@@ -235,3 +235,43 @@ export {
   trackAnalyticsEvent,
   type NotificationItem,
 } from './notifications';
+
+// Phase 5: Email, Stripe, Push, Notifications dispatch, Health
+export {
+  sendEmail,
+  sendWelcomeEmail,
+  sendSubscriptionEmail,
+  sendPriceAlertEmail,
+  sendWeeklyDigestEmail,
+  sendInvoiceEmail,
+  type EmailMessage,
+  type EmailResult,
+} from './email';
+
+export {
+  createCheckoutSession,
+  createCustomerPortalSession,
+  syncSubscriptionFromStripe,
+  processWebhookEvent,
+  getBillingHistory,
+  isStripeConfigured,
+  PLAN_CONFIG,
+  type PlanKey,
+} from './stripe';
+
+export {
+  savePushSubscription,
+  removePushSubscription,
+  sendPushNotification,
+  getVapidPublicKey,
+  type PushSubscriptionData,
+} from './push';
+
+export {
+  processNotificationQueue,
+} from './notification-dispatch';
+
+export {
+  checkHealth,
+  type HealthStatus,
+} from './health';

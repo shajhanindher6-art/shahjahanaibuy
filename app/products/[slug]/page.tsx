@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PriceChart } from '@/components/products/price-chart';
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 
 interface Product {

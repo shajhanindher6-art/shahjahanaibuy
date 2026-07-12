@@ -26,10 +26,6 @@ const securityHeaders = [
     value: 'nosniff',
   },
   {
-    key: 'X-XSS-Protection',
-    value: '1; mode=block',
-  },
-  {
     key: 'Referrer-Policy',
     value: 'strict-origin-when-cross-origin',
   },
@@ -51,7 +47,18 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  images: { unoptimized: true },
+  images: {
+    formats: ['image/avif', 'image/webp'],
+    remotePatterns: [
+      { protocol: 'https', hostname: 'images.unsplash.com' },
+      { protocol: 'https', hostname: 'images.pexels.com' },
+      { protocol: 'https', hostname: '**' },
+    ],
+  },
+  experimental: {
+    optimizePackageImports: ['lucide-react'],
+    serverComponentsExternalPackages: ['resend', 'web-push', 'stripe'],
+  },
   async headers() {
     return [
       {

@@ -39,6 +39,24 @@ export const env = {
   enableGoogleAuth: booleanEnv(process.env.NEXT_PUBLIC_ENABLE_GOOGLE_AUTH, true),
   enableEmailVerification: booleanEnv(process.env.NEXT_PUBLIC_ENABLE_EMAIL_VERIFICATION, false),
 
+  // Stripe
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY,
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+  stripePublishableKey: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
+  stripeProPriceId: process.env.STRIPE_PRO_PRICE_ID,
+
+  // Email (Resend)
+  resendApiKey: process.env.RESEND_API_KEY,
+  emailFromAddress: optional(process.env.EMAIL_FROM_ADDRESS, 'noreply@smartbuy.ai'),
+  emailFromName: optional(process.env.EMAIL_FROM_NAME, 'SmartBuy AI'),
+
+  // Push notifications (VAPID)
+  vapidPublicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY,
+
+  // Monitoring / crash reporting
+  sentryDsn: process.env.SENTRY_DSN,
+
   // Future provider keys (not yet active)
   openaiApiKey: process.env.OPENAI_API_KEY,
   redisUrl: process.env.REDIS_URL,

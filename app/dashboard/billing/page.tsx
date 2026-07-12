@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Check, Crown, Sparkles, CreditCard, XCircle } from 'lucide-react';
+import { Check, Crown, Sparkles, CreditCard, XCircle, ExternalLink, FileText, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,9 +14,20 @@ interface Subscription {
   plan: string;
   status: string;
   stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
   currentPeriodStart: string | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
+}
+
+interface BillingRecord {
+  id: string;
+  stripe_invoice_id: string | null;
+  amount_paid: number;
+  currency: string;
+  status: string;
+  invoice_url: string | null;
+  created_at: string;
 }
 
 const PLANS = [
@@ -59,15 +70,26 @@ const PLANS = [
 export default function BillingPage() {
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [billingHistory, setBillingHistory] = useState<BillingRecord[]>([]);
+  const [stripeConfigured, setStripeConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [upgrading, setUpgrading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  const fetchSubscription = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
-      const res = await fetch('/api/v1/subscriptions');
-      const data = await res.json();
-      if (data.success && data.data) {
-        setSubscription(data.data as Subscription);
+      const [subRes, histRes] = await Promise.all([
+        fetch('/api/v1/subscriptions'),
+        fetch('/api/v1/subscriptions/history').catch(() => null),
+      ]);
+      const subData = await subRes.json();
+      if (subData.success && subData.data) {
+        setSubscription(subData.data as Subscription);
+      }
+      if (histRes && histRes.ok) {
+        const histData = await histRes.json();
+        if (histData.success) {
+          setBillingHistory(histData.data ?? []);
+        }
       }
     } catch {
       // No subscription yet
@@ -77,55 +99,74 @@ export default function BillingPage() {
   }, []);
 
   useEffect(() => {
-    fetchSubscription();
-  }, [fetchSubscription]);
+    fetchData();
+  }, [fetchData]);
 
   const handleUpgrade = async (planKey: string) => {
     if (planKey === 'free') return;
     if (subscription?.plan === planKey) return;
 
-    setUpgrading(true);
+    setActionLoading(true);
     try {
-      const res = await fetch('/api/v1/subscriptions', {
+      const res = await fetch('/api/v1/subscriptions/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          plan: planKey,
-          currentPeriodStart: new Date().toISOString(),
-          currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        }),
+        body: JSON.stringify({ plan: planKey }),
       });
       const data = await res.json();
-      if (data.success) {
-        setSubscription(data.data as Subscription);
-        toast({ title: `Upgraded to ${planKey === 'pro' ? 'Pro' : planKey}!` });
+
+      if (data.success && data.data?.url) {
+        window.location.href = data.data.url;
       } else {
-        toast({ title: 'Upgrade failed', variant: 'destructive' });
+        toast({ title: data.error?.message ?? 'Upgrade failed', variant: 'destructive' });
       }
     } catch {
       toast({ title: 'Upgrade failed', variant: 'destructive' });
     } finally {
-      setUpgrading(false);
+      setActionLoading(false);
+    }
+  };
+
+  const handleManage = async () => {
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/v1/subscriptions/portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+
+      if (data.success && data.data?.url) {
+        window.location.href = data.data.url;
+      } else {
+        toast({ title: data.error?.message ?? 'Failed to open portal', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Failed to open billing portal', variant: 'destructive' });
+    } finally {
+      setActionLoading(false);
     }
   };
 
   const handleCancel = async () => {
+    setActionLoading(true);
     try {
       const res = await fetch('/api/v1/subscriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          plan: 'free',
-          cancelAtPeriodEnd: true,
-        }),
+        body: JSON.stringify({ plan: 'free', cancelAtPeriodEnd: true }),
       });
       const data = await res.json();
       if (data.success) {
         setSubscription(data.data as Subscription);
-        toast({ title: 'Subscription cancelled' });
+        toast({ title: 'Subscription canceled' });
+      } else {
+        toast({ title: 'Failed to cancel', variant: 'destructive' });
       }
     } catch {
       toast({ title: 'Failed to cancel', variant: 'destructive' });
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -178,14 +219,21 @@ export default function BillingPage() {
                 </div>
               )}
             </div>
-            {!subscription.cancelAtPeriodEnd && subscription.plan !== 'free' && (
-              <Button variant="outline" size="sm" className="mt-4" onClick={handleCancel}>
-                <XCircle className="mr-2 h-4 w-4" /> Cancel Subscription
-              </Button>
-            )}
-            {subscription.cancelAtPeriodEnd && (
-              <Badge variant="destructive" className="mt-4">Cancels at period end</Badge>
-            )}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {stripeConfigured && subscription.stripeCustomerId && (
+                <Button variant="outline" size="sm" onClick={handleManage} disabled={actionLoading}>
+                  <ExternalLink className="mr-2 h-4 w-4" /> Manage in Stripe Portal
+                </Button>
+              )}
+              {!subscription.cancelAtPeriodEnd && subscription.plan !== 'free' && (
+                <Button variant="outline" size="sm" onClick={handleCancel} disabled={actionLoading}>
+                  <XCircle className="mr-2 h-4 w-4" /> Cancel Subscription
+                </Button>
+              )}
+              {subscription.cancelAtPeriodEnd && (
+                <Badge variant="destructive">Cancels at period end</Badge>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -230,10 +278,14 @@ export default function BillingPage() {
                 <Button
                   className="mt-6 w-full"
                   variant={isCurrent ? 'outline' : 'default'}
-                  disabled={isCurrent || upgrading}
+                  disabled={isCurrent || actionLoading}
                   onClick={() => handleUpgrade(plan.key)}
                 >
-                  {isCurrent ? 'Current Plan' : upgrading ? <LoadingSpinner size="sm" /> : plan.cta}
+                  {isCurrent ? 'Current Plan' : actionLoading ? <LoadingSpinner size="sm" /> : (
+                    <>
+                      <Zap className="mr-2 h-4 w-4" /> {plan.cta}
+                    </>
+                  )}
                 </Button>
               </CardContent>
             </Card>
@@ -241,19 +293,72 @@ export default function BillingPage() {
         })}
       </div>
 
+      {billingHistory.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileText className="h-5 w-5 text-muted-foreground" />
+              Billing History
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {billingHistory.map((record) => (
+                <div key={record.id} className="flex items-center justify-between border-b border-slate-100 pb-3 last:border-0 dark:border-slate-800">
+                  <div>
+                    <p className="text-sm font-medium">
+                      ${(record.amount_paid / 100).toFixed(2)} {record.currency.toUpperCase()}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(record.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Badge variant={record.status === 'paid' ? 'default' : 'outline'} className="capitalize">
+                      {record.status}
+                    </Badge>
+                    {record.invoice_url && (
+                      <a href={record.invoice_url} target="_blank" rel="noopener noreferrer">
+                        <Button variant="ghost" size="sm">
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Payment Method</CardTitle>
-          <CardDescription>Stripe integration ready — add your Stripe API key to enable live payments</CardDescription>
+          <CardDescription>
+            {stripeConfigured
+              ? 'Payments are securely processed by Stripe.'
+              : 'Stripe integration ready — add your Stripe API key to enable live payments'}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-3 rounded-lg border border-dashed border-slate-300 p-4 dark:border-slate-700">
-            <CreditCard className="h-8 w-8 text-muted-foreground" />
-            <div>
-              <p className="text-sm font-medium">No payment method</p>
-              <p className="text-xs text-muted-foreground">Stripe is not yet configured. Add your Stripe secret key to enable secure credit card payments.</p>
+          {stripeConfigured ? (
+            <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-950">
+              <CreditCard className="h-8 w-8 text-green-600" />
+              <div>
+                <p className="text-sm font-medium">Stripe payments active</p>
+                <p className="text-xs text-muted-foreground">Your payment details are handled securely by Stripe.</p>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center gap-3 rounded-lg border border-dashed border-slate-300 p-4 dark:border-slate-700">
+              <CreditCard className="h-8 w-8 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">No payment method</p>
+                <p className="text-xs text-muted-foreground">Stripe is not yet configured. Add your Stripe secret key to enable secure credit card payments.</p>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

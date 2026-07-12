@@ -8,6 +8,7 @@ import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { isStripeConfigured } from '@/services/stripe';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'subscriptions' });
@@ -41,42 +42,67 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const {
-      plan,
-      stripeCustomerId,
-      stripeSubscriptionId,
-      stripePriceId,
-      currentPeriodStart,
-      currentPeriodEnd,
-    } = body ?? {};
+    const { plan, cancelAtPeriodEnd } = body ?? {};
 
     if (typeof plan !== 'string' || plan.trim() === '') {
       return badRequest('plan is required');
     }
 
     const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase
-      .from('subscriptions')
-      .upsert({
-        user_id: auth.userId,
-        plan,
-        stripe_customer_id: typeof stripeCustomerId === 'string' ? stripeCustomerId : null,
-        stripe_subscription_id:
-          typeof stripeSubscriptionId === 'string' ? stripeSubscriptionId : null,
-        stripe_price_id: typeof stripePriceId === 'string' ? stripePriceId : null,
-        current_period_start:
-          typeof currentPeriodStart === 'string' ? currentPeriodStart : null,
-        current_period_end:
-          typeof currentPeriodEnd === 'string' ? currentPeriodEnd : null,
-      })
-      .select('*')
-      .maybeSingle();
 
-    if (error || !data) {
-      return internalError('Failed to update subscription');
+    // If Stripe is configured, subscription changes must go through Stripe
+    if (isStripeConfigured() && plan !== 'free') {
+      return badRequest('Use /api/v1/subscriptions/checkout to upgrade plans');
     }
 
-    return apiSuccess(data);
+    // Without Stripe, or for cancel-to-free, allow direct upsert
+    const existing = await supabase
+      .from('subscriptions')
+      .select('*')
+      .eq('user_id', auth.userId)
+      .maybeSingle();
+
+    const updates: Record<string, unknown> = {
+      user_id: auth.userId,
+      plan,
+      status: cancelAtPeriodEnd ? 'canceling' : (plan === 'free' ? 'canceled' : 'active'),
+    };
+
+    if (cancelAtPeriodEnd) {
+      updates.cancel_at_period_end = true;
+    } else if (plan === 'free') {
+      updates.cancel_at_period_end = false;
+      updates.ended_at = new Date().toISOString();
+    }
+
+    if (existing.data) {
+      const { data, error } = await supabase
+        .from('subscriptions')
+        .update(updates)
+        .eq('user_id', auth.userId)
+        .select('*')
+        .maybeSingle();
+
+      if (error || !data) {
+        return internalError('Failed to update subscription');
+      }
+      return apiSuccess(data);
+    } else {
+      const { data, error } = await supabase
+        .from('subscriptions')
+        .insert({
+          ...updates,
+          current_period_start: new Date().toISOString(),
+          current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        })
+        .select('*')
+        .maybeSingle();
+
+      if (error || !data) {
+        return internalError('Failed to create subscription');
+      }
+      return apiSuccess(data);
+    }
   } catch {
     return internalError('Failed to update subscription');
   }
