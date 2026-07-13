@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   Settings,
@@ -47,9 +47,15 @@ const accountNavItems: NavItem[] = [
 
 export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { signOut, profile, role } = useAuth();
 
   const isAdmin = role === 'admin';
+
+  async function handleSignOut() {
+    await signOut();
+    router.push('/sign-in');
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -134,7 +140,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void }) {
       <div className="border-t p-4">
         <div className="mb-3 flex items-center gap-3 rounded-lg px-3 py-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-            {profile?.fullName?.[0]?.toUpperCase() ?? profile?.email[0]?.toUpperCase() ?? 'U'}
+            {profile?.fullName?.[0]?.toUpperCase() ?? profile?.email?.[0]?.toUpperCase() ?? 'U'}
           </div>
           <div className="flex-1 overflow-hidden">
             <p className="truncate text-sm font-medium">{profile?.fullName ?? 'User'}</p>
@@ -145,7 +151,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void }) {
           variant="ghost"
           size="sm"
           className="w-full justify-start gap-3 text-muted-foreground"
-          onClick={() => signOut()}
+          onClick={handleSignOut}
         >
           <LogOut className="h-4 w-4" />
           Sign Out
