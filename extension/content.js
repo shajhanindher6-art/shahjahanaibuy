@@ -77,31 +77,52 @@ function createBanner(productInfo, betterPrices) {
   const bestPrice = betterPrices[0];
   const savings = productInfo.price && bestPrice.price ? productInfo.price - bestPrice.price : 0;
 
-  banner.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-      <span style="font-size: 18px;">✨</span>
-      <strong style="font-size: 14px;">SmartBuy AI found a better price!</strong>
-    </div>
-    <div style="font-size: 13px; margin-bottom: 12px;">
-      <div style="margin-bottom: 4px;">Best price: <strong>$${bestPrice.price?.toFixed(2)}</strong> at ${bestPrice.retailer}</div>
-      ${savings > 0 ? `<div style="color: #4ade80;">You save: $${savings.toFixed(2)}</div>` : ''}
-    </div>
-    <div style="display: flex; gap: 8px;">
-      <a href="${bestPrice.url || '#'}" target="_blank" rel="noopener"
-        style="background: white; color: #1e40af; padding: 6px 16px; border-radius: 6px;
-        text-decoration: none; font-size: 13px; font-weight: 600;">
-        View Deal
-      </a>
-      <button id="smartbuy-close" style="background: rgba(255,255,255,0.2); color: white; border: none;
-        padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;">
-        Dismiss
-      </button>
-    </div>
-  `;
+  // Build banner with DOM API to prevent XSS
+  const header = document.createElement('div');
+  header.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 8px;';
+  const icon = document.createElement('span');
+  icon.style.fontSize = '18px';
+  icon.textContent = '\u2728';
+  const title = document.createElement('strong');
+  title.style.fontSize = '14px';
+  title.textContent = 'SmartBuy AI found a better price!';
+  header.appendChild(icon);
+  header.appendChild(title);
 
+  const info = document.createElement('div');
+  info.style.cssText = 'font-size: 13px; margin-bottom: 12px;';
+  const priceLine = document.createElement('div');
+  priceLine.style.marginBottom = '4px';
+  priceLine.textContent = `Best price: $${bestPrice.price?.toFixed(2)} at ${bestPrice.retailer}`;
+  info.appendChild(priceLine);
+  if (savings > 0) {
+    const savingsLine = document.createElement('div');
+    savingsLine.style.color = '#4ade80';
+    savingsLine.textContent = `You save: $${savings.toFixed(2)}`;
+    info.appendChild(savingsLine);
+  }
+
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display: flex; gap: 8px;';
+  const link = document.createElement('a');
+  link.textContent = 'View Deal';
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.href = bestPrice.url || '#';
+  link.style.cssText = 'background: white; color: #1e40af; padding: 6px 16px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600;';
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = 'Dismiss';
+  closeBtn.id = 'smartbuy-close';
+  closeBtn.style.cssText = 'background: rgba(255,255,255,0.2); color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;';
+  actions.appendChild(link);
+  actions.appendChild(closeBtn);
+
+  banner.appendChild(header);
+  banner.appendChild(info);
+  banner.appendChild(actions);
   document.body.appendChild(banner);
 
-  document.getElementById('smartbuy-close')?.addEventListener('click', () => {
+  closeBtn.addEventListener('click', () => {
     banner.style.transform = 'translateY(100px)';
     banner.style.opacity = '0';
     setTimeout(() => banner.remove(), 300);
@@ -126,13 +147,13 @@ async function checkForBetterPrices(productInfo) {
     if (!data.success || !data.data?.results) return;
 
     const results = data.data.results
-      .filter((r) => r.product.id !== productInfo.retailer)
+      .filter((r) => r.product?.brand?.toLowerCase() !== productInfo.retailer)
       .map((r) => ({
-        retailer: r.product.brand ?? 'Unknown',
-        price: r.score > 50 ? productInfo.price ? productInfo.price * 0.9 : null : null,
-        url: `/products/${r.product.slug}`,
+        retailer: r.product?.brand ?? 'Unknown',
+        price: r.product?.current_price ?? r.product?.price ?? null,
+        url: r.product?.slug ? `${apiBase}/products/${r.product.slug}` : null,
       }))
-      .filter((r) => r.price !== null)
+      .filter((r) => r.price !== null && r.price > 0)
       .sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
 
     if (results.length > 0 && productInfo.price && results[0].price < productInfo.price) {

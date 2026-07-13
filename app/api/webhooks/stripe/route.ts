@@ -23,15 +23,14 @@ export async function POST(request: NextRequest) {
     return badRequest('Stripe webhook secret is not configured');
   }
 
-  const body = await request.text();
   const signature = request.headers.get('stripe-signature');
-
   if (!signature) {
     return badRequest('Missing Stripe signature header');
   }
 
   let event;
   try {
+    const body = await request.text();
     event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
   } catch (err) {
     logger.error('Stripe webhook signature verification failed', { error: String(err) });
