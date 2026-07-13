@@ -226,15 +226,42 @@ Masking is recursive (handles nested objects and arrays).
 
 ---
 
+## 12. Function EXECUTE Permission Hardening (Phase 6 Post-Audit Fix)
+
+### Original Issue
+All three trigger functions (`handle_new_user`, `handle_new_profile`, `update_updated_at_column`) had EXECUTE grants to PUBLIC, anon, and authenticated roles. For `handle_new_user()` which is SECURITY DEFINER, this meant any authenticated user could invoke it via RPC and run code with elevated privileges.
+
+### Fix Applied (Migration 013)
+- **REVOKE** EXECUTE FROM PUBLIC, anon, authenticated on all three functions
+- **GRANT** EXECUTE to `supabase_auth_admin` (fires the `on_auth_user_created` trigger) and `service_role` (admin use) on `handle_new_user()`
+- **GRANT** EXECUTE to `service_role` on `handle_new_profile()` and `update_updated_at_column()` (postgres has EXECUTE as owner)
+
+### Why SECURITY DEFINER Stays on `handle_new_user()`
+The `on_auth_user_created` trigger fires on `auth.users` AFTER INSERT as `supabase_auth_admin`, which does NOT have RLS permissions on `public.profiles`. Without SECURITY DEFINER, the INSERT into profiles would be blocked by RLS. This is the officially recommended Supabase pattern. The `search_path = 'public', 'pg_temp'` setting prevents schema hijacking.
+
+### Verification
+- Trigger tested: created a user in `auth.users` → profile + user_settings created successfully
+- ACL verified: no untrusted role (PUBLIC, anon, authenticated) has EXECUTE on any function
+- `handle_new_user()`: `{postgres=X/postgres, service_role=X/postgres, supabase_auth_admin=X/postgres}`
+- `handle_new_profile()`: `{postgres=X/postgres, service_role=X/postgres}`
+- `update_updated_at_column()`: `{postgres=X/postgres, service_role=X/postgres}`
+
+### Warning Status
+- **SECURITY DEFINER warning**: Expected — this is a required Supabase Auth pattern. Cannot be removed without breaking user registration.
+- **EXECUTE to untrusted roles warning**: **RESOLVED** — all untrusted EXECUTE permissions revoked.
+
+---
+
 ## Security Score Breakdown
 
 | Category | Score | Weight | Weighted |
 |----------|-------|--------|----------|
 | RLS / Database | 10/10 | 25% | 2.5 |
-| Authentication | 9.5/10 | 20% | 1.9 |
+| Authentication | 10/10 | 20% | 2.0 |
 | API Security | 9/10 | 20% | 1.8 |
 | Secret Management | 10/10 | 15% | 1.5 |
 | Security Headers | 8.5/10 | 10% | 0.85 |
 | Extension Security | 9/10 | 5% | 0.45 |
 | PII Protection | 9/10 | 5% | 0.45 |
-| **Overall** | | | **9.5/10** |
+| Function EXECUTE Hardening | 10/10 | — | — |
+| **Overall** | | | **9.6/10** |
