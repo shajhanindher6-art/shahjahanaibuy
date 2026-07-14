@@ -10,18 +10,19 @@ import { ProductCard, type ProductCardData } from '@/components/products/product
 
 interface SimilarProductsProps {
   productId: string;
+  productSlug: string;
   category?: string | null;
   brand?: string | null;
 }
 
-export function SimilarProducts({ productId, category, brand }: SimilarProductsProps) {
+export function SimilarProducts({ productId, productSlug, category, brand }: SimilarProductsProps) {
   const [products, setProducts] = useState<ProductCardData[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchSimilar = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/products/${productId}/similar?limit=4`);
+      const res = await fetch(`/api/v1/products/${productSlug}/similar?limit=4`);
       const data = await res.json();
       if (data.success) {
         setProducts(data.data ?? []);
@@ -33,7 +34,7 @@ export function SimilarProducts({ productId, category, brand }: SimilarProductsP
     } finally {
       setLoading(false);
     }
-  }, [productId]);
+  }, [productSlug]);
 
   useEffect(() => {
     fetchSimilar();

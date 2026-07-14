@@ -23,7 +23,8 @@ interface WishlistButtonProps {
 interface Wishlist {
   id: string;
   name: string;
-  itemCount: number;
+  itemCount?: number;
+  createdAt: string;
 }
 
 export function WishlistButton({ productId, productName, variant = 'outline', size = 'default' }: WishlistButtonProps) {
@@ -113,65 +114,81 @@ export function WishlistButton({ productId, productName, variant = 'outline', si
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2">
-          {wishlists.length === 0 && !showCreate && (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              You don't have any wishlists yet. Create one to get started.
+        {!user ? (
+          <div className="flex flex-col items-center gap-3 py-6 text-center">
+            <Heart className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              Sign in to save products to your wishlists.
             </p>
-          )}
-
-          {wishlists.map((wl) => (
-            <div
-              key={wl.id}
-              className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
-            >
-              <div>
-                <span className="font-medium text-sm">{wl.name}</span>
-                <span className="ml-2 text-xs text-muted-foreground">{wl.itemCount} items</span>
-              </div>
-              <Button
-                size="sm"
-                variant={addedTo.has(wl.id) ? 'default' : 'outline'}
-                onClick={() => handleAdd(wl.id, wl.name)}
-                disabled={loading || addedTo.has(wl.id)}
-              >
-                {addedTo.has(wl.id) ? (
-                  <><Check className="mr-1 h-4 w-4 text-green-500" /> Added</>
-                ) : (
-                  'Add'
-                )}
-              </Button>
-            </div>
-          ))}
-
-          {showCreate ? (
-            <div className="space-y-2 rounded-lg border p-3">
-              <Label className="text-sm">Wishlist Name</Label>
-              <Input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="e.g. Birthday Gifts"
-                autoFocus
-              />
-              <div className="flex gap-2">
-                <Button size="sm" onClick={handleCreate} disabled={loading || !newName.trim()}>
-                  Create
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setShowCreate(false)}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <Button variant="outline" size="sm" className="w-full" onClick={() => setShowCreate(true)}>
-              Create New Wishlist
+            <Button asChild>
+              <a href="/sign-in">Sign In</a>
             </Button>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {wishlists.length === 0 && !showCreate && (
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                You don't have any wishlists yet. Create one to get started.
+              </p>
+            )}
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Done</Button>
-        </DialogFooter>
+            {wishlists.map((wl) => (
+              <div
+                key={wl.id}
+                className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+              >
+                <div>
+                  <span className="font-medium text-sm">{wl.name}</span>
+                  {wl.itemCount != null && (
+                    <span className="ml-2 text-xs text-muted-foreground">{wl.itemCount} items</span>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant={addedTo.has(wl.id) ? 'default' : 'outline'}
+                  onClick={() => handleAdd(wl.id, wl.name)}
+                  disabled={loading || addedTo.has(wl.id)}
+                >
+                  {addedTo.has(wl.id) ? (
+                    <><Check className="mr-1 h-4 w-4 text-green-500" /> Added</>
+                  ) : (
+                    'Add'
+                  )}
+                </Button>
+              </div>
+            ))}
+
+            {showCreate ? (
+              <div className="space-y-2 rounded-lg border p-3">
+                <Label className="text-sm">Wishlist Name</Label>
+                <Input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="e.g. Birthday Gifts"
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={handleCreate} disabled={loading || !newName.trim()}>
+                    Create
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setShowCreate(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button variant="outline" size="sm" className="w-full" onClick={() => setShowCreate(true)}>
+                Create New Wishlist
+              </Button>
+            )}
+          </div>
+        )}
+
+        {user && (
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Done</Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

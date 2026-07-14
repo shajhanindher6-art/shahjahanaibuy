@@ -504,6 +504,7 @@ export default function ProductDetailsPage() {
         <div className="mt-8">
           <SimilarProducts
             productId={product.id}
+            productSlug={product.slug}
             category={product.category}
             brand={product.brand}
           />

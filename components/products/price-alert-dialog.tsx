@@ -24,6 +24,7 @@ interface PriceAlertDialogProps {
 
 interface Alert {
   id: string;
+  productId: string;
   alertType: string;
   conditionValue: number | null;
   channel: string;
@@ -53,7 +54,8 @@ export function PriceAlertDialog({ productId, productName, currentPrice }: Price
       const res = await fetch('/api/v1/alerts');
       const data = await res.json();
       if (data.success) {
-        setAlerts((data.data ?? []).filter((a: Alert) => a.conditionValue !== null || a.alertType !== 'price_drop'));
+        const allAlerts: Alert[] = data.data ?? [];
+        setAlerts(allAlerts.filter((a) => a.productId === productId));
       }
     } catch { setAlerts([]); }
   };
@@ -117,79 +119,93 @@ export function PriceAlertDialog({ productId, productName, currentPrice }: Price
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div>
-            <Label className="mb-1.5 block text-sm">Alert Type</Label>
-            <Select value={alertType} onValueChange={setAlertType}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="price_drop">Price Drop</SelectItem>
-                <SelectItem value="back_in_stock">Back in Stock</SelectItem>
-                <SelectItem value="deal">New Deal</SelectItem>
-              </SelectContent>
-            </Select>
+        {!user ? (
+          <div className="flex flex-col items-center gap-3 py-6 text-center">
+            <BellRing className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              Sign in to create price alerts and get notified when prices drop.
+            </p>
+            <Button asChild>
+              <a href="/sign-in">Sign In</a>
+            </Button>
           </div>
-
-          {alertType === 'price_drop' && (
+        ) : (
+          <div className="space-y-4">
             <div>
-              <Label className="mb-1.5 block text-sm">Target Price ($)</Label>
-              <Input
-                type="number"
-                value={targetPrice}
-                onChange={(e) => setTargetPrice(e.target.value)}
-                placeholder="e.g. 199.99"
-              />
-              {currentPrice && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Current price: ${currentPrice.toFixed(2)}
-                </p>
-              )}
+              <Label className="mb-1.5 block text-sm">Alert Type</Label>
+              <Select value={alertType} onValueChange={setAlertType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="price_drop">Price Drop</SelectItem>
+                  <SelectItem value="back_in_stock">Back in Stock</SelectItem>
+                  <SelectItem value="deal">New Deal</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          )}
 
-          <div>
-            <Label className="mb-1.5 block text-sm">Notification Channel</Label>
-            <Select value={channel} onValueChange={setChannel}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="email">Email</SelectItem>
-                <SelectItem value="push">Push Notification</SelectItem>
-                <SelectItem value="both">Email & Push</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+            {alertType === 'price_drop' && (
+              <div>
+                <Label className="mb-1.5 block text-sm">Target Price ($)</Label>
+                <Input
+                  type="number"
+                  value={targetPrice}
+                  onChange={(e) => setTargetPrice(e.target.value)}
+                  placeholder="e.g. 199.99"
+                />
+                {currentPrice && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Current price: ${currentPrice.toFixed(2)}
+                  </p>
+                )}
+              </div>
+            )}
 
-          {alerts.length > 0 && (
-            <div className="space-y-2">
-              <Label className="text-sm">Active Alerts</Label>
-              {alerts.map((alert) => (
-                <div key={alert.id} className="flex items-center justify-between rounded-lg border p-2">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="text-xs capitalize">
-                      {alert.alertType.replace('_', ' ')}
-                    </Badge>
-                    {alert.conditionValue && (
-                      <span className="text-sm text-muted-foreground">
-                        Below ${alert.conditionValue.toFixed(2)}
-                      </span>
-                    )}
-                    <Badge variant="outline" className="text-xs capitalize">{alert.channel}</Badge>
+            <div>
+              <Label className="mb-1.5 block text-sm">Notification Channel</Label>
+              <Select value={channel} onValueChange={setChannel}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="email">Email</SelectItem>
+                  <SelectItem value="push">Push Notification</SelectItem>
+                  <SelectItem value="both">Email & Push</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {alerts.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm">Active Alerts</Label>
+                {alerts.map((alert) => (
+                  <div key={alert.id} className="flex items-center justify-between rounded-lg border p-2">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="text-xs capitalize">
+                        {alert.alertType.replace('_', ' ')}
+                      </Badge>
+                      {alert.conditionValue && (
+                        <span className="text-sm text-muted-foreground">
+                          Below ${alert.conditionValue.toFixed(2)}
+                        </span>
+                      )}
+                      <Badge variant="outline" className="text-xs capitalize">{alert.channel}</Badge>
+                    </div>
+                    <Button size="sm" variant="ghost" onClick={() => handleDelete(alert.id)}>
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={() => handleDelete(alert.id)}>
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={handleCreate} disabled={loading || (alertType === 'price_drop' && !targetPrice)}>
-            {loading ? 'Creating...' : 'Create Alert'}
-          </Button>
-        </DialogFooter>
+        {user && (
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} disabled={loading || (alertType === 'price_drop' && !targetPrice)}>
+              {loading ? 'Creating...' : 'Create Alert'}
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );
