@@ -32,7 +32,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    // Get initial session
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
       if (!mounted) return;
       setUser(session?.user ?? null);
@@ -43,7 +42,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event: string, session: Session | null) => {
         (async () => {
@@ -67,40 +65,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(
     async (email: string, password: string): Promise<AuthResult> => {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) return { success: false, error: error.message };
-      return { success: true };
+      try {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) return { success: false, error: error.message };
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : 'Failed to sign in' };
+      }
     },
     [supabase]
   );
 
   const signUp = useCallback(
     async (email: string, password: string, fullName?: string): Promise<AuthResult> => {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { full_name: fullName ?? '' },
-        },
-      });
-      if (error) return { success: false, error: error.message };
-      if (!data.session) {
-        return {
-          success: true,
-          error: 'Check your email to confirm your account.',
-        };
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { full_name: fullName ?? '' },
+          },
+        });
+        if (error) return { success: false, error: error.message };
+        if (!data.session) {
+          return {
+            success: true,
+            error: 'Account created! Check your email to confirm your account.',
+          };
+        }
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : 'Failed to sign up' };
       }
-      return { success: true };
     },
     [supabase]
   );
 
-  const signInWithGoogle = useCallback(async (): Promise<void> => {
-    const redirectTo = `${window.location.origin}/auth/callback`;
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo },
-    });
+  const signInWithGoogle = useCallback(async (): Promise<AuthResult> => {
+    try {
+      const redirectTo = `${window.location.origin}/auth/callback`;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo },
+      });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (err) {
+      return {
+        success: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Google Sign-In is not available. Please use email/password.',
+      };
+    }
   }, [supabase]);
 
   const signOut = useCallback(async (): Promise<void> => {
@@ -111,32 +129,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const resetPassword = useCallback(
     async (email: string): Promise<AuthResult> => {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
-      });
-      if (error) return { success: false, error: error.message };
-      return { success: true };
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
+        });
+        if (error) return { success: false, error: error.message };
+        return { success: true };
+      } catch (err) {
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : 'Failed to send reset email',
+        };
+      }
     },
     [supabase]
   );
 
   const updatePassword = useCallback(
     async (password: string): Promise<AuthResult> => {
-      const { error } = await supabase.auth.updateUser({ password });
-      if (error) return { success: false, error: error.message };
-      return { success: true };
+      try {
+        const { error } = await supabase.auth.updateUser({ password });
+        if (error) return { success: false, error: error.message };
+        return { success: true };
+      } catch (err) {
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : 'Failed to update password',
+        };
+      }
     },
     [supabase]
   );
 
   const resendVerification = useCallback(
     async (email: string): Promise<AuthResult> => {
-      const { error } = await supabase.auth.resend({
-        type: 'signup',
-        email,
-      });
-      if (error) return { success: false, error: error.message };
-      return { success: true };
+      try {
+        const { error } = await supabase.auth.resend({
+          type: 'signup',
+          email,
+        });
+        if (error) return { success: false, error: error.message };
+        return { success: true };
+      } catch (err) {
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : 'Failed to resend verification email',
+        };
+      }
     },
     [supabase]
   );

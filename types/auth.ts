@@ -13,7 +13,7 @@ export interface AuthContextValue {
   isAuthenticated: boolean;
   signIn: (email: string, password: string) => Promise<AuthResult>;
   signUp: (email: string, password: string, fullName?: string) => Promise<AuthResult>;
-  signInWithGoogle: () => Promise<void>;
+  signInWithGoogle: () => Promise<AuthResult>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<AuthResult>;
   updatePassword: (password: string) => Promise<AuthResult>;

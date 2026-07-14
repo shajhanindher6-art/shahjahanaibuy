@@ -21,12 +21,17 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const result = await resetPassword(email);
-    setLoading(false);
-    if (result.success) {
-      setSent(true);
-    } else {
-      setError(result.error || 'Failed to send reset email');
+    try {
+      const result = await resetPassword(email);
+      if (result.success) {
+        setSent(true);
+      } else {
+        setError(result.error || 'Failed to send reset email');
+      }
+    } catch {
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -42,7 +47,7 @@ export default function ForgotPasswordPage() {
     >
       {sent ? (
         <div className="text-center">
-          <CheckCircle2 className="mx-auto mb-4 h-12 w-12 text-success" />
+          <CheckCircle2 className="mx-auto mb-4 h-12 w-12 text-emerald-500" />
           <h2 className="mb-2 text-lg font-semibold">Check your email</h2>
           <p className="text-sm text-muted-foreground">
             We&apos;ve sent a password reset link to <strong>{email}</strong>. Follow the link in
@@ -52,9 +57,7 @@ export default function ForgotPasswordPage() {
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              {error}
-            </div>
+            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
           )}
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>

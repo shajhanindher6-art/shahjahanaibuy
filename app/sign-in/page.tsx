@@ -3,6 +3,7 @@
 import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/features/auth';
 import { AuthShell } from '@/components/layout/auth-shell';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,7 @@ function SignInContent() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -26,19 +28,33 @@ function SignInContent() {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const result = await signIn(email, password);
-    setLoading(false);
-    if (result.success) {
-      router.push(redirect);
-    } else {
-      setError(result.error || 'Failed to sign in');
+    try {
+      const result = await signIn(email, password);
+      if (result.success) {
+        router.push(redirect);
+      } else {
+        setError(result.error || 'Failed to sign in');
+      }
+    } catch {
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
     }
   }
 
   async function handleGoogle() {
+    setError('');
     setGoogleLoading(true);
-    await signInWithGoogle();
-    setGoogleLoading(false);
+    try {
+      const result = await signInWithGoogle();
+      if (!result.success) {
+        setError(result.error || 'Google Sign-In is not available');
+        setGoogleLoading(false);
+      }
+    } catch {
+      setError('Google Sign-In is not available. Please use email/password.');
+      setGoogleLoading(false);
+    }
   }
 
   return (
@@ -82,15 +98,30 @@ function SignInContent() {
               Forgot password?
             </Link>
           </div>
-          <Input
-            id="password"
-            type="password"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="current-password"
-          />
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? 'text' : 'password'}
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+              className="pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((s) => !s)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              tabIndex={-1}
+            >
+              {showPassword ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
+            </button>
+          </div>
         </div>
         <Button type="submit" className="w-full" disabled={loading}>
           {loading ? <LoadingSpinner size="sm" /> : 'Sign In'}

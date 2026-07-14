@@ -21,12 +21,17 @@ export default function VerifyEmailPage() {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const result = await resendVerification(email);
-    setLoading(false);
-    if (result.success) {
-      setSent(true);
-    } else {
-      setError(result.error || 'Failed to resend verification email');
+    try {
+      const result = await resendVerification(email);
+      if (result.success) {
+        setSent(true);
+      } else {
+        setError(result.error || 'Failed to resend verification email');
+      }
+    } catch {
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -37,7 +42,7 @@ export default function VerifyEmailPage() {
     >
       {sent ? (
         <div className="text-center">
-          <MailCheck className="mx-auto mb-4 h-12 w-12 text-success" />
+          <MailCheck className="mx-auto mb-4 h-12 w-12 text-emerald-500" />
           <h2 className="mb-2 text-lg font-semibold">Verification email sent</h2>
           <p className="mb-4 text-sm text-muted-foreground">
             Check your inbox at <strong>{email}</strong> for a verification link.
@@ -49,9 +54,7 @@ export default function VerifyEmailPage() {
       ) : (
         <form onSubmit={handleResend} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              {error}
-            </div>
+            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
           )}
           <p className="text-sm text-muted-foreground">
             We&apos;ll send a verification link to your email address. Click the link to confirm
