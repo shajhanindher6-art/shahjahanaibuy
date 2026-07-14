@@ -40,6 +40,7 @@ export default function SignUpPage() {
         if (result.error) {
           setMessage(result.error);
         } else {
+          router.refresh();
           router.push('/dashboard');
         }
       } else {
