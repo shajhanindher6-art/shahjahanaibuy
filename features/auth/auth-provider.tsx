@@ -66,8 +66,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(
     async (email: string, password: string): Promise<AuthResult> => {
       try {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) return { success: false, error: error.message };
+        if (data.user) {
+          setUser(data.user);
+          await fetchProfile(data.user.id);
+        }
         return { success: true };
       } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : 'Failed to sign in' };
@@ -92,6 +96,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             success: true,
             error: 'Account created! Check your email to confirm your account.',
           };
+        }
+        if (data.user) {
+          setUser(data.user);
+          await fetchProfile(data.user.id);
         }
         return { success: true };
       } catch (err) {
