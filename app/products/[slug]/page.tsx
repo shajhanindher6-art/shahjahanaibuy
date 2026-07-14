@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft, Star, TrendingDown, TrendingUp, Minus,
-  Check, X, GitCompare, Bell, Heart, Sparkles, BarChart3,
+  Check, X, GitCompare, Sparkles, BarChart3,
   ThumbsUp, ThumbsDown, Package
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,12 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PriceChart } from '@/components/products/price-chart';
-import Image from 'next/image';
+import { DealScoreBadge } from '@/components/products/deal-score-badge';
+import { BestTimeToBuyIndicator } from '@/components/products/best-time-to-buy';
+import { SimilarProducts } from '@/components/products/similar-products';
+import { CashbackCouponsSection } from '@/components/products/cashback-coupons-section';
+import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
+import { WishlistButton } from '@/components/products/wishlist-button';
 import { cn } from '@/lib/utils';
 
 interface Product {
@@ -221,16 +226,51 @@ export default function ProductDetailsPage() {
               </div>
             )}
 
+            {prediction && (
+              <div className="flex items-center gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                <DealScoreBadge
+                  score={Math.round(
+                    100 - prediction.discountProbability * 0.4 +
+                    (prediction.currentPrice && prediction.lowestPrice
+                      ? ((prediction.lowestPrice / prediction.currentPrice) * 30)
+                      : 20) +
+                    (prediction.confidenceScore * 0.3)
+                  )}
+                  size="lg"
+                  showLabel
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Deal Score</p>
+                  <p className="text-xs text-muted-foreground">
+                    AI-calculated value score based on price history, trends, and discount probability.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {prediction && (
+              <BestTimeToBuyIndicator
+                discountProbability={prediction.discountProbability}
+                currentPrice={prediction.currentPrice}
+                averagePrice={prediction.averagePrice}
+                lowestPrice={prediction.lowestPrice}
+                expectedSaleDate={prediction.expectedSaleDate}
+              />
+            )}
+
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => router.push(`/compare?products=${product.id}`)}>
                 <GitCompare className="mr-2 h-4 w-4" /> Compare
               </Button>
-              <Button variant="outline">
-                <Bell className="mr-2 h-4 w-4" /> Set Alert
-              </Button>
-              <Button variant="outline">
-                <Heart className="mr-2 h-4 w-4" /> Wishlist
-              </Button>
+              <PriceAlertDialog
+                productId={product.id}
+                productName={product.name}
+                currentPrice={prediction?.currentPrice}
+              />
+              <WishlistButton
+                productId={product.id}
+                productName={product.name}
+              />
             </div>
 
             {summary && (
@@ -250,11 +290,12 @@ export default function ProductDetailsPage() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-8">
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-5">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-6">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="price-history">Price History</TabsTrigger>
             <TabsTrigger value="prediction">Prediction</TabsTrigger>
             <TabsTrigger value="reviews">Reviews</TabsTrigger>
+            <TabsTrigger value="savings">Savings</TabsTrigger>
             <TabsTrigger value="specs">Specs</TabsTrigger>
           </TabsList>
 
@@ -439,6 +480,10 @@ export default function ProductDetailsPage() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="savings" className="mt-4">
+            <CashbackCouponsSection productId={product.id} />
+          </TabsContent>
+
           <TabsContent value="specs" className="mt-4">
             <Card>
               <CardHeader>
@@ -455,6 +500,14 @@ export default function ProductDetailsPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        <div className="mt-8">
+          <SimilarProducts
+            productId={product.id}
+            category={product.category}
+            brand={product.brand}
+          />
+        </div>
       </div>
     </div>
   );

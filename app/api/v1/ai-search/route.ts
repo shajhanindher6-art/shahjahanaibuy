@@ -19,14 +19,21 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { query, filters, page, pageSize } = body ?? {};
+    const { query, url, filters, page, pageSize } = body ?? {};
 
-    if (typeof query !== 'string' || query.trim() === '') {
-      return badRequest('query is required');
+    const hasQuery = typeof query === 'string' && query.trim() !== '';
+    const hasUrl = typeof url === 'string' && url.trim() !== '';
+
+    if (!hasQuery && !hasUrl) {
+      return badRequest('query or url is required');
     }
 
+    const searchQuery = hasQuery
+      ? query.trim()
+      : extractSearchFromUrl(url.trim());
+
     const options: AISearchOptions = {
-      query,
+      query: searchQuery,
       filters: filters as SearchFilters | undefined,
       page: typeof page === 'number' ? page : undefined,
       pageSize: typeof pageSize === 'number' ? pageSize : undefined,
@@ -38,7 +45,7 @@ export async function POST(request: NextRequest) {
     // Best-effort: record search history for authenticated users.
     const auth = await requireAuth(request);
     if (!('error' in auth)) {
-      void recordSearch(supabase, auth.userId, query, options.filters ?? null, result.total);
+      void recordSearch(supabase, auth.userId, searchQuery, options.filters ?? null, result.total);
     }
 
     return apiSuccess(result.results, 200, {
@@ -47,5 +54,17 @@ export async function POST(request: NextRequest) {
     });
   } catch {
     return internalError('Failed to perform AI search');
+  }
+}
+
+function extractSearchFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const pathParts = parsed.pathname.split('/').filter(Boolean);
+    const lastSegment = pathParts[pathParts.length - 1] ?? '';
+    const decoded = decodeURIComponent(lastSegment).replace(/[-_]/g, ' ').replace(/\.\w+$/, '');
+    return decoded.trim() || parsed.hostname.replace(/^www\./, '');
+  } catch {
+    return url;
   }
 }

@@ -184,7 +184,7 @@ function mapDealRow(row: Record<string, unknown>): Deal {
     description: row.description as string | null,
     dealType: row.deal_type as string,
     discountType: row.discount_type as string,
-    discountValue: row.discountValue as number,
+    discountValue: parseFloat(String(row.discount_value)),
     startAt: row.start_at as string,
     endAt: row.end_at as string,
     couponCode: row.coupon_code as string | null,

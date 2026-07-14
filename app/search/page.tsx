@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, SlidersHorizontal, X, Star, TrendingDown } from 'lucide-react';
+import { Search, SlidersHorizontal, X, Star, TrendingDown, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,6 +47,7 @@ const SUGGESTED_QUERIES = [
 export default function SearchPage() {
   const router = useRouter();
   const [query, setQuery] = useState('');
+  const [searchMode, setSearchMode] = useState<'text' | 'url'>('text');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [parsedIntent, setParsedIntent] = useState<ParsedIntent | null>(null);
   const [loading, setLoading] = useState(false);
@@ -65,7 +66,14 @@ export default function SearchPage() {
     setHasSearched(true);
 
     try {
-      const body: Record<string, unknown> = { query: searchQuery, pageSize: 20 };
+      const body: Record<string, unknown> = { pageSize: 20 };
+
+      if (searchMode === 'url') {
+        body.url = searchQuery;
+      } else {
+        body.query = searchQuery;
+      }
+
       const filterObj: Record<string, unknown> = {};
       if (filters.category) filterObj.category = filters.category;
       if (filters.brand) filterObj.brand = filters.brand;
@@ -92,7 +100,7 @@ export default function SearchPage() {
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, searchMode]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,14 +139,45 @@ export default function SearchPage() {
         </div>
 
         <form onSubmit={handleSearch} className="mb-6">
+          <div className="mb-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setSearchMode('text')}
+              className={cn(
+                'flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                searchMode === 'text'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'
+              )}
+            >
+              <Search className="h-4 w-4" /> Text Search
+            </button>
+            <button
+              type="button"
+              onClick={() => setSearchMode('url')}
+              className={cn(
+                'flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                searchMode === 'url'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'
+              )}
+            >
+              <Link2 className="h-4 w-4" /> URL Search
+            </button>
+          </div>
+
           <div className="flex gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+              {searchMode === 'text' ? (
+                <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+              ) : (
+                <Link2 className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+              )}
               <Input
-                type="text"
+                type={searchMode === 'url' ? 'url' : 'text'}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="e.g. Best gaming laptop under $1000"
+                placeholder={searchMode === 'url' ? 'Paste a product URL (e.g. https://...)' : 'e.g. Best gaming laptop under $1000'}
                 className="pl-10"
                 autoFocus
               />
