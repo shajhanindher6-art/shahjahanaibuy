@@ -16,11 +16,12 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.replace('/sign-in?redirect=' + encodeURIComponent(window.location.pathname));
+      const redirect = new URLSearchParams(window.location.search).get('redirect');
+      router.replace('/sign-in?redirect=' + encodeURIComponent(redirect ?? window.location.pathname));
     }
   }, [isLoading, isAuthenticated, router]);
 
-  if (isLoading) {
+  if (isLoading || (!isAuthenticated && !isLoading)) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <LoadingSpinner size="lg" />

@@ -32,7 +32,6 @@ function SignInContent() {
       const result = await signIn(email, password);
       if (result.success) {
         router.push('/dashboard');
-        window.location.href = '/dashboard';
       } else {
         setError(result.error || 'Failed to sign in');
       }
