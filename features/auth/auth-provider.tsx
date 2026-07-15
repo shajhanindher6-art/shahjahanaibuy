@@ -31,9 +31,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    let initialSessionChecked = false;
 
+    // First, check the existing session synchronously from localStorage/cookie.
+    // This resolves immediately (no network round-trip) and sets the user
+    // state before any navigation happens.
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
       if (!mounted) return;
+      initialSessionChecked = true;
       setUser(session?.user ?? null);
       if (session?.user) {
         fetchProfile(session.user.id).finally(() => mounted && setIsLoading(false));
@@ -42,10 +47,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
+    // Listen for auth state changes (sign-in, sign-out, token refresh).
+    // The critical fix: do NOT set isLoading=false here on the INITIAL event.
+    // onAuthStateChange fires an INITIAL_SESSION event on mount, which races
+    // with getSession() above. If it fires with no session before getSession
+    // resolves, it would prematurely set isLoading=false with user=null,
+    // causing ProtectedRoute to redirect to /sign-in even when the user is
+    // actually authenticated.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event: string, session: Session | null) => {
+        if (!mounted) return;
+
+        // Skip the initial INITIAL_SESSION event — getSession() handles that.
+        if (event === 'INITIAL_SESSION' && !initialSessionChecked) return;
+
         (async () => {
-          if (!mounted) return;
           setUser(session?.user ?? null);
           if (session?.user) {
             await fetchProfile(session.user.id);
@@ -77,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: err instanceof Error ? err.message : 'Failed to sign in' };
       }
     },
-    [supabase]
+    [supabase, fetchProfile]
   );
 
   const signUp = useCallback(
@@ -106,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: err instanceof Error ? err.message : 'Failed to sign up' };
       }
     },
-    [supabase]
+    [supabase, fetchProfile]
   );
 
   const signInWithGoogle = useCallback(async (): Promise<AuthResult> => {
