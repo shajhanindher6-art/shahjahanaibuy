@@ -54,7 +54,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void }) {
 
   async function handleSignOut() {
     await signOut();
-    router.push('/sign-in');
+    router.replace('/sign-in');
   }
 
   return (
