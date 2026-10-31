@@ -13,6 +13,11 @@ export default async function sitemap() {
     { url: '/deals', priority: 0.9, changeFrequency: 'daily' as const },
     { url: '/sign-in', priority: 0.5, changeFrequency: 'monthly' as const },
     { url: '/sign-up', priority: 0.6, changeFrequency: 'monthly' as const },
+    { url: '/about', priority: 0.5, changeFrequency: 'monthly' as const },
+    { url: '/contact', priority: 0.5, changeFrequency: 'monthly' as const },
+    { url: '/support', priority: 0.5, changeFrequency: 'monthly' as const },
+    { url: '/docs', priority: 0.5, changeFrequency: 'monthly' as const },
+    { url: '/blog', priority: 0.5, changeFrequency: 'weekly' as const },
   ];
 
   const staticEntries = staticPages.map((page) => ({

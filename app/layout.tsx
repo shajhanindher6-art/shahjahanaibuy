@@ -9,6 +9,7 @@ import { appConfig } from '@/lib/config/app';
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(appConfig.url),
   title: {
     default: `${appConfig.name} — AI-Powered Shopping Intelligence`,
     template: `%s | ${appConfig.name}`,
