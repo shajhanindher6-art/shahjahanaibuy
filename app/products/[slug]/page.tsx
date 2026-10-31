@@ -20,6 +20,7 @@ import { CashbackCouponsSection } from '@/components/products/cashback-coupons-s
 import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
 import { WishlistButton } from '@/components/products/wishlist-button';
 import { AIReviewSummarizer } from '@/components/products/ai-review-summarizer';
+import { ReviewForm } from '@/components/products/review-form';
 import type { ReviewAISummary } from '@/types/ai';
 import { cn } from '@/lib/utils';
 import { SiteHeader } from '@/components/layout/site-header';
@@ -170,6 +171,36 @@ export default function ProductDetailsPage() {
       setProduct(null);
     } finally {
       setLoading(false);
+    }
+  }, [slug, fetchTimed]);
+
+  // Lightweight refresh after a review is submitted: refetch only
+  // the review list and the AI Review Summary, without re-running
+  // the full page fetch (which would flash the loading spinner).
+  const refreshReviews = useCallback(async () => {
+    const [reviewsRes, aiReviewRes] = await Promise.all([
+      fetchTimed(`/api/v1/products/${slug}/reviews`),
+      fetchTimed(`/api/v1/products/${slug}/review-summary`),
+    ]);
+    if (reviewsRes && reviewsRes.ok) {
+      const reviewsData = await reviewsRes.json();
+      if (reviewsData.success) {
+        setReviews(reviewsData.data.reviews ?? []);
+        const s = reviewsData.data.summary as Record<string, unknown> | null;
+        setReviewSummary(
+          s
+            ? {
+                averageRating: Number(s.averageRating ?? s.avgRating ?? 0) || 0,
+                totalReviews: Number(s.totalReviews ?? s.total ?? 0) || 0,
+                ratingDistribution: (s.ratingDistribution ?? s.distribution ?? {}) as Record<number, number>,
+              }
+            : null
+        );
+      }
+    }
+    if (aiReviewRes && aiReviewRes.ok) {
+      const aiReviewData = await aiReviewRes.json();
+      if (aiReviewData.success) setAiReviewSummary(aiReviewData.data ?? null);
     }
   }, [slug, fetchTimed]);
 
@@ -473,6 +504,7 @@ export default function ProductDetailsPage() {
 
           <TabsContent value="reviews" className="mt-4">
             <AIReviewSummarizer summary={aiReviewSummary} />
+            <ReviewForm slug={slug} onReviewAdded={refreshReviews} />
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Reviews</CardTitle>

@@ -4,6 +4,7 @@ import { Inter } from 'next/font/google';
 import { Providers } from '@/components/providers';
 import { Toaster } from '@/components/ui/toaster';
 import { ServiceWorkerRegister } from '@/components/pwa/service-worker-register';
+import { AIDealFinderWidget } from '@/components/chat/ai-deal-finder-widget';
 import { appConfig } from '@/lib/config/app';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
@@ -117,6 +118,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
           <Toaster />
           <ServiceWorkerRegister />
+          <AIDealFinderWidget />
         </Providers>
       </body>
     </html>

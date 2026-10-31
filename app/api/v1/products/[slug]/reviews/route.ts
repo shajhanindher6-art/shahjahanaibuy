@@ -14,6 +14,7 @@ import {
 } from '@/lib/api/responses';
 import { logApiRequest, requireAuth } from '@/lib/api/middleware';
 import { getCachedProductBySlug, incrementViewCount } from '@/services/products';
+import { cacheKey, invalidateCache } from '@/lib/cache';
 import {
   getReviews,
   getReviewSummary,
@@ -98,6 +99,14 @@ export async function POST(
     if (!review) {
       return internalError('Failed to create review');
     }
+
+    // Invalidate the AI Review Summary cache for this product so the
+    // new review is picked up by the summarizer on the next fetch
+    // instead of waiting out its 10-minute fresh / 1-hour stale
+    // window. Note: the cache is per server instance, so on a
+    // multi-instance host a stale copy may still serve briefly
+    // until its own window expires.
+    invalidateCache(cacheKey('review-summary', product.id));
 
     // Increment view count as a popularity signal (best-effort).
     void incrementViewCount(supabase, product.id);
