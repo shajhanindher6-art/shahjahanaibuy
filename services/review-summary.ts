@@ -6,8 +6,8 @@
  * returns only numbers: average rating, total reviews and the 1–5
  * distribution. This service adds the textual layer the Reviews tab
  * was missing: a plain-language summary of what buyers like and what
- * they complain about, a verified-purchase split, and the most helpful
- * review.
+ * they complain about, a verified-purchase split, an overall verdict
+ * derived from the average rating, and the most helpful review.
  *
  * Themes are detected by keyword matching over review titles + content,
  * split by sentiment (rating >= 4 counts as positive evidence for a
@@ -182,6 +182,19 @@ async function buildReviewAISummary(
             ? 'mixed'
             : 'mostly negative';
 
+    // Overall verdict: a single short judgement, so the UI can show it
+    // as a badge without re-deriving it from the rating everywhere.
+    const verdict =
+      averageRating >= 4.5
+        ? 'Highly Recommended'
+        : averageRating >= 4
+          ? 'Recommended'
+          : averageRating >= 3
+            ? 'Mixed Reviews'
+            : averageRating >= 2
+              ? 'Mostly Negative'
+              : 'Not Recommended';
+
     const parts = [
       `Based on ${totalReviews} review${totalReviews === 1 ? '' : 's'}, buyers are ${satisfaction} about this product (average ${averageRating.toFixed(1)} out of 5).`,
     ];
@@ -204,6 +217,7 @@ async function buildReviewAISummary(
       verifiedAverageRating,
       verifiedCount: verified.length,
       summary: parts.join(' '),
+      verdict,
       positives,
       concerns,
       themes,

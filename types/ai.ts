@@ -146,6 +146,8 @@ export interface ReviewAISummary {
   verifiedAverageRating: number | null;
   verifiedCount: number;
   summary: string;
+  /** Short overall verdict derived from averageRating, e.g. "Recommended". */
+  verdict: string;
   positives: string[];
   concerns: string[];
   themes: ReviewTheme[];

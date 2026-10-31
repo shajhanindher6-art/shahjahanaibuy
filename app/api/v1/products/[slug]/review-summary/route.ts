@@ -1,8 +1,10 @@
 /**
  * API v1 product AI review summary endpoint.
  * GET /api/v1/products/[slug]/review-summary — template-based textual
- * summary of a product's reviews (what buyers like, what they complain
- * about, verified-purchase split, most helpful review).
+ * summary of a product's reviews (short summary, pros, cons, overall
+ * verdict, verified-purchase split, most helpful review). The
+ * components/products/ai-review-summarizer.tsx card renders this
+ * response on the product page.
  *
  * Public (no auth required), like the reviews endpoint. Returns
  * data: null when the product has no reviews, so the UI can show its
