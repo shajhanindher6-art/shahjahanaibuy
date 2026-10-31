@@ -1,4 +1,6 @@
 'use client';
+import { SiteHeader } from '@/components/layout/site-header';
+import { SiteFooter } from '@/components/layout/site-footer';
 
 import { useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -131,6 +133,7 @@ export default function SearchPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
+      <SiteHeader />
       <div className="container mx-auto max-w-6xl px-4 py-8">
         <div className="mb-8 text-center">
           <h1 className="bg-gradient-to-r from-blue-600 to-cyan-600 dark:from-blue-400 dark:to-cyan-400 bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
@@ -371,6 +374,7 @@ export default function SearchPage() {
           </div>
         )}
       </div>
+      <SiteFooter />
     </div>
   );
 }

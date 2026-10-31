@@ -20,6 +20,8 @@ import { CashbackCouponsSection } from '@/components/products/cashback-coupons-s
 import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
 import { WishlistButton } from '@/components/products/wishlist-button';
 import { cn } from '@/lib/utils';
+import { SiteHeader } from '@/components/layout/site-header';
+import { SiteFooter } from '@/components/layout/site-footer';
 
 interface Product {
   id: string;
@@ -164,6 +166,7 @@ export default function ProductDetailsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
+      <SiteHeader />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -522,6 +525,7 @@ export default function ProductDetailsPage() {
           />
         </div>
       </div>
+      <SiteFooter />
     </div>
   );
 }

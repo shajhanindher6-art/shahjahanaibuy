@@ -1,4 +1,6 @@
 'use client';
+import { SiteHeader } from '@/components/layout/site-header';
+import { SiteFooter } from '@/components/layout/site-footer';
 
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -115,6 +117,7 @@ export default function ComparePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
+      <SiteHeader />
       <div className="container mx-auto max-w-6xl px-4 py-8">
         <div className="mb-8 text-center">
           <h1 className="flex items-center justify-center gap-2 text-3xl font-bold sm:text-4xl">
@@ -317,6 +320,7 @@ export default function ComparePage() {
           </div>
         )}
       </div>
+      <SiteFooter />
     </div>
   );
 }
