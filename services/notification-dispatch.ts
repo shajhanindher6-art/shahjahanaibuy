@@ -93,15 +93,29 @@ async function dispatchNotification(
       .eq('id', notif.user_id)
       .maybeSingle();
 
-    if (notif.channel === 'email') {
-      if (!profile?.email) return false;
+    // Channel 'both' sends email AND push. It counts as sent when at
+    // least one leg succeeds, so a failed push leg does not cause a
+    // duplicate email on retry (and vice versa).
+    const wantsEmail = notif.channel === 'email' || notif.channel === 'both';
+    const wantsPush = notif.channel === 'push' || notif.channel === 'both';
 
-      if (notif.type === 'weekly_digest') {
+    if (!wantsEmail && !wantsPush) {
+      logger.warn('Unknown notification channel', { channel: notif.channel });
+      return false;
+    }
+
+    let emailOk = false;
+    let pushOk = false;
+
+    if (wantsEmail) {
+      if (!profile?.email) {
+        logger.warn('dispatchNotification: no email for user', {
+          userId: notif.user_id,
+        });
+      } else if (notif.type === 'weekly_digest') {
         const result = await sendWeeklyDigestEmail(profile.email, notif.body);
-        return result.success;
-      }
-
-      if (notif.type === 'price_alert' && notif.data) {
+        emailOk = result.success;
+      } else if (notif.type === 'price_alert' && notif.data) {
         const d = notif.data as Record<string, unknown>;
         const result = await sendPriceAlertEmail(
           profile.email,
@@ -110,24 +124,36 @@ async function dispatchNotification(
           d.targetPrice as number,
           d.productUrl as string
         );
-        return result.success;
+        emailOk = result.success;
+      } else {
+        const result = await sendEmail({
+          to: profile.email,
+          subject: notif.subject ?? 'Notification',
+          html: notif.body.replace(/\n/g, '<br>'),
+          text: notif.body,
+        });
+        emailOk = result.success;
       }
+    }
 
-      const result = await sendEmail({
-        to: profile.email,
-        subject: notif.subject ?? 'Notification',
-        html: notif.body.replace(/\n/g, '<br>'),
-        text: notif.body,
+    if (wantsPush) {
+      pushOk = await sendPushNotification(
+        supabase,
+        notif.user_id,
+        notif.subject ?? 'Notification',
+        notif.body
+      );
+    }
+
+    if (notif.channel === 'both' && emailOk !== pushOk) {
+      logger.warn('dispatchNotification: one leg of a both-channel notification failed', {
+        notifId: notif.id,
+        emailOk,
+        pushOk,
       });
-      return result.success;
     }
 
-    if (notif.channel === 'push') {
-      return await sendPushNotification(supabase, notif.user_id, notif.subject ?? 'Notification', notif.body);
-    }
-
-    logger.warn('Unknown notification channel', { channel: notif.channel });
-    return false;
+    return emailOk || pushOk;
   } catch (err) {
     logger.error('dispatchNotification failed', { error: String(err), notifId: notif.id });
     return false;

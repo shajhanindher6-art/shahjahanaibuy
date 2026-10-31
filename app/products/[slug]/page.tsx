@@ -81,6 +81,25 @@ export default function ProductDetailsPage() {
   // Normalise here (accepting the old shape too) so a shape change can never
   // crash the page with an undefined .toFixed() call.
   const [reviewSummary, setReviewSummary] = useState<{ averageRating: number; totalReviews: number; ratingDistribution: Record<number, number> } | null>(null);
+  // AI review summary (textual: what buyers like / complain about).
+  // Null when there are no reviews — the card is then hidden and the
+  // existing "No reviews yet" empty state shows instead.
+  const [aiReviewSummary, setAiReviewSummary] = useState<{
+    summary: string;
+    positives: string[];
+    concerns: string[];
+    themes: Array<{ theme: string; positiveCount: number; negativeCount: number }>;
+    verifiedAverageRating: number | null;
+    verifiedCount: number;
+    totalReviews: number;
+    mostHelpful: {
+      authorName: string | null;
+      rating: number;
+      title: string | null;
+      content: string | null;
+      helpfulCount: number;
+    } | null;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -116,10 +135,11 @@ export default function ProductDetailsPage() {
       // 2. Ancillary data (summary, prediction, reviews) loads in the
       // background and fills in as it arrives; a slow or failed one only
       // leaves its own section empty, it never blocks the page again.
-      const [summaryRes, predictionRes, reviewsRes] = await Promise.all([
+      const [summaryRes, predictionRes, reviewsRes, aiReviewRes] = await Promise.all([
         fetchTimed(`/api/v1/ai-summary/${slug}`),
         fetchTimed(`/api/v1/predictions/${slug}`),
         fetchTimed(`/api/v1/products/${slug}/reviews`),
+        fetchTimed(`/api/v1/products/${slug}/review-summary`),
       ]);
 
       if (summaryRes && summaryRes.ok) {
@@ -147,6 +167,11 @@ export default function ProductDetailsPage() {
               : null
           );
         }
+      }
+
+      if (aiReviewRes && aiReviewRes.ok) {
+        const aiReviewData = await aiReviewRes.json();
+        if (aiReviewData.success) setAiReviewSummary(aiReviewData.data ?? null);
       }
 
       void fetch(`/api/v1/product-views`, {
@@ -474,6 +499,71 @@ export default function ProductDetailsPage() {
           </TabsContent>
 
           <TabsContent value="reviews" className="mt-4">
+            {aiReviewSummary && (
+              <Card className="mb-4">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Sparkles className="h-4 w-4" /> AI Review Summary
+                  </CardTitle>
+                  <CardDescription>
+                    Based on {aiReviewSummary.totalReviews} review{aiReviewSummary.totalReviews === 1 ? '' : 's'}
+                    {aiReviewSummary.verifiedAverageRating !== null && aiReviewSummary.verifiedCount > 0 && (
+                      <> · Verified buyers average {aiReviewSummary.verifiedAverageRating.toFixed(1)} ({aiReviewSummary.verifiedCount} verified)</>
+                    )}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm leading-relaxed">{aiReviewSummary.summary}</p>
+                  {aiReviewSummary.positives.length > 0 && (
+                    <div>
+                      <p className="mb-1 flex items-center gap-1 text-sm font-medium">
+                        <ThumbsUp className="h-4 w-4" /> What buyers like
+                      </p>
+                      <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                        {aiReviewSummary.positives.map((item, i) => (
+                          <li key={i}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {aiReviewSummary.concerns.length > 0 && (
+                    <div>
+                      <p className="mb-1 flex items-center gap-1 text-sm font-medium">
+                        <ThumbsDown className="h-4 w-4" /> What buyers complain about
+                      </p>
+                      <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                        {aiReviewSummary.concerns.map((item, i) => (
+                          <li key={i}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {aiReviewSummary.themes.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {aiReviewSummary.themes.map((t) => (
+                        <Badge key={t.theme} variant="outline" className="text-xs">
+                          {t.theme}: {t.positiveCount} positive · {t.negativeCount} negative
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  {aiReviewSummary.mostHelpful && (
+                    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Most helpful review · {aiReviewSummary.mostHelpful.helpfulCount} helpful · {aiReviewSummary.mostHelpful.rating} stars
+                        {aiReviewSummary.mostHelpful.authorName ? ` · ${aiReviewSummary.mostHelpful.authorName}` : ''}
+                      </p>
+                      {aiReviewSummary.mostHelpful.title && (
+                        <p className="mt-1 font-medium">{aiReviewSummary.mostHelpful.title}</p>
+                      )}
+                      {aiReviewSummary.mostHelpful.content && (
+                        <p className="mt-1 text-sm text-muted-foreground">{aiReviewSummary.mostHelpful.content}</p>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Reviews</CardTitle>

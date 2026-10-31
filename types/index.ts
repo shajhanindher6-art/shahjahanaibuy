@@ -155,6 +155,8 @@ export type {
   RecommendationContext,
   PricePrediction,
   AISummary,
+  ReviewAISummary,
+  ReviewTheme,
   DealRanking,
   AlertHistoryEntry,
   UserPreferences,

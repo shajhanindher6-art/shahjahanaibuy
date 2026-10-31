@@ -130,6 +130,35 @@ export interface AISummary {
 }
 
 // ---------------------------------------------------------------------------
+// AI Review Summary
+// ---------------------------------------------------------------------------
+
+export interface ReviewTheme {
+  theme: string;
+  positiveCount: number;
+  negativeCount: number;
+}
+
+export interface ReviewAISummary {
+  productId: string;
+  averageRating: number;
+  totalReviews: number;
+  verifiedAverageRating: number | null;
+  verifiedCount: number;
+  summary: string;
+  positives: string[];
+  concerns: string[];
+  themes: ReviewTheme[];
+  mostHelpful: {
+    authorName: string | null;
+    rating: number;
+    title: string | null;
+    content: string | null;
+    helpfulCount: number;
+  } | null;
+}
+
+// ---------------------------------------------------------------------------
 // Deal Rankings
 // ---------------------------------------------------------------------------
 

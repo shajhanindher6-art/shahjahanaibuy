@@ -68,6 +68,13 @@ export {
   type CreateReviewInput,
 } from './reviews';
 
+// Phase 2: AI review summary
+export {
+  getReviewAISummary,
+  type ReviewAISummary,
+  type ReviewTheme,
+} from './review-summary';
+
 // Phase 2: Wishlists
 export {
   getWishlists,
@@ -91,6 +98,12 @@ export {
   type CreateAlertInput,
   type UpdateAlertInput,
 } from './alerts';
+
+// Phase 2: Alert checker (cron)
+export {
+  checkPriceAlerts,
+  type AlertCheckResult,
+} from './alert-checker';
 
 // Phase 2: Provider abstraction
 export {
