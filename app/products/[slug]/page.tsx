@@ -84,22 +84,43 @@ export default function ProductDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
 
+  // Fetch with a timeout so one slow/hanging API can never keep the whole
+  // page on a spinner forever (observed live: 95+ seconds of spinner).
+  const fetchTimed = useCallback(async (url: string, ms = 15000) => {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(ms) });
+      return res;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [productRes, summaryRes, predictionRes, reviewsRes] = await Promise.all([
-        fetch(`/api/v1/products/${slug}`),
-        fetch(`/api/v1/ai-summary/${slug}`).catch(() => null),
-        fetch(`/api/v1/predictions/${slug}`).catch(() => null),
-        fetch(`/api/v1/products/${slug}/reviews`).catch(() => null),
-      ]);
-
+      // 1. Product first, on its own: as soon as it is known, render the
+      // page (header, image, name) instead of waiting for everything else.
+      const productRes = await fetchTimed(`/api/v1/products/${slug}`, 30000);
+      if (!productRes) {
+        setProduct(null);
+        return;
+      }
       const productData = await productRes.json();
       if (!productData.success || !productData.data) {
         setProduct(null);
         return;
       }
       setProduct(productData.data);
+      setLoading(false);
+
+      // 2. Ancillary data (summary, prediction, reviews) loads in the
+      // background and fills in as it arrives; a slow or failed one only
+      // leaves its own section empty, it never blocks the page again.
+      const [summaryRes, predictionRes, reviewsRes] = await Promise.all([
+        fetchTimed(`/api/v1/ai-summary/${slug}`),
+        fetchTimed(`/api/v1/predictions/${slug}`),
+        fetchTimed(`/api/v1/products/${slug}/reviews`),
+      ]);
 
       if (summaryRes && summaryRes.ok) {
         const summaryData = await summaryRes.json();
@@ -138,7 +159,7 @@ export default function ProductDetailsPage() {
     } finally {
       setLoading(false);
     }
-  }, [slug]);
+  }, [slug, fetchTimed]);
 
   useEffect(() => {
     fetchAll();
