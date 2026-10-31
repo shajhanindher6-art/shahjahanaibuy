@@ -413,3 +413,154 @@ export async function removeWishlistItem(
     return false;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Public shared wishlist (no login required)
+// ---------------------------------------------------------------------------
+
+/**
+ * Product subset exposed on a shared wishlist page. Deliberately
+ * excludes the owner's user_id and any private item notes — a shared
+ * page must never leak who owns the list or what they wrote privately.
+ */
+export interface SharedWishlistProduct {
+  id: string;
+  name: string;
+  slug: string;
+  brand: string | null;
+  category: string | null;
+  imageUrl: string | null;
+}
+
+export interface SharedWishlistItem {
+  product: SharedWishlistProduct;
+  targetPrice: number | null;
+  addedAt: string;
+}
+
+export interface SharedWishlist {
+  id: string;
+  name: string;
+  description: string | null;
+  itemCount: number;
+  createdAt: string;
+  items: SharedWishlistItem[];
+}
+
+/**
+ * Fetch a wishlist for public sharing. Returns `null` unless the
+ * wishlist exists AND is_public is true — private and missing lists
+ * are indistinguishable to the caller, so a private link cannot be
+ * probed to confirm a wishlist exists.
+ *
+ * Callers must use a client that can actually see public rows: the
+ * anon role needs the policies in
+ * supabase/add-public-wishlist-sharing-rls.sql applied (the original
+ * 006 policies only allow owners to SELECT their own wishlists).
+ */
+export async function getPublicSharedWishlist(
+  supabase: AnySupabaseClient,
+  wishlistId: string
+): Promise<SharedWishlist | null> {
+  try {
+    const { data: wishlist, error: wishlistError } = await supabase
+      .from('wishlists')
+      .select('id, name, description, created_at')
+      .eq('id', wishlistId)
+      .eq('is_public', true)
+      .maybeSingle();
+
+    if (wishlistError || !wishlist) {
+      if (wishlistError) logger.warn('getPublicSharedWishlist: query failed', { error: wishlistError.message });
+      return null;
+    }
+
+    const { data: items, error: itemsError } = await supabase
+      .from('wishlist_items')
+      .select('product_id, target_price, sort_order, added_at')
+      .eq('wishlist_id', wishlistId)
+      .order('sort_order', { ascending: true })
+      .order('added_at', { ascending: false });
+
+    if (itemsError || !items) {
+      if (itemsError) logger.warn('getPublicSharedWishlist: items query failed', { error: itemsError.message });
+      return null;
+    }
+
+    const itemRows = items as Array<{
+      product_id: string;
+      target_price: number | string | null;
+      added_at: string;
+    }>;
+
+    if (itemRows.length === 0) {
+      const w = wishlist as { id: string; name: string; description: string | null; created_at: string };
+      return {
+        id: w.id,
+        name: w.name,
+        description: w.description,
+        itemCount: 0,
+        createdAt: w.created_at,
+        items: [],
+      };
+    }
+
+    const productIds = [...new Set(itemRows.map((i) => i.product_id))];
+    const { data: products, error: productsError } = await supabase
+      .from('products')
+      .select('id, name, slug, brand, category, image_url')
+      .in('id', productIds)
+      .is('deleted_at', null);
+
+    if (productsError || !products) {
+      if (productsError) logger.warn('getPublicSharedWishlist: products query failed', { error: productsError.message });
+      return null;
+    }
+
+    const productById = new Map(
+      (products as Array<{
+        id: string;
+        name: string;
+        slug: string;
+        brand: string | null;
+        category: string | null;
+        image_url: string | null;
+      }>).map((p) => [
+        p.id,
+        {
+          id: p.id,
+          name: p.name,
+          slug: p.slug,
+          brand: p.brand,
+          category: p.category,
+          imageUrl: p.image_url,
+        } as SharedWishlistProduct,
+      ])
+    );
+
+    const sharedItems: SharedWishlistItem[] = itemRows
+      .map((item) => {
+        const product = productById.get(item.product_id);
+        if (!product) return null;
+        return {
+          product,
+          targetPrice: item.target_price !== null ? parseFloat(String(item.target_price)) : null,
+          addedAt: item.added_at,
+        };
+      })
+      .filter((item): item is SharedWishlistItem => item !== null);
+
+    const w = wishlist as { id: string; name: string; description: string | null; created_at: string };
+    return {
+      id: w.id,
+      name: w.name,
+      description: w.description,
+      itemCount: sharedItems.length,
+      createdAt: w.created_at,
+      items: sharedItems,
+    };
+  } catch (err) {
+    logger.error('getPublicSharedWishlist: unexpected error', { error: String(err) });
+    return null;
+  }
+}

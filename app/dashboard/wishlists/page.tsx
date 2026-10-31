@@ -96,10 +96,29 @@ export default function WishlistsPage() {
     }
   };
 
-  const shareWishlist = (id: string) => {
-    const url = `${window.location.origin}/wishlists/${id}`;
-    navigator.clipboard.writeText(url);
-    toast({ title: 'Wishlist link copied to clipboard!' });
+  // Generate a shareable link for a wishlist. The public page only
+  // shows lists marked public, so a private list is first made public
+  // (PATCH) — and only then is the link copied. If making it public
+  // fails, no link is copied, so the recipient never gets a link
+  // that just shows "not available".
+  const shareWishlist = async (id: string) => {
+    const current = wishlists.find((w) => w.id === id);
+    try {
+      if (current && !current.isPublic) {
+        const res = await fetch(`/api/v1/wishlists/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isPublic: true }),
+        });
+        if (!res.ok) throw new Error('Failed to make wishlist public');
+        setWishlists((prev) => prev.map((w) => (w.id === id ? { ...w, isPublic: true } : w)));
+      }
+      const url = `${window.location.origin}/wishlists/${id}`;
+      await navigator.clipboard.writeText(url);
+      toast({ title: 'Wishlist link copied to clipboard!' });
+    } catch {
+      toast({ title: 'Failed to share wishlist', variant: 'destructive' });
+    }
   };
 
   return (

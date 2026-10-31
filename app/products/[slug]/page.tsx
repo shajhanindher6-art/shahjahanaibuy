@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { PriceChart } from '@/components/products/price-chart';
+import { PriceHistoryGraph } from '@/components/products/price-history-graph';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
 import { BestTimeToBuyIndicator } from '@/components/products/best-time-to-buy';
 import { SimilarProducts } from '@/components/products/similar-products';
@@ -422,23 +422,9 @@ export default function ProductDetailsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {prediction ? (
-                  <>
-                    <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-                      <StatBox label="Current" value={prediction.currentPrice ? `$${prediction.currentPrice.toFixed(2)}` : '—'} />
-                      <StatBox label="Lowest" value={prediction.lowestPrice ? `$${prediction.lowestPrice.toFixed(2)}` : '—'} color="text-green-600" />
-                      <StatBox label="Highest" value={prediction.highestPrice ? `$${prediction.highestPrice.toFixed(2)}` : '—'} color="text-red-600" />
-                      <StatBox label="Average" value={prediction.averagePrice ? `$${prediction.averagePrice.toFixed(2)}` : '—'} />
-                    </div>
-                    <PriceChart
-                      data30Day={prediction.price30Day ?? []}
-                      data90Day={prediction.price90Day ?? []}
-                      data1Year={prediction.price1Year ?? []}
-                    />
-                  </>
-                ) : (
-                  <p className="text-muted-foreground">No price history available yet.</p>
-                )}
+                {/* Direct price_history data (not the prediction proxy), so
+                    this tab works even when the prediction API has no data. */}
+                <PriceHistoryGraph slug={slug} />
               </CardContent>
             </Card>
           </TabsContent>
