@@ -75,7 +75,10 @@ export default function ProductDetailsPage() {
   const [summary, setSummary] = useState<AISummary | null>(null);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [reviewSummary, setReviewSummary] = useState<{ avgRating: number; total: number; distribution: Record<number, number> } | null>(null);
+  // Reviews API returns { averageRating, totalReviews, ratingDistribution }.
+  // Normalise here (accepting the old shape too) so a shape change can never
+  // crash the page with an undefined .toFixed() call.
+  const [reviewSummary, setReviewSummary] = useState<{ averageRating: number; totalReviews: number; ratingDistribution: Record<number, number> } | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -110,7 +113,16 @@ export default function ProductDetailsPage() {
         const reviewsData = await reviewsRes.json();
         if (reviewsData.success) {
           setReviews(reviewsData.data.reviews ?? []);
-          setReviewSummary(reviewsData.data.summary ?? null);
+          const s = reviewsData.data.summary as Record<string, unknown> | null;
+          setReviewSummary(
+            s
+              ? {
+                  averageRating: Number(s.averageRating ?? s.avgRating ?? 0) || 0,
+                  totalReviews: Number(s.totalReviews ?? s.total ?? 0) || 0,
+                  ratingDistribution: (s.ratingDistribution ?? s.distribution ?? {}) as Record<number, number>,
+                }
+              : null
+          );
         }
       }
 
@@ -172,8 +184,8 @@ export default function ProductDetailsPage() {
             } : undefined,
             aggregateRating: reviewSummary ? {
               '@type': 'AggregateRating',
-              ratingValue: reviewSummary.avgRating,
-              reviewCount: reviewSummary.total,
+              ratingValue: reviewSummary.averageRating ?? 0,
+              reviewCount: reviewSummary.totalReviews ?? 0,
             } : undefined,
           }),
         }}
@@ -312,7 +324,7 @@ export default function ProductDetailsPage() {
                     </CardHeader>
                     <CardContent>
                       <ul className="space-y-2">
-                        {summary.pros.map((pro, i) => (
+                        {(summary.pros ?? []).map((pro, i) => (
                           <li key={i} className="flex items-start gap-2 text-sm">
                             <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-500" />
                             {pro}
@@ -330,7 +342,7 @@ export default function ProductDetailsPage() {
                     </CardHeader>
                     <CardContent>
                       <ul className="space-y-2">
-                        {summary.cons.map((con, i) => (
+                        {(summary.cons ?? []).map((con, i) => (
                           <li key={i} className="flex items-start gap-2 text-sm">
                             <X className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" />
                             {con}
@@ -341,14 +353,14 @@ export default function ProductDetailsPage() {
                   </Card>
                 </>
               )}
-              {summary?.alternatives && summary.alternatives.length > 0 && (
+              {summary?.alternatives && (summary.alternatives ?? []).length > 0 && (
                 <Card className="md:col-span-2">
                   <CardHeader>
                     <CardTitle className="text-base">Alternatives</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="flex flex-wrap gap-2">
-                      {summary.alternatives.map((alt, i) => (
+                      {(summary.alternatives ?? []).map((alt, i) => (
                         <Button
                           key={i}
                           variant="outline"
@@ -383,9 +395,9 @@ export default function ProductDetailsPage() {
                       <StatBox label="Average" value={prediction.averagePrice ? `$${prediction.averagePrice.toFixed(2)}` : '—'} />
                     </div>
                     <PriceChart
-                      data30Day={prediction.price30Day}
-                      data90Day={prediction.price90Day}
-                      data1Year={prediction.price1Year}
+                      data30Day={prediction.price30Day ?? []}
+                      data90Day={prediction.price90Day ?? []}
+                      data1Year={prediction.price1Year ?? []}
                     />
                   </>
                 ) : (
@@ -443,7 +455,7 @@ export default function ProductDetailsPage() {
                 <CardTitle className="text-base">Reviews</CardTitle>
                 {reviewSummary && (
                   <CardDescription>
-                    {reviewSummary.avgRating.toFixed(1)} average from {reviewSummary.total} reviews
+                    {(reviewSummary.averageRating ?? 0).toFixed(1)} average from {reviewSummary.totalReviews ?? 0} reviews
                   </CardDescription>
                 )}
               </CardHeader>
