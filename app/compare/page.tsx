@@ -57,7 +57,19 @@ export default function ComparePage() {
       const res = await fetch(`/api/v1/products?search=${encodeURIComponent(term)}&pageSize=10`);
       const data = await res.json();
       if (data.success) {
-        setSearchResults(data.data.products ?? []);
+        // Products API returns the list directly in `data` (meta holds
+        // pagination). Accept the object shape too, and normalise the
+        // image field name, so results can never silently come back empty.
+        const list = Array.isArray(data.data) ? data.data : (data.data?.products ?? []);
+        setSearchResults(
+          list.map((p: Record<string, unknown>) => ({
+            id: p.id as string,
+            name: p.name as string,
+            slug: p.slug as string,
+            brand: (p.brand as string | null) ?? null,
+            image_url: ((p.image_url ?? p.imageUrl) as string | null) ?? null,
+          }))
+        );
         setShowSearch(true);
       }
     } catch {

@@ -88,7 +88,10 @@ export default function SearchPage() {
       const data = await res.json();
 
       if (data.success) {
-        setResults(data.data.results ?? []);
+        // ai-search API returns the results array directly in `data`
+        // (meta holds total/parsedIntent). Accept the object shape too so
+        // a future API change cannot silently empty the results again.
+        setResults(Array.isArray(data.data) ? data.data : (data.data?.results ?? []));
         setParsedIntent(data.meta?.parsedIntent ?? null);
       } else {
         setResults([]);

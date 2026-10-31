@@ -190,7 +190,12 @@ export async function getProducts(
       .range(offset, offset + pageSize - 1);
 
     if (options.search) {
-      query = query.ilike('name', `%${options.search}%`);
+      // Search name, description, brand and category — not just name — so
+      // a term like "laptop" finds the laptop products instead of nothing.
+      const term = options.search.replace(/[%_,]/g, '');
+      query = query.or(
+        `name.ilike.%${term}%,description.ilike.%${term}%,brand.ilike.%${term}%,category.ilike.%${term}%`
+      );
     }
     if (options.category) {
       query = query.eq('category', options.category);
