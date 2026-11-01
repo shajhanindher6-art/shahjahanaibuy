@@ -251,10 +251,20 @@ async function handleProductSearchIntent(
     .map((p, i) => `${i + 1}. ${p.name}${p.brand ? ` (${p.brand})` : ''}${p.price ? ` — $${p.price.toFixed(2)}` : ''}`)
     .join('\n');
 
+  // The list keeps items with no recorded price (price === null),
+  // so "all of these are within your budget" would over-claim for
+  // them. Only claim it outright when every shown item has a
+  // verified price (the filter above already dropped the
+  // over-budget ones); otherwise say so honestly.
+  const budgetLabel =
+    intent.budgetCurrency && intent.budgetCurrency !== 'USD' && intent.budgetOriginal !== null
+      ? `${formatOriginalAmount(intent.budgetOriginal)} ${intent.budgetCurrency} (≈ $${intent.budget} USD)`
+      : `$${intent.budget}`;
+  const allPriced = priceMetadata.every((p) => p.price !== null);
   const budgetNote = intent.budget
-    ? intent.budgetCurrency && intent.budgetCurrency !== 'USD' && intent.budgetOriginal !== null
-      ? ` All of these are within your ${formatOriginalAmount(intent.budgetOriginal)} ${intent.budgetCurrency} budget (≈ $${intent.budget} USD).`
-      : ` All of these are within your $${intent.budget} budget.`
+    ? allPriced
+      ? ` All of these are within your ${budgetLabel} budget.`
+      : ` Items shown with a recorded price are within your ${budgetLabel} budget; items without a recorded price are listed for comparison.`
     : '';
 
   return {

@@ -214,40 +214,46 @@ export async function aiSearch(
       const score = Math.min(100, (product.confidenceScore ?? 50) + matchedAttributes.length * 15);
       const explanation = buildSearchExplanation(product, parsedIntent, matchedAttributes);
 
-      return { product, score, matchedAttributes, aiExplanation: explanation };
+      return { product, score, matchedAttributes, aiExplanation: explanation, currentPrice: null };
     });
 
-    if (budget) {
-      // Await the price checks BEFORE sorting. The old code fired
-      // them with `void` and sorted immediately, so the -20 penalty
-      // for over-budget products almost never landed before the
-      // results were returned — another reason $500+ phones kept
-      // ranking above a ~$70 budget. Over-budget items now sink,
-      // in-budget items gain the 'budget' matched attribute (which
-      // the search page renders as its "In budget" badge).
-      const priceChecks = await Promise.all(
-        results.map(async (r) => {
-          const { data: priceData } = await supabase
-            .from('price_history')
-            .select('price')
-            .eq('product_id', r.product.id)
-            .order('recorded_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          const price =
-            priceData && typeof (priceData as { price: number | string }).price !== 'undefined'
-              ? parseFloat(String((priceData as { price: number | string }).price))
-              : null;
-          return { result: r, price: Number.isFinite(price) ? (price as number) : null };
-        })
-      );
-      for (const { result, price } of priceChecks) {
-        if (price === null) continue;
-        if (price > budget) {
-          result.score -= 20;
-        } else {
-          result.matchedAttributes.push('budget');
-        }
+    // Latest prices for every result (awaited before sorting).
+    // Cards need a real price to show, and the budget claim below
+    // needs a real price to check against — without this, the
+    // explanation claimed "within your budget" for products whose
+    // price was never looked up (e.g. a $1,199 flagship shown for
+    // a ~$71 PKR budget). A null price means "not listed", never
+    // a reason to claim the product is in budget.
+    const priceChecks = await Promise.all(
+      results.map(async (r) => {
+        const { data: priceData } = await supabase
+          .from('price_history')
+          .select('price')
+          .eq('product_id', r.product.id)
+          .order('recorded_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const price =
+          priceData && typeof (priceData as { price: number | string }).price !== 'undefined'
+            ? parseFloat(String((priceData as { price: number | string }).price))
+            : null;
+        return { result: r, price: Number.isFinite(price) ? (price as number) : null };
+      })
+    );
+    for (const { result, price } of priceChecks) {
+      result.currentPrice = price;
+      if (!budget || price === null) continue;
+      if (price > budget) {
+        result.score -= 20;
+        // Honest over-budget note, instead of the old unconditional
+        // "within your budget" claim.
+        result.aiExplanation = `${result.aiExplanation.replace(/\.$/, '')}. Its latest recorded price $${price.toFixed(2)} is above your ${budgetDisplay(parsedIntent, budget)} budget.`;
+      } else {
+        // 'budget' is only added here, with a verified price — the
+        // search page's "In budget" badge therefore only ever
+        // appears on products actually at or under budget.
+        result.matchedAttributes.push('budget');
+        result.aiExplanation = `${result.aiExplanation.replace(/\.$/, '')}, within your ${budgetDisplay(parsedIntent, budget)} budget.`;
       }
     }
 
@@ -260,6 +266,25 @@ export async function aiSearch(
   }
 }
 
+/**
+ * How a budget reads in prose. When the user wrote a non-USD
+ * currency, show what they wrote, not just the USD conversion:
+ * "20,000 PKR (≈ $71 USD)" instead of a bare "$71" (and never the
+ * old "$20000" for a PKR query). When an explicit filter overrides
+ * the parsed budget, the filter amount (USD) is what applies.
+ */
+function budgetDisplay(intent: ParsedSearchIntent, effectiveBudget: number): string {
+  if (
+    intent.budget === effectiveBudget &&
+    intent.budgetCurrency &&
+    intent.budgetCurrency !== 'USD' &&
+    intent.budgetOriginal !== null
+  ) {
+    return `${formatOriginalAmount(intent.budgetOriginal)} ${intent.budgetCurrency} (≈ $${intent.budget} USD)`;
+  }
+  return `$${effectiveBudget}`;
+}
+
 function buildSearchExplanation(
   product: Product,
   intent: ParsedSearchIntent,
@@ -268,18 +293,12 @@ function buildSearchExplanation(
   const parts: string[] = [];
   if (matched.includes('category')) parts.push(`matches your ${intent.category} category`);
   if (matched.includes('brand')) parts.push(`from your preferred brand ${product.brand}`);
-  if (intent.budget) {
-    // Show the budget the user actually wrote, not just the USD
-    // conversion: "20,000 PKR (≈ $71)" instead of a bare "$71"
-    // (and never the old "$20000" for a PKR query).
-    if (intent.budgetCurrency && intent.budgetCurrency !== 'USD' && intent.budgetOriginal !== null) {
-      parts.push(
-        `within your ${formatOriginalAmount(intent.budgetOriginal)} ${intent.budgetCurrency} budget (≈ $${intent.budget} USD)`
-      );
-    } else {
-      parts.push(`within your $${intent.budget} budget`);
-    }
-  }
+  // NOTE: no budget claim here on purpose. Whether a product is
+  // "within budget" is only known after its latest price is
+  // fetched (see the price-check loop above), and claiming it
+  // from intent alone produced the false "~$71 budget" line for a
+  // flagship phone. The budget phrase is appended there, only
+  // when the price is verified.
   if (intent.intent !== 'general') parts.push(`suited for "${intent.intent}"`);
   if (parts.length === 0) parts.push('matches your search query');
   return `This product ${parts.join(', ')}.`;

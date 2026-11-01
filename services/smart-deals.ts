@@ -38,6 +38,8 @@ export interface SmartDeal {
   dealType: string;
   discountPercentage: number;
   savingsAmount: number;
+  /** Latest recorded price in USD, or null when none is recorded. */
+  currentPrice: number | null;
   aiScore: number;
   score: number;
   reason: string;
@@ -136,6 +138,7 @@ export async function getSmartDealRecommendations(
           dealType: d.dealType,
           discountPercentage: d.discountPercentage,
           savingsAmount: d.savingsAmount,
+          currentPrice: d.currentPrice ?? null,
           aiScore: d.aiScore,
           score: Math.round(score * 10) / 10,
           reason: reasons.join(' · '),

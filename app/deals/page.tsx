@@ -20,6 +20,7 @@ interface RankedDeal {
   aiScore: number;
   discountPercentage: number;
   savingsAmount: number;
+  currentPrice: number | null;
   isFeatured: boolean;
   rankedAt: string;
   deal: {
@@ -239,7 +240,14 @@ function DealCard({ deal, featured, onClick }: { deal: RankedDeal; featured?: bo
         )}
 
         <div className="mt-3 flex items-center gap-2">
-          <span className="text-2xl font-bold text-green-600">
+          {deal.currentPrice !== null && deal.currentPrice !== undefined ? (
+            <span className="text-2xl font-bold text-blue-600">
+              ${deal.currentPrice.toFixed(2)}
+            </span>
+          ) : (
+            <span className="text-sm text-muted-foreground">Price not listed</span>
+          )}
+          <span className="text-lg font-bold text-green-600">
             {isPercent ? `${discount}%` : `$${discount}`} OFF
           </span>
           {deal.savingsAmount > 0 && (

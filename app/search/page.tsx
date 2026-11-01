@@ -30,6 +30,7 @@ interface SearchResult {
   score: number;
   matchedAttributes: string[];
   aiExplanation: string;
+  currentPrice: number | null;
 }
 
 interface ParsedIntent {
@@ -57,6 +58,10 @@ export default function SearchPage() {
   const [webResults, setWebResults] = useState<WebSearchResult[]>([]);
   const [webSource, setWebSource] = useState<'catalog' | 'web' | 'web-disabled' | null>(null);
   const [parsedIntent, setParsedIntent] = useState<ParsedIntent | null>(null);
+  // Image URLs that failed to load (e.g. the Lenovo product photo):
+  // those cards render the placeholder icon instead of a blank or
+  // broken-image box, the same fallback ProductCard already uses.
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -357,11 +362,14 @@ export default function SearchPage() {
               >
                 <CardContent className="flex gap-4 p-4">
                   <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
-                    {result.product.imageUrl ? (
+                    {result.product.imageUrl && !failedImages.has(result.product.id) ? (
                       <img
                         src={result.product.imageUrl}
                         alt={result.product.name}
                         className="h-full w-full object-cover"
+                        onError={() =>
+                          setFailedImages((prev) => new Set(prev).add(result.product.id))
+                        }
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-muted-foreground">
@@ -384,6 +392,13 @@ export default function SearchPage() {
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1">
+                        {result.currentPrice !== null && result.currentPrice !== undefined ? (
+                          <span className="text-lg font-bold text-blue-600">
+                            ${result.currentPrice.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Price not listed</span>
+                        )}
                         <Badge className="bg-blue-600">
                           {Math.round(result.score)}% match
                         </Badge>

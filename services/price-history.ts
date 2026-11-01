@@ -168,6 +168,44 @@ export async function getCachedPriceHistory(
 }
 
 /**
+ * Fetch the latest recorded price for each of several products in
+ * ONE query (newest first, first row per product wins). Used by
+ * search results, deal cards and the homepage widget so cards can
+ * show a real price instead of no price at all. Products with no
+ * price history are simply absent from the map — callers must
+ * render "price not listed", never a guessed price.
+ */
+export async function getLatestPrices(
+  supabase: AnySupabaseClient,
+  productIds: string[]
+): Promise<Map<string, number>> {
+  const prices = new Map<string, number>();
+  const ids = Array.from(new Set(productIds.filter(Boolean)));
+  if (ids.length === 0) return prices;
+  try {
+    const { data, error } = await supabase
+      .from('price_history')
+      .select('product_id, price, recorded_at')
+      .in('product_id', ids)
+      .order('recorded_at', { ascending: false })
+      .limit(500);
+    if (error || !data) {
+      if (error) logger.warn('getLatestPrices: query failed', { error: error.message });
+      return prices;
+    }
+    for (const row of data as Array<{ product_id: string; price: number | string }>) {
+      if (!prices.has(row.product_id)) {
+        const price = parseFloat(String(row.price));
+        if (Number.isFinite(price)) prices.set(row.product_id, price);
+      }
+    }
+  } catch (err) {
+    logger.error('getLatestPrices: unexpected error', { error: String(err) });
+  }
+  return prices;
+}
+
+/**
  * Fetch the latest price record for a product.
  * Returns `null` if no price history exists or on error.
  */

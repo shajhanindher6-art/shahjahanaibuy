@@ -8,7 +8,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, notFound, internalError } from '@/lib/api/responses';
 import { logApiRequest } from '@/lib/api/middleware';
 import { getCachedProductBySlug } from '@/services/products';
-import { getMerchantProducts } from '@/services/commerce';
+import { getMerchantProducts, getMerchants } from '@/services/commerce';
 
 export async function GET(
   request: NextRequest,
@@ -26,7 +26,17 @@ export async function GET(
 
     const listings = await getMerchantProducts(supabase, product.id);
 
-    return apiSuccess(listings);
+    // Listings carry only a merchantId; a UUID is useless to a
+    // shopper, so attach the merchant name here (no existing
+    // consumer of this endpoint relied on the bare shape).
+    const merchants = await getMerchants(supabase);
+    const nameById = new Map(merchants.map((m) => [m.id, m.name]));
+    const withNames = listings.map((listing) => ({
+      ...listing,
+      merchantName: nameById.get(listing.merchantId) ?? null,
+    }));
+
+    return apiSuccess(withNames);
   } catch {
     return internalError('Failed to fetch merchant listings');
   }

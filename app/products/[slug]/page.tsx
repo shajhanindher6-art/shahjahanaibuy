@@ -71,6 +71,20 @@ interface Review {
   createdAt: string;
 }
 
+interface MerchantListing {
+  id: string;
+  merchantId: string;
+  merchantName: string | null;
+  price: number;
+  compareAtPrice: number | null;
+  availability: string;
+  url: string | null;
+  shippingCost: number | null;
+  shippingDays: number | null;
+  inStock: boolean;
+  stockQuantity: number | null;
+}
+
 export default function ProductDetailsPage() {
   const params = useParams();
   const router = useRouter();
@@ -88,6 +102,11 @@ export default function ProductDetailsPage() {
   // Null when there are no reviews — the card is then hidden and the
   // existing "No reviews yet" empty state shows instead.
   const [aiReviewSummary, setAiReviewSummary] = useState<ReviewAISummary | null>(null);
+  // Merchant listings ("Where to Buy") — fetched from the existing
+  // /merchants API, which the product page previously never called,
+  // which is why the audit found no merchant, stock or buy link.
+  const [merchants, setMerchants] = useState<MerchantListing[]>([]);
+  const [merchantsLoaded, setMerchantsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -131,12 +150,21 @@ export default function ProductDetailsPage() {
       // 2. Ancillary data (summary, prediction, reviews) loads in the
       // background and fills in as it arrives; a slow or failed one only
       // leaves its own section empty, it never blocks the page again.
-      const [summaryRes, predictionRes, reviewsRes, aiReviewRes] = await Promise.all([
+      const [summaryRes, predictionRes, reviewsRes, aiReviewRes, merchantsRes] = await Promise.all([
         fetchTimed(`/api/v1/ai-summary/${slug}`),
         fetchTimed(`/api/v1/predictions/${slug}`),
         fetchTimed(`/api/v1/products/${slug}/reviews`),
         fetchTimed(`/api/v1/products/${slug}/review-summary`),
+        fetchTimed(`/api/v1/products/${slug}/merchants`),
       ]);
+
+      if (merchantsRes && merchantsRes.ok) {
+        const merchantsData = await merchantsRes.json();
+        if (merchantsData.success && Array.isArray(merchantsData.data)) {
+          setMerchants(merchantsData.data);
+        }
+      }
+      setMerchantsLoaded(true);
 
       if (summaryRes && summaryRes.ok) {
         const summaryData = await summaryRes.json();
@@ -375,6 +403,74 @@ export default function ProductDetailsPage() {
             )}
           </div>
         </div>
+
+        {/* Where to Buy — merchant listings with price, stock and a
+            retailer link. Previously this section did not exist at
+            all, so a shopper could see a price and a Deal Score but
+            never where to buy the product or whether it was in
+            stock. Listings come from merchant_products (already
+            sorted cheapest first by the API); prices here are the
+            recorded merchant prices, not live retailer checkouts —
+            the Buy button opens the retailer's own page. */}
+        {merchantsLoaded && (
+          <Card className="mt-8">
+            <CardHeader>
+              <CardTitle className="text-base">Where to Buy</CardTitle>
+              <CardDescription>
+                {merchants.length > 0
+                  ? `${merchants.length} retailer${merchants.length !== 1 ? 's' : ''} listing this product. Prices are the latest recorded merchant prices; the retailer sets the final price at checkout.`
+                  : 'No retailer listings yet for this product.'}
+              </CardDescription>
+            </CardHeader>
+            {merchants.length > 0 && (
+              <CardContent className="space-y-3">
+                {merchants.map((listing) => {
+                  const inStock = listing.inStock || listing.availability === 'in_stock';
+                  return (
+                    <div
+                      key={listing.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700"
+                    >
+                      <div>
+                        <p className="font-medium">{listing.merchantName ?? 'Retailer'}</p>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                          <Badge variant={inStock ? 'default' : 'secondary'}>
+                            {inStock ? 'In Stock' : 'Out of Stock'}
+                          </Badge>
+                          {listing.shippingDays !== null && listing.shippingDays !== undefined && (
+                            <span>Ships in {listing.shippingDays} day{listing.shippingDays !== 1 ? 's' : ''}</span>
+                          )}
+                          {listing.shippingCost !== null && listing.shippingCost !== undefined && (
+                            <span>Shipping ${listing.shippingCost.toFixed(2)}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <p className="text-lg font-bold">${listing.price.toFixed(2)}</p>
+                          {listing.compareAtPrice !== null && listing.compareAtPrice > listing.price && (
+                            <p className="text-sm text-muted-foreground line-through">
+                              ${listing.compareAtPrice.toFixed(2)}
+                            </p>
+                          )}
+                        </div>
+                        {listing.url ? (
+                          <Button asChild>
+                            <a href={listing.url} target="_blank" rel="noopener noreferrer">
+                              Buy
+                            </a>
+                          </Button>
+                        ) : (
+                          <Button disabled>Buy</Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            )}
+          </Card>
+        )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-8">
           <TabsList className="grid w-full grid-cols-2 sm:grid-cols-6">

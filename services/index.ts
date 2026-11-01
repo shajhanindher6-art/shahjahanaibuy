@@ -28,6 +28,7 @@ export {
   getPriceHistory,
   getCachedPriceHistory,
   getLatestPrice,
+  getLatestPrices,
   type PriceHistoryResult,
 } from './price-history';
 

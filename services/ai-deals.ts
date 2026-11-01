@@ -9,11 +9,31 @@ import { swrGet, cacheKey } from '@/lib/cache';
 import type { DealRanking } from '@/types/ai';
 import type { Deal } from '@/types/catalog';
 import type { Product } from '@/types';
+import { getLatestPrices } from './price-history';
 
 export interface RankedDealsResult {
-  deals: Array<DealRanking & { deal: Deal | null; product: Product | null }>;
+  deals: Array<DealRanking & { deal: Deal | null; product: Product | null; currentPrice: number | null }>;
   total: number;
   categories: string[];
+}
+
+/**
+ * Attach each deal product's latest recorded price (one query for
+ * all products). Deal cards show this as the "current price" — a
+ * null price renders as "price not listed", never a guess.
+ */
+async function attachCurrentPrices<T extends { productId: string | null }>(
+  supabase: AnySupabaseClient,
+  deals: T[]
+): Promise<Array<T & { currentPrice: number | null }>> {
+  const prices = await getLatestPrices(
+    supabase,
+    deals.map((d) => d.productId).filter(Boolean) as string[]
+  );
+  return deals.map((d) => ({
+    ...d,
+    currentPrice: d.productId ? (prices.get(d.productId) ?? null) : null,
+  }));
 }
 
 export async function getRankedDeals(
@@ -72,8 +92,9 @@ export async function getRankedDeals(
     });
 
     const categories = Array.from(new Set(deals.map((d) => d.dealType)));
+    const dealsWithPrices = await attachCurrentPrices(supabase, deals);
 
-    return { deals, total: deals.length, categories };
+    return { deals: dealsWithPrices, total: dealsWithPrices.length, categories };
   } catch (err) {
     logger.error('getRankedDeals: unexpected error', { error: String(err) });
     return { deals: [], total: 0, categories: [] };
@@ -103,7 +124,7 @@ async function generateFreshRankings(
   const productIds = deals.map((d) => d.product_id as string).filter(Boolean);
   const productsMap = await fetchProducts(supabase, productIds as string[]);
 
-  const ranked: Array<DealRanking & { deal: Deal | null; product: Product | null }> = [];
+  const ranked: Array<DealRanking & { deal: Deal | null; product: Product | null; currentPrice: number | null }> = [];
   const now = new Date();
 
   for (const dRow of deals) {
@@ -151,6 +172,8 @@ async function generateFreshRankings(
       rankedAt: now.toISOString(),
       deal,
       product,
+      // Filled by attachCurrentPrices below (one query for all).
+      currentPrice: null,
     });
 
     void supabase.from('deal_rankings').insert({
@@ -168,7 +191,7 @@ async function generateFreshRankings(
 
   const filtered = options.dealType ? ranked.filter((d) => d.dealType === options.dealType) : ranked;
   const finalDeals = options.featuredOnly ? filtered.filter((d) => d.isFeatured) : filtered;
-  const result = finalDeals.slice(0, limit);
+  const result = await attachCurrentPrices(supabase, finalDeals.slice(0, limit));
 
   const categories = Array.from(new Set(result.map((d) => d.dealType)));
 

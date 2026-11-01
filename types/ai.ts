@@ -30,6 +30,12 @@ export interface AISearchResult {
   score: number;
   matchedAttributes: string[];
   aiExplanation: string;
+  /**
+   * Latest recorded price_history price in USD, or null when no
+   * price is recorded. Search cards render this; they must never
+   * render a guessed price when it is null.
+   */
+  currentPrice: number | null;
 }
 
 /**
