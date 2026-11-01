@@ -36,6 +36,17 @@ export interface AISearchResult {
    * render a guessed price when it is null.
    */
   currentPrice: number | null;
+  /**
+   * Merchant/store names listing this product (from
+   * merchant_products + merchants). Empty when no listing exists
+   * or the query is denied — the store filter simply cannot match
+   * such a product, it never invents a store.
+   */
+  stores: string[];
+  /** Average review rating (1–5), or null when there are no reviews. */
+  rating: number | null;
+  /** Number of reviews behind `rating`. */
+  ratingCount: number;
 }
 
 /**

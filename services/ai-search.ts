@@ -214,7 +214,16 @@ export async function aiSearch(
       const score = Math.min(100, (product.confidenceScore ?? 50) + matchedAttributes.length * 15);
       const explanation = buildSearchExplanation(product, parsedIntent, matchedAttributes);
 
-      return { product, score, matchedAttributes, aiExplanation: explanation, currentPrice: null };
+      return {
+        product,
+        score,
+        matchedAttributes,
+        aiExplanation: explanation,
+        currentPrice: null,
+        stores: [],
+        rating: null,
+        ratingCount: 0,
+      };
     });
 
     // Latest prices for every result (awaited before sorting).
@@ -240,6 +249,64 @@ export async function aiSearch(
         return { result: r, price: Number.isFinite(price) ? (price as number) : null };
       })
     );
+    // Store + rating enrichment for the search page's filters
+    // (store filter, rating filter, rating display). Three queries
+    // total for the whole page, not one per result. If any query
+    // is denied or empty, the fields stay empty/null — the UI
+    // then shows no store/rating for that product instead of
+    // inventing one, and the store filter simply cannot match it.
+    if (results.length > 0) {
+      const resultIds = results.map((r) => r.product.id);
+      const [mpRes, reviewsRes] = await Promise.all([
+        supabase
+          .from('merchant_products')
+          .select('product_id, merchant_id')
+          .in('product_id', resultIds)
+          .is('deleted_at', null)
+          .limit(200),
+        supabase
+          .from('reviews')
+          .select('product_id, rating')
+          .in('product_id', resultIds)
+          .is('deleted_at', null)
+          .limit(500),
+      ]);
+      const mpRows = (mpRes.data ?? []) as Array<{ product_id: string; merchant_id: string }>;
+      const merchantIds = Array.from(new Set(mpRows.map((r) => r.merchant_id).filter(Boolean)));
+      let nameById = new Map<string, string>();
+      if (merchantIds.length > 0) {
+        const { data: merchantRows } = await supabase
+          .from('merchants')
+          .select('id, name')
+          .in('id', merchantIds);
+        nameById = new Map(
+          ((merchantRows ?? []) as Array<{ id: string; name: string }>).map((m) => [m.id, m.name])
+        );
+      }
+      const storesByProduct = new Map<string, string[]>();
+      for (const row of mpRows) {
+        const name = nameById.get(row.merchant_id);
+        if (!name) continue;
+        const list = storesByProduct.get(row.product_id) ?? [];
+        if (!list.includes(name)) list.push(name);
+        storesByProduct.set(row.product_id, list);
+      }
+      const ratingSum = new Map<string, number>();
+      const ratingCountMap = new Map<string, number>();
+      for (const row of (reviewsRes.data ?? []) as Array<{ product_id: string; rating: number | string }>) {
+        const rating = parseFloat(String(row.rating));
+        if (!Number.isFinite(rating)) continue;
+        ratingSum.set(row.product_id, (ratingSum.get(row.product_id) ?? 0) + rating);
+        ratingCountMap.set(row.product_id, (ratingCountMap.get(row.product_id) ?? 0) + 1);
+      }
+      for (const r of results) {
+        r.stores = storesByProduct.get(r.product.id) ?? [];
+        const count = ratingCountMap.get(r.product.id) ?? 0;
+        r.ratingCount = count;
+        r.rating = count > 0 ? Math.round(((ratingSum.get(r.product.id) ?? 0) / count) * 10) / 10 : null;
+      }
+    }
+
     for (const { result, price } of priceChecks) {
       result.currentPrice = price;
       if (!budget || price === null) continue;
