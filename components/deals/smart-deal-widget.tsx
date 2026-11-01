@@ -20,7 +20,6 @@ import { Sparkles, Tag, ArrowRight } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 interface SmartDealItem {
   dealId: string | null;
@@ -77,10 +76,31 @@ export function SmartDealWidget({ title = 'Smart Deals For You', limit = 6, clas
   }, [limit]);
 
   if (loading) {
+    // Render the section shell (title + skeleton cards) immediately
+    // instead of only a spinner: in the live audit the whole section
+    // looked absent for ~10s on first load, even though the widget
+    // itself was simply waiting on its fetch. Deals fill in when ready.
     return (
       <div className={className}>
-        <div className="flex justify-center py-8">
-          <LoadingSpinner />
+        <div className="mb-6 flex items-end justify-between gap-4">
+          <div>
+            <h2 className="flex items-center gap-2 text-2xl font-bold tracking-tight md:text-3xl">
+              <Sparkles className="h-6 w-6 text-primary" />
+              {title}
+            </h2>
+            <p className="mt-2 text-muted-foreground">
+              Trending deals ranked by discount and popularity. Sign in for picks tuned to you.
+            </p>
+          </div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: limit }).map((_, i) => (
+            <div key={i} className="animate-pulse rounded-lg border p-4">
+              <div className="mb-3 h-32 rounded-lg bg-slate-100 dark:bg-slate-800" />
+              <div className="h-4 w-1/2 rounded bg-slate-100 dark:bg-slate-800" />
+              <div className="mt-2 h-3 w-3/4 rounded bg-slate-100 dark:bg-slate-800" />
+            </div>
+          ))}
         </div>
       </div>
     );

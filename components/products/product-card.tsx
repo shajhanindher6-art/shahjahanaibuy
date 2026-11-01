@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { Package } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -30,15 +31,20 @@ interface ProductCardProps {
 
 export function ProductCard({ product, href, className, showReason }: ProductCardProps) {
   const link = href ?? `/products/${product.slug}`;
+  // A dead image URL (e.g. the Lenovo ThinkPad X1 image in Similar
+  // Products) used to render as a broken-image icon. Fall back to the
+  // same Package placeholder used when there is no image at all.
+  const [imageFailed, setImageFailed] = useState(false);
 
   return (
     <Card className={cn('group cursor-pointer overflow-hidden transition-all hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-800', className)}>
       <Link href={link}>
         <div className="relative h-40 overflow-hidden bg-slate-100 dark:bg-slate-800">
-          {product.imageUrl ? (
+          {product.imageUrl && !imageFailed ? (
             <img
               src={product.imageUrl}
               alt={product.name}
+              onError={() => setImageFailed(true)}
               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             />
           ) : (

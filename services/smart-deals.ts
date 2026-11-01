@@ -21,7 +21,7 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
-import { getRankedDeals } from './ai-deals';
+import { getCachedRankedDeals } from './ai-deals';
 import { getRecommendations } from './ai-recommendations';
 
 export interface SmartDeal {
@@ -58,7 +58,9 @@ export async function getSmartDealRecommendations(
 ): Promise<SmartDealsResult> {
   const maxLimit = Math.min(12, Math.max(1, limit));
   try {
-    const ranked = await getRankedDeals(supabase, { limit: maxLimit * 3 });
+    // Cached ranking (60s fresh / 300s stale in-memory) so repeat
+    // homepage loads do not re-run the full ranking query every time.
+    const ranked = await getCachedRankedDeals(supabase, { limit: maxLimit * 3 });
     if (ranked.deals.length === 0) return { deals: [], basedOn: 'trending' };
 
     // Personal activity seeds (signed-in users only).
@@ -144,7 +146,16 @@ export async function getSmartDealRecommendations(
       });
 
     deals.sort((a, b) => b.score - a.score);
-    return { deals: deals.slice(0, maxLimit), basedOn };
+    // Guests used to see a reason that was just the discount repeated
+    // ("20% off") because no personal or trending-view signal fired.
+    // The top 3 of a trending ranking genuinely are top trending
+    // picks, so say so — a distinct reason, not an invented claim.
+    const sliced = deals.slice(0, maxLimit).map((d, i) =>
+      basedOn === 'trending' && i < 3 && !d.reason.includes('Trending')
+        ? { ...d, reason: `${d.reason} · Top trending pick` }
+        : d
+    );
+    return { deals: sliced, basedOn };
   } catch (err) {
     logger.error('getSmartDealRecommendations: unexpected error', { error: String(err) });
     return { deals: [], basedOn: 'trending' };

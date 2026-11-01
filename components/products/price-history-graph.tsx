@@ -67,7 +67,10 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
       setLoading(true);
       setFailed(false);
       try {
-        const res = await fetch(`/api/v1/products/${slug}/prices?limit=500`, {
+        // limit=100 matches the prices API's default cache key, so this
+        // fetch shares the server cache with other price queries instead
+        // of opening a separate 500-row cache entry.
+        const res = await fetch(`/api/v1/products/${slug}/prices?limit=100`, {
           signal: AbortSignal.timeout(15000),
         });
         if (!res.ok) throw new Error('prices request failed');
@@ -101,9 +104,17 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
 
   const chartData = useMemo(() => {
     const cutoff = Date.now() - rangeDays * 24 * 60 * 60 * 1000;
-    return points
-      .filter((p) => new Date(p.recordedAt).getTime() >= cutoff)
-      .map((p) => ({ date: formatDate(p.recordedAt), price: p.price }));
+    // Aggregate to one point per calendar day (latest point of the day
+    // wins, points are oldest-first). Without this, several rows on the
+    // same day produced duplicate X-axis labels (e.g. "Oct 31" twice)
+    // and made the Lowest ReferenceDot's x-position ambiguous on a
+    // categorical axis, so the dot could not be seen on the chart.
+    const byDay = new Map<string, number>();
+    for (const p of points) {
+      if (new Date(p.recordedAt).getTime() < cutoff) continue;
+      byDay.set(formatDate(p.recordedAt), p.price);
+    }
+    return Array.from(byDay, ([date, price]) => ({ date, price }));
   }, [points, rangeDays]);
 
   const stats = useMemo(() => {
@@ -228,6 +239,20 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
                 }}
                 formatter={(value: number) => [`$${value.toFixed(2)}`, 'Price']}
               />
+              <Area
+                type="monotone"
+                dataKey="price"
+                stroke="#3b82f6"
+                strokeWidth={2}
+                fill="url(#priceHistoryGradient)"
+                dot={false}
+                activeDot={{ r: 5 }}
+              />
+              {/* Reference markers AFTER the Area, so they render on top
+                  of the area fill instead of being painted over by it —
+                  that was why the green Lowest dot was not visible on a
+                  flat line in the live audit, even though the Lowest
+                  stat value above the chart was green. */}
               {stats && (
                 <ReferenceLine
                   y={stats.average}
@@ -240,22 +265,13 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
                 <ReferenceDot
                   x={stats.lowestDate}
                   y={stats.lowest}
-                  r={5}
+                  r={7}
                   fill="#16a34a"
                   stroke="#ffffff"
-                  strokeWidth={2}
-                  label={{ value: 'Lowest', position: 'top', fontSize: 11, fill: '#16a34a' }}
+                  strokeWidth={3}
+                  label={{ value: 'Lowest', position: 'top', fontSize: 11, fill: '#16a34a', fontWeight: 600 }}
                 />
               )}
-              <Area
-                type="monotone"
-                dataKey="price"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                fill="url(#priceHistoryGradient)"
-                dot={false}
-                activeDot={{ r: 5 }}
-              />
             </AreaChart>
           </ResponsiveContainer>
         </div>

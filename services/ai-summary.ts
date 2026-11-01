@@ -100,7 +100,7 @@ function generatePros(
     pros.push(`${attr.key}: ${attr.value}`);
   }
 
-  if (priceStats.current && priceStats.lowest && priceStats.current <= priceStats.lowest * 1.1) {
+  if (priceStats.current && priceStats.lowest && priceStats.current <= priceStats.lowest * 1.05) {
     pros.push('Currently near its lowest recorded price');
   }
 
@@ -118,7 +118,18 @@ function generateCons(
 
   if (reviews.avgRating > 0 && reviews.avgRating < 4) cons.push(`Below-average rating (${reviews.avgRating.toFixed(1)} stars)`);
   if (reviews.count < 10 && reviews.count > 0) cons.push('Limited customer reviews available');
-  if (priceStats.current && priceStats.highest && priceStats.current >= priceStats.highest * 0.85) {
+  // Mutually exclusive with the "near its lowest" pro above. The old
+  // thresholds overlapped whenever the price range was narrow
+  // (e.g. $999–$1048: 999 is both <= 999*1.1 and >= 1048*0.85), so the
+  // live page showed BOTH "near its lowest" and "near its historical
+  // high" at once. A price only counts as "near its high" when it is
+  // within 5% of the high AND clearly above the low.
+  if (
+    priceStats.current &&
+    priceStats.highest &&
+    priceStats.current >= priceStats.highest * 0.95 &&
+    (!priceStats.lowest || priceStats.current > priceStats.lowest * 1.05)
+  ) {
     cons.push('Currently priced near its historical high');
   }
   if (!product.description) cons.push('Limited product description available');
@@ -169,6 +180,27 @@ async function getCachedSummary(
 
       if (!data) return null;
       const row = data as Record<string, unknown>;
+      // Invalidate summaries generated with the old overlapping
+      // thresholds: if a cached row contradicts itself (near-low pro
+      // AND near-high con), discard it so getAISummary regenerates
+      // it with the fixed logic instead of serving the stale
+      // contradiction until its 7-day expiry. The bad row is deleted
+      // on a best-effort basis (delete may be denied by RLS); even
+      // without the delete, the next fetch picks the newest row,
+      // which is the regenerated correct one.
+      const cachedPros = (row.pros as string[]) ?? [];
+      const cachedCons = (row.cons as string[]) ?? [];
+      if (
+        cachedPros.includes('Currently near its lowest recorded price') &&
+        cachedCons.includes('Currently priced near its historical high')
+      ) {
+        try {
+          await supabase.from('ai_summaries').delete().eq('id', row.id as string);
+        } catch {
+          // Best effort only — returning null still forces a regenerate.
+        }
+        return null;
+      }
       return {
         id: row.id as string,
         productId: row.product_id as string,

@@ -120,6 +120,14 @@ export default function ProductDetailsPage() {
       setProduct(productData.data);
       setLoading(false);
 
+      // Warm the prices server cache in the background now, so the
+      // Price History tab does not start its first fetch only when
+      // the user clicks it (live audit: ~20s after the click, mostly
+      // cold-start + first DB query). Fire-and-forget: its result is
+      // ignored, the graph still fetches on mount and renders from
+      // the warmed cache when it can.
+      void fetchTimed(`/api/v1/products/${slug}/prices?limit=100`, 15000).catch(() => {});
+
       // 2. Ancillary data (summary, prediction, reviews) loads in the
       // background and fills in as it arrives; a slow or failed one only
       // leaves its own section empty, it never blocks the page again.
