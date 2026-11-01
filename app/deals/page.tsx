@@ -4,7 +4,7 @@ import { SiteFooter } from '@/components/layout/site-footer';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Tag, Zap, Clock, TrendingDown, Sparkles, ChevronRight } from 'lucide-react';
+import { Tag, Zap, Clock, TrendingDown, Sparkles, ChevronRight, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -55,9 +55,23 @@ const DEAL_CATEGORIES = [
   { key: 'holiday', label: 'Holiday Sales', icon: Clock },
 ];
 
+interface Coupon {
+  id: string;
+  code: string;
+  merchantId: string | null;
+  description: string | null;
+  discountType: string;
+  discountValue: number;
+  minOrderValue: number | null;
+  maxDiscountAmount: number | null;
+  validUntil: string | null;
+}
+
 export default function DealsPage() {
   const router = useRouter();
   const [deals, setDeals] = useState<RankedDeal[]>([]);
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [merchantNames, setMerchantNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState('');
   const [featuredOnly, setFeaturedOnly] = useState(false);
@@ -65,19 +79,42 @@ export default function DealsPage() {
   const fetchDeals = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ limit: '30' });
-      if (activeCategory) params.set('dealType', activeCategory);
-      if (featuredOnly) params.set('featured', 'true');
-
-      const res = await fetch(`/api/v1/deals/ranked?${params}`);
-      const data = await res.json();
-      if (data.success) {
-        setDeals(data.data.deals ?? []);
-      } else {
+      // The Coupons tab previously queried /deals/ranked with
+      // dealType=coupon — but coupons live in their own `coupons`
+      // table (e.g. SAVE10, BESTBUY15), not as deals, so the tab
+      // always showed 0. It now reads the coupons endpoint, with
+      // merchant names resolved from /merchants for display.
+      if (activeCategory === 'coupon') {
+        const [couponsRes, merchantsRes] = await Promise.all([
+          fetch('/api/v1/coupons?pageSize=30'),
+          fetch('/api/v1/merchants?pageSize=100'),
+        ]);
+        const couponsData = await couponsRes.json();
+        setCoupons(couponsData.success && Array.isArray(couponsData.data) ? couponsData.data : []);
+        const merchantsData = await merchantsRes.json();
+        if (merchantsData.success && Array.isArray(merchantsData.data)) {
+          const names: Record<string, string> = {};
+          for (const m of merchantsData.data as Array<{ id: string; name: string }>) names[m.id] = m.name;
+          setMerchantNames(names);
+        }
         setDeals([]);
+      } else {
+        const params = new URLSearchParams({ limit: '30' });
+        if (activeCategory) params.set('dealType', activeCategory);
+        if (featuredOnly) params.set('featured', 'true');
+
+        const res = await fetch(`/api/v1/deals/ranked?${params}`);
+        const data = await res.json();
+        if (data.success) {
+          setDeals(data.data.deals ?? []);
+        } else {
+          setDeals([]);
+        }
+        setCoupons([]);
       }
     } catch {
       setDeals([]);
+      setCoupons([]);
     } finally {
       setLoading(false);
     }
@@ -143,12 +180,35 @@ export default function DealsPage() {
           </div>
         )}
 
-        {!loading && deals.length === 0 && (
+        {!loading && deals.length === 0 && coupons.length === 0 && (
           <EmptyState
-            title="No deals found"
-            description="Check back later for new deals and discounts"
+            title={activeCategory === 'coupon' ? 'No coupons available' : 'No deals found'}
+            description={
+              activeCategory === 'coupon'
+                ? 'No active coupon codes right now — check back later, or browse the deals above.'
+                : 'Check back later for new deals and discounts'
+            }
             icon={Tag}
           />
+        )}
+
+        {!loading && activeCategory === 'coupon' && coupons.length > 0 && (
+          <div>
+            <h2 className="mb-4 text-xl font-bold">Coupons</h2>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Copy a code and paste it at the retailer&apos;s checkout — SmartBuy cannot apply codes inside a
+              retailer&apos;s own checkout, so this one tap copies the code for you.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {coupons.map((coupon) => (
+                <CouponCard
+                  key={coupon.id}
+                  coupon={coupon}
+                  merchantName={coupon.merchantId ? merchantNames[coupon.merchantId] : undefined}
+                />
+              ))}
+            </div>
+          </div>
         )}
 
         {!loading && deals.length > 0 && (
@@ -182,6 +242,56 @@ export default function DealsPage() {
       </div>
       <SiteFooter />
     </div>
+  );
+}
+
+function CouponCard({ coupon, merchantName }: { coupon: Coupon; merchantName?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(coupon.code);
+    } catch {
+      // Clipboard blocked (insecure context): fall back to a
+      // prompt-less selection is not possible here, so just mark
+      // the code visibly — the user can long-press to copy it.
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
+  };
+
+  const discountLabel =
+    coupon.discountType === 'percentage' ? `${coupon.discountValue}% OFF` : `$${coupon.discountValue} OFF`;
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-2">
+          <Badge className="bg-green-600">{discountLabel}</Badge>
+          {merchantName && <span className="text-sm text-muted-foreground">{merchantName}</span>}
+        </div>
+        <div className="mt-3 rounded-md border border-dashed border-slate-300 p-2 text-center dark:border-slate-600">
+          <span className="font-mono text-lg font-bold tracking-wider">{coupon.code}</span>
+        </div>
+        {coupon.description && <p className="mt-2 text-sm text-muted-foreground">{coupon.description}</p>}
+        <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+          {coupon.minOrderValue !== null && <p>Min order: ${coupon.minOrderValue}</p>}
+          {coupon.maxDiscountAmount !== null && <p>Max discount: ${coupon.maxDiscountAmount}</p>}
+          {coupon.validUntil && <p>Valid until: {new Date(coupon.validUntil).toLocaleDateString()}</p>}
+        </div>
+        <Button size="sm" className="mt-3 w-full" onClick={copyCode}>
+          {copied ? (
+            <>
+              <Check className="mr-1 h-4 w-4" /> Copied!
+            </>
+          ) : (
+            <>
+              <Copy className="mr-1 h-4 w-4" /> Copy code
+            </>
+          )}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

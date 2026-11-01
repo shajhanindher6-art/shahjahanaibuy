@@ -49,7 +49,7 @@ const QUICK_CHIPS = [
 const WELCOME: WidgetMessage = {
   role: 'assistant',
   content:
-    'Hi! Tell me what you are looking for — a category, a preference, or a budget, e.g. "best laptop under $1000" — and I will find the best deals for you.',
+    'Hi! I can help you shop smarter — tell me what you need, e.g. "best laptop under $1000", and I will find the best deals. Ask me to compare products, or open any product page to set a price alert or save it to your wishlist.',
 };
 
 export function AIDealFinderWidget() {
@@ -58,11 +58,52 @@ export function AIDealFinderWidget() {
   const [messages, setMessages] = useState<WidgetMessage[]>([WELCOME]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  // Recent searches from the search page's localStorage list, so
+  // the assistant can pick up where the visitor left off — no
+  // account needed, and nothing is sent anywhere until the
+  // visitor taps a chip. Loaded when the panel opens, so a
+  // search done in another tab still shows up.
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, sending, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    try {
+      const raw = window.localStorage.getItem('smartbuy-recent-searches');
+      const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+      if (Array.isArray(parsed)) {
+        setRecentSearches(parsed.filter((q): q is string => typeof q === 'string').slice(0, 4));
+      }
+    } catch {
+      setRecentSearches([]);
+    }
+  }, [open]);
+
+  // Follow-up chips after an assistant answer that listed
+  // products: they re-send the question WITH the product names
+  // included, so the (stateless) deal-finder engine's compare
+  // intent can actually answer about those products instead of
+  // getting a context-free "cheapest?" it cannot resolve.
+  const lastAssistantProducts = [...messages]
+    .reverse()
+    .find((m) => m.role === 'assistant' && m.products && m.products.length > 0)?.products;
+  const followUpChips =
+    lastAssistantProducts && lastAssistantProducts.length > 1
+      ? [
+          {
+            label: 'Sab se sasta kaunsa hai?',
+            message: `Compare ${lastAssistantProducts.map((p) => p.name).join(', ')} — which is the cheapest and the best value?`,
+          },
+          {
+            label: 'In mein best kaunsa hai?',
+            message: `Compare ${lastAssistantProducts.map((p) => p.name).join(' vs ')} and recommend the best one for most buyers.`,
+          },
+        ]
+      : [];
 
   // Dashboard has its own full chat page; do not duplicate it there.
   if (pathname?.startsWith('/dashboard')) return null;
@@ -167,6 +208,25 @@ export function AIDealFinderWidget() {
                 className="rounded-full bg-slate-100 px-2.5 py-1 text-xs hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"
               >
                 {chip}
+              </button>
+            ))}
+            {followUpChips.map((chip) => (
+              <button
+                key={chip.label}
+                onClick={() => send(chip.message)}
+                className="rounded-full bg-blue-100 px-2.5 py-1 text-xs text-blue-800 hover:bg-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:hover:bg-blue-900"
+              >
+                {chip.label}
+              </button>
+            ))}
+            {recentSearches.map((recent) => (
+              <button
+                key={recent}
+                onClick={() => send(recent)}
+                className="rounded-full border border-dashed border-slate-300 px-2.5 py-1 text-xs text-muted-foreground hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"
+                title="Your recent search"
+              >
+                ↻ {recent}
               </button>
             ))}
           </div>

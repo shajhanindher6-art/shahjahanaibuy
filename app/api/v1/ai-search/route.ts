@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { query, url, filters, page, pageSize } = body ?? {};
+    const { query, url, filters, page, pageSize, includeWeb } = body ?? {};
 
     const hasQuery = typeof query === 'string' && query.trim() !== '';
     const hasUrl = typeof url === 'string' && url.trim() !== '';
@@ -43,15 +43,21 @@ export async function POST(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     const result = await getCachedAISearch(supabase, options);
 
-    // Web fallback: ONLY when the catalog returned nothing. Catalog
-    // results are never mixed with web results, and web results are
-    // returned separately in meta (not as catalog products), so the
-    // UI can label them honestly as "Web result" with a retailer link.
-    // When SERPAPI_API_KEY is unset, this is a no-op and the search
-    // behaves exactly as before (catalog-only empty state).
+    // Web results: by default ONLY when the catalog returned
+    // nothing (the fallback). When the caller explicitly asks for
+    // live web prices (includeWeb: true — the search page's opt-in
+    // toggle), web results are fetched ALONGSIDE catalog results
+    // and returned separately in meta (never mixed into catalog
+    // products), so the UI can label them honestly as "Web result"
+    // with a retailer link. When SERPAPI_API_KEY is unset, this is
+    // a no-op and the search behaves exactly as before. The toggle
+    // is opt-in (not default) because every uncached web search
+    // spends SerpAPI free quota (~100–250/month); the 24h/7d cache
+    // in searchWebProducts means repeat queries cost nothing.
     let webResults: WebSearchResult[] = [];
     let webSource: 'catalog' | 'web' | 'web-disabled' = 'catalog';
-    if (result.results.length === 0 && result.total === 0) {
+    const catalogEmpty = result.results.length === 0 && result.total === 0;
+    if (catalogEmpty || includeWeb === true) {
       // Effective budget for the web filter: an explicit filter
       // wins, otherwise the parsed (currency-normalized USD)
       // budget. E.g. "under 20K PKR" passes 71 here, so SerpAPI
@@ -68,8 +74,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Best-effort: record search history for authenticated users.
-    // The count reflects what the user actually saw (catalog or web).
-    const seenTotal = webSource === 'web' ? webResults.length : result.total;
+    // The count reflects what the user actually saw (catalog, web,
+    // or both when live web was requested alongside the catalog).
+    const seenTotal =
+      webSource === 'web'
+        ? catalogEmpty
+          ? webResults.length
+          : result.total + webResults.length
+        : result.total;
     const auth = await requireAuth(request);
     if (!('error' in auth)) {
       void recordSearch(supabase, auth.userId, searchQuery, options.filters ?? null, seenTotal);

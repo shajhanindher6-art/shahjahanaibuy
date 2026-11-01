@@ -107,6 +107,12 @@ export default function ProductDetailsPage() {
   // which is why the audit found no merchant, stock or buy link.
   const [merchants, setMerchants] = useState<MerchantListing[]>([]);
   const [merchantsLoaded, setMerchantsLoaded] = useState(false);
+  // Active coupons keyed by merchant id, so each "Where to Buy"
+  // row can show its retailer's code with a copy button. Coupons
+  // are merchant-level (not product-level), so the best code for
+  // a listing is its merchant's active coupon, if one exists.
+  const [couponsByMerchant, setCouponsByMerchant] = useState<Record<string, string>>({});
+  const [copiedCoupon, setCopiedCoupon] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -165,6 +171,27 @@ export default function ProductDetailsPage() {
         }
       }
       setMerchantsLoaded(true);
+
+      // Coupons are fetched in the same ancillary batch (one small
+      // request, failures ignored): the codes are shown per
+      // merchant row below, with copy-to-clipboard — the closest
+      // a website can honestly get to "auto-apply", since the
+      // retailer owns its own checkout.
+      try {
+        const couponsRes = await fetchTimed('/api/v1/coupons?pageSize=100', 15000);
+        if (couponsRes && couponsRes.ok) {
+          const couponsData = await couponsRes.json();
+          if (couponsData.success && Array.isArray(couponsData.data)) {
+            const byMerchant: Record<string, string> = {};
+            for (const c of couponsData.data as Array<{ merchantId: string | null; code: string }>) {
+              if (c.merchantId && !byMerchant[c.merchantId]) byMerchant[c.merchantId] = c.code;
+            }
+            setCouponsByMerchant(byMerchant);
+          }
+        }
+      } catch {
+        // No coupons shown; the Buy rows still work.
+      }
 
       if (summaryRes && summaryRes.ok) {
         const summaryData = await summaryRes.json();
@@ -426,6 +453,7 @@ export default function ProductDetailsPage() {
               <CardContent className="space-y-3">
                 {merchants.map((listing) => {
                   const inStock = listing.inStock || listing.availability === 'in_stock';
+                  const couponCode = couponsByMerchant[listing.merchantId];
                   return (
                     <div
                       key={listing.id}
@@ -444,6 +472,25 @@ export default function ProductDetailsPage() {
                             <span>Shipping ${listing.shippingCost.toFixed(2)}</span>
                           )}
                         </div>
+                        {couponCode && (
+                          <button
+                            type="button"
+                            className="mt-1 rounded border border-dashed border-green-300 bg-green-50 px-2 py-0.5 font-mono text-xs font-bold text-green-700 dark:border-green-700 dark:bg-green-950 dark:text-green-300"
+                            title="Copy coupon code — paste it at the retailer's checkout"
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(couponCode);
+                              } catch {
+                                // Clipboard blocked: the code is still
+                                // visible for manual copying.
+                              }
+                              setCopiedCoupon(couponCode);
+                              window.setTimeout(() => setCopiedCoupon(null), 2000);
+                            }}
+                          >
+                            {copiedCoupon === couponCode ? 'Copied!' : `Coupon: ${couponCode} (tap to copy)`}
+                          </button>
+                        )}
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="text-right">

@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { SmartDealWidget } from '@/components/deals/smart-deal-widget';
+import { StatsBar } from '@/components/home/stats-bar';
 
 const features = [
   {
@@ -170,24 +171,11 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Stats Bar */}
-        <section className="border-y bg-muted/30">
-          <div className="container mx-auto px-4 py-12">
-            <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
-              {[
-                { value: '10M+', label: 'Products Tracked' },
-                { value: '500+', label: 'Retailers Monitored' },
-                { value: '99.9%', label: 'Uptime Guarantee' },
-                { value: '< 200ms', label: 'Response Time' },
-              ].map((stat) => (
-                <div key={stat.label} className="text-center">
-                  <div className="text-3xl font-bold text-primary md:text-4xl">{stat.value}</div>
-                  <div className="mt-1 text-sm text-muted-foreground">{stat.label}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
+        {/* Stats Bar — real counts from the public APIs (see
+            components/home/stats-bar.tsx). The old bar claimed
+            10M+ products / 500+ retailers / 99.9% uptime / <200ms,
+            none of which was measured or true for this catalog. */}
+        <StatsBar />
 
         {/* Features Section */}
         <section id="features" className="py-20 md:py-28">

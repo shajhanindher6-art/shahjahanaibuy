@@ -84,6 +84,11 @@ export default function SearchPage() {
   // API returns (catalog) or SerpAPI reports (web).
   const [sort, setSort] = useState<'relevance' | 'price-asc' | 'price-desc' | 'match-desc'>('relevance');
   const [storeFilter, setStoreFilter] = useState('');
+  // Opt-in live web prices: when on, the ai-search route also
+  // fetches Google Shopping results even when the catalog has
+  // matches. Off by default to protect the small SerpAPI free
+  // quota; repeat queries are served from the 24h/7d cache.
+  const [liveWeb, setLiveWeb] = useState(false);
   // Recent searches: localStorage only, so guests get them too
   // without an account. The signed-in DB search_history (recorded
   // by the ai-search API) is separate analytics, not this UI list.
@@ -144,6 +149,7 @@ export default function SearchPage() {
       if (filters.brand) filterObj.brand = filters.brand;
       if (filters.budgetMax) filterObj.budgetMax = parseFloat(filters.budgetMax);
       if (Object.keys(filterObj).length > 0) body.filters = filterObj;
+      if (liveWeb) body.includeWeb = true;
 
       const res = await fetch('/api/v1/ai-search', {
         method: 'POST',
@@ -179,7 +185,7 @@ export default function SearchPage() {
     } finally {
       setLoading(false);
     }
-  }, [filters, searchMode]);
+  }, [filters, searchMode, liveWeb]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -404,6 +410,7 @@ export default function SearchPage() {
                     setFilters({ category: '', brand: '', budgetMax: '', minRating: '' });
                     setSort('relevance');
                     setStoreFilter('');
+                    setLiveWeb(false);
                   }}
                 >
                   <X className="mr-1 h-4 w-4" /> Clear
@@ -491,6 +498,22 @@ export default function SearchPage() {
                   </Select>
                 </div>
               </div>
+              <label className="mt-4 flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={liveWeb}
+                  onChange={(e) => setLiveWeb(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-medium">Live web prices bhi dikhao</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Catalog ke saath Google Shopping ke live results bhi laaye jaayenge — taake aap dekh saken ke
+                    bahar market mein kya price chal rahi hai. Repeat searches cache se aati hain, is liye quota
+                    bachta hai. (Needs a SerpAPI key in Netlify; warna sirf catalog dikhega.)
+                  </span>
+                </span>
+              </label>
             </CardContent>
           </Card>
         )}
@@ -570,6 +593,7 @@ export default function SearchPage() {
                     setFilters({ category: '', brand: '', budgetMax: '', minRating: '' });
                     setSort('relevance');
                     setStoreFilter('');
+                    setLiveWeb(false);
                   }}
                 >
                   Clear all filters
@@ -699,9 +723,11 @@ export default function SearchPage() {
         {!loading && displayedWebResults.length > 0 && (
           <div className="mt-8 grid gap-4">
             <div>
-              <h2 className="text-lg font-semibold">Web results</h2>
+              <h2 className="text-lg font-semibold">{liveWeb ? 'Live web results' : 'Web results'}</h2>
               <p className="text-sm text-muted-foreground">
-                Not in our catalog yet — live shopping results from the web. Prices may change at the retailer; full specs are on the retailer page.
+                {liveWeb
+                  ? 'Live Google Shopping results alongside our catalog — prices may change at the retailer; full specs are on the retailer page.'
+                  : 'Not in our catalog yet — live shopping results from the web. Prices may change at the retailer; full specs are on the retailer page.'}
                 {displayedWebResults.length !== webResults.length && ` Showing ${displayedWebResults.length} of ${webResults.length} after filters.`}
               </p>
             </div>
