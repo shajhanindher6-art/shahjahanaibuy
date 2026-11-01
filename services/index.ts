@@ -186,6 +186,12 @@ export {
   type AISearchResults,
 } from './ai-search';
 
+// External web search fallback (SerpAPI Google Shopping)
+export {
+  searchWebProducts,
+  type WebSearchOutcome,
+} from './external-search';
+
 // Phase 3: AI comparison
 export {
   compareProducts,

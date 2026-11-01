@@ -14,6 +14,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import type { WebSearchResult } from '@/types/ai';
 
 interface SearchResult {
   product: {
@@ -51,6 +52,8 @@ export default function SearchPage() {
   const [query, setQuery] = useState('');
   const [searchMode, setSearchMode] = useState<'text' | 'url'>('text');
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [webResults, setWebResults] = useState<WebSearchResult[]>([]);
+  const [webSource, setWebSource] = useState<'catalog' | 'web' | 'web-disabled' | null>(null);
   const [parsedIntent, setParsedIntent] = useState<ParsedIntent | null>(null);
   const [loading, setLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
@@ -94,13 +97,23 @@ export default function SearchPage() {
         // (meta holds total/parsedIntent). Accept the object shape too so
         // a future API change cannot silently empty the results again.
         setResults(Array.isArray(data.data) ? data.data : (data.data?.results ?? []));
+        // Web fallback results arrive separately in meta.webResults,
+        // only when the catalog returned nothing. They are NOT catalog
+        // products, so they are kept in their own state and rendered
+        // as "Web result" cards with a retailer link below.
+        setWebResults(Array.isArray(data.meta?.webResults) ? data.meta.webResults : []);
+        setWebSource(data.meta?.source ?? null);
         setParsedIntent(data.meta?.parsedIntent ?? null);
       } else {
         setResults([]);
+        setWebResults([]);
+        setWebSource(null);
         setParsedIntent(null);
       }
     } catch {
       setResults([]);
+      setWebResults([]);
+      setWebSource(null);
       setParsedIntent(null);
     } finally {
       setLoading(false);
@@ -299,10 +312,14 @@ export default function SearchPage() {
           </div>
         )}
 
-        {!loading && hasSearched && results.length === 0 && (
+        {!loading && hasSearched && results.length === 0 && webResults.length === 0 && (
           <EmptyState
             title="No results found"
-            description="Try a different search query or adjust your filters"
+            description={
+              webSource === 'web-disabled'
+                ? 'Try a different search query or adjust your filters. Note: web search is not configured yet (it needs a SerpAPI key in Netlify), so only our catalog was searched.'
+                : 'Try a different search query or adjust your filters — our web search also found nothing for this query.'
+            }
             icon={Search}
           />
         )}
@@ -370,6 +387,80 @@ export default function SearchPage() {
                   </div>
                 </CardContent>
               </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Web fallback results — only when the catalog had nothing.
+            These are NOT SmartBuy catalog products: no Deal Score, no
+            price history, no product page. Prices come from Google
+            Shopping via SerpAPI and may change at the retailer, so
+            each card links out to the retailer instead of inventing
+            specs or a SmartBuy price record. */}
+        {!loading && webResults.length > 0 && (
+          <div className="mt-8 grid gap-4">
+            <div>
+              <h2 className="text-lg font-semibold">Web results</h2>
+              <p className="text-sm text-muted-foreground">
+                Not in our catalog yet — live shopping results from the web. Prices may change at the retailer; full specs are on the retailer page.
+              </p>
+            </div>
+            {webResults.map((web) => (
+              <a
+                key={web.id}
+                href={web.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block"
+              >
+                <Card className="transition-all hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-800">
+                  <CardContent className="flex gap-4 p-4">
+                    <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
+                      {web.thumbnail ? (
+                        <img
+                          src={web.thumbnail}
+                          alt={web.title}
+                          className="h-full w-full object-cover"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                          <Search className="h-8 w-8" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="font-semibold text-lg leading-tight">{web.title}</h3>
+                        <Badge variant="secondary" className="shrink-0 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                          Web result
+                        </Badge>
+                      </div>
+                      <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+                        {web.source && <span>{web.source}</span>}
+                        {web.rating !== null && (
+                          <span>
+                            ★ {web.rating.toFixed(1)}
+                            {web.reviews !== null ? ` (${web.reviews} reviews)` : ''}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-2 flex items-center gap-3">
+                        {web.price !== null ? (
+                          <span className="text-lg font-bold text-blue-600">
+                            ${web.price.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Price not shown by retailer</span>
+                        )}
+                        <span className="text-xs text-blue-600 underline">View at retailer →</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </a>
             ))}
           </div>
         )}

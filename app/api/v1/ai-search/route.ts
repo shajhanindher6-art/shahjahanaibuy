@@ -12,6 +12,7 @@ import {
   recordSearch,
   type AISearchOptions,
 } from '@/services/ai-search';
+import { searchWebProducts, type WebSearchResult } from '@/services/external-search';
 import type { SearchFilters } from '@/types/ai';
 
 export async function POST(request: NextRequest) {
@@ -42,15 +43,37 @@ export async function POST(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     const result = await getCachedAISearch(supabase, options);
 
+    // Web fallback: ONLY when the catalog returned nothing. Catalog
+    // results are never mixed with web results, and web results are
+    // returned separately in meta (not as catalog products), so the
+    // UI can label them honestly as "Web result" with a retailer link.
+    // When SERPAPI_API_KEY is unset, this is a no-op and the search
+    // behaves exactly as before (catalog-only empty state).
+    let webResults: WebSearchResult[] = [];
+    let webSource: 'catalog' | 'web' | 'web-disabled' = 'catalog';
+    if (result.results.length === 0 && result.total === 0) {
+      const web = await searchWebProducts(
+        supabase,
+        searchQuery,
+        typeof pageSize === 'number' ? pageSize : 10
+      );
+      webResults = web.results;
+      webSource = web.disabled ? 'web-disabled' : web.results.length > 0 ? 'web' : 'catalog';
+    }
+
     // Best-effort: record search history for authenticated users.
+    // The count reflects what the user actually saw (catalog or web).
+    const seenTotal = webSource === 'web' ? webResults.length : result.total;
     const auth = await requireAuth(request);
     if (!('error' in auth)) {
-      void recordSearch(supabase, auth.userId, searchQuery, options.filters ?? null, result.total);
+      void recordSearch(supabase, auth.userId, searchQuery, options.filters ?? null, seenTotal);
     }
 
     return apiSuccess(result.results, 200, {
       total: result.total,
       parsedIntent: result.parsedIntent,
+      source: webSource,
+      webResults,
     });
   } catch {
     return internalError('Failed to perform AI search');

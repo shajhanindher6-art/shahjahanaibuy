@@ -32,6 +32,24 @@ export interface AISearchResult {
   aiExplanation: string;
 }
 
+/**
+ * A shopping result from the external web fallback (SerpAPI Google
+ * Shopping), NOT a catalog product. It has no catalog id, slug, Deal
+ * Score or price history — the UI must render it as a "Web result"
+ * with a retailer link, never as a SmartBuy product page.
+ */
+export interface WebSearchResult {
+  id: string;
+  title: string;
+  price: number | null;
+  currency: string;
+  source: string | null;
+  link: string;
+  thumbnail: string | null;
+  rating: number | null;
+  reviews: number | null;
+}
+
 export interface AISearchResponse {
   results: AISearchResult[];
   parsedIntent: ParsedSearchIntent;

@@ -57,6 +57,11 @@ export const env = {
   // Monitoring / crash reporting
   sentryDsn: process.env.SENTRY_DSN,
 
+  // External web search fallback (SerpAPI Google Shopping).
+  // Optional: when unset, the web fallback is disabled and search
+  // behaves catalog-only. Never commit a real key — set it in Netlify.
+  serpApiKey: process.env.SERPAPI_API_KEY,
+
   // Future provider keys (not yet active)
   openaiApiKey: process.env.OPENAI_API_KEY,
   redisUrl: process.env.REDIS_URL,
