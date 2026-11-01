@@ -9,6 +9,11 @@ import { logger } from '@/lib/config/logger';
 import { swrGet, cacheKey } from '@/lib/cache';
 import type { Product } from '@/types';
 import type { AISearchResult, ParsedSearchIntent, SearchFilters, SearchHistoryEntry } from '@/types/ai';
+import {
+  parseBudgetFromQuery,
+  stripBudgetFromQuery,
+  formatOriginalAmount,
+} from './currency';
 
 // ---------------------------------------------------------------------------
 // Intent parsing
@@ -29,14 +34,15 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
   speaker: ['speaker', 'bluetooth speaker', 'soundbar'],
 };
 
-const BUDGET_PATTERNS = [
-  /under\s+\$?(\d[\d,]*)/i,
-  /below\s+\$?(\d[\d,]*)/i,
-  /less\s+than\s+\$?(\d[\d,]*)/i,
-  /budget.*\$?(\d[\d,]*)/i,
-  /\$?(\d[\d,]*)\s*or\s*less/i,
-  /max(?:imum)?\s+\$?(\d[\d,]*)/i,
-];
+// Budget parsing is delegated to services/currency.ts
+// (parseBudgetFromQuery). The old regexes here captured only the
+// digits and assumed USD, which is exactly how "under 20K PKR"
+// became a $20,000 budget: "20K" was read as 20 (the K was
+// dropped) and "20000 pkr" was read as $20,000 (the PKR was
+// ignored). See currency.ts for the interpretation rules — there
+// is no LLM system prompt in this codebase, this deterministic
+// parser IS the query-understanding layer, so the rules are
+// enforced in code there, not in prompt text.
 
 const INTENT_KEYWORDS = [
   'best', 'top', 'cheap', 'budget', 'affordable', 'premium', 'professional',
@@ -55,14 +61,15 @@ export function parseSearchIntent(query: string): ParsedSearchIntent {
     }
   }
 
-  let budget: number | null = null;
-  for (const pattern of BUDGET_PATTERNS) {
-    const match = lower.match(pattern);
-    if (match) {
-      budget = parseFloat(match[1].replace(/,/g, ''));
-      break;
-    }
-  }
+  // Normalized budget: `budget` is always USD (converted when the
+  // user wrote another currency), and the original amount/currency
+  // are kept alongside for the "AI understood" display. Example:
+  // "under 20K PKR" -> budget 71, budgetOriginal 20000,
+  // budgetCurrency 'PKR' — never 20000 USD.
+  const parsedBudget = parseBudgetFromQuery(query);
+  const budget = parsedBudget?.budgetUsd ?? null;
+  const budgetCurrency = parsedBudget ? parsedBudget.budgetCurrency : null;
+  const budgetOriginal = parsedBudget ? parsedBudget.budgetOriginal : null;
 
   const brands: string[] = [];
   const knownBrands = ['apple', 'samsung', 'sony', 'dell', 'hp', 'lenovo', 'asus', 'acer', 'canon', 'nikon', 'lg', 'google', 'microsoft', 'bose', 'jbl', 'anker', 'razer', 'logitech', 'garmin', 'fitbit', 'xiaomi', 'oneplus'];
@@ -97,7 +104,7 @@ export function parseSearchIntent(query: string): ParsedSearchIntent {
     }
   }
 
-  return { category, budget, brands, attributes, intent };
+  return { category, budget, budgetCurrency, budgetOriginal, brands, attributes, intent };
 }
 
 // ---------------------------------------------------------------------------
@@ -138,9 +145,10 @@ export async function aiSearch(
       })
       .is('deleted_at', null);
 
-    const searchTerms = options.query
-      .replace(/under\s+\$?\d[\d,]*/gi, '')
-      .replace(/below\s+\$?\d[\d,]*/gi, '')
+    // Strip the WHOLE budget expression ("under 20K PKR", not just
+    // "under 20"), or "K PKR" would leak into the product ilike
+    // match and break matching for every currency/K query.
+    const searchTerms = stripBudgetFromQuery(options.query)
       .replace(/best\s+/gi, '')
       .replace(/top\s+/gi, '')
       .trim();
@@ -210,19 +218,36 @@ export async function aiSearch(
     });
 
     if (budget) {
-      for (const r of results) {
-        void supabase
-          .from('price_history')
-          .select('price')
-          .eq('product_id', r.product.id)
-          .order('recorded_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-          .then(({ data: priceData }: { data: { price: number } | null }) => {
-            if (priceData && priceData.price > budget) {
-              r.score -= 20;
-            }
-          });
+      // Await the price checks BEFORE sorting. The old code fired
+      // them with `void` and sorted immediately, so the -20 penalty
+      // for over-budget products almost never landed before the
+      // results were returned — another reason $500+ phones kept
+      // ranking above a ~$70 budget. Over-budget items now sink,
+      // in-budget items gain the 'budget' matched attribute (which
+      // the search page renders as its "In budget" badge).
+      const priceChecks = await Promise.all(
+        results.map(async (r) => {
+          const { data: priceData } = await supabase
+            .from('price_history')
+            .select('price')
+            .eq('product_id', r.product.id)
+            .order('recorded_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const price =
+            priceData && typeof (priceData as { price: number | string }).price !== 'undefined'
+              ? parseFloat(String((priceData as { price: number | string }).price))
+              : null;
+          return { result: r, price: Number.isFinite(price) ? (price as number) : null };
+        })
+      );
+      for (const { result, price } of priceChecks) {
+        if (price === null) continue;
+        if (price > budget) {
+          result.score -= 20;
+        } else {
+          result.matchedAttributes.push('budget');
+        }
       }
     }
 
@@ -243,7 +268,18 @@ function buildSearchExplanation(
   const parts: string[] = [];
   if (matched.includes('category')) parts.push(`matches your ${intent.category} category`);
   if (matched.includes('brand')) parts.push(`from your preferred brand ${product.brand}`);
-  if (intent.budget) parts.push(`within your $${intent.budget} budget`);
+  if (intent.budget) {
+    // Show the budget the user actually wrote, not just the USD
+    // conversion: "20,000 PKR (≈ $71)" instead of a bare "$71"
+    // (and never the old "$20000" for a PKR query).
+    if (intent.budgetCurrency && intent.budgetCurrency !== 'USD' && intent.budgetOriginal !== null) {
+      parts.push(
+        `within your ${formatOriginalAmount(intent.budgetOriginal)} ${intent.budgetCurrency} budget (≈ $${intent.budget} USD)`
+      );
+    } else {
+      parts.push(`within your $${intent.budget} budget`);
+    }
+  }
   if (intent.intent !== 'general') parts.push(`suited for "${intent.intent}"`);
   if (parts.length === 0) parts.push('matches your search query');
   return `This product ${parts.join(', ')}.`;

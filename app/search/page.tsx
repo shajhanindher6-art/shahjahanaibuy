@@ -35,6 +35,8 @@ interface SearchResult {
 interface ParsedIntent {
   category: string | null;
   budget: number | null;
+  budgetCurrency?: string | null;
+  budgetOriginal?: number | null;
   brands: string[];
   intent: string;
 }
@@ -138,7 +140,25 @@ export default function SearchPage() {
     if (!parsedIntent) return null;
     const badges: string[] = [];
     if (parsedIntent.category) badges.push(`Category: ${parsedIntent.category}`);
-    if (parsedIntent.budget) badges.push(`Budget: $${parsedIntent.budget}`);
+    if (parsedIntent.budget) {
+      // Show what the user actually wrote, with the USD conversion
+      // marked approximate (rates are static approximations): e.g.
+      // "Budget: 20,000 PKR (≈ $71)" — never a bare "$20000" for a
+      // PKR query, which was the reported bug.
+      if (
+        parsedIntent.budgetCurrency &&
+        parsedIntent.budgetCurrency !== 'USD' &&
+        parsedIntent.budgetOriginal !== null &&
+        parsedIntent.budgetOriginal !== undefined
+      ) {
+        const original = Number.isInteger(parsedIntent.budgetOriginal)
+          ? parsedIntent.budgetOriginal.toLocaleString('en-US')
+          : parsedIntent.budgetOriginal.toLocaleString('en-US', { maximumFractionDigits: 2 });
+        badges.push(`Budget: ${original} ${parsedIntent.budgetCurrency} (≈ $${parsedIntent.budget})`);
+      } else {
+        badges.push(`Budget: $${parsedIntent.budget}`);
+      }
+    }
     if (parsedIntent.brands.length > 0) badges.push(`Brands: ${parsedIntent.brands.join(', ')}`);
     if (parsedIntent.intent && parsedIntent.intent !== 'general') badges.push(`Intent: ${parsedIntent.intent}`);
     return badges.length > 0 ? badges : null;

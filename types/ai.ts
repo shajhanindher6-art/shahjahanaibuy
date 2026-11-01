@@ -58,7 +58,21 @@ export interface AISearchResponse {
 
 export interface ParsedSearchIntent {
   category: string | null;
+  /**
+   * Budget in USD. This is the value every price comparison uses.
+   * When the user wrote a non-USD currency, this is the CONVERTED
+   * figure (see services/currency.ts), not the raw number — so
+   * "under 20K PKR" is 71 here, not 20000.
+   */
   budget: number | null;
+  /**
+   * Currency the user actually wrote, e.g. 'PKR' for "under 20K
+   * PKR". Null when the query carried no budget at all. When the
+   * user wrote no currency, this is 'USD' (bare numbers stay USD).
+   */
+  budgetCurrency: string | null;
+  /** Amount exactly as written, before conversion (e.g. 20000). */
+  budgetOriginal: number | null;
   brands: string[];
   attributes: Record<string, string>;
   intent: string;

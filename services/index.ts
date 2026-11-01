@@ -186,6 +186,17 @@ export {
   type AISearchResults,
 } from './ai-search';
 
+// Currency Normalizer (budget parsing: K notation + multi-currency)
+export {
+  parseBudgetFromQuery,
+  stripBudgetFromQuery,
+  normalizeAmountToUsd,
+  detectCurrencyCode,
+  formatOriginalAmount,
+  type ParsedBudget,
+  type CurrencyCode,
+} from './currency';
+
 // External web search fallback (SerpAPI Google Shopping)
 export {
   searchWebProducts,

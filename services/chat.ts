@@ -6,6 +6,7 @@
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
 import { parseSearchIntent } from './ai-search';
+import { stripBudgetFromQuery, formatOriginalAmount } from './currency';
 
 export interface ChatMessage {
   id: string;
@@ -194,10 +195,9 @@ async function handleProductSearchIntent(
   message: string,
   intent: ReturnType<typeof parseSearchIntent>
 ): Promise<{ content: string; metadata: ChatMetadata | null }> {
-  const searchTerms = message
+  const searchTerms = stripBudgetFromQuery(message)
     .replace(/best\s+/gi, '')
     .replace(/top\s+/gi, '')
-    .replace(/under\s+\$?\d[\d,]*/gi, '')
     .trim();
 
   let query = supabase
@@ -251,7 +251,11 @@ async function handleProductSearchIntent(
     .map((p, i) => `${i + 1}. ${p.name}${p.brand ? ` (${p.brand})` : ''}${p.price ? ` — $${p.price.toFixed(2)}` : ''}`)
     .join('\n');
 
-  const budgetNote = intent.budget ? ` All of these are within your $${intent.budget} budget.` : '';
+  const budgetNote = intent.budget
+    ? intent.budgetCurrency && intent.budgetCurrency !== 'USD' && intent.budgetOriginal !== null
+      ? ` All of these are within your ${formatOriginalAmount(intent.budgetOriginal)} ${intent.budgetCurrency} budget (≈ $${intent.budget} USD).`
+      : ` All of these are within your $${intent.budget} budget.`
+    : '';
 
   return {
     content: `Here are some great options I found for you:\n\n${productList}\n\nWould you like me to compare any of these, or would you like more details about a specific product?${budgetNote}`,

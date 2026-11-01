@@ -70,8 +70,11 @@ function normalizeQuery(query: string): string {
   return query.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-function cacheKeyFor(query: string, limit: number): string {
-  return `${normalizeQuery(query)}|${limit}`;
+function cacheKeyFor(query: string, limit: number, maxPriceUsd: number | null): string {
+  // The budget MUST be part of the key: a cached unfiltered result
+  // for "phone under 20K PKR" must never be served for a filtered
+  // query (or vice versa) just because the query text matches.
+  return `${normalizeQuery(query)}|${limit}|${maxPriceUsd ?? 'any'}`;
 }
 
 function stableId(link: string): string {
@@ -167,10 +170,22 @@ async function writeDbCache(
 export async function searchWebProducts(
   supabase: AnySupabaseClient,
   query: string,
-  limit = 10
+  limit = 10,
+  options: { maxPriceUsd?: number | null } = {}
 ): Promise<WebSearchOutcome> {
   const safeLimit = Math.min(20, Math.max(1, limit));
-  const key = cacheKeyFor(query, safeLimit);
+  // Normalized USD budget (see services/currency.ts). When set,
+  // only web rows with a known price at or under budget are
+  // returned — without this, a PKR budget that the catalog parser
+  // had already converted to ~$71 would still show $500+ web
+  // phones, because SerpAPI itself is never budget-filtered.
+  // Rows with no price are dropped under a budget: an unknown
+  // price cannot be shown as "within budget".
+  const maxPriceUsd =
+    typeof options.maxPriceUsd === 'number' && Number.isFinite(options.maxPriceUsd)
+      ? options.maxPriceUsd
+      : null;
+  const key = cacheKeyFor(query, safeLimit, maxPriceUsd);
 
   // 1. In-memory cache (fastest, no quota, no DB round trip).
   const mem = memoryCache.get(key);
@@ -212,10 +227,13 @@ export async function searchWebProducts(
     const results: WebSearchResult[] = [];
     for (const row of rows as Array<Record<string, unknown>>) {
       const normalized = normalizeShoppingRow(row);
-      if (normalized && !seen.has(normalized.link)) {
-        seen.add(normalized.link);
-        results.push(normalized);
+      if (!normalized || seen.has(normalized.link)) continue;
+      // Budget filter (USD, already normalized by the caller).
+      if (maxPriceUsd !== null && (normalized.price === null || normalized.price > maxPriceUsd)) {
+        continue;
       }
+      seen.add(normalized.link);
+      results.push(normalized);
       if (results.length >= safeLimit) break;
     }
 

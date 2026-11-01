@@ -52,10 +52,16 @@ export async function POST(request: NextRequest) {
     let webResults: WebSearchResult[] = [];
     let webSource: 'catalog' | 'web' | 'web-disabled' = 'catalog';
     if (result.results.length === 0 && result.total === 0) {
+      // Effective budget for the web filter: an explicit filter
+      // wins, otherwise the parsed (currency-normalized USD)
+      // budget. E.g. "under 20K PKR" passes 71 here, so SerpAPI
+      // rows above $71 are dropped instead of showing $500+ phones.
+      const effectiveBudget = options.filters?.budgetMax ?? result.parsedIntent.budget;
       const web = await searchWebProducts(
         supabase,
         searchQuery,
-        typeof pageSize === 'number' ? pageSize : 10
+        typeof pageSize === 'number' ? pageSize : 10,
+        { maxPriceUsd: effectiveBudget }
       );
       webResults = web.results;
       webSource = web.disabled ? 'web-disabled' : web.results.length > 0 ? 'web' : 'catalog';
