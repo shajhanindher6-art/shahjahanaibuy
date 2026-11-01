@@ -510,7 +510,7 @@ export default function SearchPage() {
                   <span className="block text-xs text-muted-foreground">
                     Catalog ke saath Google Shopping ke live results bhi laaye jaayenge — taake aap dekh saken ke
                     bahar market mein kya price chal rahi hai. Repeat searches cache se aati hain, is liye quota
-                    bachta hai. (Needs a SerpAPI key in Netlify; warna sirf catalog dikhega.)
+                    bachta hai. (Needs a SerpAPI key in your hosting dashboard; warna sirf catalog dikhega.)
                   </span>
                 </span>
               </label>
@@ -579,7 +579,7 @@ export default function SearchPage() {
                 title="No results found"
                 description={
                   webSource === 'web-disabled'
-                    ? 'We searched our catalog and found nothing for this query. Live web search is not configured yet (it needs a SerpAPI key in Netlify), so no web fallback ran. Try a broader product name, check the spelling, or clear your filters.'
+                    ? 'We searched our catalog and found nothing for this query. Live web search is not configured yet (it needs a SerpAPI key in your hosting dashboard), so no web fallback ran. Try a broader product name, check the spelling, or clear your filters.'
                     : 'We searched our catalog and, when it had nothing, live web shopping results too — and found nothing for this query. Try a broader product name, check the spelling, remove a budget limit, or clear your filters.'
                 }
                 icon={Search}
