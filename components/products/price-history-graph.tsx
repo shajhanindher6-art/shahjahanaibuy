@@ -11,7 +11,10 @@
  *
  * Features: 7D / 30D / 90D / 1Y range selector, and stats computed
  * from the selected range — Current, Lowest, Highest, Average and
- * Change (last vs first point in range, in $ and %).
+ * Change (last vs first point in range, in $ and %). The chart also
+ * marks the range average (dashed line) and the lowest point in the
+ * range (green "Lowest" dot), so a price drop / best-buy moment is
+ * visible at a glance instead of only in the stats row.
  *
  * Self-fetching client component, so the product page only has to
  * render <PriceHistoryGraph slug={slug} /> in its Price History tab.
@@ -23,7 +26,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, AreaChart, CartesianGrid, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { TrendingDown, TrendingUp } from 'lucide-react';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
@@ -113,7 +116,10 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
     const average = prices.reduce((sum, p) => sum + p, 0) / prices.length;
     const change = current - first;
     const changePct = first !== 0 ? (change / first) * 100 : 0;
-    return { current, lowest, highest, average, change, changePct };
+    // Date of the lowest point in range, for the "best price" marker.
+    // chartData is oldest-first, so the first occurrence wins on ties.
+    const lowestPoint = chartData.reduce((min, d) => (d.price < min.price ? d : min), chartData[0]);
+    return { current, lowest, highest, average, change, changePct, lowestDate: lowestPoint.date };
   }, [chartData]);
 
   if (loading) {
@@ -222,6 +228,25 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
                 }}
                 formatter={(value: number) => [`$${value.toFixed(2)}`, 'Price']}
               />
+              {stats && (
+                <ReferenceLine
+                  y={stats.average}
+                  stroke="#94a3b8"
+                  strokeDasharray="3 3"
+                  label={{ value: 'Avg', position: 'insideTopRight', fontSize: 11, fill: '#94a3b8' }}
+                />
+              )}
+              {stats && (
+                <ReferenceDot
+                  x={stats.lowestDate}
+                  y={stats.lowest}
+                  r={5}
+                  fill="#16a34a"
+                  stroke="#ffffff"
+                  strokeWidth={2}
+                  label={{ value: 'Lowest', position: 'top', fontSize: 11, fill: '#16a34a' }}
+                />
+              )}
               <Area
                 type="monotone"
                 dataKey="price"

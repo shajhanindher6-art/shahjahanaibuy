@@ -109,6 +109,21 @@ export {
   type AlertCheckResult,
 } from './alert-checker';
 
+// Price refresh worker (scheduled: refresh -> check -> Resend email)
+export {
+  refreshTrackedPrices,
+  type PriceRefreshResult,
+} from './price-refresh';
+
+// User tracking dashboard (wishlists + prices + alerts, one view)
+export {
+  getUserTracking,
+  type TrackedItem,
+  type TrackedAlert,
+  type TrackingSummary,
+  type TrackingResult,
+} from './tracking';
+
 // Phase 2: Provider abstraction
 export {
   getProviderRegistry,
@@ -200,6 +215,13 @@ export {
   getCachedRankedDeals,
   type RankedDealsResult,
 } from './ai-deals';
+
+// Smart deal recommendations (deals + trending + user activity widget)
+export {
+  getSmartDealRecommendations,
+  type SmartDeal,
+  type SmartDealsResult,
+} from './smart-deals';
 
 // Phase 3: User preferences
 export {

@@ -17,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { SmartDealWidget } from '@/components/deals/smart-deal-widget';
 
 const features = [
   {
@@ -218,6 +219,13 @@ export default function HomePage() {
                 </Card>
               ))}
             </div>
+          </div>
+        </section>
+
+        {/* Smart Deal Recommendations */}
+        <section className="border-t py-20 md:py-28">
+          <div className="container mx-auto px-4">
+            <SmartDealWidget limit={6} />
           </div>
         </section>
 

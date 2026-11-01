@@ -14,6 +14,7 @@ import {
   Tag,
   Brain,
   Heart,
+  TrendingDown,
   Shield,
   CreditCard,
   type LucideIcon,
@@ -36,6 +37,7 @@ const mainNavItems: NavItem[] = [
   { href: '/deals', label: 'Smart Deals', icon: Tag },
   { href: '/dashboard/recommendations', label: 'Recommendations', icon: Brain },
   { href: '/dashboard/wishlists', label: 'Wishlists', icon: Heart },
+  { href: '/dashboard/tracking', label: 'My Tracking', icon: TrendingDown },
 ];
 
 const accountNavItems: NavItem[] = [
