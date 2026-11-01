@@ -439,14 +439,14 @@ export default function SearchPage() {
                 <div>
                   <Label className="mb-1.5 block text-sm">Store</Label>
                   <Select
-                    value={storeFilter}
-                    onValueChange={(v) => setStoreFilter(v)}
+                    value={storeFilter || 'all'}
+                    onValueChange={(v) => setStoreFilter(v === 'all' ? '' : v)}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="All stores" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All stores</SelectItem>
+                      <SelectItem value="all">All stores</SelectItem>
                       {storeOptions.map((store) => (
                         <SelectItem key={store} value={store}>
                           {store}
@@ -483,14 +483,14 @@ export default function SearchPage() {
                 <div>
                   <Label className="mb-1.5 block text-sm">Min Rating</Label>
                   <Select
-                    value={filters.minRating}
-                    onValueChange={(v) => setFilters({ ...filters, minRating: v })}
+                    value={filters.minRating || 'any'}
+                    onValueChange={(v) => setFilters({ ...filters, minRating: v === 'any' ? '' : v })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Any rating" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Any rating</SelectItem>
+                      <SelectItem value="any">Any rating</SelectItem>
                       <SelectItem value="3">3+ stars</SelectItem>
                       <SelectItem value="4">4+ stars</SelectItem>
                       <SelectItem value="4.5">4.5+ stars</SelectItem>
