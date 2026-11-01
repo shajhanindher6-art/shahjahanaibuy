@@ -1,43 +1,42 @@
 {
-  "manifest_version": 3,
-  "name": "SmartBuy AI — Price Comparison",
-  "version": "1.0.0",
-  "description": "Automatically find better prices across Amazon, Walmart, Best Buy, eBay, and AliExpress while you shop.",
-  "permissions": ["activeTab", "storage", "notifications"],
-  "host_permissions": [
-    "https://*.amazon.com/*",
-    "https://*.walmart.com/*",
-    "https://*.bestbuy.com/*",
-    "https://*.ebay.com/*",
-    "https://*.aliexpress.com/*"
-  ],
   "action": {
-    "default_popup": "popup.html",
-    "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
-    }
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
+      "css": [
+        "content.css"
+      ],
+      "js": [
+        "content.js"
+      ],
       "matches": [
         "https://*.amazon.com/*",
         "https://*.walmart.com/*",
         "https://*.bestbuy.com/*",
         "https://*.ebay.com/*",
         "https://*.aliexpress.com/*"
-      ],
-      "js": ["content.js"],
-      "css": ["content.css"]
+      ]
     }
   ],
-  "background": {
-    "service_worker": "background.js"
-  },
-  "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
-  }
+  "description": "Find better prices across Amazon, Walmart, Best Buy, eBay, and AliExpress while you shop, and apply SmartBuy coupon codes at checkout.",
+  "host_permissions": [
+    "https://*.amazon.com/*",
+    "https://*.walmart.com/*",
+    "https://*.bestbuy.com/*",
+    "https://*.ebay.com/*",
+    "https://*.aliexpress.com/*",
+    "https://aismartbuy.netlify.app/*"
+  ],
+  "manifest_version": 3,
+  "name": "SmartBuy AI \u2014 Price Comparison & Coupons",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "notifications"
+  ],
+  "version": "1.1.0"
 }
