@@ -5,8 +5,10 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import { FALLBACK_REGION, type Region } from '@/lib/region';
 import { parseSearchIntent } from './ai-search';
-import { stripBudgetFromQuery, formatOriginalAmount } from './currency';
+import { stripBudgetFromQuery } from './currency';
+import { compareAssistant, dealsAssistant, recommendAssistant } from './personal-assistant';
 
 export interface ChatMessage {
   id: string;
@@ -167,199 +169,54 @@ export async function saveMessage(
   }
 }
 
+export interface ChatResponseOptions {
+  /**
+   * Visitor region for country-aware prices. The floating widget
+   * sends its RegionProvider country; the dashboard chat (which
+   * has no region) omits it and gets the US fallback, i.e. plain
+   * "$999.00" prices exactly as before.
+   */
+  region?: Region;
+}
+
+/**
+ * Route one message to an intent handler. The handlers live in
+ * services/personal-assistant.ts, which enforces the assistant's
+ * hard rules: no demo/unpriced recommendations, budget as a hard
+ * filter, region-aware prices, real price history, and real
+ * coupons/cashback only. `conversationHistory` is accepted for
+ * API compatibility (the dashboard chat passes it) but the
+ * engine is stateless by design — follow-ups work because the
+ * widget re-sends the question WITH product names included.
+ */
 export async function generateChatResponse(
   supabase: AnySupabaseClient,
   userMessage: string,
-  conversationHistory: ChatMessage[]
+  conversationHistory: ChatMessage[],
+  options: ChatResponseOptions = {}
 ): Promise<{ content: string; metadata: ChatMetadata | null }> {
+  void conversationHistory;
+  const region = options.region ?? FALLBACK_REGION;
   const intent = parseSearchIntent(userMessage);
   const lower = userMessage.toLowerCase();
 
   if (lower.includes('compare') || lower.includes('vs') || lower.includes('versus')) {
-    return handleComparisonIntent(supabase, userMessage, intent);
-  }
-
-  if (lower.includes('budget') || lower.includes('under $') || lower.includes('affordable') || intent.budget) {
-    return handleBudgetIntent(supabase, userMessage, intent);
+    return compareAssistant(supabase, userMessage, intent, region);
   }
 
   if (lower.includes('deal') || lower.includes('discount') || lower.includes('sale')) {
-    return handleDealIntent(supabase);
+    return dealsAssistant(supabase, region);
   }
 
-  return handleProductSearchIntent(supabase, userMessage, intent);
-}
-
-async function handleProductSearchIntent(
-  supabase: AnySupabaseClient,
-  message: string,
-  intent: ReturnType<typeof parseSearchIntent>
-): Promise<{ content: string; metadata: ChatMetadata | null }> {
-  const searchTerms = stripBudgetFromQuery(message)
+  // Budget and general product search share one handler: the old
+  // budget intent only delegated to the product-search handler
+  // anyway, and both need the same priced-only + hard-budget
+  // filtering. The search terms still strip the whole budget
+  // expression so "K PKR" never leaks into product matching.
+  const searchTerms = stripBudgetFromQuery(userMessage)
     .replace(/best\s+/gi, '')
     .replace(/top\s+/gi, '')
     .trim();
-
-  let query = supabase
-    .from('products')
-    .select('id, name, slug, brand, category, image_url, confidence_score')
-    .is('deleted_at', null);
-
-  if (searchTerms) {
-    query = query.or(`name.ilike.%${searchTerms}%,description.ilike.%${searchTerms}%,brand.ilike.%${searchTerms}%`);
-  }
-  if (intent.category) {
-    query = query.ilike('category', `%${intent.category}%`);
-  }
-
-  const { data, error } = await query
-    .order('confidence_score', { ascending: false })
-    .limit(4);
-
-  if (error || !data || data.length === 0) {
-    return {
-      content: `I couldn't find products matching "${message}". Could you try rephrasing your search? For example, "best laptop under $1000" or "noise cancelling headphones".`,
-      metadata: null,
-    };
-  }
-
-  const products = (data as Array<Record<string, unknown>>).map((row) => ({
-    id: row.id as string,
-    name: row.name as string,
-    slug: row.slug as string,
-    brand: row.brand as string | null,
-    imageUrl: row.image_url as string | null,
-    price: null as number | null,
-  }));
-
-  let priceMetadata = products;
-  if (intent.budget) {
-    for (const p of priceMetadata) {
-      const { data: priceData } = await supabase
-        .from('price_history')
-        .select('price')
-        .eq('product_id', p.id)
-        .order('recorded_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      p.price = priceData ? parseFloat(String((priceData as Record<string, unknown>).price)) : null;
-    }
-    priceMetadata = priceMetadata.filter((p) => p.price === null || p.price <= intent.budget!);
-  }
-
-  const productList = priceMetadata
-    .map((p, i) => `${i + 1}. ${p.name}${p.brand ? ` (${p.brand})` : ''}${p.price ? ` — $${p.price.toFixed(2)}` : ''}`)
-    .join('\n');
-
-  // The list keeps items with no recorded price (price === null),
-  // so "all of these are within your budget" would over-claim for
-  // them. Only claim it outright when every shown item has a
-  // verified price (the filter above already dropped the
-  // over-budget ones); otherwise say so honestly.
-  const budgetLabel =
-    intent.budgetCurrency && intent.budgetCurrency !== 'USD' && intent.budgetOriginal !== null
-      ? `${formatOriginalAmount(intent.budgetOriginal)} ${intent.budgetCurrency} (≈ $${intent.budget} USD)`
-      : `$${intent.budget}`;
-  const allPriced = priceMetadata.every((p) => p.price !== null);
-  const budgetNote = intent.budget
-    ? allPriced
-      ? ` All of these are within your ${budgetLabel} budget.`
-      : ` Items shown with a recorded price are within your ${budgetLabel} budget; items without a recorded price are listed for comparison.`
-    : '';
-
-  return {
-    content: `Here are some great options I found for you:\n\n${productList}\n\nWould you like me to compare any of these, or would you like more details about a specific product?${budgetNote}`,
-    metadata: { products: priceMetadata, intent: intent.intent, budget: intent.budget ?? undefined },
-  };
+  return recommendAssistant(supabase, intent, searchTerms, region);
 }
 
-async function handleBudgetIntent(
-  supabase: AnySupabaseClient,
-  message: string,
-  intent: ReturnType<typeof parseSearchIntent>
-): Promise<{ content: string; metadata: ChatMetadata | null }> {
-  if (!intent.budget) {
-    return {
-      content: "I'd be happy to help you find products within your budget! What's your budget range? For example, you can say 'best laptop under $1000'.",
-      metadata: null,
-    };
-  }
-
-  return handleProductSearchIntent(supabase, message, intent);
-}
-
-async function handleComparisonIntent(
-  supabase: AnySupabaseClient,
-  message: string,
-  intent: ReturnType<typeof parseSearchIntent>
-): Promise<{ content: string; metadata: ChatMetadata | null }> {
-  const searchTerms = message
-    .replace(/compare\s+/gi, '')
-    .replace(/vs\.?/gi, '')
-    .replace(/versus\s+/gi, '')
-    .trim();
-
-  const { data } = await supabase
-    .from('products')
-    .select('id, name, slug, brand, category, image_url')
-    .is('deleted_at', null)
-    .or(`name.ilike.%${searchTerms}%,brand.ilike.%${searchTerms}%`)
-    .limit(2);
-
-  if (!data || data.length < 2) {
-    return {
-      content: `I'd love to help you compare products! Please tell me which products you'd like to compare. For example, 'compare iPhone vs Samsung Galaxy' or use the Compare page for a detailed side-by-side comparison.`,
-      metadata: null,
-    };
-  }
-
-  const products = (data as Array<Record<string, unknown>>).map((row) => ({
-    id: row.id as string,
-    name: row.name as string,
-    slug: row.slug as string,
-    brand: row.brand as string | null,
-    imageUrl: row.image_url as string | null,
-    price: null as number | null,
-  }));
-
-  return {
-    content: `I found some products to compare:\n\n${products.map((p, i) => `${i + 1}. ${p.name}${p.brand ? ` (${p.brand})` : ''}`).join('\n')}\n\nFor a detailed comparison with prices, ratings, and AI analysis, visit the Compare page. Would you like more details about either product?`,
-    metadata: { products, comparison: `${products[0]?.name} vs ${products[1]?.name}` },
-  };
-}
-
-async function handleDealIntent(
-  supabase: AnySupabaseClient
-): Promise<{ content: string; metadata: ChatMetadata | null }> {
-  const { data } = await supabase
-    .from('deals')
-    .select('id, title, deal_type, discount_type, discount_value, end_at, coupon_code')
-    .eq('active', true)
-    .is('deleted_at', null)
-    .gte('end_at', new Date().toISOString())
-    .order('discount_value', { ascending: false })
-    .limit(4);
-
-  if (!data || data.length === 0) {
-    return {
-      content: "I don't see any active deals right now. Check the Deals page for the latest offers, or set up a price alert to be notified when prices drop!",
-      metadata: null,
-    };
-  }
-
-  const deals = (data as Array<Record<string, unknown>>).map((d) => ({
-    title: d.title as string,
-    discount: `${d.discount_value}${d.discount_type === 'percentage' ? '%' : '$'}`,
-    coupon: d.coupon_code as string | null,
-    endsAt: d.end_at as string,
-  }));
-
-  const dealList = deals
-    .map((d, i) => `${i + 1}. ${d.title} — ${d.discount} off${d.coupon ? ` (Code: ${d.coupon})` : ''}`)
-    .join('\n');
-
-  return {
-    content: `Here are today's best deals:\n\n${dealList}\n\nVisit the Deals page for more offers and AI-ranked discounts!`,
-    metadata: null,
-  };
-}

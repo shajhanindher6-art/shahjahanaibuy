@@ -63,7 +63,11 @@ export async function getRecommendations(
     let query = supabase
       .from('products')
       .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at')
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      // The Sample Laptop row is a database health-check demo, not
+      // a shoppable product — it must never appear as a
+      // recommendation (same rule as the chat assistant).
+      .neq('slug', 'sample-laptop');
 
     if (excludeProductIds.size > 0) {
       query = query.not('id', 'in', `(${Array.from(excludeProductIds).join(',')})`);
@@ -99,6 +103,7 @@ export async function getRecommendations(
         .from('products')
         .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at')
         .is('deleted_at', null)
+        .neq('slug', 'sample-laptop')
         .order('view_count', { ascending: false })
         .limit(maxLimit);
 

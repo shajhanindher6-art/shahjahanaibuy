@@ -20,6 +20,7 @@ import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest } from '@/lib/api/middleware';
+import { resolveRegion } from '@/lib/region';
 import { generateChatResponse } from '@/services/chat';
 
 export async function POST(request: NextRequest) {
@@ -36,8 +37,14 @@ export async function POST(request: NextRequest) {
       return badRequest('message must be 500 characters or fewer');
     }
 
+    // Visitor region from the widget's RegionProvider (cookie /
+    // IP detection). Unknown or missing codes fall back to US via
+    // resolveRegion, so prices stay plain "$999.00" — never a
+    // crash, never a guessed region.
+    const region = resolveRegion(typeof body?.country === 'string' ? body.country : null);
+
     const supabase = await createSupabaseServerClient();
-    const { content, metadata } = await generateChatResponse(supabase, message.trim(), []);
+    const { content, metadata } = await generateChatResponse(supabase, message.trim(), [], { region });
 
     return apiSuccess({ response: content, metadata });
   } catch {

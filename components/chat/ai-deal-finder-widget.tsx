@@ -24,6 +24,29 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { cn } from '@/lib/utils';
+import { formatPriceForRegion, formatUsd, type Region } from '@/lib/region';
+import { useRegion } from '@/components/region/region-provider';
+
+/**
+ * Product-card price in the visitor's currency — the same
+ * rendering as <Price/>: USD visitors see "$999.00", everyone
+ * else sees "≈ Rs 279,720" plus the small USD value. Card prices
+ * arrive from the server in USD, so this formats client-side
+ * from the RegionProvider region (the reply text itself is
+ * already region-formatted server-side from the `country` the
+ * widget sends with each request).
+ */
+function CardPrice({ usd, region }: { usd: number; region: Region }) {
+  const { display, approximate } = formatPriceForRegion(usd, region);
+  if (!approximate) {
+    return <span className="float-right font-semibold text-green-600">{display}</span>;
+  }
+  return (
+    <span className="float-right font-semibold text-green-600">
+      ≈ {display} <span className="text-xs font-normal text-muted-foreground">{formatUsd(usd)}</span>
+    </span>
+  );
+}
 
 interface WidgetProduct {
   id: string;
@@ -54,6 +77,10 @@ const WELCOME: WidgetMessage = {
 
 export function AIDealFinderWidget() {
   const pathname = usePathname();
+  // Visitor region (Country Switcher / IP detection) — sent with
+  // every request so the assistant's reply prices match the
+  // currency the visitor already sees across the site.
+  const { region } = useRegion();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<WidgetMessage[]>([WELCOME]);
   const [input, setInput] = useState('');
@@ -118,7 +145,7 @@ export function AIDealFinderWidget() {
       const res = await fetch('/api/v1/deal-finder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, country: region.code }),
       });
       const data = await res.json();
       if (data.success && data.data) {
@@ -181,9 +208,7 @@ export function AIDealFinderWidget() {
                         >
                           <span className="font-medium">{p.name}</span>
                           {p.brand && <span className="text-muted-foreground"> · {p.brand}</span>}
-                          {p.price !== null && (
-                            <span className="float-right font-semibold text-green-600">${p.price.toFixed(2)}</span>
-                          )}
+                          {p.price !== null && <CardPrice usd={p.price} region={region} />}
                         </Link>
                       ))}
                     </div>
