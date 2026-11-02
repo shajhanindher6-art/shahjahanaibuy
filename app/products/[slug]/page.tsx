@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { Price } from '@/components/region/price';
 import { useRegion } from '@/components/region/region-provider';
 import { localizeAmazonUrl } from '@/lib/region';
+import { getLocalStores, buildStoreSearchUrl } from '@/lib/stores';
 import { tFor } from '@/lib/i18n';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
@@ -531,6 +532,65 @@ export default function ProductDetailsPage() {
             )}
           </Card>
         )}
+
+        {/* Local stores — Option 2 Phase 1: DIRECTORY + SEARCH LINKS
+            ONLY, directly under "Where to Buy". These are outbound
+            links to the visitor-country stores' own search results
+            for this product name. They carry NO price, NO stock
+            badge and NO discount: the store itself shows its price
+            and availability on its own site. Nothing here is a
+            SmartBuy price or deal, and no partnership or affiliate
+            relationship is claimed. Amazon/Best Buy are never listed
+            here (they are already the priced rows above); as a
+            safety net, any local store whose name matches a priced
+            merchant row on this page is also filtered out. */}
+        {product && (() => {
+          const pricedNames = new Set(
+            merchants.map((m) => (m.merchantName ?? '').toLowerCase())
+          );
+          const localStores = getLocalStores(region.code).filter(
+            (store) => !pricedNames.has(store.name.toLowerCase())
+          );
+          if (localStores.length === 0) return null;
+          return (
+            <Card className="mt-8">
+              <CardHeader>
+                <CardTitle className="text-base">Local stores in {region.name}</CardTitle>
+                <CardDescription>
+                  These are links to local stores in {region.name}. SmartBuy does not show
+                  prices, stock, or deals for these stores — click through to see the
+                  store&apos;s own price and availability on its website. No partnership
+                  or affiliate relationship is claimed.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {localStores.map((store) => (
+                  <div
+                    key={store.slug}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700"
+                  >
+                    <div>
+                      <p className="font-medium">{store.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Search results on {store.name} — price and stock shown by the
+                        store, not by SmartBuy.
+                      </p>
+                    </div>
+                    <Button asChild variant="outline">
+                      <a
+                        href={buildStoreSearchUrl(store, product.name)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Search on {store.name}
+                      </a>
+                    </Button>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-8">
           {/* Responsive fix: the old `grid grid-cols-2 sm:grid-cols-6`
