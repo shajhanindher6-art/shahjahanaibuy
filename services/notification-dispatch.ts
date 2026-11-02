@@ -5,6 +5,7 @@
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
+import { env } from '@/lib/config/env';
 import { logger } from '@/lib/config/logger';
 import { sendEmail, sendWeeklyDigestEmail, sendPriceAlertEmail } from '@/services/email';
 import { sendPushNotification } from '@/services/push';
@@ -47,12 +48,29 @@ export async function processNotificationQueue(
   for (const notif of data as QueuedNotification[]) {
     const result = await dispatchNotification(supabase, notif);
 
-    if (result) {
+    if (result.delivered) {
       await supabase
         .from('notification_queue')
         .update({ status: 'sent', sent_at: new Date().toISOString() })
         .eq('id', notif.id);
       sent++;
+    } else if (result.permanent) {
+      // Delivery can never succeed for this row: a required provider
+      // is unconfigured, the user has no email address, or the user
+      // has no push subscription. Retrying it on every run would spam
+      // the queue forever without ever delivering — mark it failed
+      // immediately (retry_count untouched) and rely on the in-app
+      // notification row created at queue time so the alert is never
+      // silently lost.
+      await supabase
+        .from('notification_queue')
+        .update({
+          status: 'failed',
+          last_error:
+            'Delivery unavailable: provider not configured, no email address, or no push subscription. In-app notification retained.',
+        })
+        .eq('id', notif.id);
+      failed++;
     } else {
       const nextRetry = notif.retry_count + 1;
       if (nextRetry >= notif.max_retries) {
@@ -81,10 +99,22 @@ export async function processNotificationQueue(
   return { processed: data.length, sent, failed };
 }
 
+interface DispatchOutcome {
+  /** At least one wanted leg was actually delivered. */
+  delivered: boolean;
+  /**
+   * True only when delivery can NEVER succeed for this row: every
+   * wanted leg is permanently unavailable (provider unconfigured, no
+   * email address, or no push subscription). Transient provider
+   * errors are NOT permanent — those keep the existing retry path.
+   */
+  permanent: boolean;
+}
+
 async function dispatchNotification(
   supabase: AnySupabaseClient,
   notif: QueuedNotification
-): Promise<boolean> {
+): Promise<DispatchOutcome> {
   try {
     // Get user email
     const { data: profile } = await supabase
@@ -101,14 +131,25 @@ async function dispatchNotification(
 
     if (!wantsEmail && !wantsPush) {
       logger.warn('Unknown notification channel', { channel: notif.channel });
-      return false;
+      return { delivered: false, permanent: true };
     }
 
     let emailOk = false;
     let pushOk = false;
+    // A leg is "permanently unavailable" when no retry could ever fix
+    // it. Provider keys and subscriptions are configuration, not
+    // transient failures — retrying them is pure queue spam.
+    let emailPermanent = false;
+    let pushPermanent = false;
 
     if (wantsEmail) {
-      if (!profile?.email) {
+      if (!env.resendApiKey) {
+        emailPermanent = true;
+        logger.info('dispatchNotification: email leg skipped, RESEND_API_KEY not set', {
+          notifId: notif.id,
+        });
+      } else if (!profile?.email) {
+        emailPermanent = true;
         logger.warn('dispatchNotification: no email for user', {
           userId: notif.user_id,
         });
@@ -137,12 +178,33 @@ async function dispatchNotification(
     }
 
     if (wantsPush) {
-      pushOk = await sendPushNotification(
-        supabase,
-        notif.user_id,
-        notif.subject ?? 'Notification',
-        notif.body
-      );
+      if (!env.vapidPublicKey || !env.vapidPrivateKey) {
+        pushPermanent = true;
+        logger.info('dispatchNotification: push leg skipped, VAPID keys not set', {
+          notifId: notif.id,
+        });
+      } else {
+        // A user with no stored subscription can never receive a push
+        // for this row, no matter how often it is retried.
+        const { data: subs } = await supabase
+          .from('push_subscriptions')
+          .select('endpoint')
+          .eq('user_id', notif.user_id)
+          .limit(1);
+        if (!subs || subs.length === 0) {
+          pushPermanent = true;
+          logger.info('dispatchNotification: push leg skipped, no subscription', {
+            userId: notif.user_id,
+          });
+        } else {
+          pushOk = await sendPushNotification(
+            supabase,
+            notif.user_id,
+            notif.subject ?? 'Notification',
+            notif.body
+          );
+        }
+      }
     }
 
     if (notif.channel === 'both' && emailOk !== pushOk) {
@@ -153,9 +215,17 @@ async function dispatchNotification(
       });
     }
 
-    return emailOk || pushOk;
+    const delivered = emailOk || pushOk;
+    // Permanent only when EVERY wanted leg is permanently unavailable.
+    // If any leg merely failed transiently, the row keeps retrying.
+    const permanent =
+      !delivered &&
+      (!wantsEmail || emailPermanent) &&
+      (!wantsPush || pushPermanent);
+
+    return { delivered, permanent };
   } catch (err) {
     logger.error('dispatchNotification failed', { error: String(err), notifId: notif.id });
-    return false;
+    return { delivered: false, permanent: false };
   }
 }

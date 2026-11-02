@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useToast } from '@/hooks/use-toast';
+import { subscribePush, unsubscribePush } from '@/lib/push-client';
 import { Save } from 'lucide-react';
 import type { UserSettings } from '@/types';
 
@@ -41,6 +42,35 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchSettings();
   }, [fetchSettings]);
+
+  /**
+   * Push toggle wiring: the preference flag alone never subscribed the
+   * browser, so push alerts could never arrive. Turning the toggle ON
+   * now actually subscribes (permission + service worker + server
+   * save); if that fails the toggle reverts and the reason is shown.
+   * Turning it OFF unsubscribes. The flag itself is still persisted
+   * by handleSave, as before.
+   */
+  async function handlePushToggle(enabled: boolean) {
+    setSettings((prev) => (prev ? { ...prev, pushNotifications: enabled } : prev));
+    if (!enabled) {
+      await unsubscribePush();
+      return;
+    }
+    const result = await subscribePush();
+    if (!result.ok) {
+      setSettings((prev) => (prev ? { ...prev, pushNotifications: false } : prev));
+      const description =
+        result.reason === 'denied'
+          ? 'Browser notifications are blocked for this site. Allow them in your browser settings and try again.'
+          : result.reason === 'unsupported'
+            ? 'This browser does not support push notifications.'
+            : result.reason === 'no-key'
+              ? 'Push notifications are not configured yet (VAPID public key missing). Ask the site owner to set it, then try again.'
+              : 'Push subscription could not be saved. Please try again.';
+      toast({ title: 'Push notifications unavailable', description, variant: 'destructive' });
+    }
+  }
 
   async function handleSave() {
     if (!user || !settings) return;
@@ -188,7 +218,7 @@ export default function SettingsPage() {
             <Switch
               id="pushNotif"
               checked={settings.pushNotifications}
-              onCheckedChange={(v) => setSettings({ ...settings, pushNotifications: v })}
+              onCheckedChange={(v) => void handlePushToggle(v)}
             />
           </div>
           <div className="flex items-center justify-between">

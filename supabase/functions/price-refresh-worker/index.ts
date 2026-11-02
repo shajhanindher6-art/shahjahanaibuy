@@ -34,9 +34,15 @@
 //   supabase secrets set APP_URL=https://aismartbuy.netlify.app \
 //     CRON_SECRET=<value already in Netlify>
 //   Then invoke it on a schedule (or call it once manually to test).
-//   Alternative free scheduler (no Supabase schedule needed): the
-//   GitHub Actions workflow .github/workflows/price-refresh.yml calls
-//   the same endpoint directly — pick ONE scheduler, not both.
+//
+//   PICK ONE SCHEDULER — NEVER TWO (see docs/alerts-delivery-setup.md):
+//   the canonical trigger is ONE free cron job (e.g. cron-job.org)
+//   POSTing directly to /api/v1/prices/refresh. This Edge Function is
+//   only the ALTERNATIVE for owners who prefer a Supabase-side
+//   invocation: it calls the exact same endpoint. Scheduling BOTH the
+//   cron job and this function (or additionally /api/v1/alerts/check)
+//   runs the whole refresh → check → dispatch chain twice per
+//   cadence. Pick one trigger and leave the others unscheduled.
 //
 // Required environment (function secrets):
 //   APP_URL     — the deployed SmartBuy AI origin, no trailing slash.

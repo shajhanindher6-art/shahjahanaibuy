@@ -6,20 +6,29 @@
  *      alerted / wishlisted products as a new price_history row.
  *   2. checkPriceAlerts(): compare active alerts with the new prices
  *      and queue notifications for triggered alerts.
- *   3. processNotificationQueue(): drain the queue, sending the
- *      price-drop emails via Resend (services/email.ts).
+ *   3. processNotificationQueue(): drain the queue, sending email
+ *      (Resend) and web push (VAPID) for every enabled channel, and
+ *      leaving an in-app notification row for every alert even when
+ *      email/push providers are unconfigured.
  *
- * Protected by CRON_SECRET, the same pattern as /api/v1/alerts/check
- * and /api/v1/notifications/process. Uses the service-role client
- * because the refresh and checker must read alerts and wishlist
- * items belonging to every user. Requires
- * SUPABASE_SERVICE_ROLE_KEY in the hosting dashboard; without it the
- * endpoint fails fast instead of silently checking zero alerts.
+ * SINGLE-SCHEDULER RULE — THIS IS THE CANONICAL TRIGGER (see
+ * docs/alerts-delivery-setup.md): schedule exactly ONE free cron job
+ * (e.g. cron-job.org) that POSTs to this endpoint, e.g. every
+ * 6 hours. Do NOT also schedule /api/v1/alerts/check (it runs the
+ * same chain and exists for manual runs), and do NOT also schedule
+ * the Supabase price-refresh-worker Edge Function (it calls this
+ * same endpoint). Pick ONE trigger, never two — a second trigger
+ * only re-runs the same chain per cadence.
  *
- * Intended caller: the free GitHub Actions workflow in
- * .github/workflows/price-refresh.yml (daily), or the Supabase Edge
- * Function in supabase/functions/price-refresh-worker/ — either way,
- * one call per run, not one per user or product.
+ * Protected by CRON_SECRET: the secret must be set in the hosting
+ * dashboard, and the caller must send `Authorization: Bearer
+ * <CRON_SECRET>`. When CRON_SECRET is unset the endpoint refuses to
+ * run (fail closed) instead of accepting unauthenticated trigger
+ * calls. Uses the service-role client because the refresh and
+ * checker must read alerts and wishlist items belonging to every
+ * user. Requires SUPABASE_SERVICE_ROLE_KEY in the hosting dashboard;
+ * without it the endpoint fails fast instead of silently checking
+ * zero alerts.
  */
 
 import type { NextRequest } from 'next/server';
@@ -34,11 +43,14 @@ export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'prices.refresh' });
 
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return unauthorized('Invalid cron secret');
-    }
+  if (!cronSecret) {
+    return internalError(
+      'CRON_SECRET is not configured; set it in the hosting dashboard before scheduling this endpoint'
+    );
+  }
+  const authHeader = request.headers.get('authorization');
+  if (authHeader !== `Bearer ${cronSecret}`) {
+    return unauthorized('Invalid cron secret');
   }
 
   const supabase = createSupabaseServiceClient();

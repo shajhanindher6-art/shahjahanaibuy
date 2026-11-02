@@ -43,6 +43,25 @@ export async function queueNotification(
       logger.warn('queueNotification: insert failed', { error: error.message });
       return false;
     }
+
+    // In-app inbox record (best effort, never fatal): the dashboard
+    // notifications page reads the queue rows, but the dedicated
+    // `notifications` table is the durable inbox record that survives
+    // the queue row's sent/failed lifecycle. Older databases may not
+    // have this table — a failure here must never lose the queued
+    // delivery, so it is swallowed silently by design.
+    try {
+      await supabase.from('notifications').insert({
+        user_id: userId,
+        type,
+        title: subject,
+        message: body,
+        read: false,
+      });
+    } catch {
+      // Best effort only — the queue row above is the primary record.
+    }
+
     return true;
   } catch (err) {
     logger.error('queueNotification: unexpected error', { error: String(err) });

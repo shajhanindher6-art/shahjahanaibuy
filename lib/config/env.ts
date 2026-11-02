@@ -47,7 +47,13 @@ export const env = {
 
   // Email (Resend)
   resendApiKey: process.env.RESEND_API_KEY,
-  emailFromAddress: optional(process.env.EMAIL_FROM_ADDRESS, 'noreply@smartbuy.ai'),
+  // RESEND_FROM is accepted as an alias for EMAIL_FROM_ADDRESS so the
+  // setup doc and the dashboard can use either name; EMAIL_FROM_ADDRESS
+  // wins when both are set. Neither is a secret.
+  emailFromAddress: optional(
+    process.env.EMAIL_FROM_ADDRESS ?? process.env.RESEND_FROM,
+    'noreply@smartbuy.ai'
+  ),
   emailFromName: optional(process.env.EMAIL_FROM_NAME, 'SmartBuy AI'),
 
   // Push notifications (VAPID)
