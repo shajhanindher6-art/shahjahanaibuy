@@ -852,10 +852,15 @@ function StatBox({ label, value, color }: { label: string; value: string; color?
 }
 
 function SpecRow({ label, value }: { label: string; value: string | null }) {
+  // A spec with no recorded value (e.g. GTIN is null in the database
+  // for every catalog product) is hidden instead of shown as a dash:
+  // a dash reads like a broken field, while a missing row is honest
+  // about the data simply not existing. Never invent a value here.
+  if (value === null || value === undefined || value === '') return null;
   return (
     <div className="flex justify-between border-b border-slate-100 py-2 text-sm dark:border-slate-800">
       <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium">{value ?? '—'}</span>
+      <span className="font-medium">{value}</span>
     </div>
   );
 }

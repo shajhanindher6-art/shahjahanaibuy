@@ -27,29 +27,31 @@ export async function compareProducts(
       return null;
     }
 
+    // Merchant names, fetched once: the compare table must count the
+    // SAME retailers as the product page's Where to Buy section, which
+    // reads merchant_products joined to merchants — NOT price_history.
+    // The old code derived retailers from price_history rows, whose
+    // seed rows only ever carried a single retailer per product, so
+    // the compare count was 1 while Where to Buy showed 2 (Amazon +
+    // Best Buy). See getMerchantProducts in services/commerce.ts and
+    // the merchants API route for the reference behavior.
+    const { data: merchantsData } = await supabase
+      .from('merchants')
+      .select('id, name')
+      .eq('active', true)
+      .is('deleted_at', null);
+
+    const merchantNameMap = new Map<string, string>();
+    for (const m of merchantsData ?? []) {
+      const mRow = m as Record<string, unknown>;
+      merchantNameMap.set(mRow.id as string, mRow.name as string);
+    }
+
     const products: ComparisonProduct[] = [];
 
     for (const pRow of productsData) {
       const product = pRow as Record<string, unknown>;
       const productId = product.id as string;
-
-      const { data: pricesData } = await supabase
-        .from('price_history')
-        .select('id, product_id, retailer_id, price, currency, availability, url, recorded_at')
-        .eq('product_id', productId)
-        .order('recorded_at', { ascending: false })
-        .limit(10);
-
-      const { data: retailersData } = await supabase
-        .from('retailers')
-        .select('id, name, slug, logo_url, website_url, active, country, created_at, updated_at')
-        .eq('active', true);
-
-      const retailerMap = new Map<string, string>();
-      for (const r of retailersData ?? []) {
-        const rRow = r as Record<string, unknown>;
-        retailerMap.set(rRow.id as string, rRow.name as string);
-      }
 
       const { data: reviewsData } = await supabase
         .from('reviews')
@@ -61,28 +63,95 @@ export async function compareProducts(
       const ratings = (reviewsData ?? []).map((r) => (r as Record<string, unknown>).rating as number);
       const avgRating = ratings.length > 0 ? ratings.reduce((a, b) => a + b, 0) / ratings.length : null;
 
-      const seenRetailers = new Set<string>();
+      // Primary source: merchant_products, exactly like Where to Buy
+      // (cheapest first; one entry per merchant). This is what makes
+      // the compare count match Where to Buy.
+      const { data: listingsData } = await supabase
+        .from('merchant_products')
+        .select('merchant_id, price, compare_at_price, availability, url, in_stock')
+        .eq('product_id', productId)
+        .is('deleted_at', null)
+        .order('price', { ascending: true });
+
+      const seenMerchants = new Set<string>();
       const retailerEntries: ComparisonProduct['retailers'] = [];
 
-      for (const pHist of pricesData ?? []) {
-        const phRow = pHist as Record<string, unknown>;
-        const retailerId = phRow.retailer_id as string;
-        if (seenRetailers.has(retailerId)) continue;
-        seenRetailers.add(retailerId);
+      for (const row of listingsData ?? []) {
+        const mpRow = row as Record<string, unknown>;
+        const merchantId = mpRow.merchant_id as string;
+        if (seenMerchants.has(merchantId)) continue;
+        seenMerchants.add(merchantId);
+
+        const price = parseFloat(String(mpRow.price));
+        const compareAt =
+          mpRow.compare_at_price !== null && mpRow.compare_at_price !== undefined
+            ? parseFloat(String(mpRow.compare_at_price))
+            : null;
+        // Mirror the product page's in-stock rule: the boolean wins,
+        // otherwise the availability string decides.
+        const inStock = mpRow.in_stock === true || mpRow.availability === 'in_stock';
 
         retailerEntries.push({
-          retailerName: retailerMap.get(retailerId) ?? 'Unknown',
-          price: parseFloat(String(phRow.price)),
-          originalPrice: null,
-          discount: null,
+          retailerName: merchantNameMap.get(merchantId) ?? 'Retailer',
+          price,
+          originalPrice: compareAt,
+          discount:
+            compareAt !== null && compareAt > price
+              ? Math.round((1 - price / compareAt) * 100)
+              : null,
           rating: avgRating,
           reviewCount: ratings.length,
           shipping: null,
-          availability: phRow.availability as string,
+          availability: inStock ? 'in_stock' : 'out_of_stock',
           seller: null,
           warranty: null,
-          url: phRow.url as string | null,
+          url: mpRow.url as string | null,
         });
+      }
+
+      // Fallback only: if a product has no merchant_products rows at
+      // all, keep the old price_history-derived entries so the
+      // comparison never goes empty for that product.
+      if (retailerEntries.length === 0) {
+        const { data: pricesData } = await supabase
+          .from('price_history')
+          .select('id, product_id, retailer_id, price, currency, availability, url, recorded_at')
+          .eq('product_id', productId)
+          .order('recorded_at', { ascending: false })
+          .limit(10);
+
+        const { data: retailersData } = await supabase
+          .from('retailers')
+          .select('id, name, slug, logo_url, website_url, active, country, created_at, updated_at')
+          .eq('active', true);
+
+        const retailerMap = new Map<string, string>();
+        for (const r of retailersData ?? []) {
+          const rRow = r as Record<string, unknown>;
+          retailerMap.set(rRow.id as string, rRow.name as string);
+        }
+
+        const seenRetailers = new Set<string>();
+        for (const pHist of pricesData ?? []) {
+          const phRow = pHist as Record<string, unknown>;
+          const retailerId = phRow.retailer_id as string;
+          if (seenRetailers.has(retailerId)) continue;
+          seenRetailers.add(retailerId);
+
+          retailerEntries.push({
+            retailerName: retailerMap.get(retailerId) ?? 'Unknown',
+            price: parseFloat(String(phRow.price)),
+            originalPrice: null,
+            discount: null,
+            rating: avgRating,
+            reviewCount: ratings.length,
+            shipping: null,
+            availability: phRow.availability as string,
+            seller: null,
+            warranty: null,
+            url: phRow.url as string | null,
+          });
+        }
       }
 
       products.push({
