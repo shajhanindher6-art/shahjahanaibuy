@@ -20,6 +20,7 @@ import { Sparkles, Tag, ArrowRight } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Price } from '@/components/region/price';
 
 interface SmartDealItem {
   dealId: string | null;
@@ -196,7 +197,7 @@ export function SmartDealWidget({ title = 'Smart Deals For You', limit = 6, clas
                 )}
                 {deal.currentPrice !== null && deal.currentPrice !== undefined ? (
                   <p className="mt-1 text-base font-bold text-blue-600">
-                    ${deal.currentPrice.toFixed(2)}
+                    <Price usd={deal.currentPrice} />
                   </p>
                 ) : (
                   <p className="mt-1 text-xs text-muted-foreground">Price not listed</p>

@@ -6,6 +6,7 @@ import { Package } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
+import { Price } from '@/components/region/price';
 import { cn } from '@/lib/utils';
 
 export interface ProductCardData {
@@ -75,7 +76,9 @@ export function ProductCard({ product, href, className, showReason }: ProductCar
             <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{product.description}</p>
           )}
           {product.price != null && (
-            <p className="mt-2 text-lg font-bold text-blue-600">${product.price.toFixed(2)}</p>
+            <p className="mt-2 text-lg font-bold text-blue-600">
+              <Price usd={product.price} />
+            </p>
           )}
           {showReason && product.reason && (
             <div className="mt-2 rounded-md bg-blue-50 p-2 text-xs text-blue-700 dark:bg-blue-950 dark:text-blue-300">

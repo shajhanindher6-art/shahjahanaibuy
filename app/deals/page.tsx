@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { cn } from '@/lib/utils';
+import { Price } from '@/components/region/price';
 
 interface RankedDeal {
   id: string;
@@ -351,9 +352,7 @@ function DealCard({ deal, featured, onClick }: { deal: RankedDeal; featured?: bo
 
         <div className="mt-3 flex items-center gap-2">
           {deal.currentPrice !== null && deal.currentPrice !== undefined ? (
-            <span className="text-2xl font-bold text-blue-600">
-              ${deal.currentPrice.toFixed(2)}
-            </span>
+            <Price usd={deal.currentPrice} className="text-2xl font-bold text-blue-600" />
           ) : (
             <span className="text-sm text-muted-foreground">Price not listed</span>
           )}
@@ -362,7 +361,7 @@ function DealCard({ deal, featured, onClick }: { deal: RankedDeal; featured?: bo
           </span>
           {deal.savingsAmount > 0 && (
             <span className="text-sm text-muted-foreground">
-              Save ${deal.savingsAmount.toFixed(2)}
+              Save <Price usd={deal.savingsAmount} showOriginal={false} />
             </span>
           )}
         </div>

@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { cn } from '@/lib/utils';
+import { Price } from '@/components/region/price';
 
 interface ComparisonRetailer {
   retailerName: string;
@@ -249,7 +250,7 @@ export default function ComparePage() {
                         <td key={p.productId} className="p-3">
                           {minPrice !== null && (
                             <span className={cn('font-bold', minPrice === overallMin ? 'text-green-600' : '')}>
-                              ${minPrice.toFixed(2)}
+                              <Price usd={minPrice} />
                             </span>
                           )}
                         </td>

@@ -23,6 +23,10 @@ import { AIReviewSummarizer } from '@/components/products/ai-review-summarizer';
 import { ReviewForm } from '@/components/products/review-form';
 import type { ReviewAISummary } from '@/types/ai';
 import { cn } from '@/lib/utils';
+import { Price } from '@/components/region/price';
+import { useRegion } from '@/components/region/region-provider';
+import { localizeAmazonUrl } from '@/lib/region';
+import { tFor } from '@/lib/i18n';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 
@@ -89,6 +93,7 @@ export default function ProductDetailsPage() {
   const params = useParams();
   const router = useRouter();
   const slug = params.slug as string;
+  const { region, language } = useRegion();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [summary, setSummary] = useState<AISummary | null>(null);
@@ -350,9 +355,7 @@ export default function ProductDetailsPage() {
 
             {prediction?.currentPrice && (
               <div className="flex items-center gap-3">
-                <span className="text-3xl font-bold text-blue-600">
-                  ${prediction.currentPrice.toFixed(2)}
-                </span>
+                <Price usd={prediction.currentPrice} className="text-3xl font-bold text-blue-600" />
                 {prediction.currentPrice > (prediction.averagePrice ?? 0) && (
                   <Badge className="bg-red-500">
                     <TrendingUp className="mr-1 h-3 w-3" />
@@ -442,11 +445,11 @@ export default function ProductDetailsPage() {
         {merchantsLoaded && (
           <Card className="mt-8">
             <CardHeader>
-              <CardTitle className="text-base">Where to Buy</CardTitle>
+              <CardTitle className="text-base">{tFor(language, 'whereToBuy')}</CardTitle>
               <CardDescription>
                 {merchants.length > 0
                   ? `${merchants.length} retailer${merchants.length !== 1 ? 's' : ''} listing this product. Prices are the latest recorded merchant prices; the retailer sets the final price at checkout.`
-                  : 'No retailer listings yet for this product.'}
+                  : tFor(language, 'noListings')}
               </CardDescription>
             </CardHeader>
             {merchants.length > 0 && (
@@ -463,13 +466,13 @@ export default function ProductDetailsPage() {
                         <p className="font-medium">{listing.merchantName ?? 'Retailer'}</p>
                         <div className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                           <Badge variant={inStock ? 'default' : 'secondary'}>
-                            {inStock ? 'In Stock' : 'Out of Stock'}
+                            {inStock ? tFor(language, 'inStock') : tFor(language, 'outOfStock')}
                           </Badge>
                           {listing.shippingDays !== null && listing.shippingDays !== undefined && (
                             <span>Ships in {listing.shippingDays} day{listing.shippingDays !== 1 ? 's' : ''}</span>
                           )}
                           {listing.shippingCost !== null && listing.shippingCost !== undefined && (
-                            <span>Shipping ${listing.shippingCost.toFixed(2)}</span>
+                            <span>Shipping <Price usd={listing.shippingCost} showOriginal={false} /></span>
                           )}
                         </div>
                         {couponCode && (
@@ -494,21 +497,31 @@ export default function ProductDetailsPage() {
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="text-right">
-                          <p className="text-lg font-bold">${listing.price.toFixed(2)}</p>
+                          <Price usd={listing.price} className="text-lg font-bold" />
                           {listing.compareAtPrice !== null && listing.compareAtPrice > listing.price && (
                             <p className="text-sm text-muted-foreground line-through">
-                              ${listing.compareAtPrice.toFixed(2)}
+                              <Price usd={listing.compareAtPrice} showOriginal={false} />
                             </p>
                           )}
                         </div>
                         {listing.url ? (
                           <Button asChild>
-                            <a href={listing.url} target="_blank" rel="noopener noreferrer">
-                              Buy
+                            {/* Global: an Amazon search link's domain is
+                                rewritten to the visitor region's Amazon
+                                domain (path/query untouched); Best Buy
+                                links are left unchanged (US/CA only).
+                                These remain search links, never invented
+                                product-page URLs. */}
+                            <a
+                              href={localizeAmazonUrl(listing.url, region) ?? listing.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              {tFor(language, 'buy')}
                             </a>
                           </Button>
                         ) : (
-                          <Button disabled>Buy</Button>
+                          <Button disabled>{tFor(language, 'buy')}</Button>
                         )}
                       </div>
                     </div>
@@ -520,13 +533,19 @@ export default function ProductDetailsPage() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-8">
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-6">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="price-history">Price History</TabsTrigger>
-            <TabsTrigger value="prediction">Prediction</TabsTrigger>
-            <TabsTrigger value="reviews">Reviews</TabsTrigger>
-            <TabsTrigger value="savings">Savings</TabsTrigger>
-            <TabsTrigger value="specs">Specs</TabsTrigger>
+          {/* Responsive fix: the old `grid grid-cols-2 sm:grid-cols-6`
+              wrapped the tab row on narrow viewports and the panel
+              overlapped/clipped the wrapped rows (Savings/Specs
+              became unclickable). A single horizontally scrollable
+              row with non-shrinking triggers can never wrap under
+              or behind the panel. */}
+          <TabsList className="flex w-full flex-nowrap justify-start overflow-x-auto">
+            <TabsTrigger value="overview" className="shrink-0">Overview</TabsTrigger>
+            <TabsTrigger value="price-history" className="shrink-0">Price History</TabsTrigger>
+            <TabsTrigger value="prediction" className="shrink-0">Prediction</TabsTrigger>
+            <TabsTrigger value="reviews" className="shrink-0">Reviews</TabsTrigger>
+            <TabsTrigger value="savings" className="shrink-0">Savings</TabsTrigger>
+            <TabsTrigger value="specs" className="shrink-0">Specs</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="mt-4">

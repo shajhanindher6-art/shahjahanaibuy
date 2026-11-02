@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import {
-  Sparkles,
   Brain,
   TrendingDown,
   Shield,
@@ -19,6 +18,7 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { SmartDealWidget } from '@/components/deals/smart-deal-widget';
 import { StatsBar } from '@/components/home/stats-bar';
+import { HeroCopy } from '@/components/home/hero-copy';
 
 const features = [
   {
@@ -128,45 +128,7 @@ export default function HomePage() {
           <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent" />
           <div className="container relative mx-auto px-4 py-20 md:py-28">
             <div className="mx-auto max-w-3xl text-center">
-              <Badge variant="secondary" className="mb-4 gap-1.5">
-                <Sparkles className="h-3.5 w-3.5" />
-                AI-Powered Shopping Intelligence
-              </Badge>
-              <h1 className="text-4xl font-bold tracking-tight md:text-6xl">
-                Make smarter{' '}
-                <span className="bg-gradient-to-r from-primary to-chart-4 bg-clip-text text-transparent">
-                  shopping decisions
-                </span>{' '}
-                with AI
-              </h1>
-              <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
-                SmartBuy AI analyzes millions of products, reviews, and prices in real-time to
-                help you find the best deals, avoid bad purchases, and shop with confidence.
-              </p>
-              <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                <Button size="lg" asChild>
-                  <Link href="/sign-up">
-                    Get Started Free
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Link>
-                </Button>
-                <Button size="lg" variant="outline" asChild>
-                  <Link href="/search">
-                    <Search className="mr-2 h-4 w-4" />
-                    Try AI Search
-                  </Link>
-                </Button>
-              </div>
-              <div className="mt-8 flex items-center justify-center gap-6 text-sm text-muted-foreground">
-                <span className="flex items-center gap-1.5">
-                  <Check className="h-4 w-4 text-success" />
-                  No credit card required
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Check className="h-4 w-4 text-success" />
-                  Free forever plan
-                </span>
-              </div>
+              <HeroCopy />
             </div>
           </div>
         </section>

@@ -16,6 +16,9 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { WishlistButton } from '@/components/products/wishlist-button';
 import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
+import { Price } from '@/components/region/price';
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import type { WebSearchResult } from '@/types/ai';
 
 interface SearchResult {
@@ -57,6 +60,7 @@ const SUGGESTED_QUERIES = [
 
 export default function SearchPage() {
   const router = useRouter();
+  const { language } = useRegion();
   const [query, setQuery] = useState('');
   const [searchMode, setSearchMode] = useState<'text' | 'url'>('text');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -350,7 +354,7 @@ export default function SearchPage() {
                 type={searchMode === 'url' ? 'url' : 'text'}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={searchMode === 'url' ? 'Paste a product URL (e.g. https://...)' : 'e.g. Best gaming laptop under $1000'}
+                placeholder={searchMode === 'url' ? 'Paste a product URL (e.g. https://...)' : tFor(language, 'searchPlaceholder')}
                 className="pl-10"
                 autoFocus
               />
@@ -659,9 +663,7 @@ export default function SearchPage() {
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         {result.currentPrice !== null && result.currentPrice !== undefined ? (
-                          <span className="text-lg font-bold text-blue-600">
-                            ${result.currentPrice.toFixed(2)}
-                          </span>
+                          <Price usd={result.currentPrice} className="text-lg font-bold text-blue-600" />
                         ) : (
                           <span className="text-xs text-muted-foreground">Price not listed</span>
                         )}
@@ -775,9 +777,7 @@ export default function SearchPage() {
                       </div>
                       <div className="mt-2 flex items-center gap-3">
                         {web.price !== null ? (
-                          <span className="text-lg font-bold text-blue-600">
-                            ${web.price.toFixed(2)}
-                          </span>
+                          <Price usd={web.price} className="text-lg font-bold text-blue-600" />
                         ) : (
                           <span className="text-sm text-muted-foreground">Price not shown by retailer</span>
                         )}
