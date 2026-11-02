@@ -5,9 +5,11 @@
  *
  * - Native <select> elements (reliable on every device, no extra
  *   dependency, native mobile picker). Two bound selects share one
- *   value: a compact currency-code-only select on small screens
- *   ("PKR") and a full "Pakistan (PKR)" select on sm+ screens, so
- *   the crowded mobile header never breaks.
+ *   value: a compact code + currency select on small screens
+ *   ("PK PKR") and a full "Pakistan (PKR)" select on sm+ screens, so
+ *   the crowded mobile header never breaks. Currency alone would
+ *   be ambiguous now that 60 regions share a handful of currencies
+ *   (many EUR entries), so the compact option carries the code.
  * - A manual choice writes cookie + localStorage and always wins
  *   over geo detection (see RegionProvider).
  * - The language toggle next to it flips English ↔ Roman Urdu.
@@ -33,7 +35,7 @@ export function CountrySwitcher() {
   return (
     <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Country">
       <Globe className="hidden h-4 w-4 shrink-0 text-muted-foreground sm:block" aria-hidden />
-      {/* Compact: currency code only on small screens. */}
+      {/* Compact: country code + currency on small screens. */}
       <select
         id="sb-country-switcher-mobile"
         aria-label="Country"
@@ -43,7 +45,7 @@ export function CountrySwitcher() {
       >
         {REGIONS.map((r) => (
           <option key={r.code} value={r.code}>
-            {r.currency}
+            {r.code} {r.currency}
           </option>
         ))}
       </select>

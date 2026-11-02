@@ -26,7 +26,8 @@ import { cn } from '@/lib/utils';
 import { Price } from '@/components/region/price';
 import { useRegion } from '@/components/region/region-provider';
 import { localizeAmazonUrl } from '@/lib/region';
-import { getLocalStores, buildStoreSearchUrl } from '@/lib/stores';
+import { getStoresForCountry, buildStoreSearchUrl } from '@/lib/stores';
+import { getRegionByCountry } from '@/lib/region';
 import { tFor } from '@/lib/i18n';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
@@ -94,7 +95,7 @@ export default function ProductDetailsPage() {
   const params = useParams();
   const router = useRouter();
   const slug = params.slug as string;
-  const { region, language } = useRegion();
+  const { region, language, detectedCountryCode } = useRegion();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [summary, setSummary] = useState<AISummary | null>(null);
@@ -533,38 +534,67 @@ export default function ProductDetailsPage() {
           </Card>
         )}
 
-        {/* Local stores — Option 2 Phase 1: DIRECTORY + SEARCH LINKS
-            ONLY, directly under "Where to Buy". These are outbound
-            links to the visitor-country stores' own search results
-            for this product name. They carry NO price, NO stock
-            badge and NO discount: the store itself shows its price
-            and availability on its own site. Nothing here is a
-            SmartBuy price or deal, and no partnership or affiliate
-            relationship is claimed. Amazon/Best Buy are never listed
-            here (they are already the priced rows above); as a
-            safety net, any local store whose name matches a priced
-            merchant row on this page is also filtered out. */}
+        {/* Local stores / global fallback — Worldwide expansion:
+            DIRECTORY + SEARCH LINKS ONLY, directly under "Where to
+            Buy". Store lookup uses the visitor's actual country
+            (saved choice or raw detection via detectedCountryCode),
+            NOT the display region: for a country outside the region
+            registry the display region falls back to US, but the
+            lookup must return the global fallback, never US local
+            stores. The section therefore ALWAYS renders for a valid
+            country — local stores when the country has them, the
+            worldwide fallback otherwise. These are outbound links
+            to the stores' own search results for this product name.
+            They carry NO price, NO stock badge and NO discount: the
+            store itself shows its price and availability on its own
+            site. Nothing here is a SmartBuy price or deal, and no
+            partnership or affiliate relationship is claimed.
+            Amazon/Best Buy are never listed here (they are already
+            the priced rows above); as a safety net, any store whose
+            name matches a priced merchant row on this page is also
+            filtered out (this removes the Amazon row from the
+            global fallback, where the priced Amazon row already
+            serves that link). */}
         {product && (() => {
           const pricedNames = new Set(
             merchants.map((m) => (m.merchantName ?? '').toLowerCase())
           );
-          const localStores = getLocalStores(region.code).filter(
+          const storeCountryCode = detectedCountryCode ?? region.code;
+          const { kind, stores } = getStoresForCountry(storeCountryCode);
+          const storeRegion = getRegionByCountry(storeCountryCode) ?? region;
+          const visibleStores = stores.filter(
             (store) => !pricedNames.has(store.name.toLowerCase())
           );
-          if (localStores.length === 0) return null;
+          const isLocal = kind === 'local';
           return (
             <Card className="mt-8">
               <CardHeader>
-                <CardTitle className="text-base">Local stores in {region.name}</CardTitle>
+                <CardTitle className="text-base">
+                  {isLocal
+                    ? `Local stores in ${storeRegion.name}`
+                    : 'Global retailers (worldwide)'}
+                </CardTitle>
                 <CardDescription>
-                  These are links to local stores in {region.name}. SmartBuy does not show
-                  prices, stock, or deals for these stores — click through to see the
-                  store&apos;s own price and availability on its website. No partnership
-                  or affiliate relationship is claimed.
+                  {isLocal ? (
+                    <>
+                      These are links to local stores in {storeRegion.name}. SmartBuy does not show
+                      prices, stock, or deals for these stores — click through to see the
+                      store&apos;s own price and availability on its website. No partnership
+                      or affiliate relationship is claimed.
+                    </>
+                  ) : (
+                    <>
+                      No local stores are listed for your country yet. These are worldwide
+                      retailers — click through to see the retailer&apos;s own price and
+                      availability on its website. SmartBuy does not show prices, stock, or
+                      deals for these stores, and no partnership or affiliate relationship
+                      is claimed.
+                    </>
+                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {localStores.map((store) => (
+                {visibleStores.map((store) => (
                   <div
                     key={store.slug}
                     className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700"

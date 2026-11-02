@@ -19,8 +19,9 @@
  *   - "K" notation: 20K = 20,000. Also M = 1,000,000, thousand,
  *     million, lakh/lac = 100,000, crore = 10,000,000.
  *   - Currency is auto-detected from a code (PKR, INR, EUR, GBP,
- *     AED, USD, SAR, CAD, AUD, CNY, JPY, BDT), a symbol ($, €, £,
- *     ₹, ₨, ¥), or a word (rupees, dollars, euros, pounds,
+ *     AED, USD, SAR, CAD, AUD, CNY, JPY, BDT, plus the 37
+ *     worldwide-expansion codes), a symbol ($, €, £, ₹, ₨, ¥, ₩,
+ *     ₺, ₱, ฿, ₫, ₴, ₦), or a word (rupees, dollars, euros, pounds,
  *     dirhams, riyals). "Rs" / "rupees" default to PKR, the
  *     primary market for this app; "₹" is always INR.
  *   - An explicit currency code after the amount wins over a
@@ -35,6 +36,11 @@
  * the USD figure is rounded to whole dollars. If a rate drifts
  * enough to matter, update USD_PER_UNIT here; every consumer
  * (catalog search, chat, SerpAPI filter, UI badge) follows.
+ *
+ * The worldwide-expansion block (2026-11-02) adds the region
+ * currencies for 50+ markets on the same approximate basis
+ * (reviewed 2026-11-02). Venezuela and Ecuador use USD: both are
+ * dollarized in practice, and no reliable VES rate is asserted.
  */
 
 export type CurrencyCode =
@@ -49,7 +55,46 @@ export type CurrencyCode =
   | 'AUD'
   | 'CNY'
   | 'JPY'
-  | 'BDT';
+  | 'BDT'
+  | 'BRL'
+  | 'TRY'
+  | 'QAR'
+  | 'EGP'
+  | 'MXN'
+  | 'KRW'
+  | 'IDR'
+  | 'THB'
+  | 'VND'
+  | 'PHP'
+  | 'MYR'
+  | 'SGD'
+  | 'NGN'
+  | 'KES'
+  | 'MAD'
+  | 'PLN'
+  | 'CHF'
+  | 'ZAR'
+  | 'CLP'
+  | 'ARS'
+  | 'COP'
+  | 'PEN'
+  | 'UAH'
+  | 'TWD'
+  | 'XOF'
+  | 'GHS'
+  | 'UGX'
+  | 'LKR'
+  | 'NPR'
+  | 'UYU'
+  | 'BOB'
+  | 'PYG'
+  | 'CRC'
+  | 'GTQ'
+  | 'DOP'
+  | 'PAB'
+  | 'HNL'
+  | 'NIO'
+  | 'CZK';
 
 /** Approximate USD value of 1 unit of each supported currency. */
 export const USD_PER_UNIT: Record<CurrencyCode, number> = {
@@ -76,6 +121,87 @@ export const USD_PER_UNIT: Record<CurrencyCode, number> = {
   JPY: 1 / 150,
   // ~122 BDT per USD
   BDT: 1 / 122,
+  // --- Worldwide expansion (reviewed 2026-11-02): approximate
+  // static rates for the new region currencies, same convention
+  // (USD value of 1 unit), always shown with "≈" in the UI.
+  // ~5.4 BRL per USD
+  BRL: 1 / 5.4,
+  // ~43 TRY per USD
+  TRY: 1 / 43,
+  // ~3.64 QAR per USD (pegged)
+  QAR: 1 / 3.64,
+  // ~48.5 EGP per USD
+  EGP: 1 / 48.5,
+  // ~17.2 MXN per USD
+  MXN: 1 / 17.2,
+  // ~1470 KRW per USD
+  KRW: 1 / 1470,
+  // ~16500 IDR per USD
+  IDR: 1 / 16500,
+  // ~32.5 THB per USD
+  THB: 1 / 32.5,
+  // ~26200 VND per USD
+  VND: 1 / 26200,
+  // ~59 PHP per USD
+  PHP: 1 / 59,
+  // ~4.2 MYR per USD
+  MYR: 1 / 4.2,
+  // ~1.29 SGD per USD
+  SGD: 1 / 1.29,
+  // ~1460 NGN per USD
+  NGN: 1 / 1460,
+  // ~129 KES per USD
+  KES: 1 / 129,
+  // ~9.0 MAD per USD
+  MAD: 1 / 9.0,
+  // ~3.65 PLN per USD
+  PLN: 1 / 3.65,
+  // ~1 CHF = $1.25
+  CHF: 1.25,
+  // ~17.3 ZAR per USD
+  ZAR: 1 / 17.3,
+  // ~940 CLP per USD
+  CLP: 1 / 940,
+  // ~1450 ARS per USD
+  ARS: 1 / 1450,
+  // ~3900 COP per USD
+  COP: 1 / 3900,
+  // ~3.4 PEN per USD
+  PEN: 1 / 3.4,
+  // ~42 UAH per USD
+  UAH: 1 / 42,
+  // ~31.5 TWD per USD
+  TWD: 1 / 31.5,
+  // ~560 XOF per USD (West African CFA franc, euro-pegged)
+  XOF: 1 / 560,
+  // ~11.5 GHS per USD
+  GHS: 1 / 11.5,
+  // ~3650 UGX per USD
+  UGX: 1 / 3650,
+  // ~300 LKR per USD
+  LKR: 1 / 300,
+  // ~133 NPR per USD
+  NPR: 1 / 133,
+  // ~40 UYU per USD
+  UYU: 1 / 40,
+  // ~6.9 BOB per USD
+  BOB: 1 / 6.9,
+  // ~7500 PYG per USD
+  PYG: 1 / 7500,
+  // ~500 CRC per USD
+  CRC: 1 / 500,
+  // ~7.7 GTQ per USD
+  GTQ: 1 / 7.7,
+  // ~63 DOP per USD
+  DOP: 1 / 63,
+  // Panama is dollarized: 1 PAB = $1
+  PAB: 1,
+  // ~26 HNL per USD
+  HNL: 1 / 26,
+  // ~36.5 NIO per USD
+  NIO: 1 / 36.5,
+  // ~21 CZK per USD
+  CZK: 1 / 21,
 };
 
 const CODE_MAP: Record<string, CurrencyCode> = {
@@ -91,6 +217,56 @@ const CODE_MAP: Record<string, CurrencyCode> = {
   cny: 'CNY',
   jpy: 'JPY',
   bdt: 'BDT',
+  brl: 'BRL',
+  try: 'TRY',
+  qar: 'QAR',
+  egp: 'EGP',
+  mxn: 'MXN',
+  krw: 'KRW',
+  idr: 'IDR',
+  thb: 'THB',
+  vnd: 'VND',
+  php: 'PHP',
+  myr: 'MYR',
+  sgd: 'SGD',
+  ngn: 'NGN',
+  kes: 'KES',
+  mad: 'MAD',
+  pln: 'PLN',
+  chf: 'CHF',
+  zar: 'ZAR',
+  clp: 'CLP',
+  ars: 'ARS',
+  cop: 'COP',
+  pen: 'PEN',
+  uah: 'UAH',
+  twd: 'TWD',
+  xof: 'XOF',
+  ghs: 'GHS',
+  ugx: 'UGX',
+  lkr: 'LKR',
+  npr: 'NPR',
+  uyu: 'UYU',
+  bob: 'BOB',
+  pyg: 'PYG',
+  crc: 'CRC',
+  gtq: 'GTQ',
+  dop: 'DOP',
+  pab: 'PAB',
+  hnl: 'HNL',
+  nio: 'NIO',
+  czk: 'CZK',
+  real: 'BRL',
+  reais: 'BRL',
+  lira: 'TRY',
+  liras: 'TRY',
+  won: 'KRW',
+  baht: 'THB',
+  dong: 'VND',
+  ringgit: 'MYR',
+  rand: 'ZAR',
+  zloty: 'PLN',
+  naira: 'NGN',
   'rs': 'PKR',
   'rs.': 'PKR',
   rupees: 'PKR',
@@ -115,6 +291,13 @@ const SYMBOL_MAP: Record<string, CurrencyCode> = {
   '₹': 'INR',
   '₨': 'PKR',
   '¥': 'JPY',
+  '₩': 'KRW',
+  '₺': 'TRY',
+  '₱': 'PHP',
+  '฿': 'THB',
+  '₫': 'VND',
+  '₴': 'UAH',
+  '₦': 'NGN',
 };
 
 const MULTIPLIER_MAP: Record<string, number> = {
@@ -148,7 +331,7 @@ export function detectCurrencyCode(text: string): CurrencyCode | null {
   }
 
   const wordPattern =
-    /\b(pkr|inr|eur|gbp|aed|usd|sar|cad|aud|cny|jpy|bdt|rs\.?|rupees?|dollars?|euros?|pounds?|sterling|dirhams?|riyals?)\b/gi;
+    /\b(pkr|inr|eur|gbp|aed|usd|sar|cad|aud|cny|jpy|bdt|brl|try|qar|egp|mxn|krw|idr|thb|vnd|php|myr|sgd|ngn|kes|mad|pln|chf|zar|clp|ars|cop|pen|uah|twd|xof|ghs|ugx|lkr|npr|uyu|bob|pyg|crc|gtq|dop|pab|hnl|nio|czk|rs\.?|rupees?|dollars?|euros?|pounds?|sterling|dirhams?|riyals?|real|reais|lira|liras|won|baht|dong|ringgit|rand|zloty|naira)\b/gi;
   let match: RegExpExecArray | null;
   while ((match = wordPattern.exec(lower)) !== null) {
     const code = currencyFromToken(match[1]);
@@ -177,25 +360,25 @@ export interface ParsedBudget {
 const AMOUNT = String.raw`(\d[\d,]*\.?\d*)`;
 const MULTIPLIER = String.raw`([kKmM]|lakh|lac|crore|thousand|million)?`;
 const CURRENCY_WORD =
-  String.raw`(pkr|inr|eur|gbp|aed|usd|sar|cad|aud|cny|jpy|bdt|rs\.?|rupees?|dollars?|euros?|pounds?|sterling|dirhams?|riyals?)?`;
+  String.raw`(pkr|inr|eur|gbp|aed|usd|sar|cad|aud|cny|jpy|bdt|brl|try|qar|egp|mxn|krw|idr|thb|vnd|php|myr|sgd|ngn|kes|mad|pln|chf|zar|clp|ars|cop|pen|uah|twd|xof|ghs|ugx|lkr|npr|uyu|bob|pyg|crc|gtq|dop|pab|hnl|nio|czk|rs\.?|rupees?|dollars?|euros?|pounds?|sterling|dirhams?|riyals?|real|reais|lira|liras|won|baht|dong|ringgit|rand|zloty|naira)?`;
 const KEYWORD =
   String.raw`(?:under|below|less\s+than|up\s+to|upto|max(?:imum)?|budget(?:\s+of|\s+is)?|within|around|cheaper\s+than)`;
 
 // Groups: 1 = symbol, 2 = amount, 3 = multiplier, 4 = currency word
 const KEYWORD_PATTERN = new RegExp(
-  `${KEYWORD}\\s*([€£₹₨$¥]?)\\s*${AMOUNT}\\s*${MULTIPLIER}\\s*${CURRENCY_WORD}`,
+  `${KEYWORD}\\s*([€£₹₨$¥₩₺₱฿₫₴₦]?)\\s*${AMOUNT}\\s*${MULTIPLIER}\\s*${CURRENCY_WORD}`,
   'i'
 );
 // Groups: 1 = currency word, 2 = amount, 3 = multiplier
 const CURRENCY_FIRST_PATTERN = new RegExp(
-  `\\b(pkr|inr|eur|gbp|aed|usd|sar|cad|aud|cny|jpy|bdt|rs\\.?|rupees?)\\s+${AMOUNT}\\s*${MULTIPLIER}`,
+  `\\b(pkr|inr|eur|gbp|aed|usd|sar|cad|aud|cny|jpy|bdt|brl|try|qar|egp|mxn|krw|idr|thb|vnd|php|myr|sgd|ngn|kes|mad|pln|chf|zar|clp|ars|cop|pen|uah|twd|xof|ghs|ugx|lkr|npr|uyu|bob|pyg|crc|gtq|dop|pab|hnl|nio|czk|rs\\.?|rupees?)\\s+${AMOUNT}\\s*${MULTIPLIER}`,
   'i'
 );
 // Groups: 1 = symbol, 2 = amount, 3 = multiplier
-const SYMBOL_FIRST_PATTERN = new RegExp(`([€£₹₨$¥])\\s*${AMOUNT}\\s*${MULTIPLIER}`, 'i');
+const SYMBOL_FIRST_PATTERN = new RegExp(`([€£₹₨$¥₩₺₱฿₫₴₦])\\s*${AMOUNT}\\s*${MULTIPLIER}`, 'i');
 // Groups: 1 = amount, 2 = multiplier, 3 = currency word
 const AMOUNT_CURRENCY_PATTERN = new RegExp(
-  `${AMOUNT}\\s*${MULTIPLIER}\\s*\\b(pkr|inr|eur|gbp|aed|usd|sar|cad|aud|cny|jpy|bdt|rs\\.?|rupees?|dollars?|euros?|pounds?|sterling|dirhams?|riyals?)\\b`,
+  `${AMOUNT}\\s*${MULTIPLIER}\\s*\\b(pkr|inr|eur|gbp|aed|usd|sar|cad|aud|cny|jpy|bdt|brl|try|qar|egp|mxn|krw|idr|thb|vnd|php|myr|sgd|ngn|kes|mad|pln|chf|zar|clp|ars|cop|pen|uah|twd|xof|ghs|ugx|lkr|npr|uyu|bob|pyg|crc|gtq|dop|pab|hnl|nio|czk|rs\\.?|rupees?|dollars?|euros?|pounds?|sterling|dirhams?|riyals?|real|reais|lira|liras|won|baht|dong|ringgit|rand|zloty|naira)\\b`,
   'i'
 );
 
@@ -290,7 +473,7 @@ export function parseBudgetFromQuery(query: string): ParsedBudget | null {
 }
 
 const CURRENCY_CODE_ALTERNATION =
-  String.raw`pkr|inr|eur|gbp|aed|usd|sar|cad|aud|cny|jpy|bdt|rs\.?|rupees?|dollars?|euros?|pounds?|sterling|dirhams?|riyals?`;
+  String.raw`pkr|inr|eur|gbp|aed|usd|sar|cad|aud|cny|jpy|bdt|brl|try|qar|egp|mxn|krw|idr|thb|vnd|php|myr|sgd|ngn|kes|mad|pln|chf|zar|clp|ars|cop|pen|uah|twd|xof|ghs|ugx|lkr|npr|uyu|bob|pyg|crc|gtq|dop|pab|hnl|nio|czk|rs\.?|rupees?|dollars?|euros?|pounds?|sterling|dirhams?|riyals?|real|reais|lira|liras|won|baht|dong|ringgit|rand|zloty|naira`;
 
 /**
  * Remove budget expressions from a query so the remaining text can
@@ -303,11 +486,11 @@ export function stripBudgetFromQuery(query: string): string {
   let cleaned = query;
   const globalPatterns = [
     new RegExp(
-      `${KEYWORD}\\s*[€£₹₨$¥]?\\s*${AMOUNT}\\s*${MULTIPLIER}\\s*${CURRENCY_WORD}`,
+      `${KEYWORD}\\s*[€£₹₨$¥₩₺₱฿₫₴₦]?\\s*${AMOUNT}\\s*${MULTIPLIER}\\s*${CURRENCY_WORD}`,
       'gi'
     ),
-    new RegExp(`\\b(pkr|inr|eur|gbp|aed|usd|sar|cad|aud|cny|jpy|bdt|rs\\.?|rupees?)\\s+${AMOUNT}\\s*${MULTIPLIER}`, 'gi'),
-    new RegExp(`[€£₹₨$¥]\\s*${AMOUNT}\\s*${MULTIPLIER}`, 'gi'),
+    new RegExp(`\\b(pkr|inr|eur|gbp|aed|usd|sar|cad|aud|cny|jpy|bdt|brl|try|qar|egp|mxn|krw|idr|thb|vnd|php|myr|sgd|ngn|kes|mad|pln|chf|zar|clp|ars|cop|pen|uah|twd|xof|ghs|ugx|lkr|npr|uyu|bob|pyg|crc|gtq|dop|pab|hnl|nio|czk|rs\\.?|rupees?)\\s+${AMOUNT}\\s*${MULTIPLIER}`, 'gi'),
+    new RegExp(`[€£₹₨$¥₩₺₱฿₫₴₦]\\s*${AMOUNT}\\s*${MULTIPLIER}`, 'gi'),
     new RegExp(`${AMOUNT}\\s*${MULTIPLIER}\\s*\\b(${CURRENCY_CODE_ALTERNATION})\\b`, 'gi'),
     // "under 20K in PKR": the keyword pattern stops at "20K", so the
     // trailing "in PKR" must go too, or it leaks into search terms.

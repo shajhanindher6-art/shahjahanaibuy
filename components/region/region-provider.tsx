@@ -19,6 +19,14 @@
  * producing a non-US region), never for a saved choice, and once
  * dismissed it stays dismissed (localStorage `sb-banner-dismissed`).
  *
+ * `detectedCountryCode` is the visitor's RAW country code: the
+ * saved choice when there is one, otherwise the raw code from IP
+ * detection or the browser guess — even when that code is OUTSIDE
+ * the region registry. `region` still falls back to US for display
+ * and currency in that case, but store lookup must use the raw
+ * code so a visitor from e.g. Iceland gets the global retailer
+ * fallback, not US local stores (see lib/stores.ts).
+ *
  * UI language always defaults to English. A PK visitor is *offered*
  * Roman Urdu in the banner; it is never switched automatically.
  */
@@ -53,6 +61,12 @@ export interface RegionContextValue {
   region: Region;
   /** ISO country code of the active region. */
   countryCode: string;
+  /**
+   * Raw visitor country code (saved choice, or raw IP/browser
+   * detection). May be outside the region registry; null before
+   * detection runs. Store lookup uses this, not countryCode.
+   */
+  detectedCountryCode: string | null;
   /** 'detected' when the region came from detection, 'saved' for a manual choice. */
   source: 'saved' | 'detected';
   language: Language;
@@ -98,6 +112,7 @@ function readStored<T>(key: string, parse: (raw: string) => T | null): T | null 
 
 export function RegionProvider({ children }: { children: ReactNode }) {
   const [region, setRegion] = useState<Region>(FALLBACK_REGION);
+  const [detectedCountryCode, setDetectedCountryCode] = useState<string | null>(null);
   const [source, setSource] = useState<'saved' | 'detected'>('detected');
   const [language, setLanguageState] = useState<Language>('en');
   const [bannerVisible, setBannerVisible] = useState(false);
@@ -117,6 +132,7 @@ export function RegionProvider({ children }: { children: ReactNode }) {
     if (savedRegion) {
       setRegion(savedRegion);
       setSource('saved');
+      setDetectedCountryCode(savedRegion.code);
       return;
     }
 
@@ -127,6 +143,9 @@ export function RegionProvider({ children }: { children: ReactNode }) {
       const detected = resolveRegion(code);
       setRegion(detected);
       setSource('detected');
+      // Raw code, even when outside the registry (resolveRegion
+      // above still falls back to US for display/currency).
+      setDetectedCountryCode(code ? code.toUpperCase() : null);
       const dismissed = readStored<boolean>(LS_BANNER_DISMISSED, (raw) => raw === '1');
       // Banner only for a real non-US detection, and only if never dismissed.
       if (showBanner && detected.code !== 'US' && !dismissed) {
@@ -189,6 +208,7 @@ export function RegionProvider({ children }: { children: ReactNode }) {
     const next = resolveRegion(code);
     setRegion(next);
     setSource('saved');
+    setDetectedCountryCode(next.code);
     setBannerVisible(false);
     writeCountryChoice(next.code);
   }, []);
@@ -215,6 +235,7 @@ export function RegionProvider({ children }: { children: ReactNode }) {
     () => ({
       region,
       countryCode: region.code,
+      detectedCountryCode,
       source,
       language,
       setCountry,
@@ -222,7 +243,7 @@ export function RegionProvider({ children }: { children: ReactNode }) {
       bannerVisible,
       dismissBanner,
     }),
-    [region, source, language, setCountry, setLanguage, bannerVisible, dismissBanner]
+    [region, detectedCountryCode, source, language, setCountry, setLanguage, bannerVisible, dismissBanner]
   );
 
   return <RegionContext.Provider value={value}>{children}</RegionContext.Provider>;
