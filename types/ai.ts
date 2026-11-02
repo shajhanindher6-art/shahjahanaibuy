@@ -101,6 +101,7 @@ export interface ParsedSearchIntent {
 
 export interface ComparisonProduct {
   productId: string;
+  slug: string;
   name: string;
   brand: string | null;
   image: string | null;

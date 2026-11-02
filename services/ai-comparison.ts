@@ -87,6 +87,7 @@ export async function compareProducts(
 
       products.push({
         productId,
+        slug: product.slug as string,
         name: product.name as string,
         brand: product.brand as string | null,
         image: product.image_url as string | null,

@@ -30,6 +30,7 @@ interface ComparisonRetailer {
 
 interface ComparisonProduct {
   productId: string;
+  slug: string;
   name: string;
   brand: string | null;
   image: string | null;
@@ -308,7 +309,7 @@ export default function ComparePage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => router.push(`/products/${p.productId}`)}
+                          onClick={() => router.push(`/products/${p.slug || p.productId}`)}
                         >
                           View Details
                         </Button>
