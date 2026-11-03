@@ -27,8 +27,28 @@
  * code so a visitor from e.g. Iceland gets the global retailer
  * fallback, not US local stores (see lib/stores.ts).
  *
- * UI language always defaults to English. A PK visitor is *offered*
- * Roman Urdu in the banner; it is never switched automatically.
+ * UI language (Option 4 Part 1, auto-detection — this REPLACES
+ * the old "never auto-switch" rule, because auto-detection was
+ * explicitly requested):
+ *   (a) saved choice in localStorage `sb-language` — never
+ *       overridden by detection, and always wins;
+ *   (b) geo-detected country → language map
+ *       (lib/region.ts COUNTRY_LANGUAGE);
+ *   (c) browser navigator.language primary subtag, mapped into
+ *       the supported set (only when geo yields no country);
+ *   (d) English.
+ * Detection runs once on load and applies to React state only —
+ * it never writes `sb-language`, so a later manual switch (which
+ * does persist) is never undone by a later visit's detection.
+ * A manual Country Switcher choice never forces a language
+ * change: country and language stay independent after first
+ * detection. One subtlety: the middleware geo cookie looks like a
+ * "saved" country to this provider, but a manual choice writes
+ * BOTH the cookie and localStorage `sb-country`, while middleware
+ * writes only the cookie — so a cookie WITHOUT a localStorage
+ * country entry means server geo detection, and the language map
+ * is applied for that visitor too (state only, same as above).
+ * On every language change, document.documentElement.lang is set.
  */
 
 import {
@@ -44,6 +64,9 @@ import {
   FALLBACK_REGION,
   getRegionByCountry,
   guessCountryFromBrowser,
+  isSupportedLanguage,
+  languageForCountry,
+  languageFromBrowserLanguage,
   resolveRegion,
   type Language,
   type Region,
@@ -118,9 +141,10 @@ export function RegionProvider({ children }: { children: ReactNode }) {
   const [bannerVisible, setBannerVisible] = useState(false);
 
   useEffect(() => {
-    // UI language: stored choice only, never auto-derived from region.
+    // UI language precedence (Option 4 Part 1):
+    // (a) saved choice wins and is never overridden by detection.
     const storedLang = readStored<Language>(LS_LANGUAGE, (raw) =>
-      raw === 'ur' || raw === 'en' ? raw : null
+      isSupportedLanguage(raw) ? raw : null
     );
     if (storedLang) setLanguageState(storedLang);
 
@@ -133,6 +157,14 @@ export function RegionProvider({ children }: { children: ReactNode }) {
       setRegion(savedRegion);
       setSource('saved');
       setDetectedCountryCode(savedRegion.code);
+      // Cookie WITHOUT a localStorage country entry means the
+      // country came from the middleware geo cookie, not a manual
+      // choice: apply the geo language map (state only) unless
+      // the visitor already has a saved language choice.
+      const manualCountry = readStored<string>(LS_COUNTRY, (raw) => raw);
+      if (!storedLang && !manualCountry) {
+        setLanguageState(languageForCountry(savedRegion.code));
+      }
       return;
     }
 
@@ -146,6 +178,17 @@ export function RegionProvider({ children }: { children: ReactNode }) {
       // Raw code, even when outside the registry (resolveRegion
       // above still falls back to US for display/currency).
       setDetectedCountryCode(code ? code.toUpperCase() : null);
+      // (b) geo country → language map; (c) browser language only
+      // when geo yields no country at all; (d) English. Skipped
+      // entirely when a saved language choice exists (step (a)).
+      if (!storedLang) {
+        const detectedLang = code
+          ? languageForCountry(code)
+          : (languageFromBrowserLanguage(
+              typeof navigator !== 'undefined' ? navigator.language : null
+            ) ?? 'en');
+        setLanguageState(detectedLang);
+      }
       const dismissed = readStored<boolean>(LS_BANNER_DISMISSED, (raw) => raw === '1');
       // Banner only for a real non-US detection, and only if never dismissed.
       if (showBanner && detected.code !== 'US' && !dismissed) {
@@ -203,6 +246,16 @@ export function RegionProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  // Keep <html lang> in sync with the UI language (accessibility
+  // + correct rendering of localized chrome strings).
+  useEffect(() => {
+    try {
+      document.documentElement.lang = language;
+    } catch {
+      // Non-DOM environment — ignore.
+    }
+  }, [language]);
 
   const setCountry = useCallback((code: string) => {
     const next = resolveRegion(code);

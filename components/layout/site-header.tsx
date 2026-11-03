@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { useAuth } from '@/features/auth';
 import { cn } from '@/lib/utils';
-import { CountrySwitcher, LanguageToggle } from '@/components/region/country-switcher';
+import { CountrySwitcher, LanguageSwitcher } from '@/components/region/country-switcher';
 import { RegionBanner } from '@/components/region/region-banner';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor, type DictKey } from '@/lib/i18n';
@@ -34,7 +34,7 @@ export function SiteHeader() {
             <Sparkles className="h-6 w-6 shrink-0 text-primary" />
             {/* Logo wordmark hides on very narrow screens so the
                 header row (now carrying the country switcher +
-                language toggle) never overflows on phones. */}
+                language switcher) never overflows on phones. */}
             <span className="hidden min-[400px]:inline">SmartBuy AI</span>
           </Link>
           <nav className="hidden items-center gap-6 md:flex">
@@ -58,7 +58,7 @@ export function SiteHeader() {
               currency-code-only select on small screens so the
               mobile header row never wraps or overflows. */}
           <CountrySwitcher />
-          <LanguageToggle />
+          <LanguageSwitcher />
           <ThemeToggle />
           {isAuthenticated ? (
             <Button asChild size="sm" className="shrink-0">

@@ -4,12 +4,22 @@
  * Dismissible region banner, shown once on first geo detection
  * (never for a saved Country Switcher choice, never after dismiss).
  * Example: "You're browsing from Pakistan — prices shown in PKR (≈)".
- * PK visitors also get a one-tap offer for Roman Urdu (never forced:
- * tapping is the only way the language changes).
+ *
+ * Language offer (Option 4 Part 1): when the detected region's
+ * language differs from the current UI language — e.g. a visitor
+ * with a saved English choice browsing from Germany — the banner
+ * offers a one-tap switch to the DETECTED language, shown by its
+ * native name (e.g. "Deutsch"). It never forces a switch, and it
+ * never shows a Roman-Urdu-only button inside another language's
+ * UI: on a first visit the detected language is already applied
+ * by auto-detection, so the offer simply does not appear then.
+ * (The old `bannerOfferUrdu` dictionary key is retained for
+ * 28-key parity but is no longer rendered here.)
  */
 
 import { X } from 'lucide-react';
 import { bannerText, tFor } from '@/lib/i18n';
+import { languageMeta } from '@/lib/region';
 import { useRegion } from './region-provider';
 
 export function RegionBanner() {
@@ -26,6 +36,11 @@ export function RegionBanner() {
     el?.scrollIntoView({ block: 'nearest' });
   };
 
+  // Offer the detected language only when it differs from the
+  // current UI language (e.g. saved English + detected Germany).
+  const offerLanguage =
+    region.suggestedLanguage !== language ? region.suggestedLanguage : null;
+
   return (
     <div className="border-b bg-blue-50 dark:bg-blue-950">
       <div className="container mx-auto flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 py-2 text-center text-xs sm:text-sm">
@@ -39,13 +54,14 @@ export function RegionBanner() {
         >
           {tFor(language, 'bannerChange')}
         </button>
-        {region.suggestedLanguage === 'ur' && language === 'en' && (
+        {offerLanguage && (
           <button
             type="button"
-            onClick={() => setLanguage('ur')}
+            onClick={() => setLanguage(offerLanguage)}
+            aria-label={`Switch language to ${languageMeta(offerLanguage).nativeName}`}
             className="font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-100"
           >
-            {tFor(language, 'bannerOfferUrdu')}
+            {languageMeta(offerLanguage).nativeName}
           </button>
         )}
         <button

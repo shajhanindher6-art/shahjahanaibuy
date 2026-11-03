@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Country Switcher + language toggle for the site header.
+ * Country Switcher + Language Switcher for the site header.
  *
  * - Native <select> elements (reliable on every device, no extra
  *   dependency, native mobile picker). Two bound selects share one
@@ -12,13 +12,16 @@
  *   (many EUR entries), so the compact option carries the code.
  * - A manual choice writes cookie + localStorage and always wins
  *   over geo detection (see RegionProvider).
- * - The language toggle next to it flips English ↔ Roman Urdu.
- *   Language always defaults to English; nothing auto-switches it.
+ * - The Language Switcher next to it (Option 4 Part 1) lists all
+ *   8 supported languages by native name: a compact 2-letter code
+ *   select on small screens and the full native name on sm+
+ *   screens, so the mobile header never overflows. Switching
+ *   persists to localStorage `sb-language` and never forces a
+ *   country change; country and language stay independent.
  */
 
 import { Globe } from 'lucide-react';
-import { REGIONS } from '@/lib/region';
-import { tFor } from '@/lib/i18n';
+import { LANGUAGES, REGIONS, type Language } from '@/lib/region';
 import { useRegion } from './region-provider';
 import { cn } from '@/lib/utils';
 
@@ -67,24 +70,43 @@ export function CountrySwitcher() {
   );
 }
 
-export function LanguageToggle() {
+export function LanguageSwitcher() {
   const { language, setLanguage } = useRegion();
-  const next = language === 'en' ? 'ur' : 'en';
+
+  const onChange = (code: string) => {
+    setLanguage(code as Language);
+  };
+
   return (
-    <button
-      type="button"
-      onClick={() => setLanguage(next)}
-      title={
-        language === 'en'
-          ? tFor('en', 'languageRomanUrdu')
-          : tFor('ur', 'languageEnglish')
-      }
-      aria-label={
-        language === 'en' ? 'Switch to Roman Urdu' : 'Switch to English'
-      }
-      className="flex h-8 shrink-0 items-center rounded-md border border-input bg-background px-2 text-xs font-bold hover:bg-accent"
-    >
-      {language === 'en' ? 'UR' : 'EN'}
-    </button>
+    <div className="flex shrink-0 items-center" role="group" aria-label="Language">
+      {/* Compact: 2-letter code on small screens. */}
+      <select
+        id="sb-language-switcher-mobile"
+        aria-label="Language"
+        value={language}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(selectClass, 'w-14 px-1 sm:hidden')}
+      >
+        {LANGUAGES.map((l) => (
+          <option key={l.code} value={l.code}>
+            {l.code.toUpperCase()}
+          </option>
+        ))}
+      </select>
+      {/* Full: native language name on sm+ screens. */}
+      <select
+        id="sb-language-switcher"
+        aria-label="Language"
+        value={language}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(selectClass, 'hidden w-auto px-2 sm:block')}
+      >
+        {LANGUAGES.map((l) => (
+          <option key={l.code} value={l.code}>
+            {l.nativeName}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }

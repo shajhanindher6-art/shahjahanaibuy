@@ -22,7 +22,157 @@
 
 import { USD_PER_UNIT, type CurrencyCode } from '@/services/currency';
 
-export type Language = 'en' | 'ur';
+/**
+ * Supported UI languages (Option 4 Part 1). Chrome strings only —
+ * see lib/i18n.ts. Adding a language is a small, obvious change:
+ * one entry here, one dictionary in lib/i18n.ts, and one
+ * COUNTRY_LANGUAGE entry per country that speaks it (below).
+ * Japanese/Arabic and other languages are deliberately NOT here
+ * yet: they need RTL/CJK handling, which is a later part.
+ */
+export type Language = 'en' | 'ur' | 'de' | 'fr' | 'es' | 'it' | 'pt' | 'tr';
+
+export const SUPPORTED_LANGUAGES: Language[] = [
+  'en',
+  'ur',
+  'de',
+  'fr',
+  'es',
+  'it',
+  'pt',
+  'tr',
+];
+
+export interface LanguageMeta {
+  code: Language;
+  /** Native name, as shown in the header Language Switcher. */
+  nativeName: string;
+}
+
+export const LANGUAGES: LanguageMeta[] = [
+  { code: 'en', nativeName: 'English' },
+  { code: 'ur', nativeName: 'Roman Urdu' },
+  { code: 'de', nativeName: 'Deutsch' },
+  { code: 'fr', nativeName: 'Français' },
+  { code: 'es', nativeName: 'Español' },
+  { code: 'it', nativeName: 'Italiano' },
+  { code: 'pt', nativeName: 'Português' },
+  { code: 'tr', nativeName: 'Türkçe' },
+];
+
+export function languageMeta(code: Language): LanguageMeta {
+  return LANGUAGES.find((l) => l.code === code) ?? LANGUAGES[0];
+}
+
+/** True when a stored/raw value is one of the supported languages. */
+export function isSupportedLanguage(value: string | null | undefined): value is Language {
+  return !!value && (SUPPORTED_LANGUAGES as string[]).includes(value);
+}
+
+/**
+ * Country → UI language map (Option 4 Part 1 auto-detection).
+ *
+ * Every one of the 60 region codes below is listed explicitly so
+ * coverage is checkable (see the scripted check: each REGIONS code
+ * must resolve here to a supported language). Regions whose
+ * language is NOT in the supported set map to 'en' — English
+ * fallback, stated honestly, not a pretended translation:
+ * - DE/AT/CH → de (German-speaking; CH locale is de-CH).
+ * - FR, plus CI/SN (locales fr-CI/fr-SN, French-speaking) → fr.
+ * - ES plus Mexico and Latin America → es.
+ * - IT → it. BR → pt (PT is listed too, although Portugal is not
+ *   itself a region code, so a PT detection still resolves).
+ * - TR → tr. PK → ur.
+ * - Everything else (US, GB, CA, AU, IN, JP, KR, NL, PL, …) → en:
+ *   either English-speaking or a language not yet supported
+ *   (Japanese, Arabic, Dutch, Polish, … are later parts).
+ * Unlisted codes (outside the registry, e.g. IS) also resolve
+ * to 'en' via languageForCountry's fallback.
+ */
+export const COUNTRY_LANGUAGE: Record<string, Language> = {
+  // English-speaking / English fallback (explicit, not omitted).
+  US: 'en',
+  GB: 'en',
+  CA: 'en',
+  AU: 'en',
+  IN: 'en',
+  AE: 'en',
+  SA: 'en',
+  IE: 'en',
+  SG: 'en',
+  PH: 'en',
+  NG: 'en',
+  KE: 'en',
+  UG: 'en',
+  GH: 'en',
+  ZA: 'en',
+  NZ: 'en',
+  // Languages not yet supported → honest English fallback.
+  JP: 'en',
+  KR: 'en',
+  TW: 'en',
+  ID: 'en',
+  MY: 'en',
+  TH: 'en',
+  VN: 'en',
+  BD: 'en',
+  LK: 'en',
+  NP: 'en',
+  QA: 'en',
+  EG: 'en',
+  MA: 'en',
+  PL: 'en',
+  CZ: 'en',
+  GR: 'en',
+  BE: 'en',
+  NL: 'en',
+  // Supported non-English languages.
+  PK: 'ur',
+  DE: 'de',
+  AT: 'de',
+  CH: 'de',
+  FR: 'fr',
+  CI: 'fr',
+  SN: 'fr',
+  ES: 'es',
+  MX: 'es',
+  AR: 'es',
+  CL: 'es',
+  CO: 'es',
+  PE: 'es',
+  UY: 'es',
+  BO: 'es',
+  PY: 'es',
+  VE: 'es',
+  CR: 'es',
+  EC: 'es',
+  GT: 'es',
+  DO: 'es',
+  PA: 'es',
+  HN: 'es',
+  NI: 'es',
+  IT: 'it',
+  BR: 'pt',
+  PT: 'pt',
+  TR: 'tr',
+};
+
+/** Resolve a country code to its UI language; 'en' for anything unknown. */
+export function languageForCountry(code: string | null | undefined): Language {
+  if (!code) return 'en';
+  return COUNTRY_LANGUAGE[code.toUpperCase()] ?? 'en';
+}
+
+/**
+ * Map a browser language tag to a supported UI language, using
+ * only the primary subtag (e.g. 'de-AT' → 'de'). Null when the
+ * browser language is not in the supported set.
+ */
+export function languageFromBrowserLanguage(tag: string | null | undefined): Language | null {
+  if (!tag) return null;
+  const primary = tag.toLowerCase().split('-')[0];
+  return isSupportedLanguage(primary) ? primary : null;
+}
 
 export interface Region {
   /** ISO 3166-1 alpha-2 country code (also the sb-country value). */
@@ -35,8 +185,11 @@ export interface Region {
   /** Intl locale used to format prices for this region. */
   locale: string;
   /**
-   * Language to *offer* a visitor from this region (never forced:
-   * the UI language always defaults to English; see lib/i18n.ts).
+   * UI language auto-detected for a visitor from this region
+   * (Option 4 Part 1): it equals languageForCountry(code), so the
+   * banner can offer it when the current UI language differs.
+   * A saved language choice always wins over this value; changing
+   * the Country Switcher never forces a language change.
    */
   suggestedLanguage: Language;
 }
@@ -45,10 +198,10 @@ export const REGIONS: Region[] = [
   { code: 'US', name: 'United States', currency: 'USD', amazonDomain: 'amazon.com', locale: 'en-US', suggestedLanguage: 'en' },
   { code: 'PK', name: 'Pakistan', currency: 'PKR', amazonDomain: 'amazon.com', locale: 'en-PK', suggestedLanguage: 'ur' },
   { code: 'GB', name: 'United Kingdom', currency: 'GBP', amazonDomain: 'amazon.co.uk', locale: 'en-GB', suggestedLanguage: 'en' },
-  { code: 'DE', name: 'Germany', currency: 'EUR', amazonDomain: 'amazon.de', locale: 'de-DE', suggestedLanguage: 'en' },
-  { code: 'FR', name: 'France', currency: 'EUR', amazonDomain: 'amazon.fr', locale: 'fr-FR', suggestedLanguage: 'en' },
-  { code: 'IT', name: 'Italy', currency: 'EUR', amazonDomain: 'amazon.it', locale: 'it-IT', suggestedLanguage: 'en' },
-  { code: 'ES', name: 'Spain', currency: 'EUR', amazonDomain: 'amazon.es', locale: 'es-ES', suggestedLanguage: 'en' },
+  { code: 'DE', name: 'Germany', currency: 'EUR', amazonDomain: 'amazon.de', locale: 'de-DE', suggestedLanguage: 'de' },
+  { code: 'FR', name: 'France', currency: 'EUR', amazonDomain: 'amazon.fr', locale: 'fr-FR', suggestedLanguage: 'fr' },
+  { code: 'IT', name: 'Italy', currency: 'EUR', amazonDomain: 'amazon.it', locale: 'it-IT', suggestedLanguage: 'it' },
+  { code: 'ES', name: 'Spain', currency: 'EUR', amazonDomain: 'amazon.es', locale: 'es-ES', suggestedLanguage: 'es' },
   { code: 'IN', name: 'India', currency: 'INR', amazonDomain: 'amazon.in', locale: 'en-IN', suggestedLanguage: 'en' },
   { code: 'AE', name: 'United Arab Emirates', currency: 'AED', amazonDomain: 'amazon.ae', locale: 'en-AE', suggestedLanguage: 'en' },
   { code: 'SA', name: 'Saudi Arabia', currency: 'SAR', amazonDomain: 'amazon.sa', locale: 'en-SA', suggestedLanguage: 'en' },
@@ -75,43 +228,43 @@ export const REGIONS: Region[] = [
   { code: 'NP', name: 'Nepal', currency: 'NPR', amazonDomain: 'amazon.com', locale: 'en-NP', suggestedLanguage: 'en' },
   // Middle East & Africa
   { code: 'QA', name: 'Qatar', currency: 'QAR', amazonDomain: 'amazon.com', locale: 'ar-QA', suggestedLanguage: 'en' },
-  { code: 'TR', name: 'Turkey', currency: 'TRY', amazonDomain: 'amazon.com.tr', locale: 'tr-TR', suggestedLanguage: 'en' },
+  { code: 'TR', name: 'Turkey', currency: 'TRY', amazonDomain: 'amazon.com.tr', locale: 'tr-TR', suggestedLanguage: 'tr' },
   { code: 'EG', name: 'Egypt', currency: 'EGP', amazonDomain: 'amazon.eg', locale: 'ar-EG', suggestedLanguage: 'en' },
   { code: 'NG', name: 'Nigeria', currency: 'NGN', amazonDomain: 'amazon.com', locale: 'en-NG', suggestedLanguage: 'en' },
   { code: 'KE', name: 'Kenya', currency: 'KES', amazonDomain: 'amazon.com', locale: 'en-KE', suggestedLanguage: 'en' },
   { code: 'MA', name: 'Morocco', currency: 'MAD', amazonDomain: 'amazon.com', locale: 'ar-MA', suggestedLanguage: 'en' },
-  { code: 'CI', name: 'Côte d’Ivoire', currency: 'XOF', amazonDomain: 'amazon.com', locale: 'fr-CI', suggestedLanguage: 'en' },
-  { code: 'SN', name: 'Senegal', currency: 'XOF', amazonDomain: 'amazon.com', locale: 'fr-SN', suggestedLanguage: 'en' },
+  { code: 'CI', name: 'Côte d’Ivoire', currency: 'XOF', amazonDomain: 'amazon.com', locale: 'fr-CI', suggestedLanguage: 'fr' },
+  { code: 'SN', name: 'Senegal', currency: 'XOF', amazonDomain: 'amazon.com', locale: 'fr-SN', suggestedLanguage: 'fr' },
   { code: 'UG', name: 'Uganda', currency: 'UGX', amazonDomain: 'amazon.com', locale: 'en-UG', suggestedLanguage: 'en' },
   { code: 'GH', name: 'Ghana', currency: 'GHS', amazonDomain: 'amazon.com', locale: 'en-GH', suggestedLanguage: 'en' },
   { code: 'ZA', name: 'South Africa', currency: 'ZAR', amazonDomain: 'amazon.co.za', locale: 'en-ZA', suggestedLanguage: 'en' },
   // Latin America
-  { code: 'BR', name: 'Brazil', currency: 'BRL', amazonDomain: 'amazon.com.br', locale: 'pt-BR', suggestedLanguage: 'en' },
-  { code: 'MX', name: 'Mexico', currency: 'MXN', amazonDomain: 'amazon.com.mx', locale: 'es-MX', suggestedLanguage: 'en' },
-  { code: 'AR', name: 'Argentina', currency: 'ARS', amazonDomain: 'amazon.com', locale: 'es-AR', suggestedLanguage: 'en' },
-  { code: 'CL', name: 'Chile', currency: 'CLP', amazonDomain: 'amazon.com', locale: 'es-CL', suggestedLanguage: 'en' },
-  { code: 'CO', name: 'Colombia', currency: 'COP', amazonDomain: 'amazon.com', locale: 'es-CO', suggestedLanguage: 'en' },
-  { code: 'PE', name: 'Peru', currency: 'PEN', amazonDomain: 'amazon.com', locale: 'es-PE', suggestedLanguage: 'en' },
-  { code: 'UY', name: 'Uruguay', currency: 'UYU', amazonDomain: 'amazon.com', locale: 'es-UY', suggestedLanguage: 'en' },
-  { code: 'BO', name: 'Bolivia', currency: 'BOB', amazonDomain: 'amazon.com', locale: 'es-BO', suggestedLanguage: 'en' },
-  { code: 'PY', name: 'Paraguay', currency: 'PYG', amazonDomain: 'amazon.com', locale: 'es-PY', suggestedLanguage: 'en' },
-  { code: 'VE', name: 'Venezuela', currency: 'USD', amazonDomain: 'amazon.com', locale: 'es-VE', suggestedLanguage: 'en' },
-  { code: 'CR', name: 'Costa Rica', currency: 'CRC', amazonDomain: 'amazon.com', locale: 'es-CR', suggestedLanguage: 'en' },
-  { code: 'EC', name: 'Ecuador', currency: 'USD', amazonDomain: 'amazon.com', locale: 'es-EC', suggestedLanguage: 'en' },
-  { code: 'GT', name: 'Guatemala', currency: 'GTQ', amazonDomain: 'amazon.com', locale: 'es-GT', suggestedLanguage: 'en' },
-  { code: 'DO', name: 'Dominican Republic', currency: 'DOP', amazonDomain: 'amazon.com', locale: 'es-DO', suggestedLanguage: 'en' },
-  { code: 'PA', name: 'Panama', currency: 'PAB', amazonDomain: 'amazon.com', locale: 'es-PA', suggestedLanguage: 'en' },
-  { code: 'HN', name: 'Honduras', currency: 'HNL', amazonDomain: 'amazon.com', locale: 'es-HN', suggestedLanguage: 'en' },
-  { code: 'NI', name: 'Nicaragua', currency: 'NIO', amazonDomain: 'amazon.com', locale: 'es-NI', suggestedLanguage: 'en' },
+  { code: 'BR', name: 'Brazil', currency: 'BRL', amazonDomain: 'amazon.com.br', locale: 'pt-BR', suggestedLanguage: 'pt' },
+  { code: 'MX', name: 'Mexico', currency: 'MXN', amazonDomain: 'amazon.com.mx', locale: 'es-MX', suggestedLanguage: 'es' },
+  { code: 'AR', name: 'Argentina', currency: 'ARS', amazonDomain: 'amazon.com', locale: 'es-AR', suggestedLanguage: 'es' },
+  { code: 'CL', name: 'Chile', currency: 'CLP', amazonDomain: 'amazon.com', locale: 'es-CL', suggestedLanguage: 'es' },
+  { code: 'CO', name: 'Colombia', currency: 'COP', amazonDomain: 'amazon.com', locale: 'es-CO', suggestedLanguage: 'es' },
+  { code: 'PE', name: 'Peru', currency: 'PEN', amazonDomain: 'amazon.com', locale: 'es-PE', suggestedLanguage: 'es' },
+  { code: 'UY', name: 'Uruguay', currency: 'UYU', amazonDomain: 'amazon.com', locale: 'es-UY', suggestedLanguage: 'es' },
+  { code: 'BO', name: 'Bolivia', currency: 'BOB', amazonDomain: 'amazon.com', locale: 'es-BO', suggestedLanguage: 'es' },
+  { code: 'PY', name: 'Paraguay', currency: 'PYG', amazonDomain: 'amazon.com', locale: 'es-PY', suggestedLanguage: 'es' },
+  { code: 'VE', name: 'Venezuela', currency: 'USD', amazonDomain: 'amazon.com', locale: 'es-VE', suggestedLanguage: 'es' },
+  { code: 'CR', name: 'Costa Rica', currency: 'CRC', amazonDomain: 'amazon.com', locale: 'es-CR', suggestedLanguage: 'es' },
+  { code: 'EC', name: 'Ecuador', currency: 'USD', amazonDomain: 'amazon.com', locale: 'es-EC', suggestedLanguage: 'es' },
+  { code: 'GT', name: 'Guatemala', currency: 'GTQ', amazonDomain: 'amazon.com', locale: 'es-GT', suggestedLanguage: 'es' },
+  { code: 'DO', name: 'Dominican Republic', currency: 'DOP', amazonDomain: 'amazon.com', locale: 'es-DO', suggestedLanguage: 'es' },
+  { code: 'PA', name: 'Panama', currency: 'PAB', amazonDomain: 'amazon.com', locale: 'es-PA', suggestedLanguage: 'es' },
+  { code: 'HN', name: 'Honduras', currency: 'HNL', amazonDomain: 'amazon.com', locale: 'es-HN', suggestedLanguage: 'es' },
+  { code: 'NI', name: 'Nicaragua', currency: 'NIO', amazonDomain: 'amazon.com', locale: 'es-NI', suggestedLanguage: 'es' },
   // Europe (new)
   { code: 'PL', name: 'Poland', currency: 'PLN', amazonDomain: 'amazon.pl', locale: 'pl-PL', suggestedLanguage: 'en' },
   { code: 'CZ', name: 'Czechia', currency: 'CZK', amazonDomain: 'amazon.com', locale: 'cs-CZ', suggestedLanguage: 'en' },
   { code: 'GR', name: 'Greece', currency: 'EUR', amazonDomain: 'amazon.com', locale: 'el-GR', suggestedLanguage: 'en' },
   { code: 'IE', name: 'Ireland', currency: 'EUR', amazonDomain: 'amazon.ie', locale: 'en-IE', suggestedLanguage: 'en' },
-  { code: 'AT', name: 'Austria', currency: 'EUR', amazonDomain: 'amazon.de', locale: 'de-AT', suggestedLanguage: 'en' },
+  { code: 'AT', name: 'Austria', currency: 'EUR', amazonDomain: 'amazon.de', locale: 'de-AT', suggestedLanguage: 'de' },
   { code: 'BE', name: 'Belgium', currency: 'EUR', amazonDomain: 'amazon.com.be', locale: 'en-BE', suggestedLanguage: 'en' },
   { code: 'NL', name: 'Netherlands', currency: 'EUR', amazonDomain: 'amazon.nl', locale: 'nl-NL', suggestedLanguage: 'en' },
-  { code: 'CH', name: 'Switzerland', currency: 'CHF', amazonDomain: 'amazon.de', locale: 'de-CH', suggestedLanguage: 'en' },
+  { code: 'CH', name: 'Switzerland', currency: 'CHF', amazonDomain: 'amazon.de', locale: 'de-CH', suggestedLanguage: 'de' },
 ];
 
 /** Generic fallback for any country outside the registry. */
