@@ -397,7 +397,19 @@ export async function getCoupons(
       return [];
     }
 
-    return data.map((row) => mapCoupon(row as CouponRow));
+    return data.map((row) => mapCoupon(row as CouponRow)).filter((coupon) => {
+      // "Active" must mean currently usable, not just the active flag:
+      // an expired, not-yet-started, or usage-exhausted coupon must
+      // never be served as active. (Inactive-flag queries, active=false,
+      // keep returning rows as stored — this filter applies only to
+      // the active listing the coupons tab and product page consume.)
+      if (!active) return true;
+      const now = Date.now();
+      if (coupon.validFrom && new Date(coupon.validFrom).getTime() > now) return false;
+      if (coupon.validUntil && new Date(coupon.validUntil).getTime() < now) return false;
+      if (coupon.usageLimit !== null && coupon.usageCount >= coupon.usageLimit) return false;
+      return true;
+    });
   } catch (err) {
     logger.error('getCoupons: unexpected error', { error: String(err) });
     return [];

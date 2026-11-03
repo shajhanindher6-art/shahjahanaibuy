@@ -31,6 +31,12 @@ import {
 import { TrendingDown, TrendingUp } from 'lucide-react';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { cn } from '@/lib/utils';
+import {
+  computePriceDrops,
+  computeTrendStats,
+  filterPointsByRange,
+  type TrendPoint,
+} from '@/lib/price-trend';
 
 interface PricePoint {
   price: number;
@@ -42,13 +48,16 @@ interface PriceHistoryGraphProps {
   className?: string;
 }
 
-type Range = '7d' | '30d' | '90d' | '1y';
+type Range = '7d' | '30d' | '90d' | '1y' | 'all';
 
-const RANGES: Array<{ key: Range; label: string; days: number }> = [
+// days: null = all recorded history (no cutoff) — the only range
+// guaranteed to show every recorded point, however thin the data is.
+const RANGES: Array<{ key: Range; label: string; days: number | null }> = [
   { key: '7d', label: '7 Days', days: 7 },
   { key: '30d', label: '30 Days', days: 30 },
   { key: '90d', label: '90 Days', days: 90 },
   { key: '1y', label: '1 Year', days: 365 },
+  { key: 'all', label: 'All History', days: null },
 ];
 
 function formatDate(iso: string): string {
@@ -102,35 +111,40 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
 
   const rangeDays = RANGES.find((r) => r.key === range)?.days ?? 30;
 
+  // Actual recorded points inside the selected range (oldest-first).
+  // No interpolation, no synthesized points: a thin range honestly
+  // shows only its few real points.
+  const rangedPoints = useMemo(
+    () => filterPointsByRange(points, rangeDays),
+    [points, rangeDays]
+  );
+
   const chartData = useMemo(() => {
-    const cutoff = Date.now() - rangeDays * 24 * 60 * 60 * 1000;
     // Aggregate to one point per calendar day (latest point of the day
     // wins, points are oldest-first). Without this, several rows on the
     // same day produced duplicate X-axis labels (e.g. "Oct 31" twice)
     // and made the Lowest ReferenceDot's x-position ambiguous on a
     // categorical axis, so the dot could not be seen on the chart.
     const byDay = new Map<string, number>();
-    for (const p of points) {
-      if (new Date(p.recordedAt).getTime() < cutoff) continue;
+    for (const p of rangedPoints) {
       byDay.set(formatDate(p.recordedAt), p.price);
     }
     return Array.from(byDay, ([date, price]) => ({ date, price }));
-  }, [points, rangeDays]);
+  }, [rangedPoints]);
+
+  // Real point-to-point decreases inside the range, from the raw
+  // recorded points (not the per-day aggregation). Empty = no drops
+  // recorded, rendered as an honest empty state below.
+  const priceDrops = useMemo(() => computePriceDrops(rangedPoints), [rangedPoints]);
 
   const stats = useMemo(() => {
     if (chartData.length === 0) return null;
-    const prices = chartData.map((d) => d.price);
-    const current = prices[prices.length - 1];
-    const first = prices[0];
-    const lowest = Math.min(...prices);
-    const highest = Math.max(...prices);
-    const average = prices.reduce((sum, p) => sum + p, 0) / prices.length;
-    const change = current - first;
-    const changePct = first !== 0 ? (change / first) * 100 : 0;
+    const base = computeTrendStats(chartData.map((d) => ({ price: d.price, recordedAt: d.date })));
+    if (!base) return null;
     // Date of the lowest point in range, for the "best price" marker.
     // chartData is oldest-first, so the first occurrence wins on ties.
     const lowestPoint = chartData.reduce((min, d) => (d.price < min.price ? d : min), chartData[0]);
-    return { current, lowest, highest, average, change, changePct, lowestDate: lowestPoint.date };
+    return { ...base, lowestDate: lowestPoint.date };
   }, [chartData]);
 
   if (loading) {
@@ -175,7 +189,7 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
 
       {/* Stats for the selected range */}
       {stats ? (
-        <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-5">
+        <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
           <div>
             <p className="text-xs text-muted-foreground">Current</p>
             <p className="text-lg font-semibold">${stats.current.toFixed(2)}</p>
@@ -201,7 +215,15 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
               )}
             >
               {stats.change >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-              {stats.change >= 0 ? '+' : ''}${stats.change.toFixed(2)} ({stats.changePct.toFixed(1)}%)
+              {stats.change >= 0 ? '+' : ''}${stats.change.toFixed(2)} ({stats.changePercent.toFixed(1)}%)
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Above lowest</p>
+            <p className="text-lg font-semibold">
+              {stats.vsLowestAmount === 0
+                ? 'At lowest'
+                : `+$${stats.vsLowestAmount.toFixed(2)} (${stats.vsLowestPercent.toFixed(1)}%)`}
             </p>
           </div>
         </div>
@@ -282,8 +304,34 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
       )}
 
       <p className="mt-2 text-xs text-muted-foreground">
-        Based on {points.length} recorded price point{points.length === 1 ? '' : 's'} from the price_history table.
+        Showing {rangedPoints.length} recorded price point{rangedPoints.length === 1 ? '' : 's'} in this
+        range ({points.length} total) from the price_history table. Only actual recorded points are
+        shown — no interpolated or estimated prices.
       </p>
+
+      {/* Price drop history — real point-to-point decreases only. */}
+      <div className="mt-6">
+        <h4 className="mb-2 text-sm font-semibold">Price drop history</h4>
+        {priceDrops.length > 0 ? (
+          <ul className="space-y-1.5">
+            {priceDrops.map((drop, i) => (
+              <li key={`${drop.date}-${i}`} className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-muted-foreground">{formatDate(drop.date)}</span>
+                <span className="line-through text-muted-foreground">${drop.oldPrice.toFixed(2)}</span>
+                <span aria-hidden>→</span>
+                <span className="font-semibold text-green-600">${drop.newPrice.toFixed(2)}</span>
+                <span className="font-medium text-green-600">
+                  −${drop.dropAmount.toFixed(2)} (−{drop.dropPercent.toFixed(1)}%)
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No price drops recorded in this range.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

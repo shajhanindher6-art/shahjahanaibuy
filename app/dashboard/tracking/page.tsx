@@ -68,9 +68,20 @@ interface TrackingData {
   summary: { savedCount: number; activeAlerts: number; priceDrops: number; belowTarget: number };
 }
 
+/** One row from GET /api/v1/alerts/history (services/alert-history.ts). */
+interface AlertHistoryEntry {
+  id: string;
+  alertId: string;
+  triggeredPrice: number;
+  targetPrice: number | null;
+  notificationChannel: string;
+  sentAt: string;
+}
+
 export default function TrackingPage() {
   const { toast } = useToast();
   const [data, setData] = useState<TrackingData | null>(null);
+  const [alertHistory, setAlertHistory] = useState<AlertHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingTarget, setEditingTarget] = useState<Record<string, string>>({});
 
@@ -84,6 +95,16 @@ export default function TrackingPage() {
       setData(null);
     } finally {
       setLoading(false);
+    }
+    // Trigger history lives behind its own route (the service existed
+    // but no UI consumed it). A failed fetch leaves the section in its
+    // honest empty state instead of breaking the whole page.
+    try {
+      const res = await fetch('/api/v1/alerts/history?limit=20');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) setAlertHistory(json.data);
+    } catch {
+      setAlertHistory([]);
     }
   }, []);
 
@@ -356,6 +377,58 @@ export default function TrackingPage() {
                     <Link href="/deals">Browse deals</Link>
                   </Button>
                 }
+              />
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Alert trigger history — every time an alert actually fired.
+          Product names resolve from the alerts above; an unmatched
+          alert id falls back to its id, never to a guessed product. */}
+      <div>
+        <h2 className="mb-4 text-lg font-semibold">Alert trigger history</h2>
+        {alertHistory.length > 0 ? (
+          <div className="space-y-3">
+            {alertHistory.map((entry) => {
+              const alert = alerts.find((a) => a.id === entry.alertId);
+              return (
+                <Card key={entry.id}>
+                  <CardContent className="flex flex-col gap-1 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      {alert?.productSlug ? (
+                        <Link href={`/products/${alert.productSlug}`} className="font-medium hover:underline">
+                          {alert.productName}
+                        </Link>
+                      ) : (
+                        <span className="font-medium">
+                          {alert?.productName ?? `Alert ${entry.alertId.slice(0, 8)}`}
+                        </span>
+                      )}
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        <Badge variant="secondary">{entry.notificationChannel}</Badge>
+                        <span className="text-xs text-muted-foreground">
+                          Triggered at ${entry.triggeredPrice.toFixed(2)}
+                          {entry.targetPrice !== null && ` · Target was $${entry.targetPrice.toFixed(2)}`}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(entry.sentAt).toLocaleDateString()}{' '}
+                      {new Date(entry.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
+          <Card>
+            <CardContent className="pt-6">
+              <EmptyState
+                icon={Bell}
+                title="No alerts have triggered yet"
+                description="When one of your price alerts fires, the trigger — price, target, and channel — will be listed here."
               />
             </CardContent>
           </Card>

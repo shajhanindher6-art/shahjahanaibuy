@@ -31,6 +31,12 @@ import { getRegionByCountry } from '@/lib/region';
 import { tFor } from '@/lib/i18n';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import {
+  bestCoupon,
+  couponValueLabel,
+  discountPercent,
+  type DealCoupon,
+} from '@/lib/deal-math';
 
 interface Product {
   id: string;
@@ -114,11 +120,14 @@ export default function ProductDetailsPage() {
   // which is why the audit found no merchant, stock or buy link.
   const [merchants, setMerchants] = useState<MerchantListing[]>([]);
   const [merchantsLoaded, setMerchantsLoaded] = useState(false);
-  // Active coupons keyed by merchant id, so each "Where to Buy"
-  // row can show its retailer's code with a copy button. Coupons
-  // are merchant-level (not product-level), so the best code for
-  // a listing is its merchant's active coupon, if one exists.
-  const [couponsByMerchant, setCouponsByMerchant] = useState<Record<string, string>>({});
+  // Best currently-valid coupon per merchant id, so each "Where to
+  // Buy" row can show its retailer's code with a copy button. Coupons
+  // are merchant-level (not product-level). Selection is deterministic
+  // (lib/deal-math bestCoupon): expired, not-yet-valid, inactive, and
+  // usage-exhausted coupons are never surfaced — the old code kept
+  // whichever coupon the API listed first, which could be an expired
+  // one, since the API filters only the active flag.
+  const [couponsByMerchant, setCouponsByMerchant] = useState<Record<string, DealCoupon>>({});
   const [copiedCoupon, setCopiedCoupon] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
@@ -180,18 +189,21 @@ export default function ProductDetailsPage() {
       setMerchantsLoaded(true);
 
       // Coupons are fetched in the same ancillary batch (one small
-      // request, failures ignored): the codes are shown per
-      // merchant row below, with copy-to-clipboard — the closest
-      // a website can honestly get to "auto-apply", since the
-      // retailer owns its own checkout.
+      // request, failures ignored): the best currently-valid code is
+      // shown per merchant row below, with copy-to-clipboard — the
+      // closest a website can honestly get to "auto-apply", since the
+      // retailer owns its own checkout (auto-apply lives only in the
+      // browser extension's checkout panel).
       try {
         const couponsRes = await fetchTimed('/api/v1/coupons?pageSize=100', 15000);
         if (couponsRes && couponsRes.ok) {
           const couponsData = await couponsRes.json();
           if (couponsData.success && Array.isArray(couponsData.data)) {
-            const byMerchant: Record<string, string> = {};
-            for (const c of couponsData.data as Array<{ merchantId: string | null; code: string }>) {
-              if (c.merchantId && !byMerchant[c.merchantId]) byMerchant[c.merchantId] = c.code;
+            const all = couponsData.data as DealCoupon[];
+            const byMerchant: Record<string, DealCoupon> = {};
+            for (const merchantId of Array.from(new Set(all.map((c) => c.merchantId).filter(Boolean)))) {
+              const best = bestCoupon(all.filter((c) => c.merchantId === merchantId));
+              if (best && merchantId) byMerchant[merchantId] = best;
             }
             setCouponsByMerchant(byMerchant);
           }
@@ -458,7 +470,11 @@ export default function ProductDetailsPage() {
               <CardContent className="space-y-3">
                 {merchants.map((listing) => {
                   const inStock = listing.inStock || listing.availability === 'in_stock';
-                  const couponCode = couponsByMerchant[listing.merchantId];
+                  const coupon = couponsByMerchant[listing.merchantId];
+                  // Merchant-basis saving (compare_at_price vs price),
+                  // computed by the shared helper — additive badge only.
+                  // The deals-table % shown on widgets is untouched.
+                  const merchantSaving = discountPercent(listing.price, listing.compareAtPrice);
                   return (
                     <div
                       key={listing.id}
@@ -477,29 +493,46 @@ export default function ProductDetailsPage() {
                             <span>Shipping <Price usd={listing.shippingCost} showOriginal={false} /></span>
                           )}
                         </div>
-                        {couponCode && (
-                          <button
-                            type="button"
-                            className="mt-1 rounded border border-dashed border-green-300 bg-green-50 px-2 py-0.5 font-mono text-xs font-bold text-green-700 dark:border-green-700 dark:bg-green-950 dark:text-green-300"
-                            title="Copy coupon code — paste it at the retailer's checkout"
-                            onClick={async () => {
-                              try {
-                                await navigator.clipboard.writeText(couponCode);
-                              } catch {
-                                // Clipboard blocked: the code is still
-                                // visible for manual copying.
-                              }
-                              setCopiedCoupon(couponCode);
-                              window.setTimeout(() => setCopiedCoupon(null), 2000);
-                            }}
-                          >
-                            {copiedCoupon === couponCode ? 'Copied!' : `Coupon: ${couponCode} (tap to copy)`}
-                          </button>
+                        {coupon && (
+                          <div className="mt-1">
+                            <button
+                              type="button"
+                              className="rounded border border-dashed border-green-300 bg-green-50 px-2 py-0.5 font-mono text-xs font-bold text-green-700 dark:border-green-700 dark:bg-green-950 dark:text-green-300"
+                              title="Copy coupon code — paste it at the retailer's checkout"
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(coupon.code);
+                                } catch {
+                                  // Clipboard blocked: the code is still
+                                  // visible for manual copying.
+                                }
+                                setCopiedCoupon(coupon.code);
+                                window.setTimeout(() => setCopiedCoupon(null), 2000);
+                              }}
+                            >
+                              {copiedCoupon === coupon.code
+                                ? 'Copied!'
+                                : `Coupon: ${coupon.code} · ${couponValueLabel(coupon)} (tap to copy)`}
+                            </button>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {coupon.description ? `${coupon.description} · ` : ''}
+                              {coupon.validUntil
+                                ? `Valid until ${new Date(coupon.validUntil).toLocaleDateString()} · `
+                                : ''}
+                              Apply this code at the retailer&apos;s checkout — SmartBuy cannot apply
+                              codes inside a retailer&apos;s checkout.
+                            </p>
+                          </div>
                         )}
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="text-right">
                           <Price usd={listing.price} className="text-lg font-bold" />
+                          {merchantSaving !== null && (
+                            <p className="text-sm font-semibold text-green-600">
+                              Save {merchantSaving}%
+                            </p>
+                          )}
                           {listing.compareAtPrice !== null && listing.compareAtPrice > listing.price && (
                             <p className="text-sm text-muted-foreground line-through">
                               <Price usd={listing.compareAtPrice} showOriginal={false} />

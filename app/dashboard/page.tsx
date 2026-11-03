@@ -78,17 +78,28 @@ interface SearchHistoryEntry {
   createdAt: string;
 }
 
+interface TrackingSummary {
+  savedCount: number;
+  activeAlerts: number;
+  priceDrops: number;
+  belowTarget: number;
+}
+
 export default function DashboardPage() {
   const { profile, role } = useAuth();
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [searchHistory, setSearchHistory] = useState<SearchHistoryEntry[]>([]);
+  const [trackingSummary, setTrackingSummary] = useState<TrackingSummary | null>(null);
   const [loadingRecs, setLoadingRecs] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(true);
 
   const fetchDashboardData = useCallback(async () => {
-    const [recsRes, historyRes] = await Promise.all([
+    const [recsRes, historyRes, trackingRes] = await Promise.all([
       fetch('/api/v1/recommendations?limit=4').catch(() => null),
       fetch('/api/v1/search-history?limit=5').catch(() => null),
+      // Real counts for the overview cards, from the user's own data.
+      // On failure the section is hidden — never demo/fallback counts.
+      fetch('/api/v1/tracking').catch(() => null),
     ]);
 
     try {
@@ -111,6 +122,17 @@ export default function DashboardPage() {
       // Not logged in or error
     } finally {
       setLoadingHistory(false);
+    }
+
+    try {
+      if (trackingRes && trackingRes.ok) {
+        const trackingData = await trackingRes.json();
+        if (trackingData.success && trackingData.data?.summary) {
+          setTrackingSummary(trackingData.data.summary as TrackingSummary);
+        }
+      }
+    } catch {
+      // Overview cards stay hidden; other sections still render.
     }
   }, []);
 
@@ -138,6 +160,63 @@ export default function DashboardPage() {
           </div>
         </div>
       </Card>
+
+      {/* Activity at a glance — real counts from the user's own data
+          (tracking endpoint). Rendered only when the fetch succeeds;
+          a failed fetch hides the section instead of showing demo
+          numbers. Links point at the existing sections; this is not a
+          second dashboard. */}
+      {trackingSummary && (
+        <div>
+          <h2 className="mb-4 text-lg font-semibold">Your activity at a glance</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Card className="transition-shadow hover:shadow-md">
+              <Link href="/dashboard/wishlists">
+                <CardHeader>
+                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Heart className="h-5 w-5" />
+                  </div>
+                  <CardTitle className="text-2xl">{trackingSummary.savedCount}</CardTitle>
+                  <CardDescription className="text-xs">Saved products in your wishlists</CardDescription>
+                </CardHeader>
+              </Link>
+            </Card>
+            <Card className="transition-shadow hover:shadow-md">
+              <Link href="/dashboard/tracking">
+                <CardHeader>
+                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Bell className="h-5 w-5" />
+                  </div>
+                  <CardTitle className="text-2xl">{trackingSummary.activeAlerts}</CardTitle>
+                  <CardDescription className="text-xs">Active price alerts</CardDescription>
+                </CardHeader>
+              </Link>
+            </Card>
+            <Card className="transition-shadow hover:shadow-md">
+              <Link href="/dashboard/tracking">
+                <CardHeader>
+                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <TrendingDown className="h-5 w-5" />
+                  </div>
+                  <CardTitle className="text-2xl">{trackingSummary.priceDrops}</CardTitle>
+                  <CardDescription className="text-xs">Price drops on tracked items</CardDescription>
+                </CardHeader>
+              </Link>
+            </Card>
+            <Card className="transition-shadow hover:shadow-md">
+              <Link href="/dashboard/tracking">
+                <CardHeader>
+                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Tag className="h-5 w-5" />
+                  </div>
+                  <CardTitle className="text-2xl">{trackingSummary.belowTarget}</CardTitle>
+                  <CardDescription className="text-xs">Items below your target price</CardDescription>
+                </CardHeader>
+              </Link>
+            </Card>
+          </div>
+        </div>
+      )}
 
       <div>
         <h2 className="mb-4 text-lg font-semibold">Quick Actions</h2>
