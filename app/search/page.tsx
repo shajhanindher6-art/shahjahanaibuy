@@ -81,6 +81,11 @@ export default function SearchPage() {
   // broken-image box, the same fallback ProductCard already uses.
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  // Distinct failure state: the old code collapsed a failed fetch
+  // (network error, or a !success API response) into "No results
+  // found", telling the shopper the catalog had nothing when the
+  // search itself had failed. A failure now says so, with a retry.
+  const [searchError, setSearchError] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [filters, setFilters] = useState({
@@ -152,6 +157,7 @@ export default function SearchPage() {
   const performSearch = useCallback(async (searchQuery: string, mode?: 'text' | 'url') => {
     if (!searchQuery.trim()) return;
     setLoading(true);
+    setSearchError(false);
     setHasSearched(true);
     // Callers that switch mode in the same click (recent-search
     // chips) pass the mode explicitly: reading searchMode state
@@ -195,12 +201,14 @@ export default function SearchPage() {
         setWebSource(data.meta?.source ?? null);
         setParsedIntent(data.meta?.parsedIntent ?? null);
       } else {
+        setSearchError(true);
         setResults([]);
         setWebResults([]);
         setWebSource(null);
         setParsedIntent(null);
       }
     } catch {
+      setSearchError(true);
       setResults([]);
       setWebResults([]);
       setWebSource(null);
@@ -362,8 +370,11 @@ export default function SearchPage() {
             </button>
           </div>
 
-          <div className="flex gap-2">
-            <div className="relative flex-1">
+          {/* flex-wrap: on narrow phones the input + Search +
+              Filters buttons used to squeeze onto one row; they
+              now wrap instead of overflowing or crushing the input. */}
+          <div className="flex flex-wrap gap-2">
+            <div className="relative min-w-[200px] flex-1">
               {searchMode === 'text' ? (
                 <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
               ) : (
@@ -605,7 +616,22 @@ export default function SearchPage() {
           </div>
         )}
 
-        {!loading && hasSearched && displayedResults.length === 0 && displayedWebResults.length === 0 && (
+        {!loading && hasSearched && searchError && displayedResults.length === 0 && displayedWebResults.length === 0 && (
+          <>
+            <EmptyState
+              title="Search failed"
+              description="We couldn't reach the search service — this doesn't mean the catalog has nothing for your query. Check your connection and try again."
+              icon={Search}
+            />
+            <div className="mt-4 flex justify-center">
+              <Button variant="outline" onClick={() => performSearch(query)}>
+                Try again
+              </Button>
+            </div>
+          </>
+        )}
+
+        {!loading && !searchError && hasSearched && displayedResults.length === 0 && displayedWebResults.length === 0 && (
           <>
             {results.length > 0 || webResults.length > 0 ? (
               <EmptyState
@@ -647,6 +673,18 @@ export default function SearchPage() {
             <div className="text-sm text-muted-foreground">
               {displayedResults.length} result{displayedResults.length !== 1 ? 's' : ''} found
               {displayedResults.length !== results.length && ` (of ${results.length} before filters)`}
+              {/* Budget honesty for unpriced rows: the server hard
+                  filter keeps products with no recorded price (their
+                  price is unknown, not over budget), but they must
+                  never read as "in budget" — they carry no "In
+                  budget" badge and show "Price not listed". */}
+              {(parsedIntent?.budget != null || filters.budgetMax !== '') &&
+                displayedResults.some((r) => r.currentPrice === null || r.currentPrice === undefined) && (
+                  <span className="block mt-1">
+                    Products without a recorded price are shown because their price is unknown,
+                    not because they are within your budget.
+                  </span>
+                )}
             </div>
             {displayedResults.map((result) => (
               <Card
@@ -702,8 +740,25 @@ export default function SearchPage() {
                         ) : (
                           <span className="text-xs text-muted-foreground">Price not listed</span>
                         )}
-                        <Badge className="bg-blue-600">
-                          {Math.round(result.score)}% match
+                        {/* A2 label fix: this is the SEARCH relevance
+                            score (services/ai-search.ts: product
+                            confidenceScore + 15 per matched attribute,
+                            capped at 100) — NOT the product page's
+                            Deal Score, which is a different formula
+                            (price history + discount probability).
+                            The old bare "% match" badge sat next to
+                            a price and was read as a deal score, so
+                            a 65% search match looked like it
+                            contradicted the product page's Deal
+                            Score 100. Labeling it "search match"
+                            keeps the two numbers unconfusable; the
+                            search API returns no Deal Score, so none
+                            is shown here rather than computed ad hoc. */}
+                        <Badge
+                          className="bg-blue-600"
+                          title="Search match: how closely this result matches your search query — not a Deal Score. Deal Scores are shown on product pages."
+                        >
+                          {Math.round(result.score)}% search match
                         </Badge>
                         {result.matchedAttributes.includes('budget') && (
                           <Badge variant="outline" className="text-green-600 border-green-300">

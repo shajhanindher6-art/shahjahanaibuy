@@ -25,7 +25,12 @@ import { SiteFooter } from '@/components/layout/site-footer';
 function TrackContent() {
   const params = useSearchParams();
   const title = params.get('title') ?? '';
-  const price = params.get('price');
+  // A non-numeric ?price= (e.g. "$49" or "abc" from a bookmarklet
+  // misread) used to render as "$NaN". Only a finite number counts
+  // as a detected price; anything else shows no price line at all.
+  const rawPrice = params.get('price');
+  const priceNum = rawPrice !== null && rawPrice !== '' ? Number(rawPrice) : NaN;
+  const price = Number.isFinite(priceNum) ? priceNum : null;
   const url = params.get('url') ?? '';
   const image = params.get('image') ?? '';
 
@@ -49,7 +54,7 @@ function TrackContent() {
             <img src={image} alt={title || 'Product'} className="h-40 w-auto rounded-md object-contain" />
           )}
           <p className="font-medium">{title || 'No product title was detected.'}</p>
-          {price !== null && <p className="text-lg font-semibold text-green-600">${Number(price).toFixed(2)}</p>}
+          {price !== null && <p className="text-lg font-semibold text-green-600">${price.toFixed(2)}</p>}
           {url && (
             <a
               href={url}

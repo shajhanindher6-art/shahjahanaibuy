@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { SmartDealWidget } from '@/components/deals/smart-deal-widget';
@@ -49,7 +48,7 @@ const features = [
     icon: BarChart3,
     title: 'Review Analysis',
     description:
-      'AI-summarized reviews that surface the most important insights from thousands of customer opinions.',
+      'AI-summarized reviews that surface the most important insights from customer opinions.',
   },
   {
     icon: LineChart,
@@ -69,7 +68,7 @@ const steps = [
     number: '02',
     title: 'Get AI Insights',
     description:
-      'Our AI analyzes millions of products, reviews, and prices to find the best options for you.',
+      'Our AI analyzes the products, reviews, and prices in our catalog to find the best options for you.',
   },
   {
     number: '03',
@@ -204,34 +203,46 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Testimonials */}
+        {/* Testimonials — HONESTY: these are illustrative
+            examples, NOT verified customer reviews. The names,
+            roles, star ratings and the "$300 saved" claim below
+            are marketing copy, not real customer feedback, so
+            they are labeled as such in plain sight instead of
+            being presented as real reviews. Do not remove this
+            note without replacing the section with real,
+            verifiable reviews. */}
         <section className="py-20 md:py-28">
           <div className="container mx-auto px-4">
             <div className="mx-auto max-w-2xl text-center">
               <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-                Trusted by smart shoppers
+                Illustrative shopper feedback
               </h2>
               <p className="mt-4 text-lg text-muted-foreground">
-                Join thousands of users who shop smarter with AI.
+                Shop smarter with AI.
+              </p>
+              <p className="mx-auto mt-3 max-w-xl rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+                Illustrative examples — not verified customer reviews. These quotes, names and
+                ratings are sample copy showing the kind of feedback shoppers might give; they
+                are not reviews from real customers.
               </p>
             </div>
             <div className="mt-16 grid gap-6 md:grid-cols-3">
               {[
                 {
                   name: 'Sarah K.',
-                  role: 'Verified User',
+                  role: 'Illustrative example',
                   quote:
                     'SmartBuy AI saved me $300 on a laptop by predicting a price drop. The AI recommendations are spot on.',
                 },
                 {
                   name: 'Michael R.',
-                  role: 'Premium Member',
+                  role: 'Illustrative example',
                   quote:
                     'The review analysis feature is a game changer. I can instantly see if a product is worth buying.',
                 },
                 {
                   name: 'Emily T.',
-                  role: 'Daily Shopper',
+                  role: 'Illustrative example',
                   quote:
                     'I love how the AI explains its recommendations. It feels like having a personal shopping advisor.',
                 },
@@ -279,9 +290,10 @@ export default function HomePage() {
                   }
                 >
                   <CardHeader>
-                    {plan.highlighted && (
-                      <Badge className="mb-2 w-fit">Most Popular</Badge>
-                    )}
+                    {/* No "Most Popular" badge: popularity is not
+                        measured, so claiming one plan is the most
+                        popular would be an invented stat. The
+                        highlighted styling alone marks the plan. */}
                     <CardTitle className="text-2xl">{plan.name}</CardTitle>
                     <CardDescription>{plan.description}</CardDescription>
                     <div className="mt-4">
@@ -323,7 +335,7 @@ export default function HomePage() {
                   Ready to shop smarter?
                 </h2>
                 <p className="mx-auto mt-4 max-w-xl text-lg text-primary-foreground/90">
-                  Join thousands of users who are making better purchasing decisions with AI.
+                  Make better purchasing decisions with AI.
                 </p>
                 <Button size="lg" variant="secondary" className="mt-8" asChild>
                   <Link href="/sign-up">

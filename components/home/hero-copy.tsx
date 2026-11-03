@@ -12,7 +12,34 @@ import { ArrowRight, Camera, Check, Gift, Puzzle, Search, Sparkles } from 'lucid
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { tFor } from '@/lib/i18n';
+import type { Language } from '@/lib/region';
 import { useRegion } from '@/components/region/region-provider';
+
+/**
+ * HONEST SUBTITLE OVERRIDE (A2 audit, 2026-11-03): the dictionary
+ * heroSubtitle in lib/i18n.ts (outside this workstream's files)
+ * still claims a catalog scale the site does not have, in every
+ * language — false for a catalog of ~11 products with 2 retailers,
+ * and directly contradicted by the real-count stats bar directly
+ * below the hero. This component
+ * therefore does NOT render tFor(language, 'heroSubtitle'):
+ * it renders the honest subtitle below instead, which claims
+ * only what the site does (search its catalog, compare recorded
+ * retailer prices, explain its picks) and no catalog size at all,
+ * so it cannot go stale as the catalog grows. The dictionary
+ * strings are left untouched for the coordinator to move these
+ * honest strings into lib/i18n.ts in a later pass.
+ */
+const HONEST_SUBTITLE: Record<Language, string> = {
+  en: 'SmartBuy AI searches our catalog, compares recorded retailer prices, and explains its picks — so you can find a good deal and shop with confidence.',
+  ur: 'SmartBuy AI hamare catalog mein search karta hai, retailers ki recorded prices compare karta hai aur apni picks ki wajah batata hai — taake aap achi deal dhoond sakein aur itminan se shopping karein.',
+  de: 'SmartBuy AI durchsucht unseren Katalog, vergleicht erfasste Händlerpreise und erklärt seine Empfehlungen — damit du gute Angebote findest und mit gutem Gefühl einkaufst.',
+  fr: 'SmartBuy AI recherche dans notre catalogue, compare les prix enregistrés des commerçants et explique ses choix — pour vous aider à trouver une bonne affaire et à acheter en toute confiance.',
+  es: 'SmartBuy AI busca en nuestro catálogo, compara los precios registrados de las tiendas y explica sus recomendaciones, para que encuentres una buena oferta y compres con confianza.',
+  it: 'SmartBuy AI cerca nel nostro catalogo, confronta i prezzi registrati dei rivenditori e spiega le sue scelte, così puoi trovare una buona offerta e acquistare in tutta sicurezza.',
+  pt: 'O SmartBuy AI pesquisa nosso catálogo, compara os preços registrados das lojas e explica suas escolhas, para você encontrar uma boa oferta e comprar com confiança.',
+  tr: 'SmartBuy AI kataloğumuzda arama yapar, kayıtlı mağaza fiyatlarını karşılaştırır ve seçimlerinin nedenini açıklar — böylece iyi bir fırsat bulup güvenle alışveriş yapabilirsiniz.',
+};
 
 export function HeroCopy() {
   const { language } = useRegion();
@@ -30,7 +57,7 @@ export function HeroCopy() {
         {tFor(language, 'heroTitleC')}
       </h1>
       <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
-        {tFor(language, 'heroSubtitle')}
+        {HONEST_SUBTITLE[language] ?? HONEST_SUBTITLE.en}
       </p>
       <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
         <Button size="lg" asChild>

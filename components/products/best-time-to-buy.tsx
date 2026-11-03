@@ -41,7 +41,9 @@ const config = {
   wait: {
     icon: TrendingDown,
     label: 'Wait for Sale',
-    description: 'High probability of a price drop soon. Consider waiting for a better deal.',
+    // No timing is claimed: the legacy prediction carries a
+    // probability, not a date — "soon" used to promise one.
+    description: 'High discount probability in the prediction. Consider waiting for a better deal.',
     bg: 'bg-amber-50 dark:bg-amber-950/50',
     border: 'border-amber-200 dark:border-amber-800',
     text: 'text-amber-700 dark:text-amber-300',
@@ -50,7 +52,10 @@ const config = {
   monitor: {
     icon: Clock,
     label: 'Monitor Price',
-    description: 'Price is stable. Set up a price alert to be notified when it drops.',
+    // (6) "Price is stable" stated a fact the prediction does not
+    // contain — it only carries a discount probability. Reworded to
+    // what the number actually says: no strong drop signal.
+    description: 'No strong drop signal in the prediction. Set up a price alert to be notified when it drops.',
     bg: 'bg-blue-50 dark:bg-blue-950/50',
     border: 'border-blue-200 dark:border-blue-800',
     text: 'text-blue-700 dark:text-blue-300',

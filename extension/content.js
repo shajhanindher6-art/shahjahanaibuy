@@ -1,4 +1,4 @@
-// SmartBuy AI — Browser Extension Content Script (v1.2.0)
+// SmartBuy AI — Browser Extension Content Script (v1.3.0, matches manifest.json)
 //
 // Two jobs, both on the retailer's own site:
 //  1. Product pages: detect the product, ask SmartBuy's public

@@ -84,6 +84,13 @@ export default function BillingPage() {
       const subData = await subRes.json();
       if (subData.success && subData.data) {
         setSubscription(subData.data as Subscription);
+        // stripeConfigured was never set anywhere, so the Stripe
+        // portal button could never appear and the payment card
+        // always claimed Stripe was unconfigured. The subscriptions
+        // API returns no config flag, but a stored Stripe customer ID
+        // only exists when Stripe has actually been used — derive
+        // from that instead of asserting server config state.
+        setStripeConfigured(Boolean((subData.data as Subscription).stripeCustomerId));
       }
       if (histRes && histRes.ok) {
         const histData = await histRes.json();
@@ -338,7 +345,7 @@ export default function BillingPage() {
           <CardDescription>
             {stripeConfigured
               ? 'Payments are securely processed by Stripe.'
-              : 'Stripe integration ready — add your Stripe API key to enable live payments'}
+              : 'Payment methods are managed through Stripe once a subscription exists.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -354,8 +361,8 @@ export default function BillingPage() {
             <div className="flex items-center gap-3 rounded-lg border border-dashed border-slate-300 p-4 dark:border-slate-700">
               <CreditCard className="h-8 w-8 text-muted-foreground" />
               <div>
-                <p className="text-sm font-medium">No payment method</p>
-                <p className="text-xs text-muted-foreground">Stripe is not yet configured. Add your Stripe secret key to enable secure credit card payments.</p>
+                <p className="text-sm font-medium">No payment method on file</p>
+                <p className="text-xs text-muted-foreground">No Stripe customer record exists for this account yet. Payment methods are managed through Stripe checkout and the customer portal once you upgrade.</p>
               </div>
             </div>
           )}

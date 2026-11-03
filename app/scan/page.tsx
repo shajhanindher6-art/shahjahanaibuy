@@ -61,13 +61,17 @@ export default function ScanPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  // Mirror of `preview` for the unmount cleanup: the old effect
+  // closed over the initial (null) preview, so a preview that was
+  // still showing on unmount was never revoked (object-URL leak).
+  const previewRef = useRef<string | null>(null);
+  previewRef.current = preview;
 
   useEffect(() => {
     return () => {
       streamRef.current?.getTracks().forEach((t) => t.stop());
-      if (preview) URL.revokeObjectURL(preview);
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function handleFile(file: File | undefined) {
@@ -99,7 +103,7 @@ export default function ScanPage() {
       });
     } catch {
       setCameraError(
-        'Camera is not available or permission was denied. Use the photo upload below instead — nothing is lost, the search works the same way.'
+        'Camera is not available or permission was denied. Use the photo upload above instead — nothing is lost, the search works the same way.'
       );
       setCameraOn(false);
     }

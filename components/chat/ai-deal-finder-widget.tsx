@@ -176,7 +176,17 @@ export function AIDealFinderWidget() {
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-3">
       {open && (
-        <div className="flex h-[480px] w-[calc(100vw-2rem)] max-w-sm flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+        // (i) Height capped to the viewport: the old fixed 480px panel
+        // plus the toggle button overflowed short viewports (e.g.
+        // landscape phones), clipping the panel header off-screen and
+        // over the page's buy area with no way to reach the close
+        // button. Desktop keeps 480px; short screens shrink the panel
+        // instead of overflowing. The panel is still a floating overlay
+        // by design, so while open it covers the bottom-right content
+        // beneath it — closing it (X or the bubble) restores the buy
+        // buttons; fully reserving page space would need layout changes
+        // outside this component (see report).
+        <div className="flex h-[min(480px,calc(100dvh-6.5rem))] w-[calc(100vw-2rem)] max-w-sm flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
           <div className="flex items-center justify-between bg-blue-600 px-4 py-3 text-white">
             <p className="flex items-center gap-2 text-sm font-semibold">
               <Sparkles className="h-4 w-4" /> AI Deal Finder

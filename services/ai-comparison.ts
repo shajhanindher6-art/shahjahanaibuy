@@ -208,12 +208,26 @@ function generateComparisonSummary(products: ComparisonProduct[]): string {
     lines.push(`The ${bestRated.product.name} has the highest rating at ${bestRated.avgRating.toFixed(1)} stars.`);
   }
 
-  const mostAvailable = products
-    .map((p) => ({ product: p, availableCount: p.retailers.filter((r) => r.availability === 'in_stock').length }))
-    .sort((a, b) => b.availableCount - a.availableCount)[0];
-
-  if (mostAvailable && mostAvailable.availableCount > 0) {
-    lines.push(`The ${mostAvailable.product.name} is available from the most retailers (${mostAvailable.availableCount}).`);
+  // (7) Availability ties must never read as a false lead: the old
+  // code sorted by count and named only the first product, so with
+  // MacBook at 2 retailers and Sony also at 2 it still claimed
+  // MacBook was "available from the most retailers". A tie now names
+  // every tied product.
+  const availabilityCounts = products.map((p) => ({
+    product: p,
+    availableCount: p.retailers.filter((r) => r.availability === 'in_stock').length,
+  }));
+  const maxAvailable = Math.max(0, ...availabilityCounts.map((c) => c.availableCount));
+  const availabilityLeaders = availabilityCounts.filter((c) => c.availableCount === maxAvailable);
+  if (maxAvailable > 0 && availabilityLeaders.length === 1) {
+    lines.push(`The ${availabilityLeaders[0].product.name} is available from the most retailers (${maxAvailable}).`);
+  } else if (maxAvailable > 0) {
+    const names = availabilityLeaders.map((c) => c.product.name);
+    const joined =
+      names.length === 2
+        ? `${names[0]} and ${names[1]}`
+        : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    lines.push(`${joined} are tied for widest availability (${maxAvailable} retailers each).`);
   }
 
   lines.push('Consider your priorities: budget, quality, or availability when making your choice.');

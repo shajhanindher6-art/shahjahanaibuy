@@ -173,6 +173,21 @@ export default function ChatPage() {
           createdAt: new Date().toISOString(),
         };
         setMessages((prev) => [...prev, aiMessage]);
+      } else {
+        // A non-success API response used to leave the user's message
+        // hanging with no reply at all. Show the same honest failure
+        // note as the network-error path below.
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `err-${Date.now()}`,
+            conversationId: conversationId!,
+            role: 'assistant',
+            content: 'Sorry, I had trouble processing your request. Please try again.',
+            metadata: null,
+            createdAt: new Date().toISOString(),
+          },
+        ]);
       }
     } catch {
       const errorMessage: ChatMessage = {
@@ -227,6 +242,15 @@ export default function ChatPage() {
 
       {/* Chat Area */}
       <div className="flex flex-1 flex-col">
+        {/* Mobile only: the conversation sidebar (with New Chat) is
+            hidden below md, so without this a mobile visitor could
+            never start a fresh conversation — only continue the
+            auto-selected one. */}
+        <div className="border-b border-slate-200 p-3 dark:border-slate-800 md:hidden">
+          <Button onClick={createNewConversation} className="w-full" variant="outline" size="sm">
+            <Plus className="mr-2 h-4 w-4" /> New Chat
+          </Button>
+        </div>
         <div className="flex-1 overflow-y-auto p-4">
           <div className="mx-auto max-w-3xl space-y-4">
             {messages.length === 0 && !loading && (

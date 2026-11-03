@@ -135,6 +135,10 @@ export default function ProductDetailsPage() {
   // which is why the audit found no merchant, stock or buy link.
   const [merchants, setMerchants] = useState<MerchantListing[]>([]);
   const [merchantsLoaded, setMerchantsLoaded] = useState(false);
+  // Distinct from an empty list: true only when the merchants fetch itself
+  // failed, so the stores section can say its priced-merchant filter could
+  // not be applied instead of silently showing an unfiltered list.
+  const [merchantsFailed, setMerchantsFailed] = useState(false);
   // Best currently-valid coupon per merchant id, so each "Where to
   // Buy" row can show its retailer's code with a copy button. Coupons
   // are merchant-level (not product-level). Selection is deterministic
@@ -146,6 +150,11 @@ export default function ProductDetailsPage() {
   const [copiedCoupon, setCopiedCoupon] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
+  // (c) A non-null but dead image URL must fall back to the same
+  // Package placeholder as a null URL — the old code only handled
+  // null and rendered a broken-image icon for a dead URL (the same
+  // failure ProductCard already guards with onError).
+  const [imageFailed, setImageFailed] = useState(false);
 
   // Fetch with a timeout so one slow/hanging API can never keep the whole
   // page on a spinner forever (observed live: 95+ seconds of spinner).
@@ -160,6 +169,7 @@ export default function ProductDetailsPage() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
+    setImageFailed(false);
     try {
       // 1. Product first, on its own: as soon as it is known, render the
       // page (header, image, name) instead of waiting for everything else.
@@ -199,7 +209,11 @@ export default function ProductDetailsPage() {
         const merchantsData = await merchantsRes.json();
         if (merchantsData.success && Array.isArray(merchantsData.data)) {
           setMerchants(merchantsData.data);
+        } else {
+          setMerchantsFailed(true);
         }
+      } else {
+        setMerchantsFailed(true);
       }
       setMerchantsLoaded(true);
 
@@ -325,6 +339,28 @@ export default function ProductDetailsPage() {
     );
   }
 
+  // Hero price: the prediction's current price when it loaded, else
+  // the cheapest recorded merchant price — a failed prediction fetch
+  // used to leave the hero with NO price at all even though Where to
+  // Buy (below) had real prices. Merchant listings arrive cheapest
+  // first from the API, so merchants[0] is the cheapest.
+  const heroPrice =
+    prediction?.currentPrice ??
+    (merchantsLoaded && merchants.length > 0 ? merchants[0].price : null);
+  // Structured data must never claim what is not known: availability
+  // comes from the real merchant rows (only once they have loaded —
+  // never a hardcoded InStock), and an aggregate rating is emitted
+  // only when at least one real review exists (0 reviews + a 0.0
+  // rating would read as a rated product).
+  const anyInStock = merchants.some(
+    (m) => m.inStock || m.availability === 'in_stock'
+  );
+  const jsonLdAvailability = !merchantsLoaded
+    ? undefined
+    : anyInStock
+      ? 'https://schema.org/InStock'
+      : 'https://schema.org/OutOfStock';
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
       <SiteHeader />
@@ -338,15 +374,15 @@ export default function ProductDetailsPage() {
             description: product.description ?? undefined,
             brand: product.brand ? { '@type': 'Brand', name: product.brand } : undefined,
             category: product.category ?? undefined,
-            image: product.imageUrl ?? undefined,
+            image: !imageFailed && product.imageUrl ? product.imageUrl : undefined,
             gtin: product.gtin ?? undefined,
-            offers: prediction?.currentPrice ? {
+            offers: heroPrice ? {
               '@type': 'Offer',
-              price: prediction.currentPrice,
+              price: heroPrice,
               priceCurrency: 'USD',
-              availability: 'https://schema.org/InStock',
+              availability: jsonLdAvailability,
             } : undefined,
-            aggregateRating: reviewSummary ? {
+            aggregateRating: reviewSummary && (reviewSummary.totalReviews ?? 0) > 0 ? {
               '@type': 'AggregateRating',
               ratingValue: reviewSummary.averageRating ?? 0,
               reviewCount: reviewSummary.totalReviews ?? 0,
@@ -362,8 +398,13 @@ export default function ProductDetailsPage() {
         <div className="grid gap-6 lg:grid-cols-2">
           <Card className="overflow-hidden">
             <div className="flex h-80 items-center justify-center bg-slate-100 dark:bg-slate-800">
-              {product.imageUrl ? (
-                <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
+              {product.imageUrl && !imageFailed ? (
+                <img
+                  src={product.imageUrl}
+                  alt={product.name}
+                  onError={() => setImageFailed(true)}
+                  className="h-full w-full object-cover"
+                />
               ) : (
                 <Package className="h-24 w-24 text-muted-foreground" />
               )}
@@ -382,16 +423,16 @@ export default function ProductDetailsPage() {
               )}
             </div>
 
-            {prediction?.currentPrice && (
+            {heroPrice && (
               <div className="flex items-center gap-3">
-                <Price usd={prediction.currentPrice} className="text-3xl font-bold text-blue-600" />
-                {prediction.currentPrice > (prediction.averagePrice ?? 0) && (
+                <Price usd={heroPrice} className="text-3xl font-bold text-blue-600" />
+                {prediction && prediction.averagePrice !== null && prediction.averagePrice !== undefined && heroPrice > prediction.averagePrice && (
                   <Badge className="bg-red-500">
                     <TrendingUp className="mr-1 h-3 w-3" />
                     Above average
                   </Badge>
                 )}
-                {prediction.currentPrice < (prediction.averagePrice ?? Infinity) && (
+                {prediction && prediction.averagePrice !== null && prediction.averagePrice !== undefined && heroPrice < prediction.averagePrice && (
                   <Badge className="bg-green-500">
                     <TrendingDown className="mr-1 h-3 w-3" />
                     Below average
@@ -402,13 +443,24 @@ export default function ProductDetailsPage() {
 
             {prediction && (
               <div className="flex items-center gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                {/* (g) Clamped here, not only inside the badge: the raw
+                    formula can exceed 100 (100 − prob×0.4 + up to 30 +
+                    up to 30), so an unclamped pass-through displayed a
+                    perfect 100 that the formula never computed. The
+                    badge still clamps as a second line of defence. */}
                 <DealScoreBadge
-                  score={Math.round(
-                    100 - prediction.discountProbability * 0.4 +
-                    (prediction.currentPrice && prediction.lowestPrice
-                      ? ((prediction.lowestPrice / prediction.currentPrice) * 30)
-                      : 20) +
-                    (prediction.confidenceScore * 0.3)
+                  score={Math.max(
+                    0,
+                    Math.min(
+                      100,
+                      Math.round(
+                        100 - prediction.discountProbability * 0.4 +
+                        (prediction.currentPrice && prediction.lowestPrice
+                          ? ((prediction.lowestPrice / prediction.currentPrice) * 30)
+                          : 20) +
+                        (prediction.confidenceScore * 0.3)
+                      )
+                    )
                   )}
                   size="lg"
                   showLabel
@@ -416,7 +468,19 @@ export default function ProductDetailsPage() {
                 <div className="flex-1">
                   <p className="text-sm font-medium">Deal Score</p>
                   <p className="text-xs text-muted-foreground">
-                    AI-calculated value score based on price history, trends, and discount probability.
+                    {/* (6) Reconciles the "100 / Excellent Deal" badge
+                        with a 0% discount probability: the score
+                        rewards buying NOW (price at/near its recorded
+                        low scores highest), while the discount
+                        probability is about a FUTURE drop — and a high
+                        future-drop chance LOWERS this score, because
+                        waiting may pay off. So 100 next to 0% means
+                        "good now, no drop expected", not "a drop is
+                        coming". */}
+                    Value of buying now, from recorded price history: highest when the price is at
+                    or near its recorded low. A high chance of a future price drop lowers this
+                    score instead — so a high score with a low discount probability means
+                    &ldquo;good now, no drop expected&rdquo;, not &ldquo;a drop is coming&rdquo;.
                   </p>
                 </div>
               </div>
@@ -715,7 +779,20 @@ export default function ProductDetailsPage() {
             filtered out (this removes the Amazon row from the
             global fallback, where the priced Amazon row already
             serves that link). */}
-        {product && (() => {
+        {/* (17) Gated on merchantsLoaded: the old code rendered this
+            section on every render, so BEFORE the merchants fetch
+            returned, pricedNames was empty and the priced-merchant
+            filter was a no-op — the global fallback's Amazon row (and
+            any priced merchant present in a registry) flashed
+            unfiltered. The US registry itself contains no Best Buy
+            row at all (eBay/Walmart/Target only), so a US "Best Buy"
+            sighting cannot come from this code; Walmart in that
+            section is by design (directory search link, no price).
+            A failed merchants fetch sets merchantsFailed (distinct
+            from a genuinely empty list), and the section then shows
+            an amber note that priced-merchant filtering could not be
+            applied. */}
+        {product && merchantsLoaded && (() => {
           const pricedNames = new Set(
             merchants.map((m) => (m.merchantName ?? '').toLowerCase())
           );
@@ -754,6 +831,13 @@ export default function ProductDetailsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
+                {merchantsFailed && (
+                  <p className="text-sm text-amber-600 dark:text-amber-400">
+                    Merchant data could not be loaded, so priced merchants could not be
+                    filtered out of this list — a store shown here may duplicate a priced
+                    row above.
+                  </p>
+                )}
                 {visibleStores.map((store) => (
                   <div
                     key={store.slug}
@@ -896,19 +980,14 @@ export default function ProductDetailsPage() {
                     as a fact — only a recommendation + capped confidence
                     + a reason tied to the recorded points. */}
                 <BuyVsWait slug={slug} />
-                {prediction && (
-                  <div className="mt-4 grid grid-cols-2 gap-4">
-                    <StatBox
-                      label="Discount Chance (legacy engine)"
-                      value={`${Math.round(prediction.discountProbability)}%`}
-                      color={prediction.discountProbability > 50 ? 'text-green-600' : 'text-muted-foreground'}
-                    />
-                    <StatBox
-                      label="Confidence (legacy engine)"
-                      value={`${Math.round(prediction.confidenceScore)}%`}
-                    />
-                  </div>
-                )}
+                {/* (g) The legacy-engine StatBoxes lived here next to
+                    BuyVsWait, so one tab showed TWO confidences for one
+                    verdict (BuyVsWait 25% vs legacy 20% on the MacBook
+                    shape) with no way to tell which to trust. Removed:
+                    BuyVsWait is the single canonical engine for this
+                    tab; the legacy prediction API still feeds the hero
+                    Deal Score / BestTimeToBuy indicator, where its
+                    inputs are labeled as such. */}
                 <p className="mt-3 text-xs text-muted-foreground">
                   Exact-date and exact-price forecasts are not shown: with few
                   recorded points, SmartBuy shows an estimate with its
@@ -925,7 +1004,10 @@ export default function ProductDetailsPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Reviews</CardTitle>
-                {reviewSummary && (
+                {/* With 0 reviews there is no average to state: the old
+                    code rendered "0.0 average from 0 reviews" above the
+                    "No reviews yet." empty state. */}
+                {reviewSummary && (reviewSummary.totalReviews ?? 0) > 0 && (
                   <CardDescription>
                     {(reviewSummary.averageRating ?? 0).toFixed(1)} average from {reviewSummary.totalReviews ?? 0} reviews
                   </CardDescription>
@@ -983,7 +1065,7 @@ export default function ProductDetailsPage() {
                   <SpecRow label="Brand" value={product.brand} />
                   <SpecRow label="Category" value={product.category} />
                   <SpecRow label="GTIN" value={product.gtin} />
-                  <SpecRow label="Confidence Score" value={`${product.confidenceScore}%`} />
+                  <SpecRow label="Confidence Score" value={product.confidenceScore != null ? `${product.confidenceScore}%` : null} />
                 </div>
               </CardContent>
             </Card>
@@ -1014,15 +1096,6 @@ export default function ProductDetailsPage() {
         </div>
       </div>
       <SiteFooter />
-    </div>
-  );
-}
-
-function StatBox({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={cn('mt-1 text-lg font-bold', color)}>{value}</div>
     </div>
   );
 }

@@ -133,8 +133,8 @@ export function EcoFootprint({
               ) : (
                 <ul className="space-y-2">
                   {alternatives.map((a) => (
-                    <li key={a.slug} className="flex items-center justify-between gap-2 text-sm">
-                      <Link href={`/products/${a.slug}`} className="text-primary hover:underline">
+                    <li key={a.slug} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                      <Link href={`/products/${a.slug}`} className="min-w-0 flex-1 break-words text-primary hover:underline">
                         {a.name}
                       </Link>
                       <span className="shrink-0 text-muted-foreground">

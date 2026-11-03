@@ -187,7 +187,7 @@ export async function aiSearch(
     }
 
     const products = (data ?? []) as unknown as Array<Record<string, unknown>>;
-    const results: AISearchResult[] = products.map((row) => {
+    let results: AISearchResult[] = products.map((row) => {
       const product: Product = {
         id: row.id as string,
         name: row.name as string,
@@ -311,10 +311,11 @@ export async function aiSearch(
       result.currentPrice = price;
       if (!budget || price === null) continue;
       if (price > budget) {
-        result.score -= 20;
-        // Honest over-budget note, instead of the old unconditional
-        // "within your budget" claim.
-        result.aiExplanation = `${result.aiExplanation.replace(/\.$/, '')}. Its latest recorded price $${price.toFixed(2)} is above your ${budgetDisplay(parsedIntent, budget)} budget.`;
+        // Over-budget items are dropped below, so no explanation
+        // note is needed for them here (the old code kept them with
+        // a -20 score penalty, which meant a "laptop under $1000"
+        // search still showed $1,099+ products — a budget the user
+        // can see being ignored).
       } else {
         // 'budget' is only added here, with a verified price — the
         // search page's "In budget" badge therefore only ever
@@ -324,9 +325,27 @@ export async function aiSearch(
       }
     }
 
+    // HARD budget filter (ordinary search, not just AI
+    // recommendations): when a budget is known — from the query
+    // ("under 20K PKR" -> $71) or the Max Budget panel filter —
+    // priced products above it are removed, not merely demoted.
+    // Unpriced products are KEPT: their price is unknown, not
+    // over budget, and the card says "Price not listed" rather
+    // than claiming they are in budget (they get no 'budget'
+    // match and no "In budget" badge above). When a budget is
+    // active, `total` is the filtered count for this page, so
+    // callers that treat "0 results + 0 total" as an empty catalog
+    // (e.g. the web fallback) behave correctly instead of seeing
+    // the pre-filter DB count for products the user will never see.
+    let total = count ?? 0;
+    if (budget) {
+      results = results.filter((r) => r.currentPrice === null || r.currentPrice <= budget);
+      total = results.length;
+    }
+
     results.sort((a, b) => b.score - a.score);
 
-    return { results, parsedIntent, total: count ?? 0, page, pageSize };
+    return { results, parsedIntent, total, page, pageSize };
   } catch (err) {
     logger.error('aiSearch: unexpected error', { error: String(err) });
     return { results: [], parsedIntent, total: 0, page, pageSize };

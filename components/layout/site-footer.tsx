@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Sparkles, Twitter, Github, Linkedin } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 
 const footerLinks = {
   Product: [
@@ -56,21 +56,14 @@ export function SiteFooter() {
             </div>
           ))}
         </div>
+        {/* No social icons: the old Twitter/GitHub/LinkedIn icons
+            all linked to "#" — dead placeholder links, not real
+            SmartBuy accounts. They are removed rather than pointed
+            at invented profiles; re-add them only with real URLs. */}
         <div className="mt-8 flex flex-col items-center justify-between gap-4 border-t pt-8 sm:flex-row">
           <p className="text-sm text-muted-foreground">
             &copy; {new Date().getFullYear()} SmartBuy AI. All rights reserved.
           </p>
-          <div className="flex items-center gap-4">
-            <Link href="#" aria-label="Twitter" className="text-muted-foreground hover:text-foreground">
-              <Twitter className="h-5 w-5" />
-            </Link>
-            <Link href="#" aria-label="GitHub" className="text-muted-foreground hover:text-foreground">
-              <Github className="h-5 w-5" />
-            </Link>
-            <Link href="#" aria-label="LinkedIn" className="text-muted-foreground hover:text-foreground">
-              <Linkedin className="h-5 w-5" />
-            </Link>
-          </div>
         </div>
       </div>
     </footer>

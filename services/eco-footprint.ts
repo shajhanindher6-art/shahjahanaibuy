@@ -80,7 +80,12 @@ export function estimateFootprint(
   const ratio = kgCO2e / base;
   const band: EcoBand =
     ratio <= 0.7 ? 'A+' : ratio <= 0.9 ? 'A' : ratio <= 1.1 ? 'B' : ratio <= 1.3 ? 'C' : ratio <= 1.6 ? 'D' : 'E';
-  return { kgCO2e, band, categoryBaseKg: base, priceFactor: Math.round(priceFactor * 100) / 100 };
+  // (j) Keep 4 decimals, not 2: at 2 decimals a $999 laptop's factor
+  // displayed as "1", so the shown formula (250 × 1) did not
+  // reproduce the shown result (249.9 kg — from the unrounded
+  // 0.9997). At 4 decimals the displayed inputs reproduce the
+  // displayed estimate (250 × 0.9997 = 249.925 → 249.9).
+  return { kgCO2e, band, categoryBaseKg: base, priceFactor: Math.round(priceFactor * 10000) / 10000 };
 }
 
 const BAND_LABEL: Record<EcoBand, string> = {

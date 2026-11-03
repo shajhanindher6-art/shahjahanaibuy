@@ -28,14 +28,23 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md">
-      <div className="container mx-auto flex h-16 items-center justify-between px-4">
-        <div className="flex items-center gap-8">
+      {/* A2 narrow-viewport fix (audit: header clipped at ~500px):
+          the old row hid the wordmark only below 400px and kept a
+          gap-8 + full "Get Started" label, so at ~500px — especially
+          with the longer German CTA — logo + selectors + buttons
+          exceeded the viewport and were cut off. Now: tighter
+          mobile padding/gaps, the wordmark and the full CTA label
+          appear only at sm+, and the theme toggle hides below
+          360px (still reachable on every larger phone). At 320px
+          the row is roughly: logo icon 24 + country 64 + language
+          56 + Start ~60 + menu 36 + gaps ≈ 260px + 24px padding,
+          comfortably inside the viewport. No header redesign:
+          same elements, same order, only breakpoints/spacing. */}
+      <div className="container mx-auto flex h-16 min-w-0 items-center justify-between gap-1 px-3 sm:px-4">
+        <div className="flex min-w-0 items-center gap-3 md:gap-8">
           <Link href="/" className="flex shrink-0 items-center gap-2 font-bold text-lg">
             <Sparkles className="h-6 w-6 shrink-0 text-primary" />
-            {/* Logo wordmark hides on very narrow screens so the
-                header row (now carrying the country switcher +
-                language switcher) never overflows on phones. */}
-            <span className="hidden min-[400px]:inline">SmartBuy AI</span>
+            <span className="hidden sm:inline">SmartBuy AI</span>
           </Link>
           <nav className="hidden items-center gap-6 md:flex">
             {navLinks.map((link) => (
@@ -59,7 +68,9 @@ export function SiteHeader() {
               mobile header row never wraps or overflows. */}
           <CountrySwitcher />
           <LanguageSwitcher />
-          <ThemeToggle />
+          <span className="hidden min-[360px]:inline-flex shrink-0">
+            <ThemeToggle />
+          </span>
           {isAuthenticated ? (
             <Button asChild size="sm" className="shrink-0">
               <Link href="/dashboard">{tFor(language, 'navDashboard')}</Link>
@@ -71,8 +82,8 @@ export function SiteHeader() {
               </Button>
               <Button size="sm" asChild className="shrink-0">
                 <Link href="/sign-up">
-                  <span className="hidden min-[380px]:inline">{tFor(language, 'navGetStarted')}</span>
-                  <span className="min-[380px]:hidden">Start</span>
+                  <span className="hidden sm:inline">{tFor(language, 'navGetStarted')}</span>
+                  <span className="sm:hidden">Start</span>
                 </Link>
               </Button>
             </>

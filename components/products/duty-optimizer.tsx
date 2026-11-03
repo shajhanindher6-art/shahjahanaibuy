@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -57,7 +57,21 @@ export function DutyOptimizer({
   const [shippingPer, setShippingPer] = useState<number>(0);
   const [splitInput, setSplitInput] = useState<string>('1, 2');
 
+  // Same stale-fallback bug as the tax estimator (see there): region
+  // detection lands after mount, so follow defaultCountryCode until
+  // the visitor manually picks a country here; after that, their
+  // choice wins and prop changes never clobber it.
+  const userPickedCountry = useRef(false);
+  useEffect(() => {
+    if (!userPickedCountry.current && defaultCountryCode !== countryCode) {
+      setCountryCode(defaultCountryCode);
+      const next = standardRateForCountry(defaultCountryCode);
+      setVatPct(next ? next.ratePct : 0);
+    }
+  }, [defaultCountryCode, countryCode]);
+
   function handleCountryChange(code: string) {
+    userPickedCountry.current = true;
     setCountryCode(code);
     const next = standardRateForCountry(code);
     setVatPct(next ? next.ratePct : 0);
@@ -198,6 +212,16 @@ export function DutyOptimizer({
             </>
           )}
         </p>
+        {/* (12) Same placeholder rule as the tax estimator: for
+            manual-rate countries the 0% tax default is unentered, not
+            real — the scenario totals below are then price + duty +
+            shipping only, and must not read as computed real totals. */}
+        {standard === null && vatPct === 0 && (
+          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+            Local tax is 0% here because no rate was entered yet — 0% is a placeholder, not your
+            real rate. Enter your local rate above for real scenario totals.
+          </p>
+        )}
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-left text-sm">

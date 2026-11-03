@@ -71,7 +71,7 @@ export default function ExtensionPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Integration Hub — feature status (extension v1.2.0)</CardTitle>
+              <CardTitle className="text-base">Integration Hub — feature status (extension v1.3.0)</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <p className="flex justify-between gap-4">
@@ -87,7 +87,7 @@ export default function ExtensionPage() {
                   <strong>Background price-drop sync</strong> — re-checks products you viewed, hourly,
                   and notifies you in the browser when SmartBuy&apos;s price drops
                 </span>
-                <span className="shrink-0 font-medium text-green-700">Available in v1.2.0</span>
+                <span className="shrink-0 font-medium text-green-700">Available in v1.3.0</span>
               </p>
               <p className="flex justify-between gap-4">
                 <span>

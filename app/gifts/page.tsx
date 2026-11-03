@@ -13,7 +13,7 @@
  * (no live shipping costs exist, so no fee or date is invented).
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Gift, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -53,6 +53,27 @@ export default function GiftsPage() {
   const [error, setError] = useState<string | null>(null);
   const [picks, setPicks] = useState<GiftPick[] | null>(null);
   const [meta, setMeta] = useState<{ shippingNote?: string; storeKind?: string } | null>(null);
+
+  // Pre-fill the budget from the ?budget= URL parameter on first load
+  // (e.g. /gifts?budget=1000). Only a finite positive number is
+  // accepted; anything else (abc, empty, Infinity, 0, negatives) is
+  // ignored and the field stays empty — never crash, never invent a
+  // budget. Read via window.location (not useSearchParams) so the
+  // page needs no Suspense boundary. The prefilled text flows through
+  // the same server budget parser as typed input: the route wraps it
+  // as "under <text>", so "1000" parses as $1000 USD.
+  useEffect(() => {
+    try {
+      const raw = new URLSearchParams(window.location.search).get('budget');
+      if (raw === null) return;
+      const trimmed = raw.trim();
+      if (trimmed === '') return;
+      const value = Number(trimmed);
+      if (Number.isFinite(value) && value > 0) setBudgetText(trimmed);
+    } catch {
+      // Unparseable query string: leave the budget field empty.
+    }
+  }, []);
 
   async function run() {
     setError(null);
@@ -118,7 +139,7 @@ export default function GiftsPage() {
                   </button>
                 ))}
               </div>
-              <label className="block text-sm font-medium">Budget (hard limit — picks never exceed it)</label>
+              <label className="block text-sm font-medium">Budget (hard limit — picks never exceed it; leave blank for no budget limit)</label>
               <Input
                 placeholder='e.g. under 20K PKR, under $500, under €300'
                 value={budgetText}

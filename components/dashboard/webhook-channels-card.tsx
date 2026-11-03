@@ -71,6 +71,32 @@ export function WebhookChannelsCard() {
   }, [loadStatus]);
 
   async function handleSave() {
+    // The status API returns only booleans, never the saved phone/chat
+    // ID back — so a blank input here does NOT mean "no destination":
+    // it may mean "a destination is already saved, just hidden".
+    // Saving a blank over it would silently WIPE it (POST nulls an
+    // empty field). Refuse instead and ask the user to re-enter it,
+    // so a toggle-only save can never destroy a saved destination.
+    // (A proper fix is for the status API to return the destination
+    // for prefill; until then this guard prevents the data loss.)
+    if (status?.whatsapp.destinationSet && whatsappPhone.trim() === '') {
+      toast({
+        title: 'WhatsApp destination not re-entered',
+        description:
+          'A WhatsApp number is already saved but is not shown here. Re-enter it above before saving, or nothing will be changed.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (status?.telegram.destinationSet && telegramChatId.trim() === '') {
+      toast({
+        title: 'Telegram destination not re-entered',
+        description:
+          'A Telegram chat ID is already saved but is not shown here. Re-enter it above before saving, or nothing will be changed.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch('/api/v1/settings/webhooks', {
@@ -170,6 +196,12 @@ export function WebhookChannelsCard() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="waPhone">WhatsApp phone number (with country code)</Label>
+              {status.whatsapp.destinationSet && (
+                <p className="text-xs text-muted-foreground">
+                  A number is already saved (not shown here). Re-enter it if you save anything
+                  on this card, otherwise the save is refused to protect it.
+                </p>
+              )}
               <Input
                 id="waPhone"
                 placeholder="e.g. 923001234567"
@@ -192,6 +224,12 @@ export function WebhookChannelsCard() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="tgChatId">Telegram chat ID</Label>
+              {status.telegram.destinationSet && (
+                <p className="text-xs text-muted-foreground">
+                  A chat ID is already saved (not shown here). Re-enter it if you save anything
+                  on this card, otherwise the save is refused to protect it.
+                </p>
+              )}
               <Input
                 id="tgChatId"
                 placeholder="e.g. 123456789 (message @userinfobot to find yours)"

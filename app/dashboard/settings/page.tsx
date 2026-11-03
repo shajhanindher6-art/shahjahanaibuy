@@ -13,11 +13,18 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useToast } from '@/hooks/use-toast';
 import { subscribePush, unsubscribePush } from '@/lib/push-client';
 import { WebhookChannelsCard } from '@/components/dashboard/webhook-channels-card';
+import { LANGUAGES } from '@/lib/region';
 import { Save } from 'lucide-react';
 import type { UserSettings } from '@/types';
 
 const currencies = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD'];
-const languages = ['en', 'es', 'fr', 'de', 'ja', 'zh'];
+// Language options must match the languages the site actually
+// supports (lib/region SUPPORTED_LANGUAGES, used by the header
+// Language Switcher). The old hardcoded list offered ja/zh — which
+// the site cannot render — and omitted ur/it/pt/tr. Saving an
+// unsupported code would leave the header switcher unable to show
+// the user's choice.
+const languages = LANGUAGES;
 const timezones = ['UTC', 'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Asia/Tokyo'];
 
 export default function SettingsPage() {
@@ -28,7 +35,12 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
 
   const fetchSettings = useCallback(async () => {
-    if (!user) return;
+    // Without this, a render with no user yet left `loading` true
+    // forever (infinite spinner) instead of reaching the error state.
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     const { getSupabaseBrowserClient } = await import('@/lib/supabase/client');
     try {
       const data = await getUserSettings(getSupabaseBrowserClient(), user.id);
@@ -160,8 +172,8 @@ export default function SettingsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {languages.map((l) => (
-                    <SelectItem key={l} value={l}>
-                      {l.toUpperCase()}
+                    <SelectItem key={l.code} value={l.code}>
+                      {l.nativeName} ({l.code})
                     </SelectItem>
                   ))}
                 </SelectContent>

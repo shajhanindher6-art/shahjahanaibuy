@@ -53,12 +53,27 @@ export function ProductCard({ product, href, className, showReason }: ProductCar
               <Package className="h-10 w-10 text-muted-foreground" />
             </div>
           )}
-          {(product.dealScore != null || product.matchScore != null) && (
+          {/* (g) A match/similarity score is NOT a Deal Score and must
+              never wear the Deal Score badge: similar-products cards
+              used to render matchScore through this badge, so the same
+              product showed a different "Deal Score" on a similar card
+              than on its own page (and the similar API's matchScore
+              even includes a random component — see report). A real
+              dealScore still gets the badge; a match-only card gets a
+              neutral "Match N%" chip that cannot be mistaken for one. */}
+          {product.dealScore != null && (
             <div className="absolute right-2 top-2">
               <DealScoreBadge
-                score={product.dealScore ?? product.matchScore ?? 0}
+                score={product.dealScore}
                 size="sm"
               />
+            </div>
+          )}
+          {product.dealScore == null && product.matchScore != null && (
+            <div className="absolute right-2 top-2">
+              <span className="rounded-full bg-slate-900/80 px-2 py-1 text-xs font-semibold text-white">
+                Match {Math.round(Math.max(0, Math.min(100, product.matchScore)))}%
+              </span>
             </div>
           )}
         </div>

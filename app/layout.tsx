@@ -1,7 +1,9 @@
 import './globals.css';
 import type { Metadata } from 'next';
+import { cookies, headers } from 'next/headers';
 import { Inter } from 'next/font/google';
 import { Providers } from '@/components/providers';
+import type { Language } from '@/lib/region';
 import { Toaster } from '@/components/ui/toaster';
 import { ServiceWorkerRegister } from '@/components/pwa/service-worker-register';
 import { AIDealFinderWidget } from '@/components/chat/ai-deal-finder-widget';
@@ -100,6 +102,16 @@ const structuredData = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Server-initial region/language for the first-paint flash fix (workstream D):
+  // a saved sb-country cookie wins; otherwise Vercel's geo header supplies the
+  // detected country. The provider validates both (unknown code → US display
+  // region, invalid language → English) and a saved localStorage language still
+  // wins client-side, so these props are defaults, never overrides.
+  const savedCountry = cookies().get('sb-country')?.value ?? null;
+  const savedLanguage = cookies().get('sb-language')?.value ?? null;
+  const geoCountry = headers().get('x-vercel-ip-country');
+  const initialCountryCode = savedCountry ?? geoCountry ?? null;
+  const initialSource = savedCountry ? 'saved' : 'detected';
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -114,7 +126,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className={`${inter.variable} font-sans antialiased`}>
-        <Providers>
+        <Providers
+          initialCountryCode={initialCountryCode}
+          initialLanguage={savedLanguage as Language | null}
+          initialSource={initialSource}
+        >
           {children}
           <Toaster />
           <ServiceWorkerRegister />

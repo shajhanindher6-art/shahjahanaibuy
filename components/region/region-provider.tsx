@@ -49,6 +49,31 @@
  * country entry means server geo detection, and the language map
  * is applied for that visitor too (state only, same as above).
  * On every language change, document.documentElement.lang is set.
+ *
+ * FIRST-PAINT FLASH (safe fix, 2026-11-03 audit): this provider used
+ * to always start at US/English and only resolve the real region in
+ * a post-paint effect, so every visitor briefly saw US/English
+ * prices and chrome before detection completed. Reading the cookie
+ * in a useState initializer is NOT a safe fix for that — the server
+ * render would still be US/English and React would report a
+ * hydration mismatch. The safe fix is server-resolved initials:
+ * RegionProvider accepts optional initialCountryCode /
+ * initialLanguage / initialSource props (a server component such as
+ * the root layout reads the sb-country / sb-language cookies — and,
+ * for a first visit, the Vercel geo header — and passes them down).
+ * Because the props travel in the RSC payload, server and client
+ * render identically and there is no mismatch and no flash for any
+ * visitor the server could already resolve. Until the layout passes
+ * those props, behaviour is exactly as before (no regression).
+ * A manual language choice also writes an `sb-language` cookie (in
+ * addition to localStorage) so the server can resolve it on the
+ * next visit; a saved localStorage language still always wins over
+ * any cookie/server value in the effect below, and the effect heals
+ * a stale language cookie back to the saved choice.
+ * The one case no provider-side fix can remove: a brand-new visitor
+ * with no cookie at all, whose region is only knowable from the
+ * server geo header on that very first response — that needs the
+ * layout itself to read the header (see the props above).
  */
 
 import {
@@ -73,6 +98,7 @@ import {
 } from '@/lib/region';
 
 const COOKIE_NAME = 'sb-country';
+const COOKIE_LANGUAGE = 'sb-language';
 const LS_COUNTRY = 'sb-country';
 const LS_LANGUAGE = 'sb-language';
 const LS_GEO = 'sb-geo';
@@ -123,6 +149,21 @@ function writeCountryChoice(code: string) {
   }
 }
 
+/**
+ * Persist a manual language choice in BOTH the cookie (so the
+ * server can resolve it on the next visit's first paint) and
+ * localStorage (the authority the effect below trusts).
+ */
+function writeLanguageChoice(next: Language) {
+  try {
+    document.cookie = `${COOKIE_LANGUAGE}=${encodeURIComponent(next)}; path=/; max-age=31536000; SameSite=Lax`;
+    localStorage.setItem(LS_LANGUAGE, next);
+  } catch {
+    // Storage unavailable — language still applies this session
+    // via React state.
+  }
+}
+
 function readStored<T>(key: string, parse: (raw: string) => T | null): T | null {
   try {
     const raw = localStorage.getItem(key);
@@ -133,11 +174,45 @@ function readStored<T>(key: string, parse: (raw: string) => T | null): T | null 
   }
 }
 
-export function RegionProvider({ children }: { children: ReactNode }) {
-  const [region, setRegion] = useState<Region>(FALLBACK_REGION);
-  const [detectedCountryCode, setDetectedCountryCode] = useState<string | null>(null);
-  const [source, setSource] = useState<'saved' | 'detected'>('detected');
-  const [language, setLanguageState] = useState<Language>('en');
+export interface RegionProviderProps {
+  children: ReactNode;
+  /**
+   * Server-resolved initial country code (from the sb-country
+   * cookie, or the geo header on a first visit). Raw codes outside
+   * the registry are kept as detectedCountryCode with a US display
+   * region, exactly like client detection. Null = unresolved: the
+   * provider falls back to its existing client detection.
+   */
+  initialCountryCode?: string | null;
+  /** Server-resolved initial UI language (from sb-language cookie). */
+  initialLanguage?: Language | null;
+  /**
+   * How initialCountryCode was resolved: 'saved' for a cookie,
+   * 'detected' for a geo header (banner may show for the latter).
+   * Defaults to 'saved' when an initial country code is given.
+   */
+  initialSource?: 'saved' | 'detected';
+}
+
+export function RegionProvider({
+  children,
+  initialCountryCode = null,
+  initialLanguage = null,
+  initialSource,
+}: RegionProviderProps) {
+  // Server-resolved initials are pure (props only, no document
+  // access), so server and client first renders match exactly.
+  const serverRegion = getRegionByCountry(initialCountryCode) ?? FALLBACK_REGION;
+  const [region, setRegion] = useState<Region>(serverRegion);
+  const [detectedCountryCode, setDetectedCountryCode] = useState<string | null>(
+    initialCountryCode ? initialCountryCode.toUpperCase() : null
+  );
+  const [source, setSource] = useState<'saved' | 'detected'>(
+    initialSource ?? (initialCountryCode ? 'saved' : 'detected')
+  );
+  const [language, setLanguageState] = useState<Language>(
+    initialLanguage && isSupportedLanguage(initialLanguage) ? initialLanguage : 'en'
+  );
   const [bannerVisible, setBannerVisible] = useState(false);
 
   useEffect(() => {
@@ -146,7 +221,26 @@ export function RegionProvider({ children }: { children: ReactNode }) {
     const storedLang = readStored<Language>(LS_LANGUAGE, (raw) =>
       isSupportedLanguage(raw) ? raw : null
     );
-    if (storedLang) setLanguageState(storedLang);
+    if (storedLang) {
+      setLanguageState(storedLang);
+      // Heal a stale/missing language cookie (e.g. a choice saved
+      // before the cookie existed, or a geo cookie middleware set)
+      // so the server resolves correctly on the next visit.
+      if (readCookie(COOKIE_LANGUAGE) !== storedLang) writeLanguageChoice(storedLang);
+    }
+
+    // Server-resolved first paint: region/language are already
+    // correct, so skip client detection entirely (it could only
+    // flash the page back to a different value). The banner is
+    // additive UI, so it is still decided here from localStorage
+    // (dismissed state is client-only and cannot come from props).
+    if (initialCountryCode) {
+      if ((initialSource ?? 'saved') === 'detected') {
+        const dismissed = readStored<boolean>(LS_BANNER_DISMISSED, (raw) => raw === '1');
+        if (serverRegion.code !== 'US' && !dismissed) setBannerVisible(true);
+      }
+      return;
+    }
 
     // 1–2. Saved choice (cookie from middleware, or localStorage).
     const savedCode = getRegionByCountry(readCookie(COOKIE_NAME))
@@ -162,7 +256,7 @@ export function RegionProvider({ children }: { children: ReactNode }) {
       // choice: apply the geo language map (state only) unless
       // the visitor already has a saved language choice.
       const manualCountry = readStored<string>(LS_COUNTRY, (raw) => raw);
-      if (!storedLang && !manualCountry) {
+      if (!storedLang && !manualCountry && !initialLanguage) {
         setLanguageState(languageForCountry(savedRegion.code));
       }
       return;
@@ -180,8 +274,9 @@ export function RegionProvider({ children }: { children: ReactNode }) {
       setDetectedCountryCode(code ? code.toUpperCase() : null);
       // (b) geo country → language map; (c) browser language only
       // when geo yields no country at all; (d) English. Skipped
-      // entirely when a saved language choice exists (step (a)).
-      if (!storedLang) {
+      // entirely when a saved language choice exists (step (a)),
+      // or when the server already resolved a language (prop).
+      if (!storedLang && !initialLanguage) {
         const detectedLang = code
           ? languageForCountry(code)
           : (languageFromBrowserLanguage(
@@ -268,11 +363,9 @@ export function RegionProvider({ children }: { children: ReactNode }) {
 
   const setLanguage = useCallback((next: Language) => {
     setLanguageState(next);
-    try {
-      localStorage.setItem(LS_LANGUAGE, next);
-    } catch {
-      // Ignore storage failures; language still applies this session.
-    }
+    // Cookie + localStorage together, so the server can resolve
+    // this choice on the next visit's first paint (see header note).
+    writeLanguageChoice(next);
   }, []);
 
   const dismissBanner = useCallback(() => {

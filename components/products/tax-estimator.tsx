@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -51,9 +51,27 @@ export function TaxEstimator({
   const [dutyPct, setDutyPct] = useState<number>(DEFAULT_DUTY_PCT);
   const [shipping, setShipping] = useState<number>(0);
 
+  // Region detection finishes AFTER first render (the known 1–2s
+  // USD/flash window), so defaultCountryCode can change from the
+  // fallback (US) to the visitor's real country after mount. The old
+  // useState-only initial value kept the stale fallback forever, so
+  // a visitor in Pakistan saw "Deliver to: United States" while the
+  // rest of the page already showed PKR. Follow the prop until the
+  // visitor manually picks a country in this estimator — after that,
+  // their choice wins and later prop changes never clobber it.
+  const userPickedCountry = useRef(false);
+  useEffect(() => {
+    if (!userPickedCountry.current && defaultCountryCode !== countryCode) {
+      setCountryCode(defaultCountryCode);
+      const next = standardRateForCountry(defaultCountryCode);
+      setVatPct(next ? next.ratePct : 0);
+    }
+  }, [defaultCountryCode, countryCode]);
+
   // When the country changes, refill the VAT rate from the table (or
   // clear it for manual-rate countries) — the user can still edit it.
   function handleCountryChange(code: string) {
+    userPickedCountry.current = true;
     setCountryCode(code);
     const next = standardRateForCountry(code);
     setVatPct(next ? next.ratePct : 0);
@@ -158,7 +176,10 @@ export function TaxEstimator({
 
         <div className="space-y-2 rounded-lg border p-4 text-sm">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Merchant price (estimated)</span>
+            {/* The price itself is a real recorded merchant price, not
+                an estimate — only the duty/tax/total lines below are
+                estimates. The old "(estimated)" label said otherwise. */}
+            <span className="text-muted-foreground">Merchant price</span>
             <Price usd={estimate.priceUsd} />
           </div>
           <div className="flex justify-between">
@@ -177,6 +198,18 @@ export function TaxEstimator({
             </span>
             <Price usd={estimate.vatUsd} />
           </div>
+          {/* (12) Manual-rate countries (US/CA/unlisted) default the tax
+              rate to 0% because no single rate exists — that 0% is an
+              UNFILLED placeholder, not a real rate, and with it the
+              "total" is just the price (+ duty). Say so on the
+              breakdown itself, so a $999.00 total never reads as a
+              computed real landing price. */}
+          {standard === null && vatPct === 0 && (
+            <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+              Local tax shows $0 because no rate was entered yet — 0% is a placeholder, not your
+              real rate. Enter your local rate above for a real estimate.
+            </p>
+          )}
           <div className="flex justify-between border-t pt-2 font-bold">
             <span>Estimated total landing price</span>
             <Price usd={estimate.totalUsd} />

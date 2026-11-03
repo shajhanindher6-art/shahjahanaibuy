@@ -53,6 +53,10 @@ export default function ComparePage() {
   const [loading, setLoading] = useState(false);
   const [comparing, setComparing] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  // A failed comparison used to fail silently: comparison stayed null
+  // and the page just showed the "Select products" empty state again,
+  // as if nothing had been attempted. Surface the failure instead.
+  const [compareError, setCompareError] = useState<string | null>(null);
 
   const searchProducts = useCallback(async (term: string) => {
     if (!term.trim()) return;
@@ -95,11 +99,13 @@ export default function ComparePage() {
   const removeProduct = (id: string) => {
     setSelectedProducts(selectedProducts.filter((p) => p.id !== id));
     setComparison(null);
+    setCompareError(null);
   };
 
   const runComparison = async () => {
     if (selectedProducts.length < 2) return;
     setComparing(true);
+    setCompareError(null);
     try {
       const res = await fetch('/api/v1/comparison', {
         method: 'POST',
@@ -109,9 +115,12 @@ export default function ComparePage() {
       const data = await res.json();
       if (data.success) {
         setComparison(data.data);
+      } else {
+        setCompareError('Comparison could not be loaded. Please try again.');
       }
     } catch {
       setComparison(null);
+      setCompareError('Comparison could not be loaded. Please try again.');
     } finally {
       setComparing(false);
     }
@@ -152,6 +161,12 @@ export default function ComparePage() {
                 {loading ? <LoadingSpinner size="sm" /> : 'Find'}
               </Button>
             </div>
+
+            {showSearch && !loading && searchResults.length === 0 && (
+              <p className="mt-4 text-sm text-muted-foreground">
+                No products found for that search. Try a different term.
+              </p>
+            )}
 
             {showSearch && searchResults.length > 0 && (
               <div className="mt-4 space-y-2 rounded-lg border border-slate-200 p-2 dark:border-slate-700">
@@ -197,6 +212,12 @@ export default function ComparePage() {
           <div className="flex justify-center py-12">
             <LoadingSpinner size="lg" />
           </div>
+        )}
+
+        {!comparing && compareError && !comparison && (
+          <p className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+            {compareError}
+          </p>
         )}
 
         {!comparing && !comparison && selectedProducts.length < 2 && (
@@ -249,10 +270,12 @@ export default function ComparePage() {
                       const overallMin = allPrices.length > 0 ? Math.min(...allPrices) : null;
                       return (
                         <td key={p.productId} className="p-3">
-                          {minPrice !== null && (
+                          {minPrice !== null ? (
                             <span className={cn('font-bold', minPrice === overallMin ? 'text-green-600' : '')}>
                               <Price usd={minPrice} />
                             </span>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">No listings</span>
                           )}
                         </td>
                       );
@@ -261,7 +284,13 @@ export default function ComparePage() {
                   <tr className="border-b border-slate-100 dark:border-slate-800">
                     <td className="p-3 text-sm font-medium">Rating</td>
                     {comparison.products.map((p) => {
-                      const rating = p.retailers[0]?.rating;
+                      // Ratings are shared across a product's retailer
+                      // rows (one average from the reviews table); take
+                      // the first non-null one so a first row without a
+                      // rating cannot hide a rating carried by another.
+                      // Missing data is words, never a dash: a dash in
+                      // a specs-style table reads as a broken field.
+                      const rating = p.retailers.find((r) => r.rating !== null && r.rating !== undefined)?.rating;
                       return (
                         <td key={p.productId} className="p-3">
                           {rating !== null && rating !== undefined ? (
@@ -270,7 +299,7 @@ export default function ComparePage() {
                               <span className="text-xs text-muted-foreground">★</span>
                             </span>
                           ) : (
-                            <span className="text-muted-foreground">—</span>
+                            <span className="text-sm text-muted-foreground">Not rated</span>
                           )}
                         </td>
                       );
@@ -278,11 +307,25 @@ export default function ComparePage() {
                   </tr>
                   <tr className="border-b border-slate-100 dark:border-slate-800">
                     <td className="p-3 text-sm font-medium">Reviews</td>
-                    {comparison.products.map((p) => (
-                      <td key={p.productId} className="p-3 text-sm">
-                        {p.retailers[0]?.reviewCount ?? 0}
-                      </td>
-                    ))}
+                    {comparison.products.map((p) => {
+                      // Never invent "0": with no retailer rows (or no
+                      // count on any row) the honest cell is "No review
+                      // data", not a zero that would read as "this
+                      // product has no reviews". A real 0 from the
+                      // reviews table still renders as 0.
+                      const reviewCount = p.retailers.find(
+                        (r) => r.reviewCount !== null && r.reviewCount !== undefined
+                      )?.reviewCount;
+                      return (
+                        <td key={p.productId} className="p-3 text-sm">
+                          {reviewCount !== null && reviewCount !== undefined ? (
+                            reviewCount
+                          ) : (
+                            <span className="text-muted-foreground">No review data</span>
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
                   <tr className="border-b border-slate-100 dark:border-slate-800">
                     <td className="p-3 text-sm font-medium">Availability</td>

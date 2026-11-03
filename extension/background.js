@@ -1,4 +1,4 @@
-// SmartBuy AI — Background service worker (v1.2.0)
+// SmartBuy AI — Background service worker (v1.3.0, matches manifest.json)
 // Handles extension lifecycle, communication, and the hourly
 // background price-drop sync.
 //

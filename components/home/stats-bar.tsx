@@ -33,11 +33,25 @@ export function StatsBar() {
           return null;
         }
       };
+      // CAUTION — totals are only real when the endpoint reports a
+      // true total, not a page length. /products (exact count) and
+      // /merchants (full list, sliced after counting) do, so
+      // pageSize=1 is fine there. /coupons and /deals/ranked do NOT:
+      // their `total` is the length of the limited fetch, so
+      // pageSize=1 / limit=1 used to report "1 Active Coupon" and
+      // "1 Ranked Deal" no matter how many actually exist. Fetch at
+      // each endpoint's cap instead, and hide the stat (null) when
+      // the result hits the cap — the true total is then unknown,
+      // and a capped number would be a guess, not a count.
       const [products, retailers, deals, coupons] = await Promise.all([
         fetchTotal('/api/v1/products?pageSize=1'),
         fetchTotal('/api/v1/merchants?pageSize=1'),
-        fetchTotal('/api/v1/deals/ranked?limit=1'),
-        fetchTotal('/api/v1/coupons?pageSize=1'),
+        fetchTotal('/api/v1/deals/ranked?limit=50').then((n) =>
+          n !== null && n >= 50 ? null : n
+        ),
+        fetchTotal('/api/v1/coupons?pageSize=100').then((n) =>
+          n !== null && n >= 100 ? null : n
+        ),
       ]);
       if (cancelled) return;
       const items: Array<{ value: string; label: string }> = [];

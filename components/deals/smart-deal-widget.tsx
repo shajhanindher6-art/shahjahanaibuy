@@ -210,6 +210,17 @@ export function SmartDealWidget({ title = 'Smart Deals For You', limit = 6, clas
           </Card>
         ))}
       </div>
+      {/* Honest-basis label (pending user decision on what a "deal"
+          % canonically means — see lib/deal-math.ts): the % on
+          these cards is the deals table's listed discount for each
+          deal. A product page may show a different saving, computed
+          from that retailer's own compare-at price. Neither number
+          is redefined here; each surface now says which basis its
+          % uses, so the two are never mistaken for each other. */}
+      <p className="mt-4 text-xs text-muted-foreground">
+        Discounts shown here are each deal&apos;s listed discount from our deals table. A product
+        page may show a different saving, calculated from the retailer&apos;s compare-at price.
+      </p>
     </div>
   );
 }

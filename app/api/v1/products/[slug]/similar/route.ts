@@ -58,7 +58,10 @@ export async function GET(
       category: row.category,
       imageUrl: row.image_url,
       description: row.description,
-      matchScore: Math.round((row.confidence_score ?? 50) + Math.random() * 20),
+      // Deterministic: the old term added Math.random() * 20, so the same
+      // product's "match" value jittered on every request. confidence_score
+      // alone is the stated similarity signal (50 when unrecorded).
+      matchScore: Math.round(row.confidence_score ?? 50),
       reason: product.brand && row.brand === product.brand
         ? `Same brand as ${product.name}`
         : `Similar ${product.category ?? 'product'} category`,

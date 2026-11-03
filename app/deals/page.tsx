@@ -142,6 +142,11 @@ export default function DealsPage() {
           <p className="mt-2 text-muted-foreground">
             AI-ranked deals, flash sales, coupons, and hidden discounts
           </p>
+          <p className="mx-auto mt-2 max-w-2xl text-xs text-muted-foreground">
+            Percentages on deal cards are each deal&apos;s listed discount from our deals table. A
+            product page may show a different saving, calculated from the retailer&apos;s
+            compare-at price — the two bases are not the same number.
+          </p>
         </div>
 
         <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
@@ -305,8 +310,12 @@ function CouponCard({ coupon, merchantName }: { coupon: Coupon; merchantName?: s
 }
 
 function DealCard({ deal, featured, onClick }: { deal: RankedDeal; featured?: boolean; onClick: () => void }) {
+  // Fallback basis: when the deal row itself is missing, the
+  // fallback value is the ranking's discountPercentage — a PERCENT,
+  // not a dollar amount. The old code treated the fallback as a
+  // fixed amount and rendered e.g. "$20 OFF" for a 20% deal.
   const discount = deal.deal?.discountValue ?? deal.discountPercentage;
-  const isPercent = deal.deal?.discountType === 'percentage';
+  const isPercent = deal.deal ? deal.deal.discountType === 'percentage' : true;
   const endDate = deal.deal ? new Date(deal.deal.endAt) : null;
   const hoursLeft = endDate ? Math.round((endDate.getTime() - Date.now()) / (60 * 60 * 1000)) : null;
   const isFlash = deal.dealType === 'flash';
@@ -314,7 +323,10 @@ function DealCard({ deal, featured, onClick }: { deal: RankedDeal; featured?: bo
   return (
     <Card
       className={cn(
-        'cursor-pointer transition-all hover:shadow-lg',
+        // Only a card with a product to open is clickable: a
+        // product-less deal row used to show a pointer cursor and
+        // do nothing on click (the page guards the navigation).
+        deal.product ? 'cursor-pointer transition-all hover:shadow-lg' : 'transition-all',
         featured && 'border-amber-300 bg-gradient-to-br from-amber-50 to-white dark:border-amber-700 dark:from-amber-950 dark:to-slate-900',
         isFlash && 'border-red-200 dark:border-red-800'
       )}

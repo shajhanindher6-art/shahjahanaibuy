@@ -118,7 +118,7 @@ export function CashbackCouponsSection({ productId }: CashbackCouponsSectionProp
               <Tag className="h-5 w-5 text-blue-500" />
               Available Coupons
             </CardTitle>
-            <CardDescription>Apply these codes at checkout for instant savings</CardDescription>
+            <CardDescription>Copy a code and paste it at the retailer&apos;s checkout — SmartBuy cannot apply codes inside a retailer&apos;s checkout, and a code may not apply to every order</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 sm:grid-cols-2">

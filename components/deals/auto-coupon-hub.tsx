@@ -100,13 +100,16 @@ export function AutoCouponHub({
       <CardHeader>
         <CardTitle className="text-base">Auto-Coupon Hub</CardTitle>
         <CardDescription>
-          {valid.length} currently-valid coupon code{valid.length !== 1 ? 's' : ''} across{' '}
+          {valid.length} coupon code{valid.length !== 1 ? 's' : ''} across{' '}
           {bestPerMerchant.length} merchant{bestPerMerchant.length !== 1 ? 's' : ''}, from the same
           validity-filtered source as the product pages — so this hub and the product rows always
-          agree. Tap a code to copy it, then paste it at the retailer&apos;s checkout: SmartBuy
+          agree. &quot;Valid&quot; here means only that the code passed our own check (active flag,
+          validity dates, usage limit) against the codes stored in our database: we have not
+          verified these codes with the retailer, and the retailer decides whether a code works at
+          checkout. Tap a code to copy it, then paste it at the retailer&apos;s checkout: SmartBuy
           cannot apply codes inside a retailer&apos;s checkout (auto-apply exists only in the
           browser extension&apos;s checkout panel). No code here was negotiated and none is
-          &quot;unlisted&quot; — every code below is a real, currently-valid coupon.
+          &quot;unlisted&quot;.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">

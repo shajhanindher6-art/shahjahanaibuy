@@ -23,7 +23,10 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 
 export default function BookmarkletPage() {
-  const [origin, setOrigin] = useState('https://aismartbuy.netlify.app');
+  // Default to the live production domain (the old Netlify URL is
+  // stale/frozen); the effect below replaces it with the actual
+  // origin on first render, so local dev still gets its own origin.
+  const [origin, setOrigin] = useState('https://shahjahanaibuy-b1zp.vercel.app');
 
   useEffect(() => {
     setOrigin(window.location.origin);
