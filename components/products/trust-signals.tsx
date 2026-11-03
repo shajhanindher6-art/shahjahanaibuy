@@ -119,9 +119,14 @@ export function TrustSignals({
                     ? 'Caution'
                     : 'Insufficient data'}
               </Badge>
-              {result.trustScore !== null && (
+              {result.verdict !== 'insufficient' && result.trustScore !== null && (
                 <span className="text-sm text-muted-foreground">
                   Trust score {result.trustScore}/100
+                </span>
+              )}
+              {result.verdict === 'insufficient' && (
+                <span className="text-sm text-muted-foreground">
+                  No trust score shown — not enough real signals were judged to compute one.
                 </span>
               )}
             </div>
@@ -133,7 +138,7 @@ export function TrustSignals({
                 </li>
               ))}
             </ul>
-            {result.trustScore !== null && (
+            {result.verdict !== 'insufficient' && result.trustScore !== null && (
               <p className="text-xs text-muted-foreground">{result.trustScoreFormula}</p>
             )}
           </>
