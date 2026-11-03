@@ -23,6 +23,10 @@ import { ReviewAuthenticity } from '@/components/products/review-authenticity';
 import { EcoFootprint } from '@/components/products/eco-footprint';
 import { TrustSignals } from '@/components/products/trust-signals';
 import { SmartPool } from '@/components/pools/smart-pool';
+import { UpcyclingBlueprints } from '@/components/products/upcycling-blueprints';
+import { DropWindowSimulator } from '@/components/products/drop-window-simulator';
+import { FluffDetector } from '@/components/products/fluff-detector';
+import { CompatibilityMatrix } from '@/components/products/compatibility-matrix';
 import { ProductVisualizer } from '@/components/products/product-visualizer';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
 import { BestTimeToBuyIndicator } from '@/components/products/best-time-to-buy';
@@ -660,6 +664,33 @@ export default function ProductDetailsPage() {
             productId={product.id}
             productName={product.name}
             regionCode={detectedCountryCode ?? region.code}
+          />
+        )}
+
+        {/* Option 10: upcycling ideas (templates + safety warnings only),
+            drop-window simulator (simulation, alert shortcut — never a
+            price lock), fluff check (real listing text only), and the
+            compatibility matrix (honest grades — "Exact" is never claimed). */}
+        {product && (
+          <UpcyclingBlueprints category={product.category} productName={product.name} />
+        )}
+        {product && (
+          <DropWindowSimulator
+            slug={slug}
+            productId={product.id}
+            productName={product.name}
+            cheapestPriceUsd={merchantsLoaded && merchants.length > 0 ? merchants[0].price : null}
+          />
+        )}
+        {product && (
+          <FluffDetector productName={product.name} description={product.description} />
+        )}
+        {product && (
+          <CompatibilityMatrix
+            slug={slug}
+            productName={product.name}
+            brand={product.brand}
+            category={product.category}
           />
         )}
 
