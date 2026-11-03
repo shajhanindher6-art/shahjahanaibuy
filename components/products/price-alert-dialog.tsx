@@ -20,6 +20,14 @@ interface PriceAlertDialogProps {
   productId: string;
   productName: string;
   currentPrice?: number | null;
+  /**
+   * Option 9: optional prefilled target price (e.g. from the price
+   * negotiator). Additive only — existing callers pass nothing and
+   * keep the old behavior (target defaults to 90% of current price).
+   */
+  initialTargetPrice?: number | null;
+  /** Optional trigger button label (default "Set Alert"). */
+  triggerLabel?: string;
 }
 
 interface Alert {
@@ -32,7 +40,7 @@ interface Alert {
   triggerCount: number;
 }
 
-export function PriceAlertDialog({ productId, productName, currentPrice }: PriceAlertDialogProps) {
+export function PriceAlertDialog({ productId, productName, currentPrice, initialTargetPrice, triggerLabel }: PriceAlertDialogProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -43,10 +51,13 @@ export function PriceAlertDialog({ productId, productName, currentPrice }: Price
   const [channel, setChannel] = useState('email');
 
   useEffect(() => {
-    if (currentPrice) {
+    // Prefilled target (negotiator shortcut) wins over the 90% default.
+    if (initialTargetPrice !== null && initialTargetPrice !== undefined && initialTargetPrice > 0) {
+      setTargetPrice(initialTargetPrice.toFixed(2));
+    } else if (currentPrice) {
       setTargetPrice((currentPrice * 0.9).toFixed(2));
     }
-  }, [currentPrice]);
+  }, [currentPrice, initialTargetPrice]);
 
   const fetchAlerts = async () => {
     if (!user) return;
@@ -105,7 +116,7 @@ export function PriceAlertDialog({ productId, productName, currentPrice }: Price
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline">
-          <Bell className="mr-2 h-4 w-4" /> Set Alert
+          <Bell className="mr-2 h-4 w-4" /> {triggerLabel ?? 'Set Alert'}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">

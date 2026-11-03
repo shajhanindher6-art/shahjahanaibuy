@@ -15,6 +15,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PriceHistoryGraph } from '@/components/products/price-history-graph';
 import { BuyVsWait } from '@/components/products/buy-vs-wait';
 import { TaxEstimator } from '@/components/products/tax-estimator';
+import { DutyOptimizer } from '@/components/products/duty-optimizer';
+import { PriceNegotiator } from '@/components/products/price-negotiator';
+import { ReturnWarrantyMatrix } from '@/components/products/return-warranty-matrix';
+import { DurabilityPredictor } from '@/components/products/durability-predictor';
+import { ReviewAuthenticity } from '@/components/products/review-authenticity';
 import { EcoFootprint } from '@/components/products/eco-footprint';
 import { TrustSignals } from '@/components/products/trust-signals';
 import { SmartPool } from '@/components/pools/smart-pool';
@@ -576,11 +581,43 @@ export default function ProductDetailsPage() {
           </Card>
         )}
 
+        {/* Option 9: Price negotiator (gap math + message draft only —
+            SmartBuy never negotiates with retailers) and the return
+            policy & warranty matrix (general summaries only). */}
+        {product && (
+          <PriceNegotiator
+            slug={slug}
+            productId={product.id}
+            productName={product.name}
+            cheapestPriceUsd={merchantsLoaded && merchants.length > 0 ? merchants[0].price : null}
+          />
+        )}
+        {product && (
+          <ReturnWarrantyMatrix
+            merchantNames={[
+              ...new Set(merchants.map((m) => m.merchantName).filter(Boolean) as string[]),
+            ]}
+            countryStoreNames={getStoresForCountry(
+              detectedCountryCode ?? region.code
+            ).stores.map((s) => s.name)}
+          />
+        )}
+
         {/* Option 7: Tax & duty estimator, fed by the cheapest in-stock
             merchant price (listings are cheapest-first). It is an
             estimate only — never added into a merchant price. */}
         {merchantsLoaded && merchants.length > 0 && (
           <TaxEstimator
+            priceUsd={merchants[0].price}
+            defaultCountryCode={detectedCountryCode ?? region.code}
+          />
+        )}
+
+        {/* Option 9: Customs & duty optimizer — compares the user's own
+            single vs split shipment scenarios on the estimator's rates.
+            Estimate only, never a customs quote or a guaranteed saving. */}
+        {merchantsLoaded && merchants.length > 0 && (
+          <DutyOptimizer
             priceUsd={merchants[0].price}
             defaultCountryCode={detectedCountryCode ?? region.code}
           />
@@ -605,6 +642,17 @@ export default function ProductDetailsPage() {
             ratingDistribution={reviewSummary?.ratingDistribution ?? {}}
             priceUsd={merchantsLoaded && merchants.length > 0 ? merchants[0].price : null}
             imageUrl={product.imageUrl}
+          />
+        )}
+        {/* Option 9: Durability & longevity estimate — category range
+            plus a review-gated reliability score. No repair-log data
+            exists, so none is ever shown. */}
+        {product && (
+          <DurabilityPredictor
+            category={product.category}
+            totalReviews={reviewSummary?.totalReviews ?? 0}
+            averageRating={reviewSummary?.averageRating ?? null}
+            verifiedReviews={reviews.filter((r) => r.verifiedPurchase).length}
           />
         )}
         {product && (
@@ -841,6 +889,7 @@ export default function ProductDetailsPage() {
 
           <TabsContent value="reviews" className="mt-4">
             <AIReviewSummarizer summary={aiReviewSummary} language={language} />
+            <ReviewAuthenticity reviews={reviews} />
             <ReviewForm slug={slug} onReviewAdded={refreshReviews} />
             <Card>
               <CardHeader>

@@ -13,6 +13,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { cn } from '@/lib/utils';
 import { Price } from '@/components/region/price';
 import { CommunityDeals } from '@/components/deals/community-deals';
+import { AutoCouponHub } from '@/components/deals/auto-coupon-hub';
 
 interface RankedDeal {
   id: string;
@@ -196,6 +197,10 @@ export default function DealsPage() {
 
         {!loading && activeCategory === 'coupon' && coupons.length > 0 && (
           <div>
+            {/* Option 9: Auto-Coupon Hub — aggregated view of the SAME
+                validity-filtered coupon source as the product rows, so
+                the hub and the rows can never disagree. */}
+            <AutoCouponHub coupons={coupons} merchantNames={merchantNames} />
             <h2 className="mb-4 text-xl font-bold">Coupons</h2>
             <p className="mb-4 text-sm text-muted-foreground">
               Copy a code and paste it at the retailer&apos;s checkout — SmartBuy cannot apply codes inside a
