@@ -189,6 +189,53 @@ export interface ReviewTheme {
   negativeCount: number;
 }
 
+// ---------------------------------------------------------------------------
+// Review Sentiment (Option 4 Part 2 — aspect-based, deterministic)
+// ---------------------------------------------------------------------------
+
+export type ReviewSentimentLabel = 'positive' | 'mixed' | 'negative';
+
+export interface ReviewAspectVerdict {
+  aspect: string;
+  label: string;
+  labelUr: string;
+  sentiment: ReviewSentimentLabel;
+  mentions: number;
+  positive: number;
+  negative: number;
+  strength: number;
+}
+
+export interface ReviewSourceLink {
+  /** Source name when known (review_sources row), else the link hostname. */
+  name: string;
+  url: string;
+}
+
+export interface ReviewSentiment {
+  overall: ReviewSentimentLabel;
+  averageRating: number;
+  /** Reviews actually used (verified subset when any exist). */
+  basisReviews: number;
+  totalReviews: number;
+  verifiedCount: number;
+  /** 'verified' = headline computed from verified reviews only. */
+  basis: 'verified' | 'all';
+  /** True when the basis is 1-2 reviews: an early impression. */
+  lowConfidence: boolean;
+  aspects: ReviewAspectVerdict[];
+  pros: string[];
+  prosUr: string[];
+  cons: string[];
+  consUr: string[];
+  /** Brief contrast sentence (English). Null when no aspect verdict exists. */
+  briefSummaryEn: string | null;
+  /** Brief contrast sentence (Roman Urdu). Null when no aspect verdict exists. */
+  briefSummaryUr: string | null;
+  /** Distinct original-review source links (empty when no sources exist). */
+  sources: ReviewSourceLink[];
+}
+
 export interface ReviewAISummary {
   productId: string;
   averageRating: number;
@@ -207,7 +254,16 @@ export interface ReviewAISummary {
     title: string | null;
     content: string | null;
     helpfulCount: number;
+    /** Original-review link when the review carries source_url. */
+    sourceUrl?: string | null;
   } | null;
+  /**
+   * Aspect-based sentiment analysis (Option 4 Part 2). Added alongside
+   * — never replacing — the existing fields above, so old consumers
+   * keep working. Null when the product has no reviews (the whole
+   * summary is null in that case anyway).
+   */
+  sentiment?: ReviewSentiment | null;
 }
 
 // ---------------------------------------------------------------------------

@@ -26,7 +26,8 @@
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { swrGet, cacheKey } from '@/lib/cache';
 import { logger } from '@/lib/config/logger';
-import type { ReviewAISummary, ReviewTheme } from '@/types/ai';
+import type { ReviewAISummary, ReviewTheme, ReviewSourceLink } from '@/types/ai';
+import { analyzeReviews } from '@/services/review-sentiment';
 
 export type { ReviewAISummary, ReviewTheme } from '@/types/ai';
 
@@ -41,6 +42,8 @@ interface ReviewRow {
   author_name: string | null;
   verified_purchase: boolean;
   helpful_count: number;
+  source_url: string | null;
+  review_source_id: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,7 +97,7 @@ async function buildReviewAISummary(
   try {
     const { data, error } = await supabase
       .from('reviews')
-      .select('rating, title, content, author_name, verified_purchase, helpful_count')
+      .select('rating, title, content, author_name, verified_purchase, helpful_count, source_url, review_source_id')
       .eq('product_id', productId)
       .is('deleted_at', null)
       .order('helpful_count', { ascending: false })
@@ -170,8 +173,81 @@ async function buildReviewAISummary(
             title: mostHelpfulRow.title,
             content: mostHelpfulRow.content,
             helpfulCount: mostHelpfulRow.helpful_count,
+            // Original-review link when the review carries one. The
+            // link goes to the source itself; sourced text is never
+            // presented as SmartBuy's own words.
+            sourceUrl: mostHelpfulRow.source_url ?? null,
           }
         : null;
+
+    // Aspect-based sentiment (Option 4 Part 2): computed from the
+    // same reviews, verified-priority (see review-sentiment.ts).
+    // Returns null only when there are no reviews — impossible here,
+    // since the empty case returned above.
+    const sentimentBase = analyzeReviews(
+      reviews.map((r) => ({
+        rating: r.rating,
+        title: r.title,
+        content: r.content,
+        verified_purchase: r.verified_purchase,
+      }))
+    );
+
+    // Distinct original-review sources. Best-effort and capped: when
+    // no review carries a source_url (the live case today — no
+    // review_sources rows are seeded), this is simply empty and the
+    // UI renders no source links. Nothing is invented here.
+    let sources: ReviewSourceLink[] = [];
+    try {
+      const sourceIds = [
+        ...new Set(
+          reviews
+            .map((r) => r.review_source_id)
+            .filter((id): id is string => Boolean(id))
+        ),
+      ];
+      const names = new Map<string, string>();
+      if (sourceIds.length > 0) {
+        const { data: sourceRows } = await supabase
+          .from('review_sources')
+          .select('id, name')
+          .in('id', sourceIds);
+        for (const row of (sourceRows ?? []) as Array<{ id: string; name: string }>) {
+          names.set(row.id, row.name);
+        }
+      }
+      const seen = new Set<string>();
+      for (const review of reviews) {
+        const url = review.source_url;
+        if (!url || seen.has(url)) continue;
+        seen.add(url);
+        let hostname = url;
+        try {
+          hostname = new URL(url).hostname.replace(/^www\./, '');
+        } catch {
+          // Keep the raw URL as the label when it is not parseable.
+        }
+        sources.push({
+          name:
+            (review.review_source_id && names.get(review.review_source_id)) ||
+            hostname,
+          url,
+        });
+        if (sources.length >= 5) break;
+      }
+    } catch {
+      // Source links are enrichment only; a failure here must never
+      // lose the summary itself.
+      sources = [];
+    }
+
+    const sentiment =
+      sentimentBase === null
+        ? null
+        : {
+            ...sentimentBase,
+            sources,
+          };
 
     const satisfaction =
       averageRating >= 4.5
@@ -222,6 +298,9 @@ async function buildReviewAISummary(
       concerns,
       themes,
       mostHelpful,
+      // New fields are additive: old consumers ignore them, the
+      // upgraded summarizer renders the sentiment block from them.
+      sentiment,
     };
   } catch (err) {
     logger.error('buildReviewAISummary: unexpected error', { error: String(err) });

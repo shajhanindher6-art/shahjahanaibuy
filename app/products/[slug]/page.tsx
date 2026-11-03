@@ -763,7 +763,7 @@ export default function ProductDetailsPage() {
           </TabsContent>
 
           <TabsContent value="reviews" className="mt-4">
-            <AIReviewSummarizer summary={aiReviewSummary} />
+            <AIReviewSummarizer summary={aiReviewSummary} language={language} />
             <ReviewForm slug={slug} onReviewAdded={refreshReviews} />
             <Card>
               <CardHeader>
@@ -801,7 +801,12 @@ export default function ProductDetailsPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-muted-foreground">No reviews yet.</p>
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground">No reviews yet.</p>
+                    <p className="text-sm text-muted-foreground">
+                      A sentiment summary will appear here once reviews arrive.
+                    </p>
+                  </div>
                 )}
               </CardContent>
             </Card>
