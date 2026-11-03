@@ -60,6 +60,15 @@ export const env = {
   vapidPublicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY,
 
+  // WhatsApp & Telegram alert webhooks (owner setup only).
+  // All optional: when any leg is unset, that channel reports
+  // "not_configured" and is skipped (fail-closed, same as Resend/push).
+  // Never commit real values — set them in the hosting dashboard only.
+  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+  whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN,
+  whatsappTemplateName: process.env.WHATSAPP_TEMPLATE_NAME,
+  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
+
   // Monitoring / crash reporting
   sentryDsn: process.env.SENTRY_DSN,
 

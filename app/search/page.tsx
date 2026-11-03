@@ -2,7 +2,7 @@
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, SlidersHorizontal, X, Star, TrendingDown, Link2, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,10 @@ import { cn } from '@/lib/utils';
 import { WishlistButton } from '@/components/products/wishlist-button';
 import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
 import { Price } from '@/components/region/price';
+import {
+  VoiceSearchButton,
+  speakSearchSummary,
+} from '@/components/search/voice-search-button';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import type { WebSearchResult } from '@/types/ai';
@@ -62,6 +66,11 @@ export default function SearchPage() {
   const router = useRouter();
   const { language } = useRegion();
   const [query, setQuery] = useState('');
+  // Voice search: set when a spoken transcript starts a search, so the
+  // spoken summary below fires exactly once for that search (and never
+  // for typed searches or filter changes).
+  const voiceSearchRef = useRef(false);
+  const voiceLangRef = useRef('en-US');
   const [searchMode, setSearchMode] = useState<'text' | 'url'>('text');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [webResults, setWebResults] = useState<WebSearchResult[]>([]);
@@ -129,6 +138,16 @@ export default function SearchPage() {
       // Ignore storage errors.
     }
   }, []);
+
+  // Spoken reply for a voice-started search: once the results land,
+  // speak the count in the voice input's language, then clear the flag
+  // so filter changes never re-speak.
+  useEffect(() => {
+    if (voiceSearchRef.current && hasSearched && !loading) {
+      voiceSearchRef.current = false;
+      speakSearchSummary(results.length, voiceLangRef.current);
+    }
+  }, [results, hasSearched, loading]);
 
   const performSearch = useCallback(async (searchQuery: string, mode?: 'text' | 'url') => {
     if (!searchQuery.trim()) return;
@@ -372,6 +391,22 @@ export default function SearchPage() {
             </Button>
           </div>
         </form>
+
+        {/* Option 7: browser-native voice input (Web Speech API). The
+            transcript is shown as text and runs through the SAME search
+            path as typed input — no parallel search, no server audio. */}
+        <div className="mb-6">
+          <VoiceSearchButton
+            disabled={loading}
+            onTranscript={(text, langCode) => {
+              setQuery(text);
+              setSearchMode('text');
+              voiceLangRef.current = langCode;
+              voiceSearchRef.current = true;
+              performSearch(text, 'text');
+            }}
+          />
+        </div>
 
         {recentSearches.length > 0 && (
           <div className="mb-6 flex flex-wrap items-center gap-2">

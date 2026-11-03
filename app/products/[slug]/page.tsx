@@ -13,6 +13,9 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PriceHistoryGraph } from '@/components/products/price-history-graph';
+import { BuyVsWait } from '@/components/products/buy-vs-wait';
+import { TaxEstimator } from '@/components/products/tax-estimator';
+import { ProductVisualizer } from '@/components/products/product-visualizer';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
 import { BestTimeToBuyIndicator } from '@/components/products/best-time-to-buy';
 import { SimilarProducts } from '@/components/products/similar-products';
@@ -413,7 +416,10 @@ export default function ProductDetailsPage() {
                 currentPrice={prediction.currentPrice}
                 averagePrice={prediction.averagePrice}
                 lowestPrice={prediction.lowestPrice}
-                expectedSaleDate={prediction.expectedSaleDate}
+                // Exact-date forecasts are retired (Option 7 honesty rule):
+                // with only a few recorded points, SmartBuy shows an
+                // estimate with its confidence, not a predicted sale date.
+                expectedSaleDate={null}
               />
             )}
 
@@ -565,6 +571,16 @@ export default function ProductDetailsPage() {
               </CardContent>
             )}
           </Card>
+        )}
+
+        {/* Option 7: Tax & duty estimator, fed by the cheapest in-stock
+            merchant price (listings are cheapest-first). It is an
+            estimate only — never added into a merchant price. */}
+        {merchantsLoaded && merchants.length > 0 && (
+          <TaxEstimator
+            priceUsd={merchants[0].price}
+            defaultCountryCode={detectedCountryCode ?? region.code}
+          />
         )}
 
         {/* Local stores / global fallback — Worldwide expansion:
@@ -762,35 +778,31 @@ export default function ProductDetailsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {prediction ? (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                      <StatBox
-                        label="Discount Chance"
-                        value={`${Math.round(prediction.discountProbability)}%`}
-                        color={prediction.discountProbability > 50 ? 'text-green-600' : 'text-muted-foreground'}
-                      />
-                      <StatBox
-                        label="Expected Sale"
-                        value={prediction.expectedSaleDate ?? '—'}
-                      />
-                      <StatBox
-                        label="Expected Low"
-                        value={prediction.expectedLowestPrice ? `$${prediction.expectedLowestPrice.toFixed(2)}` : '—'}
-                        color="text-green-600"
-                      />
-                      <StatBox
-                        label="Confidence"
-                        value={`${Math.round(prediction.confidenceScore)}%`}
-                      />
-                    </div>
-                    <div className="rounded-lg bg-purple-50 p-4 text-sm leading-relaxed dark:bg-purple-950">
-                      {prediction.explanation}
-                    </div>
+                {/* Option 7: Buy Now vs Wait engine over the real recorded
+                    price_history points (same endpoint the graph uses).
+                    It replaces the retired exact-date / exact-price
+                    forecast: no future price or date is ever presented
+                    as a fact — only a recommendation + capped confidence
+                    + a reason tied to the recorded points. */}
+                <BuyVsWait slug={slug} />
+                {prediction && (
+                  <div className="mt-4 grid grid-cols-2 gap-4">
+                    <StatBox
+                      label="Discount Chance (legacy engine)"
+                      value={`${Math.round(prediction.discountProbability)}%`}
+                      color={prediction.discountProbability > 50 ? 'text-green-600' : 'text-muted-foreground'}
+                    />
+                    <StatBox
+                      label="Confidence (legacy engine)"
+                      value={`${Math.round(prediction.confidenceScore)}%`}
+                    />
                   </div>
-                ) : (
-                  <p className="text-muted-foreground">No prediction available yet.</p>
                 )}
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Exact-date and exact-price forecasts are not shown: with few
+                  recorded points, SmartBuy shows an estimate with its
+                  confidence instead of a guaranteed future price.
+                </p>
               </CardContent>
             </Card>
           </TabsContent>
@@ -861,6 +873,20 @@ export default function ProductDetailsPage() {
                   <SpecRow label="GTIN" value={product.gtin} />
                   <SpecRow label="Confidence Score" value={`${product.confidenceScore}%`} />
                 </div>
+              </CardContent>
+            </Card>
+            {/* Option 7: Size & 3D view. No catalog product carries
+                dimensions or a 3D model file today, so this honestly
+                renders the no-data notes; when real dimensions or a
+                real model URL exist for a product, the diagram / AR
+                slot activates from those values — nothing is invented. */}
+            <Card className="mt-4">
+              <CardContent className="pt-6">
+                <ProductVisualizer
+                  productName={product.name}
+                  dimensions={null}
+                  modelUrl={null}
+                />
               </CardContent>
             </Card>
           </TabsContent>

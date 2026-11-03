@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useToast } from '@/hooks/use-toast';
 import { subscribePush, unsubscribePush } from '@/lib/push-client';
+import { WebhookChannelsCard } from '@/components/dashboard/webhook-channels-card';
 import { Save } from 'lucide-react';
 import type { UserSettings } from '@/types';
 
@@ -236,6 +237,11 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Option 7: WhatsApp & Telegram alert webhooks hub. Its own card
+          with its own save/status actions, so a missing webhook
+          migration can never break the main settings save above. */}
+      <WebhookChannelsCard />
     </div>
   );
 }

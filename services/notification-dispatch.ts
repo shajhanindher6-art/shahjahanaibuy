@@ -9,6 +9,41 @@ import { env } from '@/lib/config/env';
 import { logger } from '@/lib/config/logger';
 import { sendEmail, sendWeeklyDigestEmail, sendPriceAlertEmail } from '@/services/email';
 import { sendPushNotification } from '@/services/push';
+import { sendTelegramAlert, sendWhatsAppAlert } from '@/services/alert-webhooks';
+
+/**
+ * Option 7: webhook preferences for one user, read from user_settings.
+ * Returns null when the row is missing, the migration has not been run,
+ * or the read fails — every one of those means "webhook legs not
+ * wanted", never a crash and never a guessed destination.
+ */
+async function getWebhookPrefs(
+  supabase: AnySupabaseClient,
+  userId: string
+): Promise<{
+  whatsappEnabled: boolean;
+  whatsappPhone: string | null;
+  telegramEnabled: boolean;
+  telegramChatId: string | null;
+} | null> {
+  try {
+    const { data, error } = await supabase
+      .from('user_settings')
+      .select('whatsapp_enabled, whatsapp_phone, telegram_enabled, telegram_chat_id')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error || !data) return null;
+    const row = data as Record<string, unknown>;
+    return {
+      whatsappEnabled: row.whatsapp_enabled === true,
+      whatsappPhone: (row.whatsapp_phone as string | null) ?? null,
+      telegramEnabled: row.telegram_enabled === true,
+      telegramChatId: (row.telegram_chat_id as string | null) ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
 
 interface QueuedNotification {
   id: string;
@@ -129,7 +164,20 @@ async function dispatchNotification(
     const wantsEmail = notif.channel === 'email' || notif.channel === 'both';
     const wantsPush = notif.channel === 'push' || notif.channel === 'both';
 
-    if (!wantsEmail && !wantsPush) {
+    // Option 7: WhatsApp/Telegram legs are preference-driven, not
+    // channel-field-driven, and fire ONLY for price_alert rows where
+    // the user enabled the channel and saved a destination. Other
+    // notification types never touch these channels.
+    const webhookPrefs =
+      notif.type === 'price_alert' ? await getWebhookPrefs(supabase, notif.user_id) : null;
+    const wantsWhatsApp = Boolean(
+      webhookPrefs?.whatsappEnabled && webhookPrefs?.whatsappPhone
+    );
+    const wantsTelegram = Boolean(
+      webhookPrefs?.telegramEnabled && webhookPrefs?.telegramChatId
+    );
+
+    if (!wantsEmail && !wantsPush && !wantsWhatsApp && !wantsTelegram) {
       logger.warn('Unknown notification channel', { channel: notif.channel });
       return { delivered: false, permanent: true };
     }
@@ -141,6 +189,10 @@ async function dispatchNotification(
     // transient failures — retrying them is pure queue spam.
     let emailPermanent = false;
     let pushPermanent = false;
+    let whatsappOk = false;
+    let telegramOk = false;
+    let whatsappPermanent = false;
+    let telegramPermanent = false;
 
     if (wantsEmail) {
       if (!env.resendApiKey) {
@@ -207,6 +259,41 @@ async function dispatchNotification(
       }
     }
 
+    // Option 7 webhook legs (price_alert only, preference-driven).
+    // Missing owner credentials => permanent skip (fail-closed, no
+    // retry spam); a failed provider call stays transient (retries).
+    if ((wantsWhatsApp || wantsTelegram) && notif.data) {
+      const d = notif.data as Record<string, unknown>;
+      const message = {
+        productName: (d.productName as string) ?? 'a product you track',
+        triggeredPrice: Number(d.triggeredPrice) || 0,
+        targetPrice: Number(d.targetPrice) || 0,
+        productUrl: (d.productUrl as string) ?? '',
+      };
+      if (wantsWhatsApp && webhookPrefs?.whatsappPhone) {
+        const result = await sendWhatsAppAlert(
+          {
+            phoneNumberId: env.whatsappPhoneNumberId,
+            accessToken: env.whatsappAccessToken,
+            templateName: env.whatsappTemplateName,
+          },
+          webhookPrefs.whatsappPhone,
+          message
+        );
+        if (result.status === 'sent') whatsappOk = true;
+        else if (result.status === 'not_configured') whatsappPermanent = true;
+      }
+      if (wantsTelegram && webhookPrefs?.telegramChatId) {
+        const result = await sendTelegramAlert(
+          { botToken: env.telegramBotToken },
+          webhookPrefs.telegramChatId,
+          message
+        );
+        if (result.status === 'sent') telegramOk = true;
+        else if (result.status === 'not_configured') telegramPermanent = true;
+      }
+    }
+
     if (notif.channel === 'both' && emailOk !== pushOk) {
       logger.warn('dispatchNotification: one leg of a both-channel notification failed', {
         notifId: notif.id,
@@ -215,13 +302,15 @@ async function dispatchNotification(
       });
     }
 
-    const delivered = emailOk || pushOk;
+    const delivered = emailOk || pushOk || whatsappOk || telegramOk;
     // Permanent only when EVERY wanted leg is permanently unavailable.
     // If any leg merely failed transiently, the row keeps retrying.
     const permanent =
       !delivered &&
       (!wantsEmail || emailPermanent) &&
-      (!wantsPush || pushPermanent);
+      (!wantsPush || pushPermanent) &&
+      (!wantsWhatsApp || whatsappPermanent) &&
+      (!wantsTelegram || telegramPermanent);
 
     return { delivered, permanent };
   } catch (err) {
