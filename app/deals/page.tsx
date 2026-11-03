@@ -12,6 +12,7 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { cn } from '@/lib/utils';
 import { Price } from '@/components/region/price';
+import { CommunityDeals } from '@/components/deals/community-deals';
 
 interface RankedDeal {
   id: string;
@@ -240,6 +241,8 @@ export default function DealsPage() {
             </div>
           </div>
         )}
+
+        <CommunityDeals />
       </div>
       <SiteFooter />
     </div>

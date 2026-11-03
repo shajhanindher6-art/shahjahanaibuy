@@ -71,6 +71,63 @@ export default function ExtensionPage() {
 
           <Card>
             <CardHeader>
+              <CardTitle className="text-base">Integration Hub — feature status (extension v1.2.0)</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <p className="flex justify-between gap-4">
+                <span><strong>Better-price banner</strong> — on retailer product pages</span>
+                <span className="shrink-0 font-medium text-green-700">Available</span>
+              </p>
+              <p className="flex justify-between gap-4">
+                <span><strong>Checkout coupon panel</strong> — tap Apply, retailer applies the code</span>
+                <span className="shrink-0 font-medium text-green-700">Available</span>
+              </p>
+              <p className="flex justify-between gap-4">
+                <span>
+                  <strong>Background price-drop sync</strong> — re-checks products you viewed, hourly,
+                  and notifies you in the browser when SmartBuy&apos;s price drops
+                </span>
+                <span className="shrink-0 font-medium text-green-700">Available in v1.2.0</span>
+              </p>
+              <p className="flex justify-between gap-4">
+                <span>
+                  <strong>Universal shopping cart</strong> — items you save from retailer pages live
+                  in this browser only; opening them takes you to SmartBuy&apos;s wishlist
+                </span>
+                <span className="shrink-0 font-medium text-amber-700">Browser-local only</span>
+              </p>
+              <p className="text-muted-foreground">
+                Cross-device cart sync requires sign-in and is <strong>not</strong> available — the
+                extension never claims it. Likewise, no code is ever applied automatically: auto-trying
+                codes can get a shopper&apos;s retailer account flagged, so every code needs your tap.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Integration endpoints (public, no login needed)</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <p className="text-muted-foreground">
+                The extension talks to these SmartBuy endpoints. They serve only public catalog data
+                (capped responses, no account data, no secrets):
+              </p>
+              <ul className="list-disc space-y-1 pl-5">
+                <li>
+                  <code>GET /api/v1/extension/coupons?domain=amazon.com</code> — that merchant&apos;s
+                  currently-valid coupons (expired coupons are never served).
+                </li>
+                <li>
+                  <code>GET /api/v1/extension/price?slug=macbook-air-13</code> (or{' '}
+                  <code>?q=product name</code>) — cheapest in-stock merchant listings for one product.
+                </li>
+              </ul>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle className="text-base">Install (Chrome or Edge, free)</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">

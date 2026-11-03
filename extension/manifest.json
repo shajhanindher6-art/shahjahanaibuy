@@ -29,14 +29,15 @@
     "https://*.bestbuy.com/*",
     "https://*.ebay.com/*",
     "https://*.aliexpress.com/*",
-    "https://aismartbuy.netlify.app/*"
+    "https://shahjahanaibuy-b1zp.vercel.app/*"
   ],
   "manifest_version": 3,
   "name": "SmartBuy AI \u2014 Price Comparison & Coupons",
   "permissions": [
     "activeTab",
     "storage",
-    "notifications"
+    "notifications",
+    "alarms"
   ],
-  "version": "1.1.0"
+  "version": "1.2.0"
 }

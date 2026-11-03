@@ -8,7 +8,7 @@
  */
 
 import Link from 'next/link';
-import { ArrowRight, Check, Search, Sparkles } from 'lucide-react';
+import { ArrowRight, Camera, Check, Gift, Puzzle, Search, Sparkles } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { tFor } from '@/lib/i18n';
@@ -45,6 +45,17 @@ export function HeroCopy() {
             {tFor(language, 'heroCtaSearch')}
           </Link>
         </Button>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-4 text-sm">
+        <Link href="/scan" className="flex items-center gap-1.5 text-muted-foreground underline-offset-2 hover:underline">
+          <Camera className="h-4 w-4" /> Scan a product photo
+        </Link>
+        <Link href="/gifts" className="flex items-center gap-1.5 text-muted-foreground underline-offset-2 hover:underline">
+          <Gift className="h-4 w-4" /> Find a gift
+        </Link>
+        <Link href="/extension" className="flex items-center gap-1.5 text-muted-foreground underline-offset-2 hover:underline">
+          <Puzzle className="h-4 w-4" /> Extension & integrations
+        </Link>
       </div>
       <div className="mt-8 flex items-center justify-center gap-6 text-sm text-muted-foreground">
         <span className="flex items-center gap-1.5">

@@ -1,16 +1,20 @@
-// SmartBuy AI — Browser Extension Content Script (v1.1.0)
+// SmartBuy AI — Browser Extension Content Script (v1.2.0)
 //
 // Two jobs, both on the retailer's own site:
 //  1. Product pages: detect the product, ask SmartBuy's public
-//     ai-search API for a better catalog price, and show a banner
-//     when one exists. Only the product title is sent — no login,
-//     no account data, no browsing history.
+//     extension price endpoint for a better catalog price, and show
+//     a banner when one exists. Only the product title is sent —
+//     no login, no account data, no browsing history. The matched
+//     price is also saved locally (chrome.storage.local) so the
+//     background service worker can check it hourly for price drops
+//     (see background.js) — that data never leaves the browser
+//     except for the price-check requests themselves.
 //  2. Checkout / cart pages: show SmartBuy coupon codes for this
-//     retailer (from the public coupons API) with an Apply button
-//     that fills the retailer's own promo field and clicks its
-//     Apply button. The retailer owns its checkout, so SmartBuy
-//     cannot force a discount: exactly one code is applied, only
-//     when the shopper clicks Apply, and only if a promo field
+//     retailer (from the public extension coupons endpoint) with an
+//     Apply button that fills the retailer's own promo field and
+//     clicks its Apply button. The retailer owns its checkout, so
+//     SmartBuy cannot force a discount: exactly one code is applied,
+//     only when the shopper clicks Apply, and only if a promo field
 //     can be found on the page.
 //
 // Honest limits: retailer page layouts change often, so the
@@ -20,7 +24,7 @@
 // applied automatically without a click: auto-trying codes can
 // get a shopper's retailer account flagged.
 
-const API_BASE = 'https://aismartbuy.netlify.app';
+const API_BASE = 'https://shahjahanaibuy-b1zp.vercel.app';
 
 const RETAILER_PATTERNS = {
   amazon: {
@@ -161,35 +165,46 @@ function createBanner(productInfo, betterPrices) {
   });
 }
 
+// Remember a matched product's SmartBuy price locally so the
+// background worker can re-check it hourly for drops. Local only:
+// nothing is uploaded, and no account is involved.
+function rememberTrackedPrice(productSlug, price, title) {
+  try {
+    if (!productSlug || typeof price !== 'number') return;
+    chrome.storage.local.get(['smartbuyTracked'], (stored) => {
+      const tracked = stored.smartbuyTracked || {};
+      tracked[productSlug] = { price, title, checkedAt: Date.now() };
+      chrome.storage.local.set({ smartbuyTracked: tracked });
+    });
+  } catch (e) {
+    // Storage unavailable — banner still works, sync just skips this item.
+  }
+}
+
 async function checkForBetterPrices(productInfo) {
   try {
-    const res = await fetch(`${API_BASE}/api/v1/ai-search`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: productInfo.title,
-        pageSize: 5,
-      }),
-    });
+    const res = await fetch(
+      `${API_BASE}/api/v1/extension/price?q=${encodeURIComponent(productInfo.title)}`
+    );
 
     if (!res.ok) return;
 
     const data = await res.json();
-    // The ai-search API returns the results array directly in
-    // `data` (meta holds total/parsedIntent). Accept the object
-    // shape too so a future API change cannot silently break this.
-    const results = Array.isArray(data.data) ? data.data : (data.data?.results ?? []);
-    if (!Array.isArray(results)) return;
-
-    const better = results
-      .map((r) => ({
-        retailer: (r.stores && r.stores[0]) || r.product?.brand || 'SmartBuy',
-        price: typeof r.currentPrice === 'number' ? r.currentPrice : null,
-        url: r.product?.slug ? `${API_BASE}/products/${r.product.slug}` : null,
+    // The extension price endpoint returns { data: offers, meta: { product } }.
+    const offers = Array.isArray(data.data) ? data.data : [];
+    const productSlug = data.meta?.product?.slug || null;
+    const better = offers
+      .map((o) => ({
+        retailer: o.merchant || 'SmartBuy',
+        price: typeof o.price === 'number' ? o.price : null,
+        url: productSlug ? `${API_BASE}/products/${productSlug}` : o.url || null,
       }))
       .filter((r) => r.price !== null && r.price > 0)
       .sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
 
+    if (better.length > 0) {
+      rememberTrackedPrice(productSlug, better[0].price, productInfo.title);
+    }
     if (better.length > 0 && productInfo.price && better[0].price < productInfo.price) {
       createBanner(productInfo, better);
     }
@@ -307,24 +322,20 @@ function createCouponPanel(retailer, coupons, statusEl) {
 
 async function checkForCoupons(retailer) {
   try {
-    const [couponsRes, merchantsRes] = await Promise.all([
-      fetch(`${API_BASE}/api/v1/coupons?pageSize=100`),
-      fetch(`${API_BASE}/api/v1/merchants?pageSize=100`),
-    ]);
-    const couponsData = await couponsRes.json();
-    const merchantsData = await merchantsRes.json();
-    const coupons = Array.isArray(couponsData.data) ? couponsData.data : [];
-    const merchants = Array.isArray(merchantsData.data) ? merchantsData.data : [];
-    const wanted = RETAILER_PATTERNS[retailer].merchantName.toLowerCase();
-    const merchantIds = new Set(
-      merchants.filter((m) => (m.name || '').toLowerCase() === wanted).map((m) => m.id)
-    );
-    const mine = coupons.filter((c) => merchantIds.has(c.merchantId));
-    if (mine.length === 0) return;
+    // The extension coupons endpoint already resolves the domain to
+    // its merchant and serves only currently-valid coupons, so no
+    // second merchants fetch (and no client-side merchant matching)
+    // is needed anymore.
+    const domain = window.location.hostname;
+    const res = await fetch(`${API_BASE}/api/v1/extension/coupons?domain=${encodeURIComponent(domain)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const coupons = Array.isArray(data.data) ? data.data : [];
+    if (coupons.length === 0) return;
 
     const statusEl = document.createElement('span');
     statusEl.style.cssText = 'font-size: 12px; color: #475569;';
-    createCouponPanel(retailer, mine, statusEl);
+    createCouponPanel(retailer, coupons, statusEl);
   } catch (e) {
     // Silently fail — extension should not disrupt checkout
   }
