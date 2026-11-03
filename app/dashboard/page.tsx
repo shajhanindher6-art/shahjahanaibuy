@@ -13,6 +13,7 @@ import {
   Tag,
   Heart,
   Clock,
+  Archive,
   type LucideIcon,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -54,6 +55,12 @@ const quickActions: QuickAction[] = [
     title: 'Recommendations',
     description: 'Personalized suggestions based on your activity',
     href: '/dashboard/recommendations',
+  },
+  {
+    icon: Archive,
+    title: 'Receipt Vault',
+    description: 'Save purchases and track warranty expiry',
+    href: '/dashboard/vault',
   },
 ];
 

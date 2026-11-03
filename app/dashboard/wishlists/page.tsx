@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useToast } from '@/hooks/use-toast';
+import { ExternalItemsManager } from '@/components/dashboard/external-items-manager';
 
 interface Wishlist {
   id: string;
@@ -220,6 +221,11 @@ export default function WishlistsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Option 8, Feature 5: add products from ANY store by pasting a URL.
+          External items never claim price tracking unless the user
+          explicitly links a catalog product. */}
+      <ExternalItemsManager />
     </div>
   );
 }

@@ -29,10 +29,16 @@
       <span class="status-text" id="status-text">Checking page...</span>
     </div>
     <button class="btn" id="search-btn">Search for Better Prices</button>
+    <button class="btn" id="save-btn" style="background: #059669;">Save This Page to SmartBuy</button>
     <a class="btn" href="https://shahjahanaibuy-b1zp.vercel.app/deals" target="_blank">Browse Deals & Coupons</a>
     <a class="btn" href="https://shahjahanaibuy-b1zp.vercel.app/dashboard" target="_blank" style="background: #64748b;">Open Dashboard</a>
     <div class="stats" id="stats">
       <p>Supported sites: Amazon, Walmart, Best Buy, eBay, AliExpress</p>
+    </div>
+    <div class="stats" id="saved-section">
+      <p style="font-weight: 600; color: #334155;">Saved in this browser (local only)</p>
+      <p id="saved-empty">Nothing saved yet. Saving here is browser-local — sign in on the site to use the synced wishlist.</p>
+      <ul id="saved-list" style="padding-left: 16px; margin: 4px 0;"></ul>
     </div>
   </div>
   <script src="popup.js"></script>

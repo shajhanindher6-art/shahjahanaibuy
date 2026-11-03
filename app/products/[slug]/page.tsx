@@ -15,6 +15,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PriceHistoryGraph } from '@/components/products/price-history-graph';
 import { BuyVsWait } from '@/components/products/buy-vs-wait';
 import { TaxEstimator } from '@/components/products/tax-estimator';
+import { EcoFootprint } from '@/components/products/eco-footprint';
+import { TrustSignals } from '@/components/products/trust-signals';
+import { SmartPool } from '@/components/pools/smart-pool';
 import { ProductVisualizer } from '@/components/products/product-visualizer';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
 import { BestTimeToBuyIndicator } from '@/components/products/best-time-to-buy';
@@ -580,6 +583,35 @@ export default function ProductDetailsPage() {
           <TaxEstimator
             priceUsd={merchants[0].price}
             defaultCountryCode={detectedCountryCode ?? region.code}
+          />
+        )}
+
+        {/* Option 8: eco footprint (estimate only, real alternatives),
+            seller & listing trust check (real signals only), and
+            SmartPool group buying (no discount is ever promised). */}
+        {product && (
+          <EcoFootprint
+            slug={slug}
+            category={product.category}
+            cheapestPriceUsd={merchantsLoaded && merchants.length > 0 ? merchants[0].price : null}
+          />
+        )}
+        {product && (
+          <TrustSignals
+            slug={slug}
+            merchantNames={[...new Set(merchants.map((m) => m.merchantName).filter(Boolean) as string[])]}
+            knownRetailers={['Amazon', 'Best Buy']}
+            totalReviews={reviewSummary?.totalReviews ?? 0}
+            ratingDistribution={reviewSummary?.ratingDistribution ?? {}}
+            priceUsd={merchantsLoaded && merchants.length > 0 ? merchants[0].price : null}
+            imageUrl={product.imageUrl}
+          />
+        )}
+        {product && (
+          <SmartPool
+            productId={product.id}
+            productName={product.name}
+            regionCode={detectedCountryCode ?? region.code}
           />
         )}
 
