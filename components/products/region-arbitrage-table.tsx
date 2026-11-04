@@ -1,0 +1,266 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { getRegionByCountry, convertUsd } from '@/lib/region';
+import type { CurrencyCode } from '@/services/currency';
+import { DEFAULT_DUTY_PCT, standardRateForCountry } from '@/services/tax-estimator';
+import { buildStoreSearchUrl, getStoresForCountry } from '@/lib/stores';
+import type { FxSource } from '@/services/fx-rates';
+
+interface FxState {
+  rates: Partial<Record<CurrencyCode, number>>;
+  source: FxSource;
+  fetchedAt: string | null;
+}
+
+/** Regions compared in the arbitrage table (all exist in lib/region.ts). */
+const COMPARED_CODES = ['US', 'GB', 'JP', 'DE', 'PK', 'IN', 'AE', 'CA', 'AU', 'SG'];
+
+interface ArbitrageRow {
+  code: string;
+  name: string;
+  currency: CurrencyCode;
+  locale: string;
+  priceUsd: number;
+  priceLocal: number;
+  dutyUsd: number;
+  taxRatePct: number | null;
+  taxUsd: number | null;
+  landedUsd: number;
+  landedLocal: number;
+  storeName: string;
+  storeUrl: string;
+  storeKind: 'local' | 'global';
+}
+
+/**
+ * Worldwide Price Comparison — Option 11, Phase 1 (Region Arbitrage Table).
+ *
+ * HONESTY, enforced in the UI (this table must never imply what it
+ * cannot prove):
+ * - Every price here is an FX CONVERSION of the single real US
+ *   merchant price. It is NOT a UK, JP, or any other country's
+ *   retailer price. No local price, stock, discount, or deal is
+ *   claimed for any region — the store link goes to that region's
+ *   own search page so the shopper can check the retailer's price.
+ * - Landed figures are ESTIMATES (duty at the documented 10%
+ *   placeholder default, tax at standard rates where listed) and
+ *   EXCLUDE shipping, which varies by carrier and is handled in
+ *   the Landed Cost Calculator. "Lowest estimated landed cost"
+ *   compares only rows with a known tax rate; rows whose tax
+ *   varies are never crowned cheapest.
+ * - The US row is domestic (no import duty). Every other row is an
+ *   import estimate into that region.
+ */
+export function RegionArbitrageTable({
+  priceUsd,
+  productName,
+  visitorCountryCode,
+}: {
+  /** Cheapest US merchant price in USD (a real recorded price). */
+  priceUsd: number;
+  productName: string;
+  /** Visitor's country code, highlighted in the table. */
+  visitorCountryCode: string;
+}) {
+  const [fx, setFx] = useState<FxState | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/v1/fx-rates')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (!cancelled && json?.success && json.data?.rates) {
+          setFx({
+            rates: json.data.rates as Partial<Record<CurrencyCode, number>>,
+            source: (json.data.source as FxSource) ?? 'static',
+            fetchedAt: (json.data.fetchedAt as string | null) ?? null,
+          });
+        }
+      })
+      .catch(() => {
+        // Static fallback below (region convertUsd) covers this.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const rows = useMemo<ArbitrageRow[]>(() => {
+    const out: ArbitrageRow[] = [];
+    for (const code of COMPARED_CODES) {
+      const region = getRegionByCountry(code);
+      if (!region) continue;
+      const currency = region.currency;
+      const rate = fx?.rates[currency];
+      const priceLocal = rate && rate > 0 ? priceUsd * rate : convertUsd(priceUsd, currency);
+      // Domestic US purchase: no import duty. Everywhere else the
+      // documented placeholder default applies (estimate only).
+      const dutyUsd = code === 'US' ? 0 : (priceUsd * DEFAULT_DUTY_PCT) / 100;
+      const standard = standardRateForCountry(code);
+      const taxRatePct = standard ? standard.ratePct : null;
+      const taxUsd = taxRatePct === null ? null : ((priceUsd + dutyUsd) * taxRatePct) / 100;
+      const landedUsd = priceUsd + dutyUsd + (taxUsd ?? 0);
+      const landedLocal = rate && rate > 0 ? landedUsd * rate : convertUsd(landedUsd, currency);
+      const stores = getStoresForCountry(code);
+      const first = stores.stores[0];
+      out.push({
+        code,
+        name: region.name,
+        currency,
+        locale: region.locale,
+        priceUsd,
+        priceLocal,
+        dutyUsd,
+        taxRatePct,
+        taxUsd,
+        landedUsd,
+        landedLocal,
+        storeName: first ? first.name : 'Store search',
+        storeUrl: first ? buildStoreSearchUrl(first, productName) : '#',
+        storeKind: stores.kind,
+      });
+    }
+    return out;
+  }, [priceUsd, productName, fx]);
+
+  const cheapestCode = useMemo(() => {
+    let best: ArbitrageRow | null = null;
+    for (const row of rows) {
+      // Only rows with a known tax rate compete: a row that excludes
+      // tax cannot honestly be called cheapest.
+      if (row.taxRatePct === null) continue;
+      if (!best || row.landedUsd < best.landedUsd) best = row;
+    }
+    return best?.code ?? null;
+  }, [rows]);
+
+  function formatLocal(row: ArbitrageRow, usd: number): string {
+    const rate = fx?.rates[row.currency];
+    const converted = rate && rate > 0 ? usd * rate : convertUsd(usd, row.currency);
+    return new Intl.NumberFormat(row.locale, {
+      style: 'currency',
+      currency: row.currency,
+    }).format(converted);
+  }
+
+  function formatUsd(usd: number): string {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(usd);
+  }
+
+  const fxNote =
+    fx?.source === 'live'
+      ? `FX: live daily rate (open.er-api.com${fx.fetchedAt ? `, updated ${new Date(fx.fetchedAt).toLocaleDateString('en-US')}` : ''})`
+      : 'FX: approximate static rates (≈) — live feed unavailable, conversions are estimates';
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Worldwide Price Comparison — Option 11</CardTitle>
+        <CardDescription>
+          Estimate only, before shipping. Prices below are FX conversions of the real US
+          merchant price — NOT local retailer prices. No local price, stock, or discount is
+          claimed; use the store link to check the retailer&apos;s own price.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
+            <thead>
+              <tr className="border-b text-left text-muted-foreground">
+                <th className="py-2 pr-3 font-medium">Region</th>
+                <th className="py-2 pr-3 font-medium">Price (FX converted)</th>
+                <th className="py-2 pr-3 font-medium">Duty est.</th>
+                <th className="py-2 pr-3 font-medium">Tax est.</th>
+                <th className="py-2 pr-3 font-medium">Landed est. (excl. shipping)</th>
+                <th className="py-2 font-medium">Check locally</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.code} className="border-b last:border-0">
+                  <td className="py-2 pr-3">
+                    <span className="font-medium">{row.name}</span>{' '}
+                    <span className="text-muted-foreground">({row.code})</span>
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {row.code === visitorCountryCode.toUpperCase() && (
+                        <Badge variant="secondary">Your region</Badge>
+                      )}
+                      {row.code === cheapestCode && (
+                        <Badge>Lowest estimated landed cost</Badge>
+                      )}
+                    </div>
+                  </td>
+                  <td className="py-2 pr-3">
+                    {formatLocal(row, row.priceUsd)}
+                    <div className="text-xs text-muted-foreground">
+                      {formatUsd(row.priceUsd)}
+                      {fx?.source !== 'live' && row.currency !== 'USD' ? ' ≈' : ''}
+                    </div>
+                  </td>
+                  <td className="py-2 pr-3">
+                    {row.code === 'US' ? (
+                      <span className="text-muted-foreground">— (domestic)</span>
+                    ) : (
+                      <>
+                        {formatUsd(row.dutyUsd)}
+                        <div className="text-xs text-muted-foreground">
+                          {DEFAULT_DUTY_PCT}% placeholder
+                        </div>
+                      </>
+                    )}
+                  </td>
+                  <td className="py-2 pr-3">
+                    {row.taxUsd === null ? (
+                      <span className="text-muted-foreground">Varies — enter rate</span>
+                    ) : (
+                      <>
+                        {formatUsd(row.taxUsd)}
+                        <div className="text-xs text-muted-foreground">
+                          {row.taxRatePct}% standard
+                        </div>
+                      </>
+                    )}
+                  </td>
+                  <td className="py-2 pr-3 font-medium">
+                    {formatLocal(row, row.landedUsd)}
+                    <div className="text-xs font-normal text-muted-foreground">
+                      {formatUsd(row.landedUsd)}
+                      {row.taxUsd === null ? ' (excl. tax)' : ''}
+                    </div>
+                  </td>
+                  <td className="py-2">
+                    <a
+                      href={row.storeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline underline-offset-2"
+                    >
+                      Search on {row.storeName}
+                    </a>
+                    <div className="text-xs text-muted-foreground">
+                      {row.storeKind === 'global' ? 'Global retailer search' : 'Local store search'}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          How to read this: the US merchant price ({formatUsd(priceUsd)}) is converted into
+          each currency, then duty (10% placeholder default, 0 for domestic US) and standard
+          tax (where listed) are added. Shipping is excluded — use the Landed Cost Calculator
+          above with your real shipping quote. {fxNote}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}

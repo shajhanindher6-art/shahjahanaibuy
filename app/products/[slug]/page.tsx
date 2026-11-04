@@ -16,6 +16,8 @@ import { PriceHistoryGraph } from '@/components/products/price-history-graph';
 import { BuyVsWait } from '@/components/products/buy-vs-wait';
 import { TaxEstimator } from '@/components/products/tax-estimator';
 import { DutyOptimizer } from '@/components/products/duty-optimizer';
+import { LandedCostCalculator } from '@/components/products/landed-cost-calculator';
+import { RegionArbitrageTable } from '@/components/products/region-arbitrage-table';
 import { PriceNegotiator } from '@/components/products/price-negotiator';
 import { ReturnWarrantyMatrix } from '@/components/products/return-warranty-matrix';
 import { DurabilityPredictor } from '@/components/products/durability-predictor';
@@ -688,6 +690,24 @@ export default function ProductDetailsPage() {
           <DutyOptimizer
             priceUsd={merchants[0].price}
             defaultCountryCode={detectedCountryCode ?? region.code}
+          />
+        )}
+
+        {/* Option 11 Phase 1: Cross-border landed cost (destination
+            picker + live-daily FX + de minimis) and the worldwide
+            price comparison (FX conversions of the US price, never
+            local retailer prices). Both estimate only. */}
+        {merchantsLoaded && merchants.length > 0 && (
+          <LandedCostCalculator
+            priceUsd={merchants[0].price}
+            defaultCountryCode={detectedCountryCode ?? region.code}
+          />
+        )}
+        {merchantsLoaded && merchants.length > 0 && product && (
+          <RegionArbitrageTable
+            priceUsd={merchants[0].price}
+            productName={product.name}
+            visitorCountryCode={detectedCountryCode ?? region.code}
           />
         )}
 
