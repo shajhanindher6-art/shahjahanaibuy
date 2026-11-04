@@ -21,8 +21,12 @@ import {
 } from '@/lib/api/responses';
 import { logApiRequest, requireAuth } from '@/lib/api/middleware';
 
+// PostgREST reports a table missing from its schema cache as PGRST205
+// (not Postgres 42P01) on the REST path, so both codes must count as
+// "migration not run yet" — otherwise a missing table surfaces as a
+// generic INTERNAL_ERROR instead of the honest enabled:false flag.
 function isMissingTable(error: { code?: string } | null | undefined): boolean {
-  return error?.code === '42P01';
+  return error?.code === '42P01' || error?.code === 'PGRST205';
 }
 
 export async function GET(request: NextRequest) {
