@@ -44,6 +44,10 @@ export async function GET(request: NextRequest) {
     if (productId) query = query.eq('product_id', productId);
     const { data: pools, error } = await query;
     if (error) {
+      // Logged server-side only (never exposed to visitors): without
+      // this, a query failure is invisible in Vercel Runtime Logs —
+      // the route just returns a generic 500 with no error detail.
+      console.error('[pools] fetch error', error);
       if (isMissingTable(error)) return apiSuccess([], 200, { poolsEnabled: false });
       return internalError('Failed to fetch pools');
     }
@@ -65,7 +69,8 @@ export async function GET(request: NextRequest) {
       200,
       { poolsEnabled: true }
     );
-  } catch {
+  } catch (err) {
+    console.error('[pools] unexpected error', err);
     return internalError('Failed to fetch pools');
   }
 }

@@ -45,6 +45,10 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(50);
     if (error) {
+      // Logged server-side only (never exposed to visitors): without
+      // this, a query failure is invisible in Vercel Runtime Logs —
+      // the route just returns a generic 500 with no error detail.
+      console.error('[community-deals] fetch error', error);
       if (isMissingTable(error)) {
         return apiSuccess([], 200, { communityEnabled: false });
       }
@@ -87,7 +91,8 @@ export async function GET(request: NextRequest) {
     }));
     enriched.sort((a, b) => b.netScore - a.netScore || b.created_at.localeCompare(a.created_at));
     return apiSuccess(enriched, 200, { communityEnabled: true });
-  } catch {
+  } catch (err) {
+    console.error('[community-deals] unexpected error', err);
     return internalError('Failed to fetch community deals');
   }
 }
