@@ -77,6 +77,14 @@ export const env = {
   // behaves catalog-only. Never commit a real key — set it in Netlify.
   serpApiKey: process.env.SERPAPI_API_KEY,
 
+  // Upstash Redis (REST) for distributed rate limiting.
+  // Optional: when unset, rate limiting falls back to the in-memory
+  // per-instance bucket (partial protection on serverless). When set,
+  // all instances share one sliding-window counter. Never commit real
+  // values — set them in the hosting dashboard only.
+  upstashRedisRestUrl: process.env.UPSTASH_REDIS_REST_URL,
+  upstashRedisRestToken: process.env.UPSTASH_REDIS_REST_TOKEN,
+
   // Future provider keys (not yet active)
   openaiApiKey: process.env.OPENAI_API_KEY,
   redisUrl: process.env.REDIS_URL,

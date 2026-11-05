@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
   // AI compute is unauthenticated by design; cap it per IP so one
   // client cannot flood the assistant. In-memory bucket (per
   // instance) — see lib/api/middleware.ts; Redis is the Phase 2 step.
-  const limited = rateLimitResponse(`deal-finder:${getClientIp(request)}`, 20);
+  const limited = await rateLimitResponse(`deal-finder:${getClientIp(request)}`, 20);
   if (limited) return limited;
 
   try {

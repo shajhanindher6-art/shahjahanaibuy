@@ -34,8 +34,8 @@ export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'gifts' });
 
   // Public gift picks are read-only compute; cap per IP so one
-  // client cannot flood them. In-memory bucket (per instance).
-  const limited = rateLimitResponse(`gifts:${getClientIp(request)}`, 30);
+  // client cannot flood them. Redis-backed when Upstash is configured, in-memory fallback otherwise.
+  const limited = await rateLimitResponse(`gifts:${getClientIp(request)}`, 30);
   if (limited) return limited;
 
   try {

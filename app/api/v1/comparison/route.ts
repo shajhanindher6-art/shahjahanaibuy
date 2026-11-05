@@ -13,8 +13,8 @@ export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'comparison' });
 
   // Public AI comparison is read-only compute; cap per IP.
-  // In-memory bucket (per instance).
-  const limited = rateLimitResponse(`comparison:${getClientIp(request)}`, 30);
+  // Redis-backed when Upstash is configured, in-memory fallback otherwise.
+  const limited = await rateLimitResponse(`comparison:${getClientIp(request)}`, 30);
   if (limited) return limited;
 
   try {

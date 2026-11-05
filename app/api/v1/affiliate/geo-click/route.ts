@@ -75,8 +75,8 @@ export async function POST(request: NextRequest) {
   // in front of the existing host validation + burst flagging so a
   // flood cannot fill the table. Fail-open contract is unchanged:
   // over the limit the beacon answers 429 instead of tracking.
-  // In-memory bucket (per instance).
-  const limited = rateLimitResponse(`affiliate.geo-click:${getClientIp(request)}`, 60);
+  // Redis-backed when Upstash is configured, in-memory fallback otherwise.
+  const limited = await rateLimitResponse(`affiliate.geo-click:${getClientIp(request)}`, 60);
   if (limited) return limited;
 
   let tracked = false;

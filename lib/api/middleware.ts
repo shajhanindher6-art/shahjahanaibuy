@@ -7,6 +7,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { logger } from '@/lib/config/logger';
 import { unauthorized, forbidden, internalError, rateLimited } from './responses';
+import { checkRateLimitDistributed } from './rate-limit';
 import type { NextRequest } from 'next/server';
 
 /**
@@ -90,9 +91,11 @@ export function logApiRequest(request: NextRequest, metadata?: Record<string, un
 }
 
 /**
- * Rate limiting architecture.
- * Phase 1: in-memory token bucket per IP address.
- * Future: Redis-backed distributed rate limiting.
+ * Rate limiting: in-memory token bucket per IP address.
+ * This is the FALLBACK. The shared path is Redis (Upstash, see
+ * lib/api/rate-limit.ts): when configured, all server instances
+ * share one sliding-window counter; otherwise — or on a Redis
+ * error — requests fall back to this bucket.
  */
 
 interface RateLimitEntry {
@@ -123,7 +126,29 @@ export function checkRateLimit(
   return { allowed: true, remaining: maxRequests - entry.count, resetAt: entry.resetAt };
 }
 
-export function rateLimitResponse(identifier: string, limit = 100, windowMs = 60_000) {
+/**
+ * Shared entry point for route rate limiting. Distributed first:
+ * when Upstash Redis is configured, all server instances share one
+ * sliding-window counter. Otherwise — or when Redis errors at
+ * request time — it falls back to the in-memory bucket, so a limiter
+ * outage never blocks legitimate traffic. Returns a 429 response
+ * when the caller is over the limit, else null.
+ */
+export async function rateLimitResponse(identifier: string, limit = 100, windowMs = 60_000) {
+  try {
+    const distributed = await checkRateLimitDistributed(identifier, limit, windowMs);
+    if (distributed) {
+      if (!distributed.allowed) {
+        return rateLimited('Too many requests. Please try again later.', {
+          resetAt: new Date(distributed.resetAt).toISOString(),
+        });
+      }
+      return null;
+    }
+  } catch (err) {
+    logger.warn('Redis rate limit failed, using in-memory fallback', { error: String(err) });
+  }
+
   const result = checkRateLimit(identifier, limit, windowMs);
   if (!result.allowed) {
     return rateLimited('Too many requests. Please try again later.', {

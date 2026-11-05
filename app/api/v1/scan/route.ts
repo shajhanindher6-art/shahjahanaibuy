@@ -31,8 +31,8 @@ export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'scan' });
 
   // A visual match spends a SerpAPI call, so the tightest cap here:
-  // 10/min per IP. In-memory bucket (per instance).
-  const limited = rateLimitResponse(`scan:${getClientIp(request)}`, 10);
+  // 10/min per IP. Redis-backed when Upstash is configured, in-memory fallback otherwise.
+  const limited = await rateLimitResponse(`scan:${getClientIp(request)}`, 10);
   if (limited) return limited;
 
   try {

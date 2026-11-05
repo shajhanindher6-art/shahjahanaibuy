@@ -83,6 +83,52 @@ non-secure, where a secure cookie would never be set. (`httpOnly`
 was deliberately NOT added: the region provider reads these
 cookies client-side.)
 
+## Phase 2 — distributed rate limiting (Upstash Redis)
+
+**Why:** the in-memory bucket is per server instance. A live burst
+test proved it: 31 rapid transform calls, 0 × 429 — Vercel spreads
+requests across instances, so no single instance saw 30 calls.
+
+**What changed:**
+- Installed `@upstash/redis` + `@upstash/ratelimit` (free tier,
+  REST — no persistent connection, serverless-safe).
+- New `lib/api/rate-limit.ts`: a shared sliding-window limiter
+  (`Ratelimit.slidingWindow`, prefix `sb-ratelimit`) over one Redis
+  client. `windowMsToDuration` converts the existing 60s windows.
+- `rateLimitResponse` (middleware) is now async: Redis first when
+  `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set;
+  any Redis error falls back to the in-memory bucket (fail-open —
+  a limiter outage never blocks legitimate traffic); unconfigured
+  → in-memory, exactly as before. All 6 public POST routes now
+  `await` it (same limits: deal-finder 20, scan 10, gifts /
+  comparison / transform 30, geo-click 60 per minute per IP).
+- Env vars added to `lib/config/env.ts` (optional) and
+  `.env.example` (blank placeholders only — never commit real
+  values).
+- Only counter keys are stored in Redis
+  (`sb-ratelimit:<identifier>`); no IPs are logged by this module.
+
+**Owner steps to activate (code alone cannot do this):**
+1. https://console.upstash.com → sign up (free) → Create Database
+   → type Redis → region closest to the users (e.g. EU / US) →
+   Create.
+2. On the database page, copy **REST URL** (`UPSTASH_REDIS_REST_URL`)
+   and **REST Token** (`UPSTASH_REDIS_REST_TOKEN`) from the REST API
+   section.
+3. Vercel → project → Settings → Environment Variables → add both
+   (Production scope) → **Redeploy** (env vars only apply after a
+   new deployment).
+4. Verify live: 31 rapid transform POSTs must then return 30 × 200
+   + 1 × 429. Until then the in-memory bucket stays in effect.
+
+**Verification (code side):** tsc 0, production build pass.
+Logic tests on the real compiled modules (4/4 PASS): duration
+conversion, unconfigured → client null + distributed check null,
+`rateLimitResponse` falls back to in-memory and still returns 429
+after the limit, per-identifier isolation. The Redis path itself
+cannot be tested without real Upstash credentials — it is verified
+live after the owner sets them (step 4 above).
+
 ## Deliberately NOT in this batch
 
 - **CSP nonce tightening** (removing `'unsafe-eval'` /

@@ -51,8 +51,8 @@ export async function POST(request: NextRequest) {
 
   // Pure URL transform, no DB write — still cap per IP so the
   // batch endpoint cannot be used as a free proxy loop.
-  // In-memory bucket (per instance).
-  const limited = rateLimitResponse(`affiliate.transform:${getClientIp(request)}`, 30);
+  // Redis-backed when Upstash is configured, in-memory fallback otherwise.
+  const limited = await rateLimitResponse(`affiliate.transform:${getClientIp(request)}`, 30);
   if (limited) return limited;
 
   const body: unknown = await request.json().catch(() => null);
