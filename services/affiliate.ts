@@ -19,26 +19,16 @@ export interface AffiliateLink {
   active: boolean;
 }
 
-const RETAILER_AFFILIATE_CONFIG: Record<string, { tagParam: string; tagValue: string }> = {
-  amazon: { tagParam: 'tag', tagValue: 'smartbuyai-20' },
-  ebay: { tagParam: 'campid', tagValue: '5338342075' },
-  walmart: { tagParam: 'affp1', tagValue: 'smartbuyai' },
-  aliexpress: { tagParam: 'aff_fcid', tagValue: 'smartbuyai' },
-  bestbuy: { tagParam: 'irclickid', tagValue: 'smartbuyai-20' },
-};
-
-export function buildAffiliateUrl(originalUrl: string, retailerName: string): string {
-  const config = RETAILER_AFFILIATE_CONFIG[retailerName.toLowerCase()];
-  if (!config) return originalUrl;
-
-  try {
-    const url = new URL(originalUrl);
-    url.searchParams.set(config.tagParam, config.tagValue);
-    return url.toString();
-  } catch {
-    return originalUrl;
-  }
-}
+/**
+ * NOTE (2026-11-05): this module used to hardcode retailer affiliate
+ * tag values (Amazon / eBay / Walmart / AliExpress / Best Buy).
+ * The owner confirmed those were placeholder / dummy test IDs, so the
+ * whole hardcoded config and its buildAffiliateUrl were removed.
+ * Real affiliate tags live ONLY in server env vars now — see
+ * services/affiliate-geo.ts (geo-targeted engine) and .env.example.
+ * The link/click/analytics functions below stay: they read the
+ * affiliate_links / affiliate_clicks tables and contain no IDs.
+ */
 
 export async function getAffiliateLinks(
   supabase: AnySupabaseClient,

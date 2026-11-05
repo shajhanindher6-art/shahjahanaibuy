@@ -275,8 +275,9 @@ export {
 } from './chat';
 
 // Phase 4: Affiliate system
+// (buildAffiliateUrl removed 2026-11-05 with the placeholder tag
+// config it carried; geo affiliate tags live in affiliate-geo.ts.)
 export {
-  buildAffiliateUrl,
   getAffiliateLinks,
   trackAffiliateClick,
   getAffiliateAnalytics,

@@ -9,6 +9,11 @@ import { apiSuccess, notFound, internalError } from '@/lib/api/responses';
 import { logApiRequest } from '@/lib/api/middleware';
 import { getCachedProductBySlug } from '@/services/products';
 import { getMerchantProducts, getMerchants } from '@/services/commerce';
+import {
+  buildGeoAffiliateUrl,
+  isGeoAffiliateEnabled,
+  resolveGeoCountry,
+} from '@/services/affiliate-geo';
 
 export async function GET(
   request: NextRequest,
@@ -31,12 +36,27 @@ export async function GET(
     // consumer of this endpoint relied on the bare shape).
     const merchants = await getMerchants(supabase);
     const nameById = new Map(merchants.map((m) => [m.id, m.name]));
+
+    // Phase 3 Prep: geo-targeted affiliate transform, server-side.
+    // Country precedence: Vercel geo header, then the visitor's saved
+    // region cookie, then the US fallback. ENV-GATED: with no tag /
+    // publisher id configured, buildGeoAffiliateUrl returns every URL
+    // unchanged, so today's plain search links are untouched.
+    const country = resolveGeoCountry(
+      request.headers.get('x-vercel-ip-country'),
+      request.cookies.get('sb-country')?.value ?? null
+    );
     const withNames = listings.map((listing) => ({
       ...listing,
       merchantName: nameById.get(listing.merchantId) ?? null,
+      url: buildGeoAffiliateUrl(listing.url, country),
     }));
 
-    return apiSuccess(withNames);
+    // affiliateEnabled drives the on-page disclosure note only; tag
+    // values themselves are never exposed through this endpoint.
+    return apiSuccess(withNames, 200, {
+      affiliateEnabled: isGeoAffiliateEnabled(),
+    });
   } catch {
     return internalError('Failed to fetch merchant listings');
   }

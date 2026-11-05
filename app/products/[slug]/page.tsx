@@ -136,6 +136,10 @@ export default function ProductDetailsPage() {
   // /merchants API, which the product page previously never called,
   // which is why the audit found no merchant, stock or buy link.
   const [merchants, setMerchants] = useState<MerchantListing[]>([]);
+  // Phase 3 Prep: true only when the merchants endpoint reports an
+  // affiliate path configured (server env). Drives the disclosure
+  // note only — no tag values ever reach the client as config.
+  const [affiliateEnabled, setAffiliateEnabled] = useState(false);
   const [merchantsLoaded, setMerchantsLoaded] = useState(false);
   // Distinct from an empty list: true only when the merchants fetch itself
   // failed, so the stores section can say its priced-merchant filter could
@@ -211,6 +215,9 @@ export default function ProductDetailsPage() {
         const merchantsData = await merchantsRes.json();
         if (merchantsData.success && Array.isArray(merchantsData.data)) {
           setMerchants(merchantsData.data);
+          // Phase 3 Prep: affiliate disclosure flag from the server
+          // (true only when a real tag/publisher id is configured).
+          setAffiliateEnabled(merchantsData.meta?.affiliateEnabled === true);
         } else {
           setMerchantsFailed(true);
         }
@@ -559,6 +566,11 @@ export default function ProductDetailsPage() {
                   // computed by the shared helper — additive badge only.
                   // The deals-table % shown on widgets is untouched.
                   const merchantSaving = discountPercent(listing.price, listing.compareAtPrice);
+                  // Phase 3 Prep: final Buy href (server affiliate
+                  // transform, if any, + client Amazon domain rewrite).
+                  // The same href is beaconed below — never a different
+                  // URL than the one the shopper actually opens.
+                  const buyHref = localizeAmazonUrl(listing.url, region) ?? listing.url ?? undefined;
                   return (
                     <div
                       key={listing.id}
@@ -632,9 +644,34 @@ export default function ProductDetailsPage() {
                                 These remain search links, never invented
                                 product-page URLs. */}
                             <a
-                              href={localizeAmazonUrl(listing.url, region) ?? listing.url}
+                              href={buyHref}
                               target="_blank"
                               rel="noopener noreferrer"
+                              onClick={() => {
+                                // Phase 3 Prep: fire-and-forget click
+                                // beacon (sendBeacon never blocks the
+                                // navigation). No location, IP, or user
+                                // id is sent — the server derives the
+                                // country from its own geo signal.
+                                try {
+                                  navigator.sendBeacon(
+                                    '/api/v1/affiliate/geo-click',
+                                    new Blob(
+                                      [
+                                        JSON.stringify({
+                                          productId: product?.id ?? null,
+                                          productSlug: slug,
+                                          merchantName: listing.merchantName ?? null,
+                                          targetUrl: buyHref,
+                                        }),
+                                      ],
+                                      { type: 'application/json' }
+                                    )
+                                  );
+                                } catch {
+                                  // Beacon failure is silent by design.
+                                }
+                              }}
                             >
                               {tFor(language, 'buy')}
                             </a>
@@ -646,6 +683,16 @@ export default function ProductDetailsPage() {
                     </div>
                   );
                 })}
+                {/* Phase 3 Prep: affiliate disclosure, rendered ONLY
+                    when the server reports a real tag/publisher id
+                    configured. With nothing configured there is no
+                    note, because there is nothing to disclose. */}
+                {affiliateEnabled && (
+                  <p className="text-xs text-muted-foreground">
+                    Affiliate disclosure: SmartBuy may earn a commission from qualifying
+                    purchases made through these retailer links, at no extra cost to you.
+                  </p>
+                )}
               </CardContent>
             )}
           </Card>
