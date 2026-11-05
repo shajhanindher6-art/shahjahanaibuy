@@ -220,6 +220,7 @@ export function SmartDealWidget({ title = 'Smart Deals For You', limit = 6, clas
       <p className="mt-4 text-xs text-muted-foreground">
         Discounts shown here are each deal&apos;s listed discount from our deals table. A product
         page may show a different saving, calculated from the retailer&apos;s compare-at price.
+        Deal order rotates daily by region, so the same deal doesn&apos;t always lead.
       </p>
     </div>
   );

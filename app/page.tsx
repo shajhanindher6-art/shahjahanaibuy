@@ -16,6 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { SmartDealWidget } from '@/components/deals/smart-deal-widget';
+import { LocalStoresSection } from '@/components/home/local-stores-section';
 import { StatsBar } from '@/components/home/stats-bar';
 import { HeroCopy } from '@/components/home/hero-copy';
 
@@ -177,6 +178,9 @@ export default function HomePage() {
             <SmartDealWidget limit={6} />
           </div>
         </section>
+
+        {/* Geo-targeted local stores — directory + links only */}
+        <LocalStoresSection />
 
         {/* How It Works */}
         <section id="how-it-works" className="border-y bg-muted/30 py-20 md:py-28">
