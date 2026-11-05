@@ -47,7 +47,7 @@ disclosure treatment as the product page. Directory links stay plain.
 | `/gifts` results | **Wired (Step B, 2026-11-05, local)** — gifts route transforms store links + `meta.affiliateEnabled`; gifts page beacons clicks + disclosure note | None — verify live after push |
 | Region arbitrage table | **Wired (Step B, 2026-11-05, local)** — new batch endpoint `POST /api/v1/affiliate/transform` (allowlisted hosts only); table calls it only when affiliate enabled, links stay plain until it returns | None — verify live after push |
 | `/compare` | **Audited (Step B, 2026-11-05)** — no outbound merchant links (search + picker, internal links only) | None — no wiring needed |
-| `/deals` cards | No outbound retailer links today | Decision needed: add Where-to-Buy-style links, or keep deals as discovery-only |
+| `/deals` cards | No outbound retailer links today | **DECIDED (2026-11-05, owner): discovery-only (option a)** — no Buy button, no code change; earning stays on the product page Where to Buy. Rationale on record: deal.url is NULL in seed for all 6 demo deals, so a direct Shop button would have reused the product-page search link anyway. |
 | `/blog` | Single listing page, no posts, no retailer links | Content must exist first — no fake posts, no placeholder articles |
 | AI assistant answers | **Audited (Step B, 2026-11-05)** — links only to internal `/products/[slug]` pages, no retailer URLs | None — no wiring needed; if retailer links are ever added, they need the disclosure treatment first |
 
