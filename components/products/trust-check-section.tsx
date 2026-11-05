@@ -106,42 +106,71 @@ export function TrustCheckSection({
     let cancelled = false;
     async function loadHistory() {
       try {
-        const res = await fetch(`/api/v1/products/${slug}/prices?limit=500`, {
-          signal: AbortSignal.timeout(15000),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
+        const [pricesRes, retailersRes] = await Promise.all([
+          fetch(`/api/v1/products/${slug}/prices?limit=500`, {
+            signal: AbortSignal.timeout(15000),
+          }),
+          // Retailer-name join (2026-11-05 fix): price_history.retailer_id
+          // points at the RETAILERS table, while the priced merchants
+          // carry MERCHANTS-table ids — two different id spaces, so an
+          // id join can never match. Join by retailer NAME instead.
+          // A failed retailers fetch only loses names (rows then show
+          // as "Unnamed retailer"); it never blocks the price check.
+          fetch('/api/v1/retailers?pageSize=100', {
+            signal: AbortSignal.timeout(15000),
+          }).catch(() => null),
+        ]);
+        if (!pricesRes.ok) throw new Error(`HTTP ${pricesRes.status}`);
+        const json = await pricesRes.json();
         const points: HistoryPoint[] = (json?.data?.history ?? []) as HistoryPoint[];
-        const byRetailer = new Map<string, FakeSalePoint[]>();
+
+        const nameByRetailerId = new Map<string, string>();
+        if (retailersRes && retailersRes.ok) {
+          try {
+            const rJson = await retailersRes.json();
+            for (const r of (rJson?.data ?? []) as Array<{ id: string; name: string }>) {
+              if (r.id && r.name) nameByRetailerId.set(r.id, r.name);
+            }
+          } catch {
+            // Names unknown; series below fall back to "Unnamed retailer".
+          }
+        }
+
+        // Group history by normalized retailer NAME, not by id.
+        const byName = new Map<string, { displayName: string; series: FakeSalePoint[] }>();
         for (const p of points) {
           if (!p.retailerId) continue;
-          const list = byRetailer.get(p.retailerId) ?? [];
-          list.push({ price: Number(p.price), recordedAt: p.recordedAt });
-          byRetailer.set(p.retailerId, list);
+          const displayName = nameByRetailerId.get(p.retailerId) ?? 'Unnamed retailer';
+          const key = displayName.toLowerCase();
+          const entry = byName.get(key) ?? { displayName, series: [] };
+          entry.series.push({ price: Number(p.price), recordedAt: p.recordedAt });
+          byName.set(key, entry);
         }
-        const nameById = new Map(merchants.map((m) => [m.merchantId, m.merchantName ?? 'Unnamed retailer']));
-        const rows: FakeSaleRow[] = merchants.map((m) => {
-          const series = byRetailer.get(m.merchantId);
-          if (!series || series.length === 0) {
-            return {
-              merchantName: m.merchantName ?? 'Unnamed retailer',
-              result: detectFakeSale([]),
-              checked: false,
-            };
-          }
-          return {
-            merchantName: m.merchantName ?? 'Unnamed retailer',
-            result: detectFakeSale(series),
-            checked: true,
-          };
-        });
-        // History rows for retailer ids with no priced listing (should
-        // not normally happen) are shown, not silently dropped.
-        for (const [retailerId, series] of byRetailer) {
-          if (!nameById.has(retailerId)) {
+
+        // One row per DISTINCT priced merchant name; a priced merchant
+        // with no history series is honestly "cannot check" (e.g. the
+        // seed records history for Amazon only, so Best Buy has none).
+        const seen = new Set<string>();
+        const rows: FakeSaleRow[] = [];
+        for (const m of merchants) {
+          const displayName = m.merchantName ?? 'Unnamed retailer';
+          const key = displayName.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const entry = byName.get(key);
+          rows.push({
+            merchantName: displayName,
+            result: detectFakeSale(entry ? entry.series : []),
+            checked: Boolean(entry && entry.series.length > 0),
+          });
+        }
+        // History series under a name with no priced listing are shown
+        // under their retailer name, not silently dropped.
+        for (const [key, entry] of byName) {
+          if (!seen.has(key)) {
             rows.push({
-              merchantName: 'Unnamed retailer',
-              result: detectFakeSale(series),
+              merchantName: entry.displayName,
+              result: detectFakeSale(entry.series),
               checked: true,
             });
           }
