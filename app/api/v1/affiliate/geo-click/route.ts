@@ -32,7 +32,7 @@
 
 import type { NextRequest } from 'next/server';
 import { apiSuccess } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import {
   isTrackableClickHost,
@@ -70,6 +70,14 @@ function isHttpUrl(value: string): boolean {
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'affiliate.geo-click' });
+
+  // The beacon is anonymous by design; the per-IP cap (60/min) sits
+  // in front of the existing host validation + burst flagging so a
+  // flood cannot fill the table. Fail-open contract is unchanged:
+  // over the limit the beacon answers 429 instead of tracking.
+  // In-memory bucket (per instance).
+  const limited = rateLimitResponse(`affiliate.geo-click:${getClientIp(request)}`, 60);
+  if (limited) return limited;
 
   let tracked = false;
   try {

@@ -4,10 +4,10 @@
  * analytics for the admin dashboard (totals, breakdowns by country /
  * retailer / product / day, recent clicks, burst flags).
  *
- * ADMIN-ONLY, FAIL CLOSED: unlike the older admin endpoints, which
- * only require a session, this one verifies role === 'admin' on the
- * caller's profiles row via the service-role client before reading
- * anything. A missing profile or a non-admin role gets 403.
+ * ADMIN-ONLY, FAIL CLOSED: role === 'admin' is verified by the
+ * shared requireAdmin helper (profiles row via the service-role
+ * client) before reading anything. A missing profile or a non-admin
+ * role gets 403.
  *
  * The read itself also uses the service-role client: the
  * affiliate_geo_clicks table has no anon read policy by design.
@@ -18,29 +18,20 @@
  */
 
 import type { NextRequest } from 'next/server';
-import { apiSuccess, forbidden, internalError } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { apiSuccess, internalError } from '@/lib/api/responses';
+import { logApiRequest, requireAdmin } from '@/lib/api/middleware';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { getAffiliateClickAnalytics } from '@/services/admin';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'admin.affiliate-clicks' });
 
-  const auth = await requireAuth(request);
+  const auth = await requireAdmin(request);
   if ('error' in auth) return auth.error;
 
   const service = createSupabaseServiceClient();
   if (!service) {
     return internalError('Admin analytics unavailable (service key missing)');
-  }
-
-  const { data: profile } = await service
-    .from('profiles')
-    .select('role')
-    .eq('id', auth.userId)
-    .single();
-  if ((profile as { role?: unknown } | null)?.role !== 'admin') {
-    return forbidden('Admin access required');
   }
 
   const daysParam = request.nextUrl.searchParams.get('days');

@@ -19,7 +19,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getCachedAISearch } from '@/services/ai-search';
 import {
   decideScanMode,
@@ -29,6 +29,11 @@ import {
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'scan' });
+
+  // A visual match spends a SerpAPI call, so the tightest cap here:
+  // 10/min per IP. In-memory bucket (per instance).
+  const limited = rateLimitResponse(`scan:${getClientIp(request)}`, 10);
+  if (limited) return limited;
 
   try {
     const body = await request.json().catch(() => null);

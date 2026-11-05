@@ -8,6 +8,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { ServiceWorkerRegister } from '@/components/pwa/service-worker-register';
 import { AIDealFinderWidget } from '@/components/chat/ai-deal-finder-widget';
 import { appConfig } from '@/lib/config/app';
+import { toJsonLd } from '@/lib/json-ld';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -122,7 +123,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+          dangerouslySetInnerHTML={{ __html: toJsonLd(structuredData) }}
         />
       </head>
       <body className={`${inter.variable} font-sans antialiased`}>

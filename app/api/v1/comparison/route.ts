@@ -6,11 +6,16 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getCachedComparison } from '@/services/ai-comparison';
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'comparison' });
+
+  // Public AI comparison is read-only compute; cap per IP.
+  // In-memory bucket (per instance).
+  const limited = rateLimitResponse(`comparison:${getClientIp(request)}`, 30);
+  if (limited) return limited;
 
   try {
     const body = await request.json();

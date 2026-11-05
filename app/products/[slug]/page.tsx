@@ -47,6 +47,7 @@ import { getStoresForCountry, buildStoreSearchUrl } from '@/lib/stores';
 import { trackAffiliateClick } from '@/lib/affiliate-beacon';
 import { getRegionByCountry } from '@/lib/region';
 import { tFor } from '@/lib/i18n';
+import { toJsonLd } from '@/lib/json-ld';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import {
@@ -377,7 +378,7 @@ export default function ProductDetailsPage() {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
+          __html: toJsonLd({
             '@context': 'https://schema.org',
             '@type': 'Product',
             name: product.name,

@@ -19,12 +19,18 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { resolveRegion } from '@/lib/region';
 import { generateChatResponse } from '@/services/chat';
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'deal-finder' });
+
+  // AI compute is unauthenticated by design; cap it per IP so one
+  // client cannot flood the assistant. In-memory bucket (per
+  // instance) — see lib/api/middleware.ts; Redis is the Phase 2 step.
+  const limited = rateLimitResponse(`deal-finder:${getClientIp(request)}`, 20);
+  if (limited) return limited;
 
   try {
     const body = await request.json().catch(() => null);

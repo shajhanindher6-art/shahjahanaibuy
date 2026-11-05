@@ -29,6 +29,10 @@ export async function middleware(request: NextRequest) {
         path: '/',
         maxAge: 60 * 60 * 24 * 365,
         sameSite: 'lax',
+        // Production is HTTPS-only (Vercel), so the cookie must never
+        // travel over plain HTTP. Local dev stays http, where a
+        // secure cookie would never be set.
+        secure: process.env.NODE_ENV === 'production',
       });
       // First-paint language support (see RegionProvider header
       // note): seed an sb-language cookie from the same geo
@@ -43,6 +47,7 @@ export async function middleware(request: NextRequest) {
           path: '/',
           maxAge: 60 * 60 * 24 * 365,
           sameSite: 'lax',
+          secure: process.env.NODE_ENV === 'production',
         });
       }
     }

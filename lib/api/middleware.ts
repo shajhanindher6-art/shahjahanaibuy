@@ -4,8 +4,9 @@
  */
 
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { logger } from '@/lib/config/logger';
-import { unauthorized, internalError, rateLimited } from './responses';
+import { unauthorized, forbidden, internalError, rateLimited } from './responses';
 import type { NextRequest } from 'next/server';
 
 /**
@@ -30,6 +31,50 @@ export async function requireAuth(request: NextRequest): Promise<
     logger.error('requireAuth failed', { path: request.nextUrl.pathname });
     return { error: internalError('Authentication check failed') };
   }
+}
+
+/**
+ * Requires an authenticated session AND role === 'admin'.
+ * The role is read from the caller's own profiles row via the
+ * service-role client (RLS would otherwise hide other users' rows
+ * but must never be the only enforcement). Fail closed: no session,
+ * no service client, no profile, or a non-admin role all return an
+ * error response — never the user ID.
+ */
+export async function requireAdmin(request: NextRequest): Promise<
+  { userId: string } | { error: ReturnType<typeof unauthorized> | ReturnType<typeof forbidden> | ReturnType<typeof internalError> }
+> {
+  const auth = await requireAuth(request);
+  if ('error' in auth) return auth;
+
+  const service = createSupabaseServiceClient();
+  if (!service) {
+    logger.error('requireAdmin failed: service client unavailable', { path: request.nextUrl.pathname });
+    return { error: internalError('Admin check unavailable') };
+  }
+
+  const { data: profile } = await service
+    .from('profiles')
+    .select('role')
+    .eq('id', auth.userId)
+    .single();
+  if ((profile as { role?: unknown } | null)?.role !== 'admin') {
+    return { error: forbidden('Admin access required') };
+  }
+
+  return { userId: auth.userId };
+}
+
+/**
+ * Best-effort client IP for rate-limit buckets: the first
+ * x-forwarded-for entry (what Vercel sets), else x-real-ip.
+ * Proxies can spoof this header, so it is a bucket key for abuse
+ * control, never an identity proof.
+ */
+export function getClientIp(request: NextRequest): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  const ip = forwarded?.split(',')[0]?.trim();
+  return ip || request.headers.get('x-real-ip') || 'unknown';
 }
 
 /**

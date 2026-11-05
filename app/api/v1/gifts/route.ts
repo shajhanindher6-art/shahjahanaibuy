@@ -21,7 +21,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { parseBudgetFromQuery } from '@/services/currency';
 import { resolveRegion, convertUsd } from '@/lib/region';
 import { getStoresForCountry, buildStoreSearchUrl } from '@/lib/stores';
@@ -32,6 +32,11 @@ import { findGiftPicks, SHIPPING_NOTE, type GiftCandidate } from '@/services/gif
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'gifts' });
+
+  // Public gift picks are read-only compute; cap per IP so one
+  // client cannot flood them. In-memory bucket (per instance).
+  const limited = rateLimitResponse(`gifts:${getClientIp(request)}`, 30);
+  if (limited) return limited;
 
   try {
     const body = await request.json().catch(() => null);

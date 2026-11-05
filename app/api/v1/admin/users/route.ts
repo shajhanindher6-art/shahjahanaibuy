@@ -6,13 +6,13 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, internalError } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAdmin } from '@/lib/api/middleware';
 import { getAllUsers } from '@/services/admin';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'admin.users' });
 
-  const auth = await requireAuth(request);
+  const auth = await requireAdmin(request);
   if ('error' in auth) return auth.error;
 
   try {
