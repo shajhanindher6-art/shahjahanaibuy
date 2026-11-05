@@ -1,5 +1,6 @@
 import { updateSession } from '@/lib/supabase/middleware';
 import { getRegionByCountry, languageForCountry } from '@/lib/region';
+import { buildCsp } from '@/lib/csp';
 import type { NextRequest } from 'next/server';
 
 /**
@@ -19,7 +20,20 @@ import type { NextRequest } from 'next/server';
  *   the client falls back to its IP lookup / browser guess.
  */
 export async function middleware(request: NextRequest) {
+  // CSP Phase 2: one fresh nonce per request. It travels to the page
+  // render as the x-nonce request header (Next.js applies it to its
+  // own inline scripts) and back to the browser in the CSP response
+  // header below. A UUID is a valid nonce value (hex + hyphens only).
+  // Set on the request BEFORE updateSession, because updateSession
+  // builds its NextResponse from this same request object.
+  const nonce = crypto.randomUUID();
+  request.headers.set('x-nonce', nonce);
+
   const response = await updateSession(request);
+
+  // The CSP header lives here now (per-request nonce), NOT in
+  // next.config.js — a static header there cannot carry a nonce.
+  response.headers.set('Content-Security-Policy', buildCsp(nonce));
 
   const saved = request.cookies.get('sb-country')?.value;
   if (!saved) {

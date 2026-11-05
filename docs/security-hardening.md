@@ -129,6 +129,53 @@ after the limit, per-identifier isolation. The Redis path itself
 cannot be tested without real Upstash credentials — it is verified
 live after the owner sets them (step 4 above).
 
+## Phase 2 — CSP tightening (nonce-based script-src)
+
+**Why:** the old CSP allowed `script-src 'unsafe-inline' 'unsafe-eval'`,
+which lets any injected inline script or eval() run — the main XSS
+hole left after the batch above.
+
+**What changed:**
+- NEW `lib/csp.ts` `buildCsp(nonce)`: `script-src 'self' 'nonce-<uuid>'`
+  only — no `unsafe-inline`, no `unsafe-eval`.
+- `middleware.ts` generates one fresh nonce per request
+  (`crypto.randomUUID()`), sets it as the `x-nonce` request header
+  BEFORE `updateSession` (Next.js applies it to its own inline
+  scripts), and sets the CSP response header. The CSP header moved
+  OUT of `next.config.js` (a static header cannot carry a nonce);
+  all other security headers stay there.
+- The nonce is threaded to the app: root layout reads `x-nonce` via
+  `headers()` → `Providers nonce={...}` → `NonceProvider`
+  (`components/csp-nonce-context.tsx`). The layout's JSON-LD script
+  and the product page's JSON-LD script (client component, reads the
+  nonce via `useNonce()`) both carry `nonce={...}`.
+- `next-themes` also renders an inline theme script (prevents a
+  dark/light flash). Its `ThemeProvider` accepts a `nonce` prop —
+  threaded through `components/providers/theme-provider.tsx`.
+- `style-src` KEEPS `'unsafe-inline'` BY DESIGN: React renders
+  `style={{...}}` props as style attributes, and CSP has no nonce
+  mechanism for style attributes — removing it would break inline
+  styles (e.g. the dashboard's staggered animation delays). This
+  matches the official Next.js strict-CSP example.
+- `eval('require')` in `lib/workers/queue.ts` is server-side only;
+  CSP does not apply to it.
+
+**Verification (local prod server, curl on the built output):**
+- tsc 0, production build pass.
+- CSP header: exactly 1, `script-src 'self' 'nonce-<uuid>'`, no
+  `unsafe-inline`/`unsafe-eval` in script-src; all other security
+  headers still present.
+- Homepage: 24/24 `<script>` tags carry the header nonce, 0 bare
+  scripts, 1 distinct nonce value; 0 inline event handlers;
+  JSON-LD script and the next-themes theme script both nonced.
+- /gifts: 20/20 scripts nonced, 0 bare.
+- NOT verifiable by curl: the product page's JSON-LD (client
+  component, renders after hydration) — verify in a live browser
+  after push: product page renders, no CSP console errors.
+- **Lesson (do not repeat):** `pkill -f "next-server"` killed the
+  exec's own shell because the pattern matched its own command
+  line — kill the server by PID (from `ss -ltnp`) instead.
+
 ## Deliberately NOT in this batch
 
 - **CSP nonce tightening** (removing `'unsafe-eval'` /

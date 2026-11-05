@@ -28,6 +28,7 @@ import { SmartPool } from '@/components/pools/smart-pool';
 import { UpcyclingBlueprints } from '@/components/products/upcycling-blueprints';
 import { DropWindowSimulator } from '@/components/products/drop-window-simulator';
 import { FluffDetector } from '@/components/products/fluff-detector';
+import { useNonce } from '@/components/csp-nonce-context';
 import { CompatibilityMatrix } from '@/components/products/compatibility-matrix';
 import { ProductVisualizer } from '@/components/products/product-visualizer';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
@@ -117,6 +118,10 @@ interface MerchantListing {
 }
 
 export default function ProductDetailsPage() {
+  // CSP Phase 2 nonce (threaded from the root layout through
+  // Providers). Applied to this page's JSON-LD script tag below so
+  // the strict script-src policy does not block it.
+  const nonce = useNonce();
   const params = useParams();
   const router = useRouter();
   const slug = params.slug as string;
@@ -377,6 +382,7 @@ export default function ProductDetailsPage() {
       <SiteHeader />
       <script
         type="application/ld+json"
+        nonce={nonce ?? undefined}
         dangerouslySetInnerHTML={{
           __html: toJsonLd({
             '@context': 'https://schema.org',

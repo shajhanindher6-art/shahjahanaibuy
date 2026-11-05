@@ -3,6 +3,7 @@
 import { AuthProvider } from '@/features/auth/auth-provider';
 import { ThemeProvider } from './theme-provider';
 import { RegionProvider } from '@/components/region/region-provider';
+import { NonceProvider } from '@/components/csp-nonce-context';
 import type { Language } from '@/lib/region';
 
 /**
@@ -21,6 +22,14 @@ export interface ProvidersProps {
   initialCountryCode?: string | null;
   initialLanguage?: Language | null;
   initialSource?: 'saved' | 'detected';
+  /**
+   * Per-request CSP nonce from the root layout (middleware sets the
+   * x-nonce request header). Threaded through NonceProvider so
+   * client components can put it on their <script> tags (the
+   * product page's JSON-LD). Optional: without it, useNonce()
+   * returns null and script tags render without a nonce.
+   */
+  nonce?: string | null;
 }
 
 export function Providers({
@@ -28,16 +37,17 @@ export function Providers({
   initialCountryCode,
   initialLanguage,
   initialSource,
+  nonce,
 }: ProvidersProps) {
   return (
-    <ThemeProvider>
+    <ThemeProvider nonce={nonce}>
       <AuthProvider>
         <RegionProvider
           initialCountryCode={initialCountryCode}
           initialLanguage={initialLanguage}
           initialSource={initialSource}
         >
-          {children}
+          <NonceProvider nonce={nonce ?? null}>{children}</NonceProvider>
         </RegionProvider>
       </AuthProvider>
     </ThemeProvider>

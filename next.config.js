@@ -1,17 +1,9 @@
 /** @type {import('next').NextConfig} */
 
-const ContentSecurityPolicy = `
-  default-src 'self';
-  script-src 'self' 'unsafe-eval' 'unsafe-inline';
-  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-  img-src 'self' blob: data: https:;
-  font-src 'self' https://fonts.gstatic.com;
-  connect-src 'self' https://*.supabase.co https://*.supabase.in;
-  frame-ancestors 'self';
-  base-uri 'self';
-  form-action 'self';
-`;
-
+// NOTE: the Content-Security-Policy header is NOT set here. It is
+// built per request in middleware.ts (lib/csp.ts) because it carries
+// a fresh nonce on every response — a static header cannot do that.
+// All other security headers stay here.
 const securityHeaders = [
   {
     key: 'X-DNS-Prefetch-Control',
@@ -32,10 +24,6 @@ const securityHeaders = [
   {
     key: 'Permissions-Policy',
     value: 'camera=(), microphone=(), geolocation=()',
-  },
-  {
-    key: 'Content-Security-Policy',
-    value: ContentSecurityPolicy.replace(/\n/g, '').trim(),
   },
   {
     key: 'Strict-Transport-Security',

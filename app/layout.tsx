@@ -111,6 +111,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const savedCountry = cookies().get('sb-country')?.value ?? null;
   const savedLanguage = cookies().get('sb-language')?.value ?? null;
   const geoCountry = headers().get('x-vercel-ip-country');
+  // CSP Phase 2 nonce (set per request by middleware.ts). Passed to
+  // Providers so client components can put it on their <script>
+  // tags, and used on this layout's own JSON-LD script below.
+  const nonce = headers().get('x-nonce');
   const initialCountryCode = savedCountry ?? geoCountry ?? null;
   const initialSource = savedCountry ? 'saved' : 'detected';
   return (
@@ -123,6 +127,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <script
           type="application/ld+json"
+          nonce={nonce ?? undefined}
           dangerouslySetInnerHTML={{ __html: toJsonLd(structuredData) }}
         />
       </head>
@@ -131,6 +136,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           initialCountryCode={initialCountryCode}
           initialLanguage={savedLanguage as Language | null}
           initialSource={initialSource}
+          nonce={nonce}
         >
           {children}
           <Toaster />
