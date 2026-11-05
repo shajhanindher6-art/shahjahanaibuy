@@ -9,11 +9,13 @@ import { appConfig } from '@/lib/config/app';
  * account data + wishlists/alerts/search history in Supabase,
  * recent searches and region/language choices on the visitor's own
  * device, Resend for alert emails, VAPID web-push subscriptions,
- * and SerpAPI Google Shopping for the web-search fallback (query
- * terms only). Nothing here claims a practice the code does not
- * have, and nothing invents a retention period, a data-sale claim
- * beyond the stated policy, or a jurisdiction — the owner must
- * confirm those before relying on this text.
+ * SerpAPI Google Shopping for the web-search fallback (query
+ * terms only), and affiliate links with anonymous click logging
+ * (see "Affiliate links and click logging" below). Nothing here
+ * claims a practice the code does not have, and nothing invents a
+ * retention period, a data-sale claim beyond the stated policy, or
+ * a jurisdiction — the owner must confirm those before relying on
+ * this text.
  */
 export default function PrivacyPage() {
   return (
@@ -84,6 +86,27 @@ export default function PrivacyPage() {
           </section>
 
           <section className="space-y-3">
+            <h2 className="text-xl font-semibold text-foreground">Affiliate links and click logging</h2>
+            <p>
+              Some links to retailers may carry an affiliate tag. If you buy through such a link,
+              SmartBuy may earn a commission from the retailer at no extra cost to you. The price
+              you see and pay is the retailer&apos;s price; the tag does not change it. A tag is
+              only added when SmartBuy has a real affiliate account configured for that retailer
+              and region — with nothing configured, retailer links are plain links with no tag,
+              and no commission is earned.
+            </p>
+            <p>
+              <strong className="text-foreground">Zero-logging policy for link clicks.</strong>{' '}
+              When you click a retailer Buy link, SmartBuy records one anonymous event: the
+              product, the retailer name, the link clicked, and your country (from your network
+              location or your saved region choice). That event is used only for aggregate
+              analytics, such as which regions click which retailers. It is never linked to an
+              account, and SmartBuy deliberately does <em>not</em> record your IP address, your
+              browser&apos;s user-agent string, or any user identifier with it.
+            </p>
+          </section>
+
+          <section className="space-y-3">
             <h2 className="text-xl font-semibold text-foreground">Prices and product data</h2>
             <p>
               Prices, availability, and product details shown on SmartBuy come from retailer
@@ -122,9 +145,9 @@ export default function PrivacyPage() {
 
           <p className="border-t pt-4 text-sm">
             This policy is provided as a starting draft for the site owner to review — including
-            retention periods, applicable data-protection law, and any cookie-consent or
-            children&apos;s-privacy requirements for the owner&apos;s jurisdiction — before it is
-            relied on at launch.
+            retention periods, applicable data-protection law, any cookie-consent or
+            children&apos;s-privacy requirements, and affiliate-disclosure requirements for the
+            owner&apos;s jurisdiction — before it is relied on at launch.
           </p>
         </div>
       </main>

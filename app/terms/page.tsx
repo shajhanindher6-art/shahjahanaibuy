@@ -6,10 +6,12 @@ import { SiteFooter } from '@/components/layout/site-footer';
  * note at the bottom of the page). The terms describe only what the
  * site actually does: catalog browsing for guests, accounts with
  * wishlists/alerts, retailer links (SmartBuy does not sell the
- * products or take checkout payment itself), plans as shown on the
- * homepage pricing section, and Stripe billing where a paid plan is
- * offered. No partnership, guarantee, or exact-delivery promise is
- * claimed, because none exists in the product.
+ * products or take checkout payment itself), affiliate tags on some
+ * retailer links where a real affiliate account is configured (see
+ * "Affiliate links" below), plans as shown on the homepage pricing
+ * section, and Stripe billing where a paid plan is offered. No
+ * partnership, guarantee, or exact-delivery promise is claimed,
+ * because none exists in the product.
  */
 export default function TermsPage() {
   return (
@@ -42,6 +44,21 @@ export default function TermsPage() {
               here are copied by you into the retailer&apos;s checkout; SmartBuy cannot apply a
               code inside a retailer&apos;s checkout, and whether a code works there is the
               retailer&apos;s decision.
+            </p>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-xl font-semibold text-foreground">Affiliate links</h2>
+            <p>
+              Some links to retailers may include an affiliate tag, added only where SmartBuy has
+              a real affiliate account configured for that retailer and region. If you buy through
+              such a link, SmartBuy may earn a commission from the retailer at no extra cost to
+              you; the price you pay is the retailer&apos;s price, and the tag does not change it.
+              A link with no tag configured earns nothing. SmartBuy does not guarantee that any
+              particular link carries a commission, or that any purchase will qualify for one.
+              Clicks on retailer links are logged anonymously (product, retailer, link, and
+              country only — no IP address, browser identifier, or user account is recorded with
+              them); see the Privacy Policy for details.
             </p>
           </section>
 
@@ -101,8 +118,9 @@ export default function TermsPage() {
 
           <p className="border-t pt-4 text-sm">
             These terms are provided as a starting draft for the site owner to review — including
-            governing law, dispute resolution, refund handling, and any consumer-protection
-            requirements for the owner&apos;s jurisdiction — before they are relied on at launch.
+            governing law, dispute resolution, refund handling, any consumer-protection
+            requirements, and affiliate-disclosure requirements for the owner&apos;s jurisdiction —
+            before they are relied on at launch.
           </p>
         </div>
       </main>
