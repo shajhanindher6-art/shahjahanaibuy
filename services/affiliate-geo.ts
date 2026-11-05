@@ -171,6 +171,25 @@ export function isTransformableHost(hostname: string, knownHosts: Set<string>): 
 }
 
 /**
+ * Whether a beacon click's target URL may be stored — Step C Stage 1
+ * host validation. A click is trackable when its host is
+ * transformable (same allowlist as the transform endpoint: the big
+ * retailer families plus the stores directory, passed in by the
+ * caller) OR when it is the Skimlinks redirect host
+ * `go.skimresources.com`: a Skimlinks-wrapped link is a legitimate
+ * beacon target once Skimlinks is configured, and without this host
+ * in the list real clicks would be dropped. Anything else is a
+ * garbage filter, not volume control — a spammer can still copy real
+ * merchant URLs from the site, which is why burst flagging lives in
+ * the reporting layer (services/affiliate-analytics.ts).
+ */
+export function isTrackableClickHost(hostname: string, knownHosts: Set<string>): boolean {
+  const bare = hostname.toLowerCase().replace(/^www\./, '');
+  if (bare === 'go.skimresources.com') return true;
+  return isTransformableHost(hostname, knownHosts);
+}
+
+/**
  * Skimlinks wrapper (secondary fallback layer). Only used when a
  * publisher id is configured AND the retailer has no direct tag.
  * Format to confirm in the Skimlinks dashboard before enabling.

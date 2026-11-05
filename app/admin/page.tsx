@@ -3,8 +3,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard, Users, Package, Bell, BarChart3,
-  Settings, FileText, Flag, Activity, ChevronRight
+  Settings, FileText, Flag, Activity, ChevronRight, MousePointerClick
 } from 'lucide-react';
+import {
+  Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer,
+  Tooltip, XAxis, YAxis,
+} from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,6 +36,34 @@ interface AuditLog {
   targetType: string;
   targetId: string | null;
   createdAt: string;
+}
+
+interface AffiliateClicks {
+  days: number;
+  totalClicks: number;
+  flaggedClicks: number;
+  clicksToday: number;
+  topCountry: string | null;
+  topRetailer: string | null;
+  topProduct: string | null;
+  byCountry: Array<{ label: string; clicks: number }>;
+  byRetailer: Array<{ label: string; clicks: number }>;
+  byProduct: Array<{ label: string; clicks: number }>;
+  byDay: Array<{ date: string; clicks: number }>;
+  recent: Array<{
+    productSlug: string | null;
+    retailerName: string | null;
+    targetUrl: string;
+    countryCode: string | null;
+    clickedAt: string;
+  }>;
+  flags: Array<{
+    hour: string;
+    countryCode: string | null;
+    retailerName: string | null;
+    productSlug: string | null;
+    clicks: number;
+  }>;
 }
 
 export default function AdminPage() {
@@ -108,11 +140,12 @@ export default function AdminPage() {
         )}
 
         <Tabs defaultValue="analytics" className="mt-6">
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-5">
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
             <TabsTrigger value="users">Users</TabsTrigger>
             <TabsTrigger value="logs">Audit Logs</TabsTrigger>
             <TabsTrigger value="flags">Feature Flags</TabsTrigger>
+            <TabsTrigger value="affiliate">Affiliate Clicks</TabsTrigger>
           </TabsList>
 
           <TabsContent value="analytics" className="mt-4">
@@ -210,20 +243,244 @@ export default function AdminPage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="affiliate" className="mt-4">
+            <AffiliateClicksSection />
+          </TabsContent>
         </Tabs>
       </div>
     </div>
   );
 }
 
-function StatCard({ icon: Icon, label, value, subtext }: { icon: typeof Users; label: string; value: number; subtext?: string }) {
+/**
+ * Geo-click reporting — Step C. Fetches GET /api/v1/admin/affiliate-clicks
+ * (admin-only). Headline totals exclude flagged burst clicks; the
+ * exclusion is stated on the page and flagged buckets are listed, not
+ * hidden. No per-user data exists anywhere in this surface — recent
+ * clicks show product, retailer, country, time, and the merchant host.
+ */
+function AffiliateClicksSection() {
+  const [days, setDays] = useState<7 | 30 | 90>(30);
+  const [data, setData] = useState<AffiliateClicks | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetch(`/api/v1/admin/affiliate-clicks?days=${days}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (!cancelled && json.success) setData(json.data ?? null);
+      })
+      .catch(() => {
+        // Error state renders below via data === null.
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [days]);
+
+  if (loading) return <LoadingSpinner />;
+
+  if (!data) {
+    return <p className="text-sm text-muted-foreground">Could not load affiliate clicks.</p>;
+  }
+
+  const isEmpty = data.totalClicks === 0 && data.flaggedClicks === 0;
+  const hostOf = (url: string) => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return url;
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          Outbound merchant-link clicks logged by the geo affiliate beacon.
+          Burst-flagged clicks are excluded from the totals below.
+        </p>
+        <div className="flex gap-1">
+          {([7, 30, 90] as const).map((d) => (
+            <Button
+              key={d}
+              variant={days === d ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setDays(d)}
+            >
+              {d}d
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard icon={MousePointerClick} label="Total clicks" value={data.totalClicks} subtext={`last ${data.days} days, burst-flagged excluded`} />
+        <StatCard icon={Activity} label="Clicks today" value={data.clicksToday} />
+        <StatCard icon={Flag} label="Top country" value={0} display={data.topCountry ?? '—'} />
+        <StatCard icon={Package} label="Top retailer" value={0} display={data.topRetailer ?? '—'} />
+      </div>
+
+      {data.flags.length > 0 && (
+        <Card className="border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
+          <CardHeader>
+            <CardTitle className="text-base">Burst flags — {data.flaggedClicks} clicks excluded</CardTitle>
+            <CardDescription>
+              Buckets over 100 clicks/hour for one country + retailer + product.
+              These clicks are not counted in the totals or charts above.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1 text-sm">
+              {data.flags.map((f, i) => (
+                <div key={i} className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="truncate">
+                    {f.hour} · {f.countryCode ?? 'Unknown'} · {f.retailerName ?? 'Unknown retailer'} · {f.productSlug ?? 'Unknown product'}
+                  </span>
+                  <Badge variant="secondary">{f.clicks} clicks</Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {isEmpty ? (
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-sm text-muted-foreground">No clicks yet in the selected range.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Clicks by country</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={data.byCountry.slice(0, 8)}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="label" />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip />
+                      <Bar dataKey="clicks" fill="#2563eb" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Clicks by retailer</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={data.byRetailer.slice(0, 8)}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="label" />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip />
+                      <Bar dataKey="clicks" fill="#059669" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Clicks per day</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={data.byDay}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" tickFormatter={(v: string) => v.slice(5)} interval={Math.max(0, Math.floor(data.byDay.length / 10))} />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip />
+                    <Area type="monotone" dataKey="clicks" stroke="#2563eb" fill="#93c5fd" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Top products</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {data.byProduct.length > 0 ? (
+                  <div className="space-y-2">
+                    {data.byProduct.map((p) => (
+                      <div key={p.label} className="flex items-center justify-between text-sm">
+                        <span className="truncate">{p.label}</span>
+                        <Badge variant="secondary">{p.clicks}x</Badge>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No product clicks yet.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Recent clicks</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {data.recent.length > 0 ? (
+                  <div className="space-y-2">
+                    {data.recent.map((c, i) => (
+                      <div key={i} className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2 text-sm last:border-0 dark:border-slate-800">
+                        <div className="min-w-0">
+                          <span className="block truncate font-medium">{c.productSlug ?? 'Unknown product'}</span>
+                          <a href={c.targetUrl} target="_blank" rel="noreferrer" className="block truncate text-xs text-blue-600 hover:underline">
+                            {hostOf(c.targetUrl)}
+                          </a>
+                        </div>
+                        <div className="shrink-0 text-right text-xs text-muted-foreground">
+                          <span className="block">{c.retailerName ?? '—'} · {c.countryCode ?? '—'}</span>
+                          <span className="block">{new Date(c.clickedAt).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No recent clicks.</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ icon: Icon, label, value, subtext, display }: { icon: typeof Users; label: string; value: number; subtext?: string; display?: string }) {
   return (
     <Card>
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm text-muted-foreground">{label}</p>
-            <p className="mt-1 text-2xl font-bold">{value.toLocaleString()}</p>
+            <p className="mt-1 truncate text-2xl font-bold">{display ?? value.toLocaleString()}</p>
             {subtext && <p className="mt-0.5 text-xs text-green-600">{subtext}</p>}
           </div>
           <div className="rounded-lg bg-blue-50 p-2 dark:bg-blue-950">

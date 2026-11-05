@@ -1,8 +1,9 @@
 # Step C — Reporting & Scaling / Beacon Spam Protection
 
-> Phase 4, Workstream C (see `docs/affiliate-phase4-plan.md`). Plan only —
-> nothing here is built yet, and nothing in it authorises a push on
-> its own. Status 2026-11-05: proposed for approval.
+> Phase 4, Workstream C (see `docs/affiliate-phase4-plan.md`).
+> Status 2026-11-05: Stage 1 IMPLEMENTED LOCALLY (see §5), NOT pushed
+> yet — push needs its own approval. Stage 2 remains deferred on
+> evidence, as planned.
 
 ## 1. Threat model — what we are actually defending
 
@@ -123,3 +124,35 @@ Follows the existing admin patterns; no new auth, no new dependency
 
 Each build step needs its own approval; this document proposes the
 order, it does not authorise the work.
+
+## 5. Stage 1 — as built (2026-11-05, local, not pushed yet)
+
+- `services/affiliate-geo.ts`: new `isTrackableClickHost(hostname,
+  knownHosts)` — transformable host OR `go.skimresources.com`.
+- `app/api/v1/affiliate/geo-click/route.ts`: host validation before
+  the insert; a non-trackable host is dropped with `tracked:false`
+  and a server-side warning (host only, never the full URL).
+- `services/affiliate-analytics.ts` (new, pure): `analyzeAffiliateClicks`
+  — burst buckets (hour, country, retailer, product) over
+  `AFFILIATE_BURST_THRESHOLD` (100/hour) are flagged and excluded
+  from headline totals; day series is filled so charts never imply
+  a gap; recent list capped at 20, newest first.
+- `services/admin.ts`: new `getAffiliateClickAnalytics(supabase,
+  days)` — fetches at most 5,000 rows in range; on DB error returns
+  an honest empty result. If real traffic ever approaches the cap,
+  move the aggregation into a DB view/RPC instead of raising the
+  cap silently.
+- `app/api/v1/admin/affiliate-clicks/route.ts` (new): GET, `days`
+  7/30/90 (default 30). Unlike the older admin endpoints (session
+  only), this one verifies `role === 'admin'` on the caller's
+  profiles row via the service-role client and fails closed with
+  403. No `groupBy` param — one response carries every breakdown,
+  which is simpler at this volume.
+- `app/admin/page.tsx`: new "Affiliate Clicks" tab — 7/30/90-day
+  selector, four summary cards, burst-flag warning card, Recharts
+  bar charts (country, retailer) + by-day area chart, top-products
+  and recent-clicks tables, honest "No clicks yet" empty state.
+- Verified: tsc 0, production build pass (route registered), 9/9
+  logic tests PASS (host validation incl. `amazon.evil.com` and
+  `go.skimresources.com.evil.com` blocked; burst flagging, threshold
+  edge at exactly 100, bucket splitting by country, recent cap).

@@ -6,6 +6,11 @@
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
 import type { AdminAnalytics, AdminAuditLog } from '@/types/ai';
+import {
+  analyzeAffiliateClicks,
+  type AffiliateClickAnalytics,
+  type AffiliateClickRow,
+} from '@/services/affiliate-analytics';
 
 export async function getAdminAnalytics(
   supabase: AnySupabaseClient
@@ -143,6 +148,42 @@ export async function recordAdminAction(
     if (error) logger.warn('recordAdminAction: insert failed', { error: error.message });
   } catch (err) {
     logger.error('recordAdminAction: unexpected error', { error: String(err) });
+  }
+}
+
+/**
+ * Geo-click analytics for the admin dashboard — Step C.
+ * Reads `affiliate_geo_clicks` (service-role client; the table has no
+ * anon read policy by design) and aggregates with the pure analyzer
+ * in services/affiliate-analytics.ts. The fetch is capped at 5,000
+ * rows per range — far above today's volume; if real traffic ever
+ * approaches it, move the aggregation into a DB view/RPC instead of
+ * raising the cap silently. On any DB error returns an honest empty
+ * result, never a fabricated one.
+ */
+export async function getAffiliateClickAnalytics(
+  supabase: AnySupabaseClient,
+  days = 30
+): Promise<AffiliateClickAnalytics> {
+  const safeDays = days === 7 || days === 90 ? days : 30;
+  const since = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    const { data, error } = await supabase
+      .from('affiliate_geo_clicks')
+      .select('product_slug, retailer_name, target_url, country_code, clicked_at')
+      .gte('clicked_at', since)
+      .order('clicked_at', { ascending: false })
+      .limit(5000);
+
+    if (error) {
+      logger.warn('getAffiliateClickAnalytics: query failed', { error: error.message });
+      return analyzeAffiliateClicks([], safeDays);
+    }
+
+    return analyzeAffiliateClicks((data ?? []) as AffiliateClickRow[], safeDays);
+  } catch (err) {
+    logger.error('getAffiliateClickAnalytics: unexpected error', { error: String(err) });
+    return analyzeAffiliateClicks([], safeDays);
   }
 }
 

@@ -22,13 +22,35 @@
  * runs supabase/add-affiliate-geo-clicks.sql once). Tracking must
  * never break navigation or leak whether a row was stored beyond
  * the harmless `tracked` flag.
+ *
+ * STEP C STAGE 1 — HOST VALIDATION: a click is stored only when its
+ * target host is trackable (same allowlist as the transform endpoint
+ * plus go.skimresources.com, see isTrackableClickHost). Anything else
+ * is dropped silently with tracked:false. This is a garbage filter,
+ * not volume control — burst detection lives in the reporting layer.
  */
 
 import type { NextRequest } from 'next/server';
 import { apiSuccess } from '@/lib/api/responses';
 import { logApiRequest } from '@/lib/api/middleware';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
-import { resolveGeoCountryOrNull } from '@/services/affiliate-geo';
+import {
+  isTrackableClickHost,
+  resolveGeoCountryOrNull,
+} from '@/services/affiliate-geo';
+import { LOCAL_STORES, GLOBAL_STORES } from '@/lib/stores';
+
+function knownStoreHosts(): Set<string> {
+  const hosts = new Set<string>();
+  for (const store of [...LOCAL_STORES, ...GLOBAL_STORES]) {
+    try {
+      hosts.add(new URL(store.websiteUrl).hostname.toLowerCase());
+    } catch {
+      // A malformed registry URL simply contributes no host.
+    }
+  }
+  return hosts;
+}
 
 function asCappedString(value: unknown, max: number): string | null {
   if (typeof value !== 'string') return null;
@@ -67,7 +89,19 @@ export async function POST(request: NextRequest) {
 
     // A click without a valid merchant URL is not trackable; still
     // answer success so the beacon never disturbs navigation.
-    if (targetUrl && isHttpUrl(targetUrl)) {
+    // Step C Stage 1: the host must be trackable too — a junk host
+    // (anything outside the retailer/directory allowlist and
+    // Skimlinks) is dropped, never stored.
+    const hostOk =
+      targetUrl &&
+      isHttpUrl(targetUrl) &&
+      isTrackableClickHost(new URL(targetUrl).hostname, knownStoreHosts());
+    if (targetUrl && isHttpUrl(targetUrl) && !hostOk) {
+      console.warn('[affiliate-geo-click] non-trackable host, click not stored', {
+        host: new URL(targetUrl).hostname,
+      });
+    }
+    if (hostOk) {
       // Null when no geo signal resolves — never a guessed country.
       const country = resolveGeoCountryOrNull(
         request.headers.get('x-vercel-ip-country'),

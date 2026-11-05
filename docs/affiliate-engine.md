@@ -149,8 +149,30 @@ in the Skimlinks dashboard before enabling.
   campids/IDs, same env pattern as Amazon).
 - No commission/conversion reporting: the old analytics functions
   read `affiliate_links`, which this engine does not populate.
-  Reporting on `affiliate_geo_clicks` is a follow-up once real
-  clicks exist.
+  Click reporting on `affiliate_geo_clicks` landed as Step C
+  Stage 1 (see below) — it reports clicks only, never commissions.
+
+## Step C Stage 1 — spam protection + admin reporting (2026-11-05, local)
+
+- **Host validation** — `isTrackableClickHost` in
+  `services/affiliate-geo.ts` (transformable host OR
+  `go.skimresources.com`); the geo-click route drops non-trackable
+  hosts with `tracked:false` and a host-only server warning. A
+  garbage filter, not volume control.
+- **Burst flagging** — pure analyzer `services/affiliate-analytics.ts`:
+  any (hour, country, retailer, product) bucket over 100 clicks/hour
+  is flagged and excluded from headline totals; flags are listed on
+  the admin page, rows are never deleted. Threshold is a starting
+  value to tune with real traffic.
+- **Admin surface** — `GET /api/v1/admin/affiliate-clicks` (days
+  7/30/90; verifies `role === 'admin'` server-side and fails closed)
+  + "Affiliate Clicks" tab in the admin dashboard (summary cards,
+  Recharts bar/area charts, top products, recent clicks, honest
+  empty state). Service fetch capped at 5,000 rows per range.
+- **Deferred on evidence:** single-use signed beacon tokens, then
+  Upstash Redis hashed-IP counters only if tokens prove
+  insufficient. Never: CAPTCHA on click, raw IP logging, Pro WAF.
+  Full plan: `docs/affiliate-step-c-plan.md`.
 - The old affiliate module/routes stay dormant (link/click infra
   only); their placeholder tag config was removed 2026-11-05 after
   the owner confirmed the IDs were dummies.
