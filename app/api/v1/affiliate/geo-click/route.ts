@@ -57,7 +57,13 @@ export async function POST(request: NextRequest) {
     const targetUrl = asCappedString(obj.targetUrl, 2048);
     const productSlug = asCappedString(obj.productSlug, 200);
     const productId = asCappedString(obj.productId, 100);
-    const retailerName = asCappedString(obj.retailerName, 100);
+    // BUGFIX (2026-11-05): the page beacon sends `merchantName`,
+    // but this route only read `retailerName` — so retailer_name was
+    // always null and every insert failed 23502. Accept both names.
+    const retailerName = asCappedString(
+      obj.retailerName ?? obj.merchantName,
+      100
+    );
 
     // A click without a valid merchant URL is not trackable; still
     // answer success so the beacon never disturbs navigation.
