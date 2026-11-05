@@ -110,11 +110,41 @@ in the Skimlinks dashboard before enabling.
 - `supabase/add-affiliate-geo-clicks.sql` — owner-run table.
 - `.env.example` — placeholder vars (blank = feature off).
 
+## Step B — Content integration (2026-11-05, local — see Phase 4 plan)
+
+- **Shared beacon helper** `lib/affiliate-beacon.ts:trackAffiliateClick`
+  — one fire-and-forget implementation for every Buy/search link
+  (product page Buy buttons now use it too; same endpoint + payload).
+- **Batch transform endpoint** `POST /api/v1/affiliate/transform` —
+  the server-side transform point for client-rendered links
+  (arbitrage table). Body `{urls: string[]}` (1–20), response
+  `{urls: (string|null)[]}` + `meta.affiliateEnabled`. Allowlisted
+  hosts only (stores directory + Amazon/Best Buy/eBay/AliExpress
+  families — see `isTransformableHost`); anything else returns
+  unchanged, so it can never wrap arbitrary URLs. No tag values are
+  ever returned as config.
+- **Gifts** — `app/api/v1/gifts/route.ts` applies the same geo
+  transform to per-pick store links (keyed to the gift search's own
+  region) + `meta.affiliateEnabled`; `app/gifts/page.tsx` beacons
+  store-link clicks and shows the disclosure note when enabled.
+- **Arbitrage table** — calls the transform endpoint only when the
+  product page reports affiliate enabled (env-blank = no request
+  at all); links stay plain until the transform returns, and the
+  disclosure note is the product page's own (no duplicate).
+- **Audited, no change:** `/compare` renders no outbound merchant
+  links (search + product picker, internal links only) and the AI
+  assistant (`components/chat/ai-deal-finder-widget.tsx`) links only
+  to internal `/products/[slug]` pages — neither needs wiring.
+  `/deals` (no outbound links) and `/blog` (no posts yet) stay as
+  decided in the Phase 4 plan.
+
 ## Deliberately NOT in this batch
 
-- Local-store directory links are **not** transformed or tracked:
-  they are directory + search links by rule, and the beacon only
-  covers priced merchant Buy buttons.
+- The product page's local-stores directory section is **not**
+  transformed or tracked: directory + search links by rule. (The
+  gifts store links and arbitrage store links above are merchant
+  search links reached from a product context, wired per the
+  Phase 4 plan — the directory section itself stays plain.)
 - No eBay/Best Buy direct-tag scheme (needs owner-provided locale
   campids/IDs, same env pattern as Amazon).
 - No commission/conversion reporting: the old analytics functions

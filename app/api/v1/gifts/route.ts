@@ -26,6 +26,7 @@ import { parseBudgetFromQuery } from '@/services/currency';
 import { resolveRegion, convertUsd } from '@/lib/region';
 import { getStoresForCountry, buildStoreSearchUrl } from '@/lib/stores';
 import { getCoupons } from '@/services/commerce';
+import { buildGeoAffiliateUrl, isGeoAffiliateEnabled } from '@/services/affiliate-geo';
 import { bestCoupon, couponValueLabel, type DealCoupon } from '@/lib/deal-math';
 import { findGiftPicks, SHIPPING_NOTE, type GiftCandidate } from '@/services/gift-finder';
 
@@ -136,6 +137,10 @@ export async function POST(request: NextRequest) {
 
     // Per-pick store search links (the priced merchant link lives on
     // the product page; here we give the directory links).
+    // Step B: the same geo affiliate transform as the product page,
+    // keyed to this response's own region (the visitor's stated
+    // region for the gift search). ENV-GATED: with nothing
+    // configured the URLs come back unchanged.
     const enriched = picks.map((pick) => ({
       ...pick,
       priceInRegion: pick.bestPriceUsd !== null ? convertUsd(pick.bestPriceUsd, region.currency) : null,
@@ -143,7 +148,7 @@ export async function POST(request: NextRequest) {
       storeLinks: stores.stores.map((s) => ({
         name: s.name,
         country: s.countryCode,
-        searchUrl: buildStoreSearchUrl(s, pick.name),
+        searchUrl: buildGeoAffiliateUrl(buildStoreSearchUrl(s, pick.name), region.code),
       })),
     }));
 
@@ -153,6 +158,7 @@ export async function POST(request: NextRequest) {
       budgetUsd,
       shippingNote: SHIPPING_NOTE,
       storeKind: stores.kind,
+      affiliateEnabled: isGeoAffiliateEnabled(),
     });
   } catch {
     return internalError('Gift recommendations failed');

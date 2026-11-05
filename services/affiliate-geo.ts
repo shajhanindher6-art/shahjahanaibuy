@@ -121,9 +121,53 @@ export function resolveGeoCountryOrNull(
   return null;
 }
 
+/**
+ * Amazon's real host shape only: amazon.<tld> (com, de, fr, ...),
+ * amazon.co.<cc> (co.uk, co.jp), or amazon.com.<cc> (com.au, com.mx).
+ * The loose pattern amazon.<anything>.<anything> would also match a
+ * phishing host such as amazon.evil.com, so it is deliberately NOT
+ * used here (fixed 2026-11-05 after an allowlist test caught it).
+ */
 function isAmazonHostname(host: string): boolean {
   const h = host.toLowerCase();
-  return h === 'amazon.com' || h.endsWith('.amazon.com') || /^amazon\.[a-z.]+$/.test(h);
+  return (
+    h === 'amazon.com' ||
+    h.endsWith('.amazon.com') ||
+    /^amazon\.([a-z]{2,3}|com\.[a-z]{2}|co\.[a-z]{2})$/.test(h)
+  );
+}
+
+/**
+ * Whether a hostname may be affiliate-transformed by the batch
+ * transform endpoint (Step B, client-rendered store links).
+ * Allowed: the big-retailer families (Amazon, Best Buy, eBay,
+ * AliExpress) OR any hostname in the stores directory (the caller
+ * passes the directory's websiteUrl hosts). Anything else returns
+ * false, so the endpoint can never become an open redirector or a
+ * wrapper for arbitrary URLs. `www.` is ignored on both sides.
+ */
+export function isTransformableHost(hostname: string, knownHosts: Set<string>): boolean {
+  const bare = hostname.toLowerCase().replace(/^www\./, '');
+  // Same tight host shapes as isAmazonHostname: a loose
+  // amazon.<anything>.<anything> pattern would also match phishing
+  // hosts such as amazon.evil.com (caught by an allowlist test).
+  if (
+    bare === 'amazon.com' ||
+    bare.endsWith('.amazon.com') ||
+    /^amazon\.([a-z]{2,3}|com\.[a-z]{2}|co\.[a-z]{2})$/.test(bare) ||
+    bare === 'bestbuy.com' ||
+    bare.endsWith('.bestbuy.com') ||
+    /^ebay\.([a-z]{2,3}|com\.[a-z]{2}|co\.[a-z]{2})$/.test(bare) ||
+    bare.endsWith('.ebay.com') ||
+    /^aliexpress\.([a-z]{2,3}|com\.[a-z]{2})$/.test(bare)
+  ) {
+    return true;
+  }
+  for (const known of knownHosts) {
+    const k = known.toLowerCase().replace(/^www\./, '');
+    if (bare === k || bare.endsWith(`.${k}`)) return true;
+  }
+  return false;
 }
 
 /**

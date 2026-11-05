@@ -8,6 +8,7 @@ import type { CurrencyCode } from '@/services/currency';
 import { DEFAULT_DUTY_PCT, standardRateForCountry } from '@/services/tax-estimator';
 import { buildStoreSearchUrl, getStoresForCountry } from '@/lib/stores';
 import type { FxSource } from '@/services/fx-rates';
+import { trackAffiliateClick } from '@/lib/affiliate-beacon';
 
 interface FxState {
   rates: Partial<Record<CurrencyCode, number>>;
@@ -58,12 +59,18 @@ export function RegionArbitrageTable({
   priceUsd,
   productName,
   visitorCountryCode,
+  productSlug,
+  affiliateEnabled,
 }: {
   /** Cheapest US merchant price in USD (a real recorded price). */
   priceUsd: number;
   productName: string;
   /** Visitor's country code, highlighted in the table. */
   visitorCountryCode: string;
+  /** Product slug for the click beacon (null when unknown). */
+  productSlug?: string | null;
+  /** True only when the server reports an affiliate path configured. */
+  affiliateEnabled?: boolean;
 }) {
   const [fx, setFx] = useState<FxState | null>(null);
 
@@ -125,6 +132,40 @@ export function RegionArbitrageTable({
     }
     return out;
   }, [priceUsd, productName, fx]);
+
+  // Step B: server-side affiliate transform for the store links.
+  // Only runs when the product page reports affiliate enabled (the
+  // common env-blank case makes no request at all). Until the
+  // transform returns, links stay the plain search URLs; on any
+  // failure they stay plain too.
+  const [transformedUrls, setTransformedUrls] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!affiliateEnabled) return;
+    const urls = rows.map((r) => r.storeUrl).filter((u) => u && u !== '#');
+    if (urls.length === 0) return;
+    let cancelled = false;
+    fetch('/api/v1/affiliate/transform', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ urls }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (cancelled || !json?.success || !Array.isArray(json.data?.urls)) return;
+        const next: Record<string, string> = {};
+        urls.forEach((u, i) => {
+          const t = json.data.urls[i];
+          if (typeof t === 'string' && t.length > 0) next[u] = t;
+        });
+        setTransformedUrls(next);
+      })
+      .catch(() => {
+        // Links stay plain on any failure.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [affiliateEnabled, rows]);
 
   const cheapestCode = useMemo(() => {
     let best: ArbitrageRow | null = null;
@@ -238,10 +279,18 @@ export function RegionArbitrageTable({
                   </td>
                   <td className="py-2">
                     <a
-                      href={row.storeUrl}
+                      href={transformedUrls[row.storeUrl] ?? row.storeUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="underline underline-offset-2"
+                      onClick={() => {
+                        if (row.storeUrl === '#') return;
+                        trackAffiliateClick({
+                          productSlug: productSlug ?? null,
+                          merchantName: row.storeName,
+                          targetUrl: transformedUrls[row.storeUrl] ?? row.storeUrl,
+                        });
+                      }}
                     >
                       Search on {row.storeName}
                     </a>

@@ -25,6 +25,7 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { Price } from '@/components/region/price';
 import { REGIONS } from '@/lib/region';
+import { trackAffiliateClick } from '@/lib/affiliate-beacon';
 
 const OCCASIONS = ['Birthday', 'Anniversary', 'Wedding', 'Graduation', 'New home', 'Thank you', 'Holiday', 'Just because'];
 
@@ -52,7 +53,7 @@ export default function GiftsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [picks, setPicks] = useState<GiftPick[] | null>(null);
-  const [meta, setMeta] = useState<{ shippingNote?: string; storeKind?: string } | null>(null);
+  const [meta, setMeta] = useState<{ shippingNote?: string; storeKind?: string; affiliateEnabled?: boolean } | null>(null);
 
   // Pre-fill the budget from the ?budget= URL parameter on first load
   // (e.g. /gifts?budget=1000). Only a finite positive number is
@@ -187,6 +188,14 @@ export default function GiftsPage() {
                   <CardContent className="p-4 text-sm text-muted-foreground">{meta.shippingNote}</CardContent>
                 </Card>
               )}
+              {/* Step B: affiliate disclosure, rendered ONLY when the
+                  server reports a real tag/publisher id configured. */}
+              {meta?.affiliateEnabled && (
+                <p className="text-xs text-muted-foreground">
+                  Affiliate disclosure: SmartBuy may earn a commission from qualifying purchases
+                  made through these retailer links, at no extra cost to you.
+                </p>
+              )}
               {picks.map((pick) => (
                 <Card key={pick.slug}>
                   <CardContent className="space-y-2 p-4">
@@ -214,7 +223,20 @@ export default function GiftsPage() {
                         View product
                       </Link>
                       {pick.storeLinks.slice(0, 3).map((s) => (
-                        <a key={s.name} className="text-sm text-blue-600 underline" href={s.searchUrl} target="_blank" rel="noopener noreferrer">
+                        <a
+                          key={s.name}
+                          className="text-sm text-blue-600 underline"
+                          href={s.searchUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() =>
+                            trackAffiliateClick({
+                              productSlug: pick.slug,
+                              merchantName: s.name,
+                              targetUrl: s.searchUrl,
+                            })
+                          }
+                        >
                           Search on {s.name}
                         </a>
                       ))}

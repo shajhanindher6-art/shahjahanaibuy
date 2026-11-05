@@ -44,12 +44,12 @@ disclosure treatment as the product page. Directory links stay plain.
 | Surface | State today | Phase 4 step |
 |---|---|---|
 | Product page Where to Buy | Done (Phase 3) | None — reference implementation |
-| `/gifts` results | Store search URLs built in `app/api/v1/gifts/route.ts` via `buildStoreSearchUrl` | Apply the same geo transform server-side in the gifts route |
-| Region arbitrage table | Store links built client-side (`components/products/region-arbitrage-table.tsx`) | Needs a server-side transform point first — audit before touching; do not ship tag values to the client as config |
-| `/compare` | Buy-link behaviour not yet audited | Audit first: if it renders merchant URLs, wire the same transform + beacon |
+| `/gifts` results | **Wired (Step B, 2026-11-05, local)** — gifts route transforms store links + `meta.affiliateEnabled`; gifts page beacons clicks + disclosure note | None — verify live after push |
+| Region arbitrage table | **Wired (Step B, 2026-11-05, local)** — new batch endpoint `POST /api/v1/affiliate/transform` (allowlisted hosts only); table calls it only when affiliate enabled, links stay plain until it returns | None — verify live after push |
+| `/compare` | **Audited (Step B, 2026-11-05)** — no outbound merchant links (search + picker, internal links only) | None — no wiring needed |
 | `/deals` cards | No outbound retailer links today | Decision needed: add Where-to-Buy-style links, or keep deals as discovery-only |
 | `/blog` | Single listing page, no posts, no retailer links | Content must exist first — no fake posts, no placeholder articles |
-| AI assistant answers | Link behaviour not yet audited | Audit first: recommendations must never gain tags without the disclosure treatment |
+| AI assistant answers | **Audited (Step B, 2026-11-05)** — links only to internal `/products/[slug]` pages, no retailer URLs | None — no wiring needed; if retailer links are ever added, they need the disclosure treatment first |
 
 Not in scope: eBay/Best Buy direct-tag schemes (need owner-provided
 locale IDs first, same env pattern as Amazon); local-store directory

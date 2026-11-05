@@ -44,6 +44,7 @@ import { Price } from '@/components/region/price';
 import { useRegion } from '@/components/region/region-provider';
 import { localizeAmazonUrl } from '@/lib/region';
 import { getStoresForCountry, buildStoreSearchUrl } from '@/lib/stores';
+import { trackAffiliateClick } from '@/lib/affiliate-beacon';
 import { getRegionByCountry } from '@/lib/region';
 import { tFor } from '@/lib/i18n';
 import { SiteHeader } from '@/components/layout/site-header';
@@ -647,31 +648,17 @@ export default function ProductDetailsPage() {
                               href={buyHref}
                               target="_blank"
                               rel="noopener noreferrer"
-                              onClick={() => {
-                                // Phase 3 Prep: fire-and-forget click
-                                // beacon (sendBeacon never blocks the
-                                // navigation). No location, IP, or user
-                                // id is sent — the server derives the
-                                // country from its own geo signal.
-                                try {
-                                  navigator.sendBeacon(
-                                    '/api/v1/affiliate/geo-click',
-                                    new Blob(
-                                      [
-                                        JSON.stringify({
-                                          productId: product?.id ?? null,
-                                          productSlug: slug,
-                                          merchantName: listing.merchantName ?? null,
-                                          targetUrl: buyHref,
-                                        }),
-                                      ],
-                                      { type: 'application/json' }
-                                    )
-                                  );
-                                } catch {
-                                  // Beacon failure is silent by design.
-                                }
-                              }}
+                              onClick={() =>
+                                // Step B: shared beacon helper (same
+                                // endpoint + payload as before; no
+                                // location, IP, or user id is sent).
+                                trackAffiliateClick({
+                                  productId: product?.id ?? null,
+                                  productSlug: slug,
+                                  merchantName: listing.merchantName ?? null,
+                                  targetUrl: buyHref ?? listing.url ?? '',
+                                })
+                              }
                             >
                               {tFor(language, 'buy')}
                             </a>
@@ -755,6 +742,8 @@ export default function ProductDetailsPage() {
             priceUsd={merchants[0].price}
             productName={product.name}
             visitorCountryCode={detectedCountryCode ?? region.code}
+            productSlug={slug}
+            affiliateEnabled={affiliateEnabled}
           />
         )}
 
