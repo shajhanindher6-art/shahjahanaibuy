@@ -76,3 +76,24 @@
     font-feature-settings: 'rlig' 1, 'calt' 1;
   }
 }
+
+/* AI Glass dashboard — frosted-glass card used by the dashboard
+   sections. Translucent white in light mode, translucent slate in
+   dark mode, with a soft border and blur over the gradient page. */
+@layer components {
+  .glass-card {
+    @apply rounded-2xl border border-white/50 bg-white/60 shadow-lg backdrop-blur-xl dark:border-slate-700/50 dark:bg-slate-900/60;
+  }
+}
+
+/* Accessibility: users who prefer reduced motion get no fade,
+   slide, shimmer, or count-up transitions anywhere on the site. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

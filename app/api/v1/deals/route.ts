@@ -1,6 +1,9 @@
 /**
  * API v1 deals endpoint.
  * GET /api/v1/deals — list active deals.
+ * GET /api/v1/deals?status=upcoming — deals scheduled to start in
+ * the future (start_at > now), soonest first. No deals are invented:
+ * when nothing is scheduled the list is honestly empty.
  */
 
 import type { NextRequest } from 'next/server';
@@ -17,6 +20,7 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, Number(searchParams.get('page') ?? 1));
     const pageSize = Math.min(100, Math.max(1, Number(searchParams.get('pageSize') ?? 20)));
     const productId = searchParams.get('productId') ?? undefined;
+    const upcoming = searchParams.get('status') === 'upcoming';
     const limit = pageSize;
 
     const supabase = await createSupabaseServerClient();
@@ -24,6 +28,7 @@ export async function GET(request: NextRequest) {
       productId,
       active: true,
       limit,
+      upcoming,
     });
 
     const total = deals.length;

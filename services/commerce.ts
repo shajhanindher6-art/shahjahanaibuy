@@ -28,6 +28,8 @@ export interface DealListOptions {
   productId?: string;
   active?: boolean;
   limit?: number;
+  /** When true, only deals whose start_at is in the future. */
+  upcoming?: boolean;
 }
 
 export interface CouponListOptions {
@@ -339,11 +341,17 @@ export async function getDeals(
       .select('id, product_id, merchant_id, title, description, deal_type, discount_type, discount_value, start_at, end_at, coupon_code, url, active')
       .eq('active', active)
       .is('deleted_at', null)
-      .order('end_at', { ascending: true })
+      .order(options.upcoming ? 'start_at' : 'end_at', { ascending: true })
       .limit(limit);
 
     if (options.productId) {
       query = query.eq('product_id', options.productId);
+    }
+
+    // Upcoming deals: scheduled but not started yet. Ordered by
+    // start_at (soonest first) so the dashboard shows what's next.
+    if (options.upcoming) {
+      query = query.gt('start_at', new Date().toISOString());
     }
 
     const { data, error } = await query;
