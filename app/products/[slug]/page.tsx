@@ -23,7 +23,7 @@ import { ReturnWarrantyMatrix } from '@/components/products/return-warranty-matr
 import { DurabilityPredictor } from '@/components/products/durability-predictor';
 import { ReviewAuthenticity } from '@/components/products/review-authenticity';
 import { EcoFootprint } from '@/components/products/eco-footprint';
-import { TrustSignals } from '@/components/products/trust-signals';
+import { TrustCheckSection } from '@/components/products/trust-check-section';
 import { SmartPool } from '@/components/pools/smart-pool';
 import { UpcyclingBlueprints } from '@/components/products/upcycling-blueprints';
 import { DropWindowSimulator } from '@/components/products/drop-window-simulator';
@@ -712,8 +712,7 @@ export default function ProductDetailsPage() {
         )}
 
         {/* Option 8: eco footprint (estimate only, real alternatives),
-            seller & listing trust check (real signals only), and
-            SmartPool group buying (no discount is ever promised). */}
+            and SmartPool group buying (no discount is ever promised). */}
         {product && (
           <EcoFootprint
             slug={slug}
@@ -721,8 +720,13 @@ export default function ProductDetailsPage() {
             cheapestPriceUsd={merchantsLoaded && merchants.length > 0 ? merchants[0].price : null}
           />
         )}
+        {/* Option 11 Phase 2: unified Trust Check — the Option 8 trust
+            card (same component, same props) plus review-authenticity,
+            an on-device link checker, and the per-retailer Fake Sale
+            scan. This REPLACES the old standalone TrustSignals render
+            so the trust score lives in exactly one place. */}
         {product && (
-          <TrustSignals
+          <TrustCheckSection
             slug={slug}
             merchantNames={[...new Set(merchants.map((m) => m.merchantName).filter(Boolean) as string[])]}
             knownRetailers={['Amazon', 'Best Buy']}
@@ -730,6 +734,8 @@ export default function ProductDetailsPage() {
             ratingDistribution={reviewSummary?.ratingDistribution ?? {}}
             priceUsd={merchantsLoaded && merchants.length > 0 ? merchants[0].price : null}
             imageUrl={product.imageUrl}
+            merchants={merchants}
+            reviews={reviews}
           />
         )}
         {/* Option 9: Durability & longevity estimate — category range
