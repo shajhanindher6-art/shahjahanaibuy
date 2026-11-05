@@ -74,6 +74,18 @@ function SignInContent() {
         {error && (
           <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
             {error}
+            {/* Confirm email is ON in Supabase now: an unconfirmed
+                account gets "Email not confirmed" here. Without this
+                link the user has no in-flow way to resend the
+                verification email (the /verify-email page exists but
+                nothing linked to it). */}
+            {error.toLowerCase().includes('not confirmed') && (
+              <div className="mt-2">
+                <Link href="/verify-email" className="font-medium underline">
+                  Resend verification email
+                </Link>
+              </div>
+            )}
           </div>
         )}
         <div className="space-y-2">
