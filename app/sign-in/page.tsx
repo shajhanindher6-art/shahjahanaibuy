@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/features/auth';
+import { isSafeRedirectPath } from '@/lib/utils/safe-redirect';
 import { AuthShell } from '@/components/layout/auth-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +15,11 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get('redirect') || '/dashboard';
+  // Only same-origin paths are honoured (see lib/utils/safe-redirect.ts):
+  // an unvalidated `?redirect=https://evil.example` used to send a
+  // freshly signed-in user to an attacker's page (open redirect).
+  const redirectParam = searchParams.get('redirect');
+  const redirect = isSafeRedirectPath(redirectParam) ? (redirectParam as string) : '/dashboard';
   const { signIn, signInWithGoogle } = useAuth();
 
   const [email, setEmail] = useState('');

@@ -139,9 +139,17 @@ function readCookie(name: string): string | null {
   }
 }
 
+// The middleware sets these cookies with `Secure` in production, but the
+// client-side writes below used to drop the flag on every manual switch
+// (security fix 2026-11-05). httpOnly stays absent on purpose — the
+// region provider reads these cookies client-side.
+function secureFlag(): string {
+  return typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
+}
+
 function writeCountryChoice(code: string) {
   try {
-    document.cookie = `${COOKIE_NAME}=${encodeURIComponent(code)}; path=/; max-age=31536000; SameSite=Lax`;
+    document.cookie = `${COOKIE_NAME}=${encodeURIComponent(code)}; path=/; max-age=31536000; SameSite=Lax${secureFlag()}`;
     localStorage.setItem(LS_COUNTRY, code);
   } catch {
     // Storage unavailable (private mode etc.) — region still applies
@@ -156,7 +164,7 @@ function writeCountryChoice(code: string) {
  */
 function writeLanguageChoice(next: Language) {
   try {
-    document.cookie = `${COOKIE_LANGUAGE}=${encodeURIComponent(next)}; path=/; max-age=31536000; SameSite=Lax`;
+    document.cookie = `${COOKIE_LANGUAGE}=${encodeURIComponent(next)}; path=/; max-age=31536000; SameSite=Lax${secureFlag()}`;
     localStorage.setItem(LS_LANGUAGE, next);
   } catch {
     // Storage unavailable — language still applies this session

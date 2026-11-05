@@ -67,15 +67,20 @@ export async function requireAdmin(request: NextRequest): Promise<
 }
 
 /**
- * Best-effort client IP for rate-limit buckets: the first
- * x-forwarded-for entry (what Vercel sets), else x-real-ip.
- * Proxies can spoof this header, so it is a bucket key for abuse
- * control, never an identity proof.
+ * Best-effort client IP for rate-limit buckets. Prefer `x-real-ip`:
+ * Vercel sets it to the true connecting client IP. The first
+ * `x-forwarded-for` entry must NOT be trusted — any client can forge
+ * it (e.g. `X-Forwarded-For: 1.2.3.4`), which let an attacker rotate
+ * a fresh rate-limit bucket per request. It is only a fallback for
+ * non-Vercel environments (local dev). Either way this is a bucket
+ * key for abuse control, never an identity proof.
  */
 export function getClientIp(request: NextRequest): string {
+  const realIp = request.headers.get('x-real-ip')?.trim();
+  if (realIp) return realIp;
   const forwarded = request.headers.get('x-forwarded-for');
   const ip = forwarded?.split(',')[0]?.trim();
-  return ip || request.headers.get('x-real-ip') || 'unknown';
+  return ip || 'unknown';
 }
 
 /**

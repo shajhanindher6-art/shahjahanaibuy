@@ -4,11 +4,17 @@
  *
  * Enqueues a `product.fetch` job to the worker queue. When Redis/BullMQ is
  * available, the job runs asynchronously. Otherwise, it runs synchronously.
+ *
+ * ADMIN-ONLY (security fix 2026-11-05): this route used to accept any
+ * signed-in user, and with no real provider configured the job ran the
+ * MockProvider inline and inserted fake products into the live catalog.
+ * It is now requireAdmin + rate-limited, and the MockProvider is no
+ * longer registered in production (see services/providers/registry.ts).
  */
 
 import type { NextRequest } from 'next/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { getClientIp, logApiRequest, rateLimitResponse, requireAdmin } from '@/lib/api/middleware';
 import { enqueueJob } from '@/lib/workers/queue';
 import type { ProductFetchJobData } from '@/lib/workers/types';
 import { z } from 'zod';
@@ -22,8 +28,11 @@ const refreshSchema = z.object({
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'data.refresh' });
 
-  const auth = await requireAuth(request);
+  const auth = await requireAdmin(request);
   if ('error' in auth) return auth.error;
+
+  const limited = await rateLimitResponse(getClientIp(request), 10);
+  if (limited) return limited;
 
   try {
     const body = await request.json();

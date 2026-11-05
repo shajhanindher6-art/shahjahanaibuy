@@ -217,3 +217,119 @@ hole left after the batch above.
   (needs a non-admin test account — none exists yet, read-only
   constraint unlifted). Rate-limit behaviour can be probed
   logged-out (e.g. 11 rapid scan calls → the 11th is 429).
+
+## Round 2 — Deep audit (2026-11-05)
+
+A read-only deep audit (subagent) found what Round 1 missed: **0 Critical,
+3 High, 5 Medium, 6 Low**. Honest score reassessment: **~78** (Round 1's ~82
+had assumed the catalog RLS was sound — it was not). Fixing everything
+code-fixable below + 2FA → **~88 on the free tier**.
+
+### High
+
+- **H1 — Catalog RLS wide open (migration 010).** `products`,
+  `merchant_products`, `price_history`, `deals`, `coupons`, `merchants`,
+  `brands`, `categories`, `countries`, `currencies`, `data_sources`,
+  `languages`, `product_attributes`, `product_images`, `product_sources`,
+  `product_tags`, `product_variants`, `regions`, `retailers`,
+  `review_sources` (and system tables: `system_settings`,
+  `feature_flags`, `api_rate_limits`, `affiliate_links`,
+  `affiliate_clicks`, `providers`, `provider_health`, `sync_history`,
+  `queue_metrics`, `cache_metrics`, `deal_rankings`, `roles`, `tags`)
+  all had `TO authenticated WITH CHECK (true)` write policies — any
+  self-registered user could rewrite the public catalog with the anon
+  key + their JWT. Fix: `supabase/migrations/20261105190000_017_admin_only_catalog_writes.sql`
+  (38 tables, 114 policies) — writes now require
+  `profiles.role = 'admin'` via a `public.is_admin()` SECURITY DEFINER
+  helper. SELECT policies untouched. **Owner step: run the file in the
+  Supabase SQL Editor (Ctrl+A, Run) + verify with its final SELECT.**
+  Verified safe: catalog writers use the service-role client (RLS
+  bypass); community deals write to `community_deals`, not `deals`.
+- **H2 — `POST /api/v1/data/refresh` injected mock products.**
+  `requireAuth` only, no rate limit, and `MockProvider.isAvailable()`
+  always returned true with a synchronous inline queue — any signed-in
+  user could insert fake products into the live catalog. Fix: route is
+  now `requireAdmin` + 10/min rate limit, and `MockProvider` is only
+  registered when `NODE_ENV !== 'production'` (in production with no
+  real provider, the job fails cleanly with "No available provider").
+- **H3 — Next.js 13.5.1 is EOL (36 OSV advisories).** Includes the
+  middleware auth bypass CVE-2025-29927 (CVSS 9.1, fixed in 13.5.9)
+  and two unauthenticated image-optimizer RCEs (fixed only in 16.x).
+  Fix step 1 in this batch: `next` 13.5.1 → **13.5.9** (patch bump,
+  closes the middleware bypass; applicability here is reduced — no
+  authorization lives in this app's middleware). Step 2 (major upgrade
+  to 15/16) is a separate project, not a patch.
+
+### Medium
+
+- **M1 — `notifications/digest` + `notifications/process` CRON_SECRET
+  fail-OPEN.** `if (cronSecret)` meant anyone could call them when the
+  secret was unset — and `process` sends email/WhatsApp/Telegram.
+  Fix: fail-closed, same pattern as `prices/refresh` + `alerts/check`.
+- **M2 — Rate limits bypassable via spoofed `X-Forwarded-For`.**
+  `getClientIp()` trusted the first forwarded entry, which any client
+  can forge. Fix: prefer `x-real-ip` (set by Vercel to the true client
+  IP); forwarded-for is only a non-Vercel fallback.
+- **M3 — No error monitoring or alerting.** `@sentry/nextjs` is not
+  installed; `app/error.tsx` silently falls back to console-only.
+  Fix needs an owner step: free-tier Sentry account + install
+  `@sentry/nextjs` + init (not in this batch — no account exists yet).
+- **M4 — `ai_predictions` / `ai_summaries` / `product_comparisons` /
+  `admin_audit_logs` writable by any authenticated user (migration
+  011).** Fix: covered by the 017 migration (admin-only writes).
+  Known behaviour: the public ai-summary/predictions routes cache
+  through the session client fire-and-forget, so after the migration
+  the cache write only persists when an admin views the product —
+  reads and on-the-fly computation are unaffected (already the case
+  for logged-out visitors today).
+- **M5 — Open redirect on sign-in.** `?redirect=` was pushed
+  unvalidated. Fix: `lib/utils/safe-redirect.ts` (`isSafeRedirectPath`
+  — same-origin paths starting with a single `/` only) + sign-in page
+  falls back to `/dashboard` otherwise.
+
+### Low
+
+- **L1 — Dormant `/api/v1/affiliate/click`: almost harmless.**
+  Verified: anonymous inserts already fail (migration 015), the FK
+  needs a real link id, the `increment_affiliate_clicks` RPC does not
+  exist, and nothing reads the table. Left as-is (lowest priority);
+  its writes are now admin-only via the 017 migration anyway.
+- **L2 — Public monitoring endpoints** (`/api/v1/monitoring`,
+  `/providers`, `/sync-history`) leaked internal ops data. Fix:
+  `requireAdmin` on all three.
+- **L3 — `Secure` flag lost on client-side cookie overwrite.**
+  Middleware sets it, but `region-provider.tsx` rewrote `sb-country` /
+  `sb-language` without it. Fix: append `; Secure` when
+  `location.protocol === 'https:'`.
+- L4 (zod advisory — not exploitable here), L5 (`eval('require')` in
+  the worker queue — server-side static string, not exploitable), L6
+  (`chart.tsx` style injection — developer-controlled config only):
+  no change, noted for the record.
+
+### Verified clean in Round 2 (no finding)
+
+No hardcoded secrets; no `fetch()` to user-supplied URLs (`/scan`
+hands the image URL to SerpAPI, which fetches it — not our server);
+only three `dangerouslySetInnerHTML` uses, all safe (escaped JSON-LD
+×2, developer-only chart config); no stack traces or DB errors
+returned to clients; no CORS anywhere; no public storage buckets;
+Stripe webhook signature verified; checkout plan allowlisted
+server-side; IDOR spot-checks pass (alerts/vault ownership enforced).
+
+### Caveat — migration files contradict each other
+
+Migration 015 restricts `merchant_products` SELECT to `authenticated`,
+yet the live site serves it logged-out — so the live DB does not
+exactly match the file chain. Every RLS finding above is "per the
+migration files, if that policy is live". **Owner step: confirm the
+live policies** (the 017 file's verification SELECT + Supabase
+dashboard → Authentication → Policies) after running it.
+
+### Still open after Round 2
+
+- 2FA on the admin account (owner redo — verified OFF 2026-11-05).
+- Sentry free account + install (M3).
+- Next.js 15/16 major upgrade (closes the image-optimizer RCEs,
+  nonce-XSS, DoS/cache-poisoning cluster).
+- Leaked-password protection (Pro-only), WAF/bot protection, pen test
+  (paid) — these cap the free-tier score at ~88.

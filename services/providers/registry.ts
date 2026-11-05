@@ -134,14 +134,24 @@ let registrySingleton: ProviderRegistry | null = null;
 
 /**
  * Singleton factory. Returns the shared ProviderRegistry instance, registering
- * the MockProvider and ApifyProvider on first call. Additional providers (e.g.
- * CsvProvider, affiliate feeds) can be registered on the returned instance.
+ * the ApifyProvider on first call (plus the MockProvider outside production).
+ * Additional providers (e.g. CsvProvider, affiliate feeds) can be registered
+ * on the returned instance.
+ *
+ * SECURITY (2026-11-05): the MockProvider is NEVER registered in production.
+ * It was always available and, with no real provider configured, became the
+ * selected provider — so an admin (previously: any signed-in user) data
+ * refresh inserted fake products into the live catalog. In production with
+ * no real provider, getPreferred() returns undefined and product.fetch
+ * fails cleanly with "No available provider for product.fetch".
  */
 export function getProviderRegistry(): ProviderRegistry {
   if (registrySingleton) return registrySingleton;
 
   registrySingleton = new ProviderRegistry();
-  registrySingleton.register(new MockProvider());
+  if (process.env.NODE_ENV !== 'production') {
+    registrySingleton.register(new MockProvider());
+  }
   registrySingleton.register(new ApifyProvider());
 
   logger.info('ProviderRegistry initialized', {
