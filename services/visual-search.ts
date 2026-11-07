@@ -21,6 +21,20 @@
  *   source, link, thumbnail). A missing field is shown as missing,
  *   never guessed. A Lens match is labelled "Visual match"; anything
  *   else is labelled "Keyword-assisted search from your photo".
+ *
+ * VECTOR UPGRADE (Delta 1 — dormant until the owner enables it):
+ * - A second visual path matches against the catalog's own
+ *   embeddings (supabase/add-visual-embeddings.sql, pgvector):
+ *   a public image URL is captioned with
+ *   Salesforce/blip-image-captioning-base, the caption (or
+ *   user-typed caption text) is embedded with
+ *   sentence-transformers/all-MiniLM-L6-v2 (384 dims), and
+ *   match_products() returns catalog products by cosine similarity.
+ * - Key-gated on HF_API_TOKEN (free Hugging Face account). No token
+ *   = the route answers 503, never a faked match.
+ * - Uploaded/captured photos are NEVER sent here: only a public
+ *   image URL is fetched (its bytes forwarded to the captioning
+ *   model) or plain caption text is embedded. Nothing is stored.
  */
 
 import { logger } from '@/lib/config/logger';
@@ -105,4 +119,214 @@ export async function searchVisualByImageUrl(imageUrl: string): Promise<VisualMa
     logger.warn('visual-search: SerpAPI Lens request errored', { error: String(err) });
     return [];
   }
+}
+
+// =====================================================================
+// Hugging Face vector upgrade (Delta 1)
+// =====================================================================
+
+export const VECTOR_EMBEDDING_DIMS = 384;
+export const VECTOR_CAPTION_MODEL = 'Salesforce/blip-image-captioning-base';
+export const VECTOR_EMBED_MODEL = 'sentence-transformers/all-MiniLM-L6-v2';
+export const MAX_VISUAL_SEARCH_IMAGE_BYTES = MAX_SCAN_IMAGE_BYTES; // 8 MB
+
+const HF_INFERENCE_BASE = 'https://api-inference.huggingface.co/models';
+const HF_TIMEOUT_MS = 30_000;
+
+/** True when HF_API_TOKEN is configured (server env only, never in git). */
+export function isVectorSearchConfigured(): boolean {
+  return Boolean(env.hfApiToken && env.hfApiToken.trim() !== '');
+}
+
+export type HfResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: string; retryable: boolean };
+
+async function hfFetch(
+  model: string,
+  body: BodyInit,
+  contentType: string
+): Promise<HfResult<Response>> {
+  const token = env.hfApiToken;
+  if (!token) {
+    return { ok: false, error: 'Hugging Face API token is not configured.', retryable: false };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), HF_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${HF_INFERENCE_BASE}/${model}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': contentType,
+      },
+      body,
+      signal: controller.signal,
+    });
+    return { ok: true, value: res };
+  } catch (err) {
+    return {
+      ok: false,
+      error: `Hugging Face request failed: ${String(err)}`,
+      retryable: true,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function hfErrorMessage(status: number, bodyText: string): { error: string; retryable: boolean } {
+  // 503 from the Inference API means the model is still loading
+  // (cold start on the free tier) — retryable, never a fake result.
+  if (status === 503) {
+    return {
+      error: 'The captioning/embedding model is still loading on Hugging Face. Please try again in a moment.',
+      retryable: true,
+    };
+  }
+  if (status === 401 || status === 403) {
+    return {
+      error: 'The configured Hugging Face token was rejected. An admin needs to check HF_API_TOKEN.',
+      retryable: false,
+    };
+  }
+  if (status === 429) {
+    return {
+      error: 'Hugging Face rate limit reached. Please try again later.',
+      retryable: true,
+    };
+  }
+  logger.warn('visual-search: Hugging Face request failed', { status, body: bodyText.slice(0, 200) });
+  return { error: 'Visual search service failed. Please try again later.', retryable: true };
+}
+
+/** A URL is fetchable as a public image only when it is http(s). */
+export function isPublicImageUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Caption a PUBLIC image URL with BLIP image-captioning.
+ * The URL's bytes are fetched server-side and forwarded to the model
+ * — the model never fetches URLs itself. Returns the caption text,
+ * or an error (never a guessed caption). Uploaded photos are never
+ * accepted here: callers only pass user-pasted public URLs.
+ */
+export async function captionPublicImageUrl(imageUrl: string): Promise<HfResult<string>> {
+  if (!isPublicImageUrl(imageUrl)) {
+    return { ok: false, error: 'Only public http(s) image URLs can be captioned.', retryable: false };
+  }
+  let imageBytes: ArrayBuffer;
+  let contentType = 'application/octet-stream';
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), HF_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(imageUrl, { signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: `Could not fetch the image URL (HTTP ${res.status}). Check that the link is public.`,
+        retryable: false,
+      };
+    }
+    const length = Number(res.headers.get('content-length') ?? '0');
+    if (length > MAX_VISUAL_SEARCH_IMAGE_BYTES) {
+      return { ok: false, error: 'That image is over 8 MB. Please use a smaller one.', retryable: false };
+    }
+    const type = res.headers.get('content-type') ?? '';
+    if (type && !type.startsWith('image/')) {
+      return { ok: false, error: 'That URL does not point to an image.', retryable: false };
+    }
+    if (type) contentType = type;
+    imageBytes = await res.arrayBuffer();
+    if (imageBytes.byteLength > MAX_VISUAL_SEARCH_IMAGE_BYTES) {
+      return { ok: false, error: 'That image is over 8 MB. Please use a smaller one.', retryable: false };
+    }
+  } catch (err) {
+    return { ok: false, error: `Could not fetch the image URL: ${String(err)}`, retryable: true };
+  }
+
+  const fetched = await hfFetch(VECTOR_CAPTION_MODEL, imageBytes, contentType);
+  if (!fetched.ok) return fetched;
+  const res = fetched.value;
+  const bodyText = await res.text();
+  if (!res.ok) {
+    const { error, retryable } = hfErrorMessage(res.status, bodyText);
+    return { ok: false, error, retryable };
+  }
+  try {
+    const data = JSON.parse(bodyText) as Array<{ generated_text?: unknown }>;
+    const caption = Array.isArray(data) ? data[0]?.generated_text : undefined;
+    if (typeof caption !== 'string' || caption.trim() === '') {
+      return { ok: false, error: 'The image could not be captioned.', retryable: false };
+    }
+    return { ok: true, value: caption.trim() };
+  } catch {
+    return { ok: false, error: 'The captioning service returned an unexpected response.', retryable: true };
+  }
+}
+
+/**
+ * Embed plain text with all-MiniLM-L6-v2 (384 dims). Returns the
+ * embedding vector, or an error. The text is never stored.
+ */
+export async function embedText(text: string): Promise<HfResult<number[]>> {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { ok: false, error: 'Nothing to embed: the text is empty.', retryable: false };
+  }
+  const fetched = await hfFetch(
+    VECTOR_EMBED_MODEL,
+    JSON.stringify({ inputs: trimmed }),
+    'application/json'
+  );
+  if (!fetched.ok) return fetched;
+  const res = fetched.value;
+  const bodyText = await res.text();
+  if (!res.ok) {
+    const { error, retryable } = hfErrorMessage(res.status, bodyText);
+    return { ok: false, error, retryable };
+  }
+  try {
+    const data = JSON.parse(bodyText) as unknown;
+    // Single-string input returns a flat number[]; an array input
+    // would return number[][]. We only ever send one string.
+    if (
+      !Array.isArray(data) ||
+      data.length !== VECTOR_EMBEDDING_DIMS ||
+      !data.every((n) => typeof n === 'number' && Number.isFinite(n))
+    ) {
+      return { ok: false, error: 'The embedding service returned an unexpected response.', retryable: true };
+    }
+    return { ok: true, value: data as number[] };
+  } catch {
+    return { ok: false, error: 'The embedding service returned an unexpected response.', retryable: true };
+  }
+}
+
+/**
+ * Catalog text embedded for a product: name + brand + description.
+ * The same shape must be used by the backfill route and by any
+ * future re-embed, so a product's stored vector always means the
+ * same thing. Empty parts are skipped, never replaced with guesses.
+ */
+export function productEmbeddingText(input: {
+  name: string;
+  brand?: string | null;
+  description?: string | null;
+}): string {
+  return [input.name, input.brand, input.description]
+    .map((part) => (part ?? '').trim())
+    .filter((part) => part !== '')
+    .join(' — ');
 }

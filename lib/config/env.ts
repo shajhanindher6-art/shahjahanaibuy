@@ -85,6 +85,12 @@ export const env = {
   upstashRedisRestUrl: process.env.UPSTASH_REDIS_REST_URL,
   upstashRedisRestToken: process.env.UPSTASH_REDIS_REST_TOKEN,
 
+  // Hugging Face Inference API (free tier) — visual-search vector
+  // upgrade (Delta 1). Optional: when unset, POST /api/v1/visual-search
+  // answers 503 and the backfill route refuses. Never commit a real
+  // token — set it in the hosting dashboard only.
+  hfApiToken: process.env.HF_API_TOKEN,
+
   // Future provider keys (not yet active)
   openaiApiKey: process.env.OPENAI_API_KEY,
   redisUrl: process.env.REDIS_URL,

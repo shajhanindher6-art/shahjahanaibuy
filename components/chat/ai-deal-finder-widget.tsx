@@ -26,6 +26,7 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { cn } from '@/lib/utils';
 import { formatPriceForRegion, formatUsd, type Region } from '@/lib/region';
 import { useRegion } from '@/components/region/region-provider';
+import { requestDealFinder } from '@/lib/deal-finder-stream';
 
 /**
  * Product-card price in the visitor's currency — the same
@@ -135,39 +136,62 @@ export function AIDealFinderWidget() {
   // Dashboard has its own full chat page; do not duplicate it there.
   if (pathname?.startsWith('/dashboard')) return null;
 
+  // Patch the last (assistant placeholder) message in place.
+  const updateLastAssistant = (patch: (m: WidgetMessage) => WidgetMessage) => {
+    setMessages((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last && last.role === 'assistant') {
+        next[next.length - 1] = patch(last);
+      }
+      return next;
+    });
+  };
+
+  // Spinner only until the first streamed chunk arrives — the
+  // placeholder is empty until then, and grows after that.
+  const lastMessage = messages[messages.length - 1];
+  const awaitingFirstChunk =
+    sending && lastMessage?.role === 'assistant' && lastMessage.content === '';
+
   async function send(text: string) {
     const message = text.trim();
     if (!message || sending) return;
     setMessages((prev) => [...prev, { role: 'user', content: message }]);
     setInput('');
     setSending(true);
+    // Empty assistant placeholder: filled chunk by chunk as the
+    // stream arrives, or all at once on the JSON fallback.
+    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
     try {
-      const res = await fetch('/api/v1/deal-finder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, country: region.code }),
-      });
-      const data = await res.json();
-      if (data.success && data.data) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: data.data.response as string,
-            products: (data.data.metadata?.products ?? []) as WidgetProduct[],
-          },
-        ]);
+      const result = await requestDealFinder(
+        { message, country: region.code },
+        (chunk) => {
+          updateLastAssistant((m) => ({ ...m, content: m.content + chunk }));
+        }
+      );
+      if (result) {
+        updateLastAssistant(() => ({
+          role: 'assistant',
+          content: result.response,
+          products: result.metadata?.products ?? [],
+        }));
       } else {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: 'Sorry, I could not find deals right now. Please try again.' },
-        ]);
+        // A partial stream already rendered stays as-is (genuine
+        // answer text); only an empty placeholder becomes the
+        // honest error line.
+        updateLastAssistant((m) =>
+          m.content === ''
+            ? { role: 'assistant', content: 'Sorry, I could not find deals right now. Please try again.' }
+            : m
+        );
       }
     } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' },
-      ]);
+      updateLastAssistant((m) =>
+        m.content === ''
+          ? { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' }
+          : m
+      );
     } finally {
       setSending(false);
     }
@@ -226,7 +250,7 @@ export function AIDealFinderWidget() {
                 </div>
               </div>
             ))}
-            {sending && (
+            {awaitingFirstChunk && (
               <div className="flex justify-start">
                 <div className="rounded-lg bg-slate-100 px-3 py-2 dark:bg-slate-800">
                   <LoadingSpinner size="sm" />

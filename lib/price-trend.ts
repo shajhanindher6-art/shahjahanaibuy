@@ -101,3 +101,53 @@ export function computePriceDrops(pointsOldestFirst: TrendPoint[]): PriceDrop[] 
   }
   return drops;
 }
+
+/** Default trailing window for the moving-average overlay, in days. */
+export const MOVING_AVERAGE_WINDOW_DAYS = 30;
+
+export interface MovingAveragePoint {
+  /** ISO date of the anchor (latest) recorded point of the window. */
+  date: string;
+  /** Mean of the real recorded points inside the trailing window. */
+  avg: number;
+}
+
+/**
+ * Trailing moving average, computed ONLY from real recorded points —
+ * a trend line, never a forecast. For each recorded point
+ * (oldest-first), the average is the mean of the real points whose
+ * recordedAt falls inside the trailing `windowDays` ending at that
+ * point's date. A window with fewer than 2 points yields NO average
+ * for that date: absence of data is never filled in or smoothed over,
+ * so gaps in the history stay gaps. Unsorted input is sorted
+ * oldest-first internally; invalid prices (non-finite or <= 0) and
+ * invalid dates are dropped, never treated as zero. Returns
+ * oldest-first; empty when fewer than 2 usable points exist in total.
+ */
+export function movingAverage(
+  points: TrendPoint[],
+  windowDays: number = MOVING_AVERAGE_WINDOW_DAYS
+): MovingAveragePoint[] {
+  const valid = points
+    .filter(
+      (p) =>
+        Number.isFinite(p.price) &&
+        p.price > 0 &&
+        p.recordedAt &&
+        Number.isFinite(toMs(p.recordedAt))
+    )
+    .sort((a, b) => toMs(a.recordedAt) - toMs(b.recordedAt));
+  if (valid.length < 2) return [];
+  const windowMs = windowDays * 24 * 60 * 60 * 1000;
+  const out: MovingAveragePoint[] = [];
+  for (let i = 0; i < valid.length; i++) {
+    const anchorMs = toMs(valid[i].recordedAt);
+    const inWindow = valid.filter(
+      (p) => toMs(p.recordedAt) >= anchorMs - windowMs && toMs(p.recordedAt) <= anchorMs
+    );
+    if (inWindow.length < 2) continue;
+    const sum = inWindow.reduce((s, p) => s + p.price, 0);
+    out.push({ date: valid[i].recordedAt, avg: sum / inWindow.length });
+  }
+  return out;
+}

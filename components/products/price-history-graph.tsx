@@ -26,7 +26,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Area, AreaChart, CartesianGrid, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, AreaChart, CartesianGrid, Line, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { TrendingDown, TrendingUp } from 'lucide-react';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
@@ -35,6 +35,8 @@ import {
   computePriceDrops,
   computeTrendStats,
   filterPointsByRange,
+  movingAverage,
+  MOVING_AVERAGE_WINDOW_DAYS,
   type TrendPoint,
 } from '@/lib/price-trend';
 
@@ -119,6 +121,19 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
     [points, rangeDays]
   );
 
+  // 30-day trailing moving average, computed from ALL loaded points
+  // (not just the selected range) so the trailing window genuinely
+  // reaches 30 days back even in the 7-day view. Keyed by the same
+  // per-day date label the chart uses; a day with no average keeps
+  // no value, so the line honestly breaks instead of inventing one.
+  const maByDate = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const ma of movingAverage(points)) {
+      map.set(formatDate(ma.date), ma.avg);
+    }
+    return map;
+  }, [points]);
+
   const chartData = useMemo(() => {
     // Aggregate to one point per calendar day (latest point of the day
     // wins, points are oldest-first). Without this, several rows on the
@@ -129,8 +144,16 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
     for (const p of rangedPoints) {
       byDay.set(formatDate(p.recordedAt), p.price);
     }
-    return Array.from(byDay, ([date, price]) => ({ date, price }));
-  }, [rangedPoints]);
+    return Array.from(byDay, ([date, price]) => ({ date, price, ma: maByDate.get(date) }));
+  }, [rangedPoints, maByDate]);
+
+  // How many chart days actually carry an average — the overlay line
+  // renders only when there are at least 2, so a single averaged
+  // point never draws a misleading one-point "line".
+  const maPointCount = useMemo(
+    () => chartData.filter((d) => Number.isFinite(d.ma)).length,
+    [chartData]
+  );
 
   // Real point-to-point decreases inside the range, from the raw
   // recorded points (not the per-day aggregation). Empty = no drops
@@ -259,7 +282,10 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
                   borderRadius: '8px',
                   fontSize: '13px',
                 }}
-                formatter={(value: number) => [`$${value.toFixed(2)}`, 'Price']}
+                formatter={(value: number, name?: string) => [
+                  `$${value.toFixed(2)}`,
+                  name === 'ma' ? `${MOVING_AVERAGE_WINDOW_DAYS}-day moving average` : 'Price',
+                ]}
               />
               <Area
                 type="monotone"
@@ -270,6 +296,22 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
                 dot={false}
                 activeDot={{ r: 5 }}
               />
+              {/* 30-day moving-average overlay: dashed amber line, only
+                  when at least 2 chart days carry an average. Missing
+                  values break the line (connectNulls stays false) —
+                  a gap means "no average for that day", never a
+                  filled-in estimate. */}
+              {maPointCount >= 2 && (
+                <Line
+                  type="monotone"
+                  dataKey="ma"
+                  stroke="#f59e0b"
+                  strokeWidth={2}
+                  strokeDasharray="5 3"
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                />
+              )}
               {/* Reference markers AFTER the Area, so they render on top
                   of the area fill instead of being painted over by it —
                   that was why the green Lowest dot was not visible on a
@@ -302,6 +344,28 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
           No price data available for this range.
         </div>
       )}
+
+      {/* Legend for the overlay. When the history is too thin for an
+          average, the note says so plainly — no line, no placeholder. */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-0.5 w-5 bg-blue-500" aria-hidden />
+          Price
+        </span>
+        {maPointCount >= 2 ? (
+          <>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-0 w-5 border-t-2 border-dashed border-amber-500" aria-hidden />
+              {MOVING_AVERAGE_WINDOW_DAYS}-day moving average
+            </span>
+            <span>Average of recorded prices only — a trend view, not a forecast.</span>
+          </>
+        ) : (
+          <span>
+            Not enough recorded history for a {MOVING_AVERAGE_WINDOW_DAYS}-day moving average yet.
+          </span>
+        )}
+      </div>
 
       <p className="mt-2 text-xs text-muted-foreground">
         Showing {rangedPoints.length} recorded price point{rangedPoints.length === 1 ? '' : 's'} in this
