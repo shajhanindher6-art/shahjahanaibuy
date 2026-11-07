@@ -13,6 +13,15 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 
+/**
+ * `force-dynamic`: /admin is auth-gated (admin role only), so there is
+ * nothing meaningful to prerender at build time — and the build-time
+ * prerender is exactly what kept failing Vercel builds (Next 13
+ * prerender race on the 12 auth-gated /admin + /dashboard pages,
+ * e.g. commit d32ebf95). Rendering per request removes that step.
+ */
+export const dynamic = 'force-dynamic';
+
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createSupabaseServerClient();
   const {

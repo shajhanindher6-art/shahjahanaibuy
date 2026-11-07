@@ -1,25 +1,19 @@
-'use client';
+import DashboardShell from '@/components/layout/dashboard-shell';
 
-import { DashboardSidebar } from '@/components/layout/dashboard-sidebar';
-import { DashboardHeader } from '@/components/layout/dashboard-header';
-import { ProtectedRoute } from '@/features/auth/protected-route';
+/**
+ * Dashboard layout — Server Component.
+ *
+ * `force-dynamic` is deliberate: every /dashboard page is auth-gated, so
+ * there is nothing meaningful to prerender at build time — and the
+ * build-time prerender is exactly what kept failing Vercel builds
+ * (Next 13 prerender race: "Could not find the module .../error-boundary.js
+ * in the React Client Manifest" on the 12 auth-gated /admin + /dashboard
+ * pages, e.g. commit d32ebf95). Rendering these pages per request instead
+ * of at build time removes that failing step entirely. Public pages are
+ * unaffected and stay statically generated.
+ */
+export const dynamic = 'force-dynamic';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <ProtectedRoute>
-      <div className="flex min-h-screen">
-        {/* Desktop sidebar */}
-        <aside className="hidden w-64 border-r md:block">
-          <div className="sticky top-0 h-screen">
-            <DashboardSidebar />
-          </div>
-        </aside>
-        {/* Main content */}
-        <div className="flex flex-1 flex-col">
-          <DashboardHeader />
-          <main className="flex-1 bg-muted/30 p-4 md:p-8">{children}</main>
-        </div>
-      </div>
-    </ProtectedRoute>
-  );
+  return <DashboardShell>{children}</DashboardShell>;
 }
