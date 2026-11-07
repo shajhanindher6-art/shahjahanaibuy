@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { getRegionByCountry, convertUsd } from '@/lib/region';
+import { getRegionByCountry, convertUsd, REGIONS } from '@/lib/region';
 import type { CurrencyCode } from '@/services/currency';
 import { DEFAULT_DUTY_PCT, standardRateForCountry } from '@/services/tax-estimator';
 import { buildStoreSearchUrl, getStoresForCountry } from '@/lib/stores';
 import type { FxSource } from '@/services/fx-rates';
+import { formatFxStatus } from '@/lib/fx-status';
 import { trackAffiliateClick } from '@/lib/affiliate-beacon';
 
 interface FxState {
@@ -16,8 +17,24 @@ interface FxState {
   fetchedAt: string | null;
 }
 
-/** Regions compared in the arbitrage table (all exist in lib/region.ts). */
-const COMPARED_CODES = ['US', 'GB', 'JP', 'DE', 'PK', 'IN', 'AE', 'CA', 'AU', 'SG'];
+/**
+ * Regions compared in the arbitrage table (Option 12 delta: all 60
+ * regions from lib/region.ts, up from 10). NO duty/tax rate is
+ * invented for any region — the split is decided by the existing
+ * standard-rate table in services/tax-estimator.ts:
+ * - 23 regions have a listed standard tax rate (DE, FR, GB, IT, ES,
+ *   NL, BE, AT, IE, PL, GR, TR, CH, JP, KR, SG, AU, IN, PK, MX, AE,
+ *   SA, ZA) and compete for "lowest estimated landed cost".
+ * - The other 37 (incl. US and CA, whose tax varies by state /
+ *   province) render as "tax unknown" rows and NEVER compete — the
+ *   existing cheapestCode rule (taxRatePct === null skips the row)
+ *   is unchanged. Duty is the documented 10% placeholder for every
+ *   non-US row, never a per-country schedule.
+ * Regions whose tax table entry exists but which are NOT in the
+ * region registry (PT, SE, DK, FI) cannot be compared — there is
+ * no currency/locale for them here — and are left out honestly.
+ */
+const COMPARED_CODES = REGIONS.map((r) => r.code);
 
 interface ArbitrageRow {
   code: string;
@@ -38,6 +55,9 @@ interface ArbitrageRow {
 
 /**
  * Worldwide Price Comparison — Option 11, Phase 1 (Region Arbitrage Table).
+ * Option 12 delta: all 60 regions from lib/region.ts are compared
+ * (was 10); rows with an unknown tax rate are shown, never crowned
+ * cheapest, and no duty/tax rate is invented for any region.
  *
  * HONESTY, enforced in the UI (this table must never imply what it
  * cannot prove):
@@ -73,22 +93,27 @@ export function RegionArbitrageTable({
   affiliateEnabled?: boolean;
 }) {
   const [fx, setFx] = useState<FxState | null>(null);
+  const [fxFailed, setFxFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     fetch('/api/v1/fx-rates')
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => {
-        if (!cancelled && json?.success && json.data?.rates) {
+        if (cancelled) return;
+        if (json?.success && json.data?.rates) {
           setFx({
             rates: json.data.rates as Partial<Record<CurrencyCode, number>>,
             source: (json.data.source as FxSource) ?? 'static',
             fetchedAt: (json.data.fetchedAt as string | null) ?? null,
           });
+        } else {
+          setFxFailed(true);
         }
       })
       .catch(() => {
         // Static fallback below (region convertUsd) covers this.
+        if (!cancelled) setFxFailed(true);
       });
     return () => {
       cancelled = true;
@@ -137,31 +162,41 @@ export function RegionArbitrageTable({
   // Only runs when the product page reports affiliate enabled (the
   // common env-blank case makes no request at all). Until the
   // transform returns, links stay the plain search URLs; on any
-  // failure they stay plain too.
+  // failure they stay plain too. The transform route caps each
+  // batch at 20 URLs, so 60 rows are sent in chunks of 20.
   const [transformedUrls, setTransformedUrls] = useState<Record<string, string>>({});
   useEffect(() => {
     if (!affiliateEnabled) return;
     const urls = rows.map((r) => r.storeUrl).filter((u) => u && u !== '#');
     if (urls.length === 0) return;
     let cancelled = false;
-    fetch('/api/v1/affiliate/transform', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls }),
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (cancelled || !json?.success || !Array.isArray(json.data?.urls)) return;
-        const next: Record<string, string> = {};
-        urls.forEach((u, i) => {
-          const t = json.data.urls[i];
-          if (typeof t === 'string' && t.length > 0) next[u] = t;
-        });
-        setTransformedUrls(next);
-      })
-      .catch(() => {
-        // Links stay plain on any failure.
-      });
+    const TRANSFORM_BATCH_SIZE = 20;
+    const batches: string[][] = [];
+    for (let i = 0; i < urls.length; i += TRANSFORM_BATCH_SIZE) {
+      batches.push(urls.slice(i, i + TRANSFORM_BATCH_SIZE));
+    }
+    void Promise.all(
+      batches.map((batch) =>
+        fetch('/api/v1/affiliate/transform', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls: batch }),
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((json) => {
+            if (cancelled || !json?.success || !Array.isArray(json.data?.urls)) return;
+            const next: Record<string, string> = {};
+            batch.forEach((u, i) => {
+              const t = json.data.urls[i];
+              if (typeof t === 'string' && t.length > 0) next[u] = t;
+            });
+            setTransformedUrls((prev) => ({ ...prev, ...next }));
+          })
+          .catch(() => {
+            // Links stay plain on any failure.
+          })
+      )
+    );
     return () => {
       cancelled = true;
     };
@@ -196,10 +231,11 @@ export function RegionArbitrageTable({
     }).format(usd);
   }
 
-  const fxNote =
-    fx?.source === 'live'
-      ? `FX: live daily rate (open.er-api.com${fx.fetchedAt ? `, updated ${new Date(fx.fetchedAt).toLocaleDateString('en-US')}` : ''})`
-      : 'FX: approximate static rates (≈) — live feed unavailable, conversions are estimates';
+  // FX status line (Option 12 delta): the feed's own last-update
+  // date AND time when reported; an honest "unavailable" when the
+  // API returns no fetchedAt (static fallback). Shared wording
+  // with the landed-cost calculator — see lib/fx-status.ts.
+  const fxStatus = formatFxStatus(fx, fxFailed);
 
   return (
     <Card>
@@ -212,6 +248,7 @@ export function RegionArbitrageTable({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">{fxStatus}</p>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
@@ -306,8 +343,9 @@ export function RegionArbitrageTable({
         <p className="text-xs text-muted-foreground">
           How to read this: the US merchant price ({formatUsd(priceUsd)}) is converted into
           each currency, then duty (10% placeholder default, 0 for domestic US) and standard
-          tax (where listed) are added. Shipping is excluded — use the Landed Cost Calculator
-          above with your real shipping quote. {fxNote}
+          tax (where listed) are added. Rows whose tax is unknown exclude tax from the landed
+          figure and never compete for lowest cost. Shipping is excluded — use the Landed Cost
+          Calculator above with your real shipping quote.
         </p>
       </CardContent>
     </Card>

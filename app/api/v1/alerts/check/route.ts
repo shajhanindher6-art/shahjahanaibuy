@@ -7,7 +7,8 @@
  *   2. checkPriceAlerts(): compare active alerts with the new prices
  *      and queue notifications for triggered alerts.
  *   3. processNotificationQueue(): drain the queue, sending email
- *      (Resend) and web push (VAPID) for every enabled channel.
+ *      (Resend), web push (VAPID), and WhatsApp/Telegram webhook
+ *      alerts for every enabled channel.
  *
  * SINGLE-SCHEDULER RULE (see docs/alerts-delivery-setup.md): schedule
  * exactly ONE trigger — POST /api/v1/prices/refresh from one free

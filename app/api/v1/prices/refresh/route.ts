@@ -7,9 +7,10 @@
  *   2. checkPriceAlerts(): compare active alerts with the new prices
  *      and queue notifications for triggered alerts.
  *   3. processNotificationQueue(): drain the queue, sending email
- *      (Resend) and web push (VAPID) for every enabled channel, and
- *      leaving an in-app notification row for every alert even when
- *      email/push providers are unconfigured.
+ *      (Resend), web push (VAPID), and WhatsApp/Telegram webhook
+ *      alerts for every enabled channel, and leaving an in-app
+ *      notification row for every alert even when email/push
+ *      providers are unconfigured.
  *
  * SINGLE-SCHEDULER RULE — THIS IS THE CANONICAL TRIGGER (see
  * docs/alerts-delivery-setup.md): schedule exactly ONE free cron job

@@ -13,11 +13,19 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useToast } from '@/hooks/use-toast';
 import { subscribePush, unsubscribePush } from '@/lib/push-client';
 import { WebhookChannelsCard } from '@/components/dashboard/webhook-channels-card';
-import { LANGUAGES } from '@/lib/region';
+import { LANGUAGES, REGIONS } from '@/lib/region';
 import { Save } from 'lucide-react';
 import type { UserSettings } from '@/types';
 
-const currencies = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD'];
+// Currency options come from the region registry (lib/region.ts):
+// every distinct currency of the 60 supported regions, in
+// first-appearance order — no second hardcoded copy to drift out
+// of sync. The old 6-currency list omitted most regions'
+// currencies (e.g. PKR, INR, AED), so a user from Pakistan or
+// India could not even pick their own currency. CNY/UAH exist in
+// the CurrencyCode union but no region uses them, so they are
+// correctly absent here.
+const currencies = [...new Set(REGIONS.map((r) => r.currency))];
 // Language options must match the languages the site actually
 // supports (lib/region SUPPORTED_LANGUAGES, used by the header
 // Language Switcher). The old hardcoded list offered ja/zh — which

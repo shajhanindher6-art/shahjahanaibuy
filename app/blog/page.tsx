@@ -1,9 +1,11 @@
 'use client';
 
+import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { useRegion } from '@/components/region/region-provider';
 import type { Language } from '@/lib/region';
+import { getAllPosts } from '@/lib/blog/posts';
 
 /**
  * Blog index — page-level language only (A2 audit, 2026-11-03).
@@ -17,8 +19,9 @@ import type { Language } from '@/lib/region';
  * stay English). This page therefore localises its own two strings
  * (heading + honest empty state) from the visitor's language,
  * without touching the provider or the shared dictionary, which
- * belong to other workstreams. The empty state itself is unchanged
- * and honest: there are no posts, so none are invented.
+ * belong to other workstreams. Article content itself is English.
+ * The empty state is kept and honest: it renders only if the post
+ * list is ever empty.
  * Translations are functional page strings, not professionally
  * reviewed copy.
  */
@@ -65,16 +68,70 @@ const BLOG_COPY: Record<Language, { title: string; empty: string }> = {
   },
 };
 
+function formatDate(iso: string): string {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
 export default function BlogPage() {
   const { language } = useRegion();
   const copy = BLOG_COPY[language] ?? BLOG_COPY.en;
+  const posts = getAllPosts();
+
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="text-3xl font-bold">{copy.title}</h1>
-          <p className="mt-4 text-muted-foreground">{copy.empty}</p>
+          <p className="mt-2 text-muted-foreground">
+            Shopping guides, deal explainers, and product updates — written
+            from SmartBuy&apos;s real features and data.
+          </p>
+
+          {posts.length === 0 ? (
+            <p className="mt-8 text-muted-foreground">{copy.empty}</p>
+          ) : (
+            <div className="mt-8 space-y-8">
+              {posts.map((post) => (
+                <article key={post.slug} className="border-b pb-8 last:border-b-0">
+                  <h2 className="text-2xl font-semibold leading-snug">
+                    <Link
+                      href={`/blog/${post.slug}`}
+                      className="hover:text-primary hover:underline"
+                    >
+                      {post.title}
+                    </Link>
+                  </h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {formatDate(post.datePublished)} · {post.readMinutes} min read
+                  </p>
+                  <p className="mt-3 leading-relaxed text-foreground/90">
+                    {post.excerpt}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {post.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                  <Link
+                    href={`/blog/${post.slug}`}
+                    className="mt-4 inline-block text-sm font-medium text-primary hover:underline"
+                  >
+                    Read article →
+                  </Link>
+                </article>
+              ))}
+            </div>
+          )}
         </div>
       </main>
       <SiteFooter />

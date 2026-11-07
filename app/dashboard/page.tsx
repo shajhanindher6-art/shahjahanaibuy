@@ -30,6 +30,7 @@ import {
   DropsToWatchSection,
   type DropToWatch,
 } from '@/components/dashboard/drops-to-watch-section';
+import { LandedCostWidget } from '@/components/dashboard/landed-cost-widget';
 
 interface QuickAction {
   icon: LucideIcon;
@@ -260,6 +261,11 @@ export default function DashboardPage() {
             <UpcomingDealsSection />
             <DropsToWatchSection drops={drops} loading={loadingDrops} />
           </div>
+
+          {/* Landed-cost summary for tracked products (Option 12
+              delta) — compact, links out to the full calculator on
+              each product page. */}
+          <LandedCostWidget />
 
           <div className="animate-fade-in motion-reduce:animate-none" style={{ animationDelay: '340ms' }}>
             <h2 className="mb-4 text-lg font-semibold">Quick Actions</h2>

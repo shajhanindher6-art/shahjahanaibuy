@@ -1,6 +1,7 @@
 import { appConfig } from '@/lib/config/app';
 import { createClient } from '@supabase/supabase-js';
 import { env } from '@/lib/config/env';
+import { getAllPosts } from '@/lib/blog/posts';
 
 export default async function sitemap() {
   const baseUrl = appConfig.url;
@@ -61,5 +62,13 @@ export default async function sitemap() {
     // If DB is unavailable, return static-only sitemap
   }
 
-  return [...staticEntries, ...productEntries];
+  // Blog posts (static data file — always available, no DB needed).
+  const blogEntries = getAllPosts().map((post) => ({
+    url: `${baseUrl}/blog/${post.slug}`,
+    lastModified: new Date(`${post.datePublished}T00:00:00Z`),
+    changeFrequency: 'monthly' as const,
+    priority: 0.6,
+  }));
+
+  return [...staticEntries, ...productEntries, ...blogEntries];
 }

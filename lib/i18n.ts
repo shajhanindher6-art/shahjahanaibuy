@@ -76,7 +76,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'shopping decisions',
     heroTitleC: 'with AI',
     heroSubtitle:
-      'SmartBuy AI analyzes millions of products, reviews, and prices in real-time to help you find the best deals, avoid bad purchases, and shop with confidence.',
+      'SmartBuy AI analyzes products, reviews, and prices in real-time to help you find the best deals, avoid bad purchases, and shop with confidence.',
     heroCtaStart: 'Get Started Free',
     heroCtaSearch: 'Try AI Search',
     heroNoCard: 'No credit card required',
@@ -107,7 +107,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'behtareen shopping faisle',
     heroTitleC: 'karein',
     heroSubtitle:
-      'SmartBuy AI lakhon products, reviews aur prices ko real-time mein analyze kar ke aap ko behtareen deals dhoondne, ghalat khareedari se bachne aur itminan se shopping karne mein madad karta hai.',
+      'SmartBuy AI products, reviews aur prices ko real-time mein analyze kar ke aap ko behtareen deals dhoondne, ghalat khareedari se bachne aur itminan se shopping karne mein madad karta hai.',
     heroCtaStart: 'Muft Shuru Karein',
     heroCtaSearch: 'AI Search Try Karein',
     heroNoCard: 'Credit card ki zaroorat nahi',
@@ -138,7 +138,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'Kaufentscheidungen',
     heroTitleC: 'mit KI',
     heroSubtitle:
-      'SmartBuy AI analysiert Millionen von Produkten, Bewertungen und Preisen in Echtzeit, damit du die besten Angebote findest, Fehlkäufe vermeidest und mit gutem Gefühl einkaufst.',
+      'SmartBuy AI analysiert Produkte, Bewertungen und Preise in Echtzeit, damit du die besten Angebote findest, Fehlkäufe vermeidest und mit gutem Gefühl einkaufst.',
     heroCtaStart: 'Kostenlos starten',
     heroCtaSearch: 'KI-Suche ausprobieren',
     heroNoCard: 'Keine Kreditkarte erforderlich',
@@ -169,7 +169,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'décisions d’achat',
     heroTitleC: 'avec l’IA',
     heroSubtitle:
-      'SmartBuy AI analyse des millions de produits, d’avis et de prix en temps réel pour vous aider à trouver les meilleures offres, éviter les mauvais achats et acheter en toute confiance.',
+      'SmartBuy AI analyse des produits, des avis et des prix en temps réel pour vous aider à trouver les meilleures offres, éviter les mauvais achats et acheter en toute confiance.',
     heroCtaStart: 'Commencer gratuitement',
     heroCtaSearch: 'Essayer la recherche IA',
     heroNoCard: 'Aucune carte bancaire requise',
@@ -200,7 +200,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'de compra más inteligentes',
     heroTitleC: 'con IA',
     heroSubtitle:
-      'SmartBuy AI analiza millones de productos, reseñas y precios en tiempo real para ayudarte a encontrar las mejores ofertas, evitar malas compras y comprar con confianza.',
+      'SmartBuy AI analiza productos, reseñas y precios en tiempo real para ayudarte a encontrar las mejores ofertas, evitar malas compras y comprar con confianza.',
     heroCtaStart: 'Empezar gratis',
     heroCtaSearch: 'Probar la búsqueda con IA',
     heroNoCard: 'No se requiere tarjeta de crédito',
@@ -231,7 +231,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'di acquisto più intelligenti',
     heroTitleC: 'con l’IA',
     heroSubtitle:
-      'SmartBuy AI analizza milioni di prodotti, recensioni e prezzi in tempo reale per aiutarti a trovare le migliori offerte, evitare acquisti sbagliati e fare shopping in tutta sicurezza.',
+      'SmartBuy AI analizza prodotti, recensioni e prezzi in tempo reale per aiutarti a trovare le migliori offerte, evitare acquisti sbagliati e fare shopping in tutta sicurezza.',
     heroCtaStart: 'Inizia gratis',
     heroCtaSearch: 'Prova la ricerca IA',
     heroNoCard: 'Nessuna carta di credito richiesta',
@@ -262,7 +262,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'de compra mais inteligentes',
     heroTitleC: 'com IA',
     heroSubtitle:
-      'O SmartBuy AI analisa milhões de produtos, avaliações e preços em tempo real para ajudar você a encontrar as melhores ofertas, evitar compras ruins e comprar com confiança.',
+      'O SmartBuy AI analisa produtos, avaliações e preços em tempo real para ajudar você a encontrar as melhores ofertas, evitar compras ruins e comprar com confiança.',
     heroCtaStart: 'Começar grátis',
     heroCtaSearch: 'Experimentar a busca com IA',
     heroNoCard: 'Não é necessário cartão de crédito',
@@ -293,7 +293,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'daha akıllı alışveriş',
     heroTitleC: 'kararları verin',
     heroSubtitle:
-      'SmartBuy AI, milyonlarca ürünü, yorumu ve fiyatı gerçek zamanlı olarak analiz ederek en iyi fırsatları bulmanıza, yanlış alışverişlerden kaçınmanıza ve güvenle alışveriş yapmanıza yardımcı olur.',
+      'SmartBuy AI, ürünleri, yorumları ve fiyatları gerçek zamanlı olarak analiz ederek en iyi fırsatları bulmanıza, yanlış alışverişlerden kaçınmanıza ve güvenle alışveriş yapmanıza yardımcı olur.',
     heroCtaStart: 'Ücretsiz Başla',
     heroCtaSearch: 'YZ Aramasını Dene',
     heroNoCard: 'Kredi kartı gerekmez',

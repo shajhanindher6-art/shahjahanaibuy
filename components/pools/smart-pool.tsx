@@ -8,12 +8,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { poolProgress, POOL_NO_GUARANTEE_NOTE } from '@/services/smartpool';
+import { PoolMilestones } from '@/components/pools/pool-milestones';
+import { PoolShippingSplit } from '@/components/pools/pool-shipping-split';
 
 interface Pool {
   id: string;
   product_id: string | null;
   product_name: string;
   region_code: string;
+  /** Optional shared city (null = region-scoped only, or column not yet migrated). */
+  city?: string | null;
+  /** Creator-supplied shipping estimate in USD (null = no estimate). */
+  shippingEstimateUsd?: number | null;
   threshold: number;
   memberCount: number;
   status: string;
@@ -38,6 +44,8 @@ export function SmartPool({
   const [pools, setPools] = useState<Pool[] | null>(null);
   const [poolsEnabled, setPoolsEnabled] = useState(true);
   const [threshold, setThreshold] = useState(10);
+  const [city, setCity] = useState('');
+  const [shippingEstimate, setShippingEstimate] = useState<number>(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -45,7 +53,17 @@ export function SmartPool({
     try {
       const res = await fetch(`/api/v1/pools?productId=${encodeURIComponent(productId)}`);
       const data = await res.json();
-      setPools((data?.data ?? []) as Pool[]);
+      // The 018 migration columns (city, shippingEstimateUsd) may not
+      // exist yet — normalize defensively so a missing column degrades
+      // to the honest empty states instead of crashing.
+      setPools(
+        ((data?.data ?? []) as Array<Record<string, unknown>>).map((p) => ({
+          ...(p as unknown as Pool),
+          city: typeof p.city === 'string' && p.city ? p.city : null,
+          shippingEstimateUsd:
+            typeof p.shippingEstimateUsd === 'number' ? p.shippingEstimateUsd : null,
+        }))
+      );
       setPoolsEnabled(data?.meta?.poolsEnabled !== false);
     } catch {
       setPools([]);
@@ -64,7 +82,16 @@ export function SmartPool({
       const res = await fetch('/api/v1/pools', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId, productName, regionCode, threshold }),
+        body: JSON.stringify({
+          productId,
+          productName,
+          regionCode,
+          threshold,
+          city: city.trim() || undefined,
+          // 0 means "unknown" (landed-cost convention) — send null so
+          // the pool honestly records "no shipping estimate".
+          shippingEstimateUsd: shippingEstimate > 0 ? shippingEstimate : null,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -149,6 +176,7 @@ export function SmartPool({
                     <span className="font-medium">{p.product_name}</span>
                     <span className="text-muted-foreground">
                       {progress.members} of {progress.threshold} joined ({progress.percent}%)
+                      {p.city ? ` · ${p.city}, ${p.region_code}` : ` · ${p.region_code}`}
                     </span>
                   </div>
                   <div className="mt-2 h-2 overflow-hidden rounded bg-muted">
@@ -163,6 +191,15 @@ export function SmartPool({
                     <Button size="sm" disabled={busy} onClick={() => joinPool(p.id)}>
                       Join pool
                     </Button>
+                  </div>
+                  <div className="mt-3 space-y-3 border-t pt-3">
+                    <PoolMilestones memberCount={progress.members} threshold={progress.threshold} />
+                    <PoolShippingSplit
+                      shippingEstimateUsd={p.shippingEstimateUsd ?? null}
+                      memberCount={progress.members}
+                      regionCode={p.region_code}
+                      city={p.city ?? null}
+                    />
                   </div>
                 </li>
               );
@@ -179,6 +216,32 @@ export function SmartPool({
               value={threshold}
               onChange={(e) => setThreshold(Number(e.target.value))}
             />
+          </div>
+          <div>
+            <Label className="mb-1.5 block">City (optional — pools are shared per region + city)</Label>
+            <Input
+              type="text"
+              maxLength={100}
+              placeholder="e.g. Karachi"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label className="mb-1.5 block">
+              Estimated total international shipping, USD (optional — your estimate)
+            </Label>
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              value={Number.isFinite(shippingEstimate) ? shippingEstimate : 0}
+              onChange={(e) => setShippingEstimate(Math.max(0, Number(e.target.value) || 0))}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Leave 0 when unknown. This is your own estimate, not a carrier quote — members
+              split it evenly, and splitting a shipment can increase the total shipping cost.
+            </p>
           </div>
           <Button type="submit" disabled={busy}>
             Create a pool for this product

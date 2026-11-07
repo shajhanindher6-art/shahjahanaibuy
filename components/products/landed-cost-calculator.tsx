@@ -21,6 +21,7 @@ import {
 } from '@/services/tax-estimator';
 import { deMinimisForCountry } from '@/services/duty-optimizer';
 import type { FxSource } from '@/services/fx-rates';
+import { formatFxStatus } from '@/lib/fx-status';
 
 interface FxState {
   rates: Partial<Record<CurrencyCode, number>>;
@@ -64,6 +65,7 @@ export function LandedCostCalculator({
   const [dutyPct, setDutyPct] = useState<number>(DEFAULT_DUTY_PCT);
   const [shipping, setShipping] = useState<number>(0);
   const [fx, setFx] = useState<FxState | null>(null);
+  const [fxFailed, setFxFailed] = useState(false);
 
   // Same follow-the-prop-until-picked pattern as TaxEstimator: region
   // detection finishes after first render, so a stale fallback (US)
@@ -82,16 +84,20 @@ export function LandedCostCalculator({
     fetch('/api/v1/fx-rates')
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => {
-        if (!cancelled && json?.success && json.data?.rates) {
+        if (cancelled) return;
+        if (json?.success && json.data?.rates) {
           setFx({
             rates: json.data.rates as Partial<Record<CurrencyCode, number>>,
             source: (json.data.source as FxSource) ?? 'static',
             fetchedAt: (json.data.fetchedAt as string | null) ?? null,
           });
+        } else {
+          setFxFailed(true);
         }
       })
       .catch(() => {
         // Static fallback below (region convertUsd) covers this.
+        if (!cancelled) setFxFailed(true);
       });
     return () => {
       cancelled = true;
@@ -150,10 +156,11 @@ export function LandedCostCalculator({
     }).format(usd);
   }
 
-  const fxNote =
-    fx?.source === 'live'
-      ? `FX: live daily rate (open.er-api.com${fx.fetchedAt ? `, updated ${new Date(fx.fetchedAt).toLocaleDateString('en-US')}` : ''})`
-      : 'FX: approximate static rates (≈) — live feed unavailable, conversions are estimates';
+  // FX status line (Option 12 delta): the feed's own last-update
+  // date AND time when reported; an honest "unavailable" when the
+  // API returns no fetchedAt (static fallback). Shared wording
+  // with the arbitrage table — see lib/fx-status.ts.
+  const fxStatus = formatFxStatus(fx, fxFailed);
 
   return (
     <Card>
@@ -281,10 +288,12 @@ export function LandedCostCalculator({
           </div>
         </dl>
 
+        <p className="text-xs text-muted-foreground">{fxStatus}</p>
+
         <p className="text-xs text-muted-foreground">
           Formula: duty = price × duty%; tax = (price + duty + shipping) × tax%; total = price +
           duty + shipping + tax. Duty % is a placeholder default (10%), not a per-country
-          schedule — confirm the real duty with your carrier or customs. {fxNote}
+          schedule — confirm the real duty with your carrier or customs.
         </p>
       </CardContent>
     </Card>
