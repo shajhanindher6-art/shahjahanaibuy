@@ -31,7 +31,7 @@
 //
 // Deploy (run by the project owner, secrets never committed):
 //   supabase functions deploy price-refresh-worker
-//   supabase secrets set APP_URL=https://aismartbuy.netlify.app \
+//   supabase secrets set APP_URL=https://shahjahanaibuy-b1zp.vercel.app \
 //     CRON_SECRET=<value already in Netlify>
 //   Then invoke it on a schedule (or call it once manually to test).
 //

@@ -69,7 +69,7 @@
 
   // SmartBuy origin = wherever this script was loaded from, so the
   // bookmarklet works on the live site and on local dev alike.
-  var origin = 'https://aismartbuy.netlify.app';
+  var origin = 'https://shahjahanaibuy-b1zp.vercel.app';
   try {
     var scripts = document.getElementsByTagName('script');
     var current = scripts[scripts.length - 1];
