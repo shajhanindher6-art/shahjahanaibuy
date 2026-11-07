@@ -27,7 +27,7 @@ export function buildCsp(nonce: string): string {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     'img-src \'self\' blob: data: https:',
     "font-src 'self' https://fonts.gstatic.com",
-    'connect-src \'self\' https://*.supabase.co https://*.supabase.in',
+    'connect-src \'self\' https://*.supabase.co https://*.supabase.in https://*.ingest.sentry.io',
     "frame-ancestors 'self'",
     "base-uri 'self'",
     "form-action 'self'",

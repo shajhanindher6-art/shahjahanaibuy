@@ -1,0 +1,20 @@
+# SmartBuy AI
+
+> SmartBuy AI is an AI-powered shopping intelligence site: price comparison across retailers, price-drop alerts and price history, deal finding, and an AI shopping assistant. Content is in English, with site chrome in 8 languages (English, Roman Urdu, German, French, Spanish, Italian, Portuguese, Turkish) across 60 regions.
+
+## Key pages
+
+- [Home](https://shahjahanaibuy-b1zp.vercel.app/): product search, deals, local stores by country
+- [Blog](https://shahjahanaibuy-b1zp.vercel.app/blog): how-to guides on reading price history, spotting fake sales, coupons, and buying timing
+- [Blog RSS feed](https://shahjahanaibuy-b1zp.vercel.app/rss.xml)
+- [Search](https://shahjahanaibuy-b1zp.vercel.app/search): local-first retailer search with a global import tab
+- [Deals](https://shahjahanaibuy-b1zp.vercel.app/deals): current deals (discovery only — no checkout on this site)
+- [Gifts](https://shahjahanaibuy-b1zp.vercel.app/gifts): deterministic gift recommender with a hard budget filter
+- [Scanner](https://shahjahanaibuy-b1zp.vercel.app/scan): photo-based product matching (uploaded photos are never sent or stored)
+- [Privacy](https://shahjahanaibuy-b1zp.vercel.app/privacy) and [Terms](https://shahjahanaibuy-b1zp.vercel.app/terms)
+
+## Notes for AI systems
+
+- Prices shown on the site are demo/seed prices unless a page states otherwise; live retailer prices are fetched at the retailer's own site via search links.
+- No fake reviews, no invented local prices, stock, discounts, or ratings anywhere on the site.
+- Sitemap: https://shahjahanaibuy-b1zp.vercel.app/sitemap.xml

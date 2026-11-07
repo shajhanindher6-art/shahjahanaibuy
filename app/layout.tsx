@@ -11,6 +11,8 @@ import { appConfig } from '@/lib/config/app';
 import { toJsonLd } from '@/lib/json-ld';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/next';
+import CookieConsentBanner from '@/components/privacy/cookie-consent';
+import PostHogProvider from '@/components/analytics/posthog-provider';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -74,6 +76,9 @@ export const metadata: Metadata = {
   },
   alternates: {
     canonical: appConfig.url,
+    types: {
+      'application/rss+xml': '/rss.xml',
+    },
   },
   themeColor: '#1e40af',
 };
@@ -150,6 +155,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             and are cookie-free — they only activate on Vercel hosting. */}
         <Analytics />
         <SpeedInsights />
+        {/* Cookie-consent banner (necessary + analytics categories) and
+            PostHog product analytics — PostHog stays dormant until its
+            key is set AND the visitor accepts analytics. */}
+        <CookieConsentBanner />
+        <PostHogProvider />
       </body>
     </html>
   );
