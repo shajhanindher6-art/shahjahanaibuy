@@ -9,6 +9,8 @@ import { ServiceWorkerRegister } from '@/components/pwa/service-worker-register'
 import { AIDealFinderWidget } from '@/components/chat/ai-deal-finder-widget';
 import { appConfig } from '@/lib/config/app';
 import { toJsonLd } from '@/lib/json-ld';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -143,6 +145,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <ServiceWorkerRegister />
           <AIDealFinderWidget />
         </Providers>
+        {/* Vercel Analytics (visitors + page views) + Speed Insights
+            (real-user Core Web Vitals). Both are free, need no API keys,
+            and are cookie-free — they only activate on Vercel hosting. */}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

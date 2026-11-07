@@ -47,6 +47,8 @@
     "@types/react-dom": "18.2.7",
     "@upstash/ratelimit": "^2.2.0",
     "@upstash/redis": "^1.41.0",
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.1.0",
     "autoprefixer": "10.4.15",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
