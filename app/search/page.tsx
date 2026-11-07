@@ -21,6 +21,8 @@ import {
   VoiceSearchButton,
   speakSearchSummary,
 } from '@/components/search/voice-search-button';
+import { ProductSearchResults } from '@/components/search/product-search-results';
+import type { LocalFirstSearchData } from '@/services/local-first-search';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import type { WebSearchResult } from '@/types/ai';
@@ -76,6 +78,13 @@ export default function SearchPage() {
   const [webResults, setWebResults] = useState<WebSearchResult[]>([]);
   const [webSource, setWebSource] = useState<'catalog' | 'web' | 'web-disabled' | null>(null);
   const [parsedIntent, setParsedIntent] = useState<ParsedIntent | null>(null);
+  // Local-first retailer tabs (additive): /api/search splits the
+  // same query into local vs global stores for the visitor's
+  // country. Kept in its own state so a failure here never
+  // disturbs the ai-search results, filters, or sort above.
+  const [localFirst, setLocalFirst] = useState<LocalFirstSearchData | null>(null);
+  const [localFirstLoading, setLocalFirstLoading] = useState(false);
+  const [localFirstError, setLocalFirstError] = useState(false);
   // Image URLs that failed to load (e.g. the Lenovo product photo):
   // those cards render the placeholder icon instead of a blank or
   // broken-image box, the same fallback ProductCard already uses.
@@ -200,12 +209,43 @@ export default function SearchPage() {
         setWebResults(Array.isArray(data.meta?.webResults) ? data.meta.webResults : []);
         setWebSource(data.meta?.source ?? null);
         setParsedIntent(data.meta?.parsedIntent ?? null);
+        // Local-first retailer tabs: same query, split by the
+        // visitor's country server-side. Text mode only — a URL
+        // search has no product name to look up at local stores.
+        // Its own try/catch: a failure here hides only this
+        // section, never the results above.
+        if (effectiveMode === 'text') {
+          setLocalFirstLoading(true);
+          setLocalFirstError(false);
+          try {
+            const lfRes = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
+            const lfData = await lfRes.json();
+            if (lfData.success && lfData.data) {
+              setLocalFirst(lfData.data as LocalFirstSearchData);
+            } else {
+              setLocalFirstError(true);
+              setLocalFirst(null);
+            }
+          } catch {
+            setLocalFirstError(true);
+            setLocalFirst(null);
+          } finally {
+            setLocalFirstLoading(false);
+          }
+        } else {
+          setLocalFirst(null);
+          setLocalFirstError(false);
+          setLocalFirstLoading(false);
+        }
       } else {
         setSearchError(true);
         setResults([]);
         setWebResults([]);
         setWebSource(null);
         setParsedIntent(null);
+        setLocalFirst(null);
+        setLocalFirstError(false);
+        setLocalFirstLoading(false);
       }
     } catch {
       setSearchError(true);
@@ -213,6 +253,9 @@ export default function SearchPage() {
       setWebResults([]);
       setWebSource(null);
       setParsedIntent(null);
+      setLocalFirst(null);
+      setLocalFirstError(false);
+      setLocalFirstLoading(false);
     } finally {
       setLoading(false);
     }
@@ -879,6 +922,20 @@ export default function SearchPage() {
               </a>
             ))}
           </div>
+        )}
+
+        {/* Local-first retailer search — additive tabbed section
+            (local vs global stores for the visitor's country),
+            fetched from /api/search after the main search. It
+            never changes the ai-search results, filters, or sort
+            above. */}
+        {hasSearched && (
+          <ProductSearchResults
+            key={`${localFirst?.query ?? ''}-${localFirst?.country ?? ''}`}
+            data={localFirst}
+            loading={localFirstLoading}
+            error={localFirstError}
+          />
         )}
       </div>
       <SiteFooter />

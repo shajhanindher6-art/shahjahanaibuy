@@ -22,7 +22,7 @@
  *   them again here would duplicate those rows.
  * - Country codes match lib/region.ts exactly (60 regions after the
  *   worldwide expansion, 2026-11-02). 58 of them have ≥1 local
- *   store (70 stores total); QA and ZA are regions without a
+ *   store (72 stores total after PriceOye PK + Myntra IN added 2026-11-07); QA and ZA are regions without a
  *   confirmed local store, so they get the global fallback.
  * - GLOBAL FALLBACK: getStoresForCountry() returns the local list
  *   when a country has one, otherwise GLOBAL_STORES (Amazon.com,
@@ -50,7 +50,8 @@ export interface LocalStore {
   websiteUrl: string;
   /**
    * Search-URL template. `{q}` is replaced with the
-   * URL-encoded product name by buildStoreSearchUrl().
+   * URL-encoded product name by buildStoreSearchUrl();
+   * `{slug}` (where used) is the hyphenated lower-case slug.
    */
   searchUrlTemplate: string;
 }
@@ -64,6 +65,9 @@ export const LOCAL_STORES: LocalStore[] = [
   // Pakistan — Amazon has no local domain here; the priced Amazon
   // row stays amazon.com, so Daraz is a genuine additional store.
   { name: 'Daraz', slug: 'daraz', countryCode: 'PK', websiteUrl: 'https://www.daraz.pk', searchUrlTemplate: 'https://www.daraz.pk/catalog/?q={q}' },
+  // PriceOye — verbatim, live-verified 2026-11-07 ~13:15 PKT:
+  // /search?q=iphone loaded "Search Result" with listings.
+  { name: 'PriceOye', slug: 'priceoye', countryCode: 'PK', websiteUrl: 'https://www.priceoye.pk', searchUrlTemplate: 'https://www.priceoye.pk/search?q={q}' },
 
   // United Kingdom — Amazon UK excluded (priced row, localised domain).
   { name: 'eBay', slug: 'ebay', countryCode: 'GB', websiteUrl: 'https://www.ebay.co.uk', searchUrlTemplate: 'https://www.ebay.co.uk/sch/i.html?_nkw={q}' },
@@ -83,6 +87,12 @@ export const LOCAL_STORES: LocalStore[] = [
 
   // India — Amazon IN excluded (priced row, localised domain).
   { name: 'Flipkart', slug: 'flipkart', countryCode: 'IN', websiteUrl: 'https://www.flipkart.com', searchUrlTemplate: 'https://www.flipkart.com/search?q={q}' },
+  // Myntra — verbatim, live-verified 2026-11-07 ~13:15 PKT
+  // (single-word: /shoes?rawQuery=shoes, 289,312 items) and
+  // ~13:17 PKT (two-word: /running-shoes?rawQuery=running%20shoes,
+  // 18,492 items). Fashion-only; path is the hyphenated slug,
+  // hence the {slug} placeholder (see buildStoreSearchUrl).
+  { name: 'Myntra', slug: 'myntra', countryCode: 'IN', websiteUrl: 'https://www.myntra.com', searchUrlTemplate: 'https://www.myntra.com/{slug}?rawQuery={q}' },
 
   // United Arab Emirates — Amazon AE excluded (priced row, localised domain).
   { name: 'Noon', slug: 'noon', countryCode: 'AE', websiteUrl: 'https://www.noon.com', searchUrlTemplate: 'https://www.noon.com/uae-en/search/?q={q}' },
@@ -239,6 +249,20 @@ export interface StoreListResult {
 }
 
 /**
+ * ONLY the country's own confirmed local stores — no fallback.
+ * Returns [] for countries with no confirmed local store (QA, ZA)
+ * and for unknown codes. The local-first search route uses this
+ * (not getStoresForCountry) so an empty local list is honest and
+ * the fallback flag is real instead of silently serving US/global
+ * stores as "local".
+ */
+export function getLocalOnlyStores(countryCode: string | null | undefined): LocalStore[] {
+  const code = countryCode?.toUpperCase();
+  if (!code) return [];
+  return [...(BY_COUNTRY.get(code) ?? [])];
+}
+
+/**
  * Stores for a country code (case-insensitive): the country's
  * local stores when it has any, otherwise the global fallback.
  * This never returns an empty list, so a product page can always
@@ -257,7 +281,20 @@ export function getStoresForCountry(
  * Build a store's search URL for a product name. The name is
  * URL-encoded; the result is an outbound link to the store's own
  * search results, never a SmartBuy price or product page.
+ *
+ * Placeholders: `{q}` = URL-encoded query (replaced everywhere,
+ * so templates may use it twice); `{slug}` = hyphenated,
+ * lower-cased slug for stores whose search puts the term in the
+ * path (Myntra: /running-shoes?rawQuery=running%20shoes,
+ * live-verified 2026-11-07). Templates without `{slug}` are
+ * unaffected.
  */
 export function buildStoreSearchUrl(store: LocalStore, productName: string): string {
-  return store.searchUrlTemplate.replace('{q}', encodeURIComponent(productName));
+  const encoded = encodeURIComponent(productName);
+  const slug = encodeURIComponent(
+    productName.trim().toLowerCase().replace(/\s+/g, '-')
+  );
+  return store.searchUrlTemplate
+    .replaceAll('{q}', encoded)
+    .replaceAll('{slug}', slug);
 }
