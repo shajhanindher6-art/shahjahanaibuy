@@ -49,20 +49,16 @@ export const metadata: Metadata = {
     type: 'website',
     siteName: appConfig.name,
     url: appConfig.url,
-    images: [
-      {
-        url: '/og-image.png',
-        width: 1200,
-        height: 630,
-        alt: appConfig.name,
-      },
-    ],
+    // NOTE: no explicit images here — Next auto-discovers
+    // app/opengraph-image.tsx. The old static /og-image.png
+    // reference was removed: that file never existed in public/.
   },
   twitter: {
     card: 'summary_large_image',
     title: appConfig.name,
     description: appConfig.description,
-    images: ['/og-image.png'],
+    // NOTE: same as above — twitter:image comes from
+    // app/opengraph-image.tsx automatically.
   },
   robots: {
     index: true,
