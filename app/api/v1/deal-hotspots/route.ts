@@ -19,6 +19,10 @@ import { computePriceDrops, type TrendPoint } from '@/lib/price-trend';
 import { getDeals } from '@/services/commerce';
 import { buildDealHotspots } from '@/services/deal-hotspots';
 
+// Live DB data must never be served from a stale edge cache (the first
+// request after deploy once cached an empty fail-open response).
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'deal-hotspots' });
 

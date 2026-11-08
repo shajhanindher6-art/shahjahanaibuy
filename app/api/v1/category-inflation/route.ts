@@ -19,6 +19,10 @@ import {
   CATEGORY_INFLATION_WINDOW_DAYS,
 } from '@/services/category-inflation';
 
+// Live DB data must never be served from a stale edge cache (the first
+// request after deploy once cached an empty fail-open response).
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'category-inflation' });
 

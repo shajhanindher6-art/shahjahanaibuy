@@ -235,6 +235,9 @@ async function vectorRecommendations(
   return { recommendations, note: null };
 }
 
+// Live DB data must never be served from a stale edge cache.
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'dashboard.digest' });
 

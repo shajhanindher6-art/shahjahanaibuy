@@ -20,6 +20,9 @@ import {
 } from '@/lib/api/responses';
 import { logApiRequest } from '@/lib/api/middleware';
 
+// Live DB data must never be served from a stale edge cache.
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { slug: string } }
