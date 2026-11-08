@@ -130,7 +130,7 @@ export const VECTOR_CAPTION_MODEL = 'Salesforce/blip-image-captioning-base';
 export const VECTOR_EMBED_MODEL = 'sentence-transformers/all-MiniLM-L6-v2';
 export const MAX_VISUAL_SEARCH_IMAGE_BYTES = MAX_SCAN_IMAGE_BYTES; // 8 MB
 
-const HF_INFERENCE_BASE = 'https://api-inference.huggingface.co/models';
+const HF_INFERENCE_BASE = 'https://router.huggingface.co/hf-inference/models';
 const HF_TIMEOUT_MS = 30_000;
 
 /** True when HF_API_TOKEN is configured (server env only, never in git). */
