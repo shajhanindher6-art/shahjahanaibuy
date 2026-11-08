@@ -14,6 +14,7 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PriceHistoryGraph } from '@/components/products/price-history-graph';
 import { BuyVsWait } from '@/components/products/buy-vs-wait';
+import { PersonaMatcher } from '@/components/products/persona-matcher';
 import { TaxEstimator } from '@/components/products/tax-estimator';
 import { DutyOptimizer } from '@/components/products/duty-optimizer';
 import { LandedCostCalculator } from '@/components/products/landed-cost-calculator';
@@ -33,6 +34,7 @@ import { CompatibilityMatrix } from '@/components/products/compatibility-matrix'
 import { ProductVisualizer } from '@/components/products/product-visualizer';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
 import { BestTimeToBuyIndicator } from '@/components/products/best-time-to-buy';
+import { PricePredictionBadge } from '@/components/products/price-prediction-badge';
 import { SimilarProducts } from '@/components/products/similar-products';
 import { CashbackCouponsSection } from '@/components/products/cashback-coupons-section';
 import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
@@ -595,6 +597,10 @@ export default function ProductDetailsPage() {
                 expectedSaleDate={null}
               />
             )}
+
+            {/* Option 15 Module 1: deterministic MA-based badge — renders nothing
+                while loading, on fetch failure, or with <2 recorded price points. */}
+            <PricePredictionBadge slug={slug} />
 
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => router.push(`/compare?products=${product.id}`)}>
@@ -1165,6 +1171,11 @@ export default function ProductDetailsPage() {
                 </p>
               </CardContent>
             </Card>
+
+            {/* Option 15 Module 2: persona matcher — renders nothing while
+                loading or on fetch failure; honest empty state when the
+                product has no recorded specifications yet. */}
+            <PersonaMatcher slug={slug} category={product?.category ?? null} productName={product?.name ?? ''} />
           </TabsContent>
 
           <TabsContent value="reviews" className="mt-4">

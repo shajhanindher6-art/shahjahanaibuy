@@ -15,6 +15,12 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth';
+import {
+  listLocalAlertsForProduct,
+  removeLocalAlert,
+  saveLocalAlert,
+  type LocalPriceAlert,
+} from '@/lib/local-alerts';
 
 interface PriceAlertDialogProps {
   productId: string;
@@ -49,6 +55,17 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
   const [targetPrice, setTargetPrice] = useState('');
   const [alertType, setAlertType] = useState('price_drop');
   const [channel, setChannel] = useState('email');
+  // Option 15 Module 3 — guest (logged-out) alerts, stored on this
+  // device only. The signed-in flow below is untouched.
+  const [localAlerts, setLocalAlerts] = useState<LocalPriceAlert[]>([]);
+
+  const refreshLocalAlerts = () => {
+    setLocalAlerts(listLocalAlertsForProduct(productId));
+  };
+
+  useEffect(() => {
+    if (open && !user) refreshLocalAlerts();
+  }, [open, user]);
 
   useEffect(() => {
     // Prefilled target (negotiator shortcut) wins over the 90% default.
@@ -112,6 +129,32 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
     }
   };
 
+  // Option 15 Module 3 — guest create/delete. Never calls /api/v1/alerts.
+  const handleCreateLocal = () => {
+    const target = parseFloat(targetPrice);
+    const result = saveLocalAlert({ productId, productName, targetPrice: target });
+    if (result.ok) {
+      toast({
+        title: 'Price alert saved on this device',
+        description: `Target $${target.toFixed(2)} for ${productName} — saved on this device only.`,
+      });
+      refreshLocalAlerts();
+    } else {
+      toast({ title: 'Could not save alert', description: result.error, variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteLocal = (alertId: string) => {
+    setLocalAlerts(removeLocalAlert(alertId));
+    toast({ title: 'Alert removed' });
+  };
+
+  // First stored local target already met by the current price, if any.
+  const reachedLocalAlert =
+    currentPrice != null
+      ? localAlerts.find((a) => currentPrice <= a.targetPrice)
+      : undefined;
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -131,14 +174,56 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
         </DialogHeader>
 
         {!user ? (
-          <div className="flex flex-col items-center gap-3 py-6 text-center">
-            <BellRing className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              Sign in to create price alerts and get notified when prices drop.
+          <div className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Saved on this device only — sign in to get email/push notifications and sync across devices.
             </p>
-            <Button asChild>
-              <a href="/sign-in">Sign In</a>
-            </Button>
+
+            <div>
+              <Label className="mb-1.5 block text-sm">Target Price ($)</Label>
+              <Input
+                type="number"
+                value={targetPrice}
+                onChange={(e) => setTargetPrice(e.target.value)}
+                placeholder="e.g. 199.99"
+              />
+              {currentPrice && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Current price: ${currentPrice.toFixed(2)}
+                </p>
+              )}
+            </div>
+
+            {reachedLocalAlert && currentPrice != null && (
+              <p className="text-sm font-medium text-green-600">
+                Target reached — current price ${currentPrice.toFixed(2)} is at or below your ${reachedLocalAlert.targetPrice.toFixed(2)} target.
+              </p>
+            )}
+
+            {localAlerts.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm">Saved on this device</Label>
+                {localAlerts.map((alert) => (
+                  <div key={alert.id} className="flex items-center justify-between rounded-lg border p-2">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="text-xs capitalize">
+                        Price drop
+                      </Badge>
+                      <span className="text-sm text-muted-foreground">
+                        Below ${alert.targetPrice.toFixed(2)}
+                      </span>
+                    </div>
+                    <Button size="sm" variant="ghost" onClick={() => handleDeleteLocal(alert.id)}>
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              <a href="/sign-in" className="underline">Sign in</a> to get email/push notifications and sync across devices.
+            </p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -214,6 +299,15 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button onClick={handleCreate} disabled={loading || (alertType === 'price_drop' && !targetPrice)}>
               {loading ? 'Creating...' : 'Create Alert'}
+            </Button>
+          </DialogFooter>
+        )}
+
+        {!user && (
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateLocal} disabled={!targetPrice}>
+              Create Alert
             </Button>
           </DialogFooter>
         )}
