@@ -57,6 +57,15 @@ import {
   discountPercent,
   type DealCoupon,
 } from '@/lib/deal-math';
+import { useAuth } from '@/features/auth/auth-provider';
+// Enterprise #9 Verified Buyer (receipt-backed) + #11 Deal Urgency.
+import {
+  fetchOwnVaultProductIds,
+  isOwnVerifiedReview,
+} from '@/services/verified-buyer';
+import { VerifiedBuyerBadge } from '@/components/products/verified-buyer-badge';
+import { getDealUrgency } from '@/services/deal-urgency';
+import { DealUrgencyBadge } from '@/components/products/deal-urgency-badge';
 
 interface Product {
   id: string;
@@ -94,6 +103,10 @@ interface Prediction {
 
 interface Review {
   id: string;
+  // Author user id (returned by the reviews API). Used ONLY to tell
+  // whether a review is the signed-in viewer's own, for the
+  // receipt-backed Verified Buyer badge — never displayed.
+  userId: string | null;
   rating: number;
   title: string | null;
   content: string | null;
@@ -126,11 +139,16 @@ export default function ProductDetailsPage() {
   const router = useRouter();
   const slug = params.slug as string;
   const { region, language, detectedCountryCode } = useRegion();
+  const { user } = useAuth();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [summary, setSummary] = useState<AISummary | null>(null);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
+  // Enterprise #9: product ids the signed-in viewer holds a vault
+  // receipt for. Empty when logged out or when the vault is not
+  // live — the Verified Buyer badge simply never renders then.
+  const [ownVaultProductIds, setOwnVaultProductIds] = useState<Set<string>>(new Set());
   // Reviews API returns { averageRating, totalReviews, ratingDistribution }.
   // Normalise here (accepting the old shape too) so a shape change can never
   // crash the page with an undefined .toFixed() call.
@@ -179,6 +197,21 @@ export default function ProductDetailsPage() {
       return null;
     }
   }, []);
+
+  // Enterprise #9: load the viewer's own vault receipts (owner-scoped
+  // GET /api/v1/vault) once signed in and the product is known.
+  // Fire-and-forget: the helper never throws, and an empty set just
+  // means no Verified Buyer badge renders.
+  useEffect(() => {
+    if (!user?.id || !product?.id) return;
+    let cancelled = false;
+    void fetchOwnVaultProductIds().then((result) => {
+      if (!cancelled) setOwnVaultProductIds(result.productIds);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, product?.id]);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -574,6 +607,17 @@ export default function ProductDetailsPage() {
                   // computed by the shared helper — additive badge only.
                   // The deals-table % shown on widgets is untouched.
                   const merchantSaving = discountPercent(listing.price, listing.compareAtPrice);
+                  // Enterprise #11: urgency from this row's own real
+                  // signals only — its coupon expiry, its stock, its
+                  // recorded saving. No demand/velocity data exists,
+                  // so none is ever shown; 'none' renders nothing.
+                  const urgency = getDealUrgency({
+                    endsAt: coupon?.validUntil ?? null,
+                    endLabel: 'Coupon expires',
+                    inStock,
+                    stockQuantity: listing.stockQuantity,
+                    dropPercent: merchantSaving,
+                  });
                   // Phase 3 Prep: final Buy href (server affiliate
                   // transform, if any, + client Amazon domain rewrite).
                   // The same href is beaconed below — never a different
@@ -590,6 +634,7 @@ export default function ProductDetailsPage() {
                           <Badge variant={inStock ? 'default' : 'secondary'}>
                             {inStock ? tFor(language, 'inStock') : tFor(language, 'outOfStock')}
                           </Badge>
+                          <DealUrgencyBadge urgency={urgency} />
                           {listing.shippingDays !== null && listing.shippingDays !== undefined && (
                             <span>Ships in {listing.shippingDays} day{listing.shippingDays !== 1 ? 's' : ''}</span>
                           )}
@@ -1093,6 +1138,21 @@ export default function ProductDetailsPage() {
                             {review.verifiedPurchase && (
                               <Badge variant="secondary" className="text-xs">Verified</Badge>
                             )}
+                            {/* Enterprise #9: receipt-backed Verified
+                                Buyer checkmark. Only ever on the
+                                viewer's OWN review, and only when they
+                                hold a vault receipt for this product —
+                                the vault read is owner-scoped, so no
+                                other reviewer's receipt can ever back
+                                a badge here. */}
+                            <VerifiedBuyerBadge
+                              verified={isOwnVerifiedReview({
+                                reviewUserId: review.userId,
+                                viewerUserId: user?.id ?? null,
+                                viewerHasReceipt:
+                                  product !== null && ownVaultProductIds.has(product.id),
+                              })}
+                            />
                           </div>
                           <div className="flex items-center gap-1">
                             {Array.from({ length: 5 }).map((_, i) => (

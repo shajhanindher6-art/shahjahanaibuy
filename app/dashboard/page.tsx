@@ -31,6 +31,7 @@ import {
   type DropToWatch,
 } from '@/components/dashboard/drops-to-watch-section';
 import { LandedCostWidget } from '@/components/dashboard/landed-cost-widget';
+import { DigestGrid } from '@/components/dashboard/digest-grid';
 
 interface QuickAction {
   icon: LucideIcon;
@@ -266,6 +267,11 @@ export default function DashboardPage() {
               delta) — compact, links out to the full calculator on
               each product page. */}
           <LandedCostWidget />
+
+          {/* Personal shopping digest (Enterprise #13) — saved items,
+              alerts, and vector-matched recommendations in one grid.
+              Fetches its own data; hides itself on failure. */}
+          <DigestGrid />
 
           <div className="animate-fade-in motion-reduce:animate-none" style={{ animationDelay: '340ms' }}>
             <h2 className="mb-4 text-lg font-semibold">Quick Actions</h2>

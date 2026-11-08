@@ -13,6 +13,7 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { cn } from '@/lib/utils';
 import { Price } from '@/components/region/price';
+import { DecisionMatrix } from '@/components/comparison/decision-matrix';
 
 interface ComparisonRetailer {
   retailerName: string;
@@ -362,6 +363,10 @@ export default function ComparePage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Decision Matrix (Enterprise #7): the same products in a
+                metric-first table built from recorded data only. */}
+            <DecisionMatrix products={comparison.products} />
           </div>
         )}
       </div>
