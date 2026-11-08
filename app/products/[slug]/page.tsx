@@ -66,6 +66,13 @@ import {
 import { VerifiedBuyerBadge } from '@/components/products/verified-buyer-badge';
 import { getDealUrgency } from '@/services/deal-urgency';
 import { DealUrgencyBadge } from '@/components/products/deal-urgency-badge';
+// Seeded product_attributes rows (EAV specs) — rendered in the Specs
+// tab via the pure helpers in lib/product-attributes.ts.
+import type { ProductAttribute } from '@/types/catalog';
+import {
+  groupAttributes,
+  formatAttributeValue,
+} from '@/lib/product-attributes';
 
 interface Product {
   id: string;
@@ -77,6 +84,10 @@ interface Product {
   imageUrl: string | null;
   gtin: string | null;
   confidenceScore: number;
+  // Seeded product_attributes rows from GET /api/v1/products/[slug].
+  // Absent or empty when the product has no seeded specs — the Specs
+  // tab then renders exactly the base rows below, nothing invented.
+  attributes?: ProductAttribute[];
 }
 
 interface AISummary {
@@ -396,6 +407,17 @@ export default function ProductDetailsPage() {
   const heroPrice =
     prediction?.currentPrice ??
     (merchantsLoaded && merchants.length > 0 ? merchants[0].price : null);
+  // Seeded specs for the Specs tab, grouped by their stored group.
+  // [] when the product has no attribute rows — the tab then shows
+  // only the base Brand/Category/GTIN/Confidence rows, exactly as
+  // before. Ungrouped rows join the main Specifications card; each
+  // named group gets its own card below it.
+  const attributeGroups = groupAttributes(product.attributes);
+  const ungroupedAttributes =
+    attributeGroups.find((g) => g.group === null)?.items ?? [];
+  const namedAttributeGroups = attributeGroups.filter(
+    (g) => g.group !== null
+  );
   // Structured data must never claim what is not known: availability
   // comes from the real merchant rows (only once they have loaded —
   // never a hardcoded InStock), and an aggregate rating is emitted
@@ -1195,9 +1217,40 @@ export default function ProductDetailsPage() {
                   <SpecRow label="Category" value={product.category} />
                   <SpecRow label="GTIN" value={product.gtin} />
                   <SpecRow label="Confidence Score" value={product.confidenceScore != null ? `${product.confidenceScore}%` : null} />
+                  {/* Seeded specs without a stored group. Key, value
+                      and unit are verbatim from the database; a row
+                      with an empty value is hidden by SpecRow. */}
+                  {ungroupedAttributes.map((attr) => (
+                    <SpecRow
+                      key={attr.id}
+                      label={attr.key}
+                      value={formatAttributeValue(attr)}
+                    />
+                  ))}
                 </div>
               </CardContent>
             </Card>
+            {/* Seeded specs with a stored group: one card per group,
+                group name verbatim from the database. Products with no
+                attribute rows render nothing here at all. */}
+            {namedAttributeGroups.map((g) => (
+              <Card key={g.group ?? 'specs'} className="mt-4">
+                <CardHeader>
+                  <CardTitle className="text-base">{g.group}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {g.items.map((attr) => (
+                      <SpecRow
+                        key={attr.id}
+                        label={attr.key}
+                        value={formatAttributeValue(attr)}
+                      />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
             {/* Option 7: Size & 3D view. No catalog product carries
                 dimensions or a 3D model file today, so this honestly
                 renders the no-data notes; when real dimensions or a

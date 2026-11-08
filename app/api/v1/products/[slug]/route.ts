@@ -7,7 +7,11 @@ import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, notFound, internalError } from '@/lib/api/responses';
 import { logApiRequest } from '@/lib/api/middleware';
-import { getCachedProductBySlug, getProductImages } from '@/services/products';
+import {
+  getCachedProductBySlug,
+  getProductImages,
+  getProductAttributes,
+} from '@/services/products';
 
 export async function GET(
   request: NextRequest,
@@ -23,9 +27,17 @@ export async function GET(
       return notFound('Product not found');
     }
 
-    const images = await getProductImages(supabase, product.id);
+    // Structured specs (product_attributes) are fetched alongside the
+    // images. getProductAttributes is fail-safe — it returns [] when
+    // the table is missing, RLS blocks the read, or the product simply
+    // has no seeded rows — so a product without specs still renders
+    // exactly as before, with only the base Brand/Category/GTIN rows.
+    const [images, attributes] = await Promise.all([
+      getProductImages(supabase, product.id),
+      getProductAttributes(supabase, product.id),
+    ]);
 
-    return apiSuccess({ ...product, images });
+    return apiSuccess({ ...product, images, attributes });
   } catch {
     return internalError('Failed to fetch product');
   }
