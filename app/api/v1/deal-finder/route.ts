@@ -5,8 +5,8 @@
  * Unlike /api/v1/chat/messages (dashboard-only, auth required, and
  * tied to a saved conversation), this route answers one message at
  * a time for any visitor and returns product recommendations in
- * metadata.products, which the floating Deal Finder widget renders
- * as clickable product cards.
+ * metadata.products, which the chat UIs render as clickable
+ * product cards.
  *
  * It reuses services/chat.ts generateChatResponse — the same
  * template-based engine as the dashboard chat (budget / category /
@@ -15,25 +15,32 @@
  * with the anon server client, it can only see rows the public
  * RLS policies already expose (products, deals, price_history).
  *
- * Transport: two shapes, same answer, same rate limit.
- * - Accept: application/json (or anything else) → the exact JSON
+ * Transport (Vercel AI SDK v4 data-stream protocol):
+ * - Request shape { message, country } (legacy callers) with
+ *   Accept: application/json (or anything else) → the exact JSON
  *   response as before: { success, data: { response, metadata } }.
- * - Accept: text/event-stream → Server-Sent Events. The
- *   deterministic engine produces the whole answer atomically
- *   (there is no token-by-token LLM), so the stream emits the
- *   answer's own lines as `data: {"type":"chunk","text":...}`
- *   events immediately after it is computed — no added delays,
- *   no fake typing animation — followed by a final
- *   `data: {"type":"done","metadata":...}` event carrying the
- *   product recommendations. Rejoining the chunk texts
- *   reproduces the JSON answer byte for byte: this is transport
- *   streaming (progressive rendering), not token generation.
- *   Errors (bad input, rate limit, generation failure) still
- *   return the same JSON error as the non-streaming path —
- *   nothing is streamed before the answer exists.
+ * - Request shape { messages, country } (the SDK's `useChat`
+ *   hook, which posts the full history and never sends
+ *   `Accept: text/event-stream`) → the AI SDK data stream:
+ *   `0:` text parts carrying the answer's own lines, one `2:`
+ *   data part carrying { products } for the product chips, then a
+ *   `d:` finish_message part. Legacy { message } callers that
+ *   send `Accept: text/event-stream` get the same data stream.
+ *
+ * HONEST TRANSPORT NOTE: the deterministic engine produces the
+ * whole answer atomically — there is no token-by-token LLM.
+ * The text parts are the answer's own lines, written immediately
+ * after it is computed (no added delays, no fake typing
+ * animation). Rejoining them reproduces the JSON answer byte for
+ * byte: this is transport streaming (progressive rendering) via
+ * the AI SDK's standardized hooks, not token generation.
+ * Errors (bad input, rate limit, generation failure) still
+ * return the same JSON error as the non-streaming path —
+ * nothing is streamed before the answer exists.
  */
 
 import type { NextRequest } from 'next/server';
+import { createDataStreamResponse, formatDataStreamPart } from 'ai';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
@@ -55,29 +62,28 @@ function splitIntoChunks(content: string): string[] {
     .filter((chunk) => chunk !== '');
 }
 
-function streamResponse(content: string, metadata: ChatMetadata | null): Response {
-  const encoder = new TextEncoder();
-  const chunks = splitIntoChunks(content);
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const text of chunks) {
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: 'chunk', text })}\n\n`)
-        );
-      }
-      controller.enqueue(
-        encoder.encode(`data: ${JSON.stringify({ type: 'done', metadata })}\n\n`)
-      );
-      controller.close();
-    },
-  });
-  return new Response(stream, {
+/**
+ * AI SDK data-stream response: text-delta parts for the answer's
+ * own lines, one data part with the product recommendations, then
+ * the finish part the `useChat` client waits for before calling
+ * its onFinish handler.
+ */
+function dataStreamResponse(content: string, metadata: ChatMetadata | null): Response {
+  return createDataStreamResponse({
     headers: {
-      'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
       // Proxies/CDNs must not buffer the stream into one blob.
       'X-Accel-Buffering': 'no',
+    },
+    execute(dataStream) {
+      for (const chunk of splitIntoChunks(content)) {
+        dataStream.write(formatDataStreamPart('text', chunk));
+      }
+      // One data part per turn: the client collects these into its
+      // `data` state, one entry per assistant turn, and renders the
+      // products as chips under that turn's answer.
+      dataStream.writeData({ products: metadata?.products ?? [] });
+      dataStream.write(formatDataStreamPart('finish_message', { finishReason: 'stop' }));
     },
   });
 }
@@ -93,7 +99,27 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json().catch(() => null);
-    const message = body?.message;
+
+    // Two request shapes, one engine:
+    // - Legacy: { message: string, country?: string }.
+    // - Vercel AI SDK `useChat`: { messages: [{ role, content }...],
+    //   country?: string } — the hook posts the full history plus
+    //   the `body` option merged in. The engine is stateless, so
+    //   the last user message is the query.
+    let message: unknown;
+    let useChatShape = false;
+    if (Array.isArray(body?.messages)) {
+      useChatShape = true;
+      const lastUser = [...body.messages]
+        .reverse()
+        .find(
+          (m): m is { role: string; content: unknown } =>
+            !!m && typeof m === 'object' && (m as { role?: unknown }).role === 'user'
+        );
+      message = lastUser?.content;
+    } else {
+      message = body?.message;
+    }
 
     if (typeof message !== 'string' || message.trim() === '') {
       return badRequest('message is required');
@@ -111,12 +137,13 @@ export async function POST(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     const { content, metadata } = await generateChatResponse(supabase, message.trim(), [], { region });
 
-    // Content negotiation: only an explicit SSE Accept streams.
-    // Every other caller (including plain fetch with the default
-    // Accept: */*) gets the exact JSON response as before.
+    // Streaming: the AI SDK data-stream protocol. `useChat` never
+    // sends `Accept: text/event-stream` (it posts plain JSON), so
+    // the useChat shape streams on body shape alone; the legacy
+    // shape streams only on an explicit SSE Accept header.
     const accept = request.headers.get('accept') ?? '';
-    if (accept.includes('text/event-stream')) {
-      return streamResponse(content, metadata);
+    if (useChatShape || accept.includes('text/event-stream')) {
+      return dataStreamResponse(content, metadata);
     }
 
     return apiSuccess({ response: content, metadata });

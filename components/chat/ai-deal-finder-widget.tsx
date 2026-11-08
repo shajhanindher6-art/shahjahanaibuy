@@ -8,6 +8,15 @@
  * back from POST /api/v1/deal-finder, rendered as a text reply
  * plus clickable product cards.
  *
+ * Streaming runs through the Vercel AI SDK's `useChat` hook
+ * against the route's AI SDK data-stream response: the answer
+ * renders incrementally as its own lines arrive. Product cards
+ * come from the one `data` part per turn (see the mapping note
+ * in the dashboard AIChatPanel — same shape here). If the
+ * stream fails, one plain-JSON retry runs instead — never a
+ * fabricated recommendation. The engine is deterministic
+ * (no LLM): the stream is transport, not token generation.
+ *
  * Stateless: no conversation is saved and no login is required,
  * so a logged-out visitor can use it immediately. Quick chips
  * cover the most common asks for visitors who do not know what
@@ -19,6 +28,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
+import { useChat } from 'ai/react';
+import type { JSONValue } from 'ai';
 import { MessageCircle, Send, Sparkles, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,7 +37,7 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { cn } from '@/lib/utils';
 import { formatPriceForRegion, formatUsd, type Region } from '@/lib/region';
 import { useRegion } from '@/components/region/region-provider';
-import { requestDealFinder } from '@/lib/deal-finder-stream';
+import { fetchDealFinderJson } from '@/lib/deal-finder-stream';
 
 /**
  * Product-card price in the visitor's currency — the same
@@ -58,23 +69,36 @@ interface WidgetProduct {
   price: number | null;
 }
 
-interface WidgetMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  products?: WidgetProduct[];
-}
-
 const QUICK_CHIPS = [
   'Best deals today',
   'Best laptop under $1000',
   'Noise cancelling headphones',
 ];
 
-const WELCOME: WidgetMessage = {
-  role: 'assistant',
-  content:
-    'Hi! I can help you shop smarter — tell me what you need, e.g. "best laptop under $1000", and I will find the best deals. Ask me to compare products, or open any product page to set a price alert or save it to your wishlist.',
-};
+const WELCOME_TEXT =
+  'Hi! I can help you shop smarter — tell me what you need, e.g. "best laptop under $1000", and I will find the best deals. Ask me to compare products, or open any product page to set a price alert or save it to your wishlist.';
+
+const ERROR_LINE = 'Sorry, I could not find deals right now. Please try again.';
+
+function isWidgetProduct(value: unknown): value is WidgetProduct {
+  if (!value || typeof value !== 'object') return false;
+  const p = value as Record<string, unknown>;
+  return (
+    typeof p.id === 'string' &&
+    typeof p.name === 'string' &&
+    typeof p.slug === 'string' &&
+    (p.brand === null || typeof p.brand === 'string') &&
+    (p.imageUrl === null || typeof p.imageUrl === 'string') &&
+    (p.price === null || typeof p.price === 'number')
+  );
+}
+
+function productsFromDataEntry(entry: unknown): WidgetProduct[] {
+  if (!entry || typeof entry !== 'object') return [];
+  const products = (entry as { products?: unknown }).products;
+  if (!Array.isArray(products)) return [];
+  return products.filter(isWidgetProduct);
+}
 
 export function AIDealFinderWidget() {
   const pathname = usePathname();
@@ -83,16 +107,81 @@ export function AIDealFinderWidget() {
   // currency the visitor already sees across the site.
   const { region } = useRegion();
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<WidgetMessage[]>([WELCOME]);
   const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
+  // The query behind the in-flight turn, for the JSON fallback in
+  // onError (the hook's error callback does not receive it).
+  const pendingMessageRef = useRef('');
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const { messages, append, status, data, setMessages, setData } = useChat({
+    api: '/api/v1/deal-finder',
+    initialMessages: [{ id: 'welcome', role: 'assistant', content: WELCOME_TEXT }],
+    // Keep the user message and any partial answer visible when the
+    // stream fails, so the fallback can complete them in place.
+    keepLastMessageOnError: true,
+    onError: async () => {
+      const query = pendingMessageRef.current;
+      const result = query
+        ? await fetchDealFinderJson({ message: query, country: region.code })
+        : null;
+      // One data entry per assistant turn keeps the products
+      // mapping aligned, even when the turn failed. The products
+      // are re-shaped into plain JSON values: the typed
+      // DealFinderProduct interface has no index signature, so it
+      // is not assignable to the hook's JSONValue data state.
+      const productsEntry: JSONValue = {
+        products: (result?.metadata?.products ?? []).map((p) => ({
+          id: p.id,
+          name: p.name,
+          slug: p.slug,
+          brand: p.brand,
+          imageUrl: p.imageUrl,
+          price: p.price,
+        })),
+      };
+      setData((prev) => [...(prev ?? []), productsEntry]);
+      setMessages((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (!last || last.role !== 'assistant') return prev;
+        if (result) {
+          next[next.length - 1] = { ...last, content: result.response };
+        } else if (last.content === '') {
+          next[next.length - 1] = { ...last, content: ERROR_LINE };
+        }
+        // A partial stream already rendered stays as-is (genuine
+        // answer text, just incomplete).
+        return next;
+      });
+    },
+  });
+
+  const sending = status === 'submitted' || status === 'streaming';
+
+  // Attach product cards to each assistant message from the `data`
+  // entries (same mapping as the dashboard AIChatPanel: the welcome
+  // message is assistant ordinal 0 with no entry; the k-th
+  // assistant message after it maps to data[k - 1]).
+  let assistantOrdinal = -1;
+  const view = messages.map((m) => {
+    if (m.role === 'assistant') assistantOrdinal += 1;
+    return {
+      id: m.id,
+      role: m.role === 'user' ? 'user' : ('assistant' as const),
+      content: m.content,
+      products:
+        m.role === 'assistant' && assistantOrdinal >= 1
+          ? productsFromDataEntry(data?.[assistantOrdinal - 1])
+          : [],
+    };
+  });
+
   // Recent searches from the search page's localStorage list, so
   // the assistant can pick up where the visitor left off — no
   // account needed, and nothing is sent anywhere until the
   // visitor taps a chip. Loaded when the panel opens, so a
   // search done in another tab still shows up.
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -116,9 +205,9 @@ export function AIDealFinderWidget() {
   // included, so the (stateless) deal-finder engine's compare
   // intent can actually answer about those products instead of
   // getting a context-free "cheapest?" it cannot resolve.
-  const lastAssistantProducts = [...messages]
+  const lastAssistantProducts = [...view]
     .reverse()
-    .find((m) => m.role === 'assistant' && m.products && m.products.length > 0)?.products;
+    .find((m) => m.role === 'assistant' && m.products.length > 0)?.products;
   const followUpChips =
     lastAssistantProducts && lastAssistantProducts.length > 1
       ? [
@@ -136,64 +225,33 @@ export function AIDealFinderWidget() {
   // Dashboard has its own full chat page; do not duplicate it there.
   if (pathname?.startsWith('/dashboard')) return null;
 
-  // Patch the last (assistant placeholder) message in place.
-  const updateLastAssistant = (patch: (m: WidgetMessage) => WidgetMessage) => {
-    setMessages((prev) => {
-      const next = [...prev];
-      const last = next[next.length - 1];
-      if (last && last.role === 'assistant') {
-        next[next.length - 1] = patch(last);
-      }
-      return next;
-    });
-  };
-
   // Spinner only until the first streamed chunk arrives — the
   // placeholder is empty until then, and grows after that.
-  const lastMessage = messages[messages.length - 1];
+  const lastMessage = view[view.length - 1];
   const awaitingFirstChunk =
     sending && lastMessage?.role === 'assistant' && lastMessage.content === '';
 
   async function send(text: string) {
     const message = text.trim();
     if (!message || sending) return;
-    setMessages((prev) => [...prev, { role: 'user', content: message }]);
+    pendingMessageRef.current = message;
     setInput('');
-    setSending(true);
-    // Empty assistant placeholder: filled chunk by chunk as the
-    // stream arrives, or all at once on the JSON fallback.
-    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
     try {
-      const result = await requestDealFinder(
-        { message, country: region.code },
-        (chunk) => {
-          updateLastAssistant((m) => ({ ...m, content: m.content + chunk }));
-        }
+      await append(
+        { role: 'user', content: message },
+        { body: { country: region.code } }
       );
-      if (result) {
-        updateLastAssistant(() => ({
-          role: 'assistant',
-          content: result.response,
-          products: result.metadata?.products ?? [],
-        }));
-      } else {
-        // A partial stream already rendered stays as-is (genuine
-        // answer text); only an empty placeholder becomes the
-        // honest error line.
-        updateLastAssistant((m) =>
-          m.content === ''
-            ? { role: 'assistant', content: 'Sorry, I could not find deals right now. Please try again.' }
-            : m
-        );
-      }
     } catch {
-      updateLastAssistant((m) =>
-        m.content === ''
-          ? { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' }
-          : m
-      );
-    } finally {
-      setSending(false);
+      // Stream failures surface through onError (which runs the
+      // JSON fallback); this only guards an unexpected throw.
+      setMessages((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last && last.role === 'assistant' && last.content === '') {
+          next[next.length - 1] = { ...last, content: 'Sorry, something went wrong. Please try again.' };
+        }
+        return next;
+      });
     }
   }
 
@@ -221,8 +279,8 @@ export function AIDealFinderWidget() {
           </div>
 
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
-            {messages.map((m, i) => (
-              <div key={i} className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}>
+            {view.map((m) => (
+              <div key={m.id} className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}>
                 <div
                   className={cn(
                     'max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed',

@@ -2,25 +2,35 @@
  * Dashboard AI chat panel — AI Glass redesign.
  *
  * A compact embedded chat that calls the SAME public endpoint as the
- * floating AI Deal Finder widget (POST /api/v1/deal-finder with
- * {message, country}) — no second AI, no new backend, no invented
- * answers. The floating widget stays as it is; this panel is the
- * dashboard's always-visible AI, per the approved concept.
+ * floating AI Deal Finder widget (POST /api/v1/deal-finder) through
+ * the Vercel AI SDK's `useChat` hook — no second AI, no new
+ * backend, no invented answers. The hook streams the route's
+ * AI SDK data-stream response incrementally (smooth rendering as
+ * the answer's own lines arrive); the floating widget stays as
+ * it is; this panel is the dashboard's always-visible AI, per
+ * the approved concept.
  *
- * Messages render the assistant's text plus product chips (real
- * recommendations from the endpoint, linked to their product
- * pages). Failures fall back to the same honest error line as the
- * floating widget — never a fabricated recommendation.
+ * Product chips: the server writes one `data` part per turn
+ * carrying { products }; the hook collects those into its `data`
+ * state, one entry per assistant turn. The welcome message is
+ * assistant ordinal 0 and has no entry; the k-th assistant
+ * message after it maps to data[k - 1]. The onError path appends
+ * an entry even for failed turns, so the mapping never drifts.
+ * Failures fall back to one plain-JSON retry — never a fabricated
+ * recommendation. The engine is deterministic (no LLM): the
+ * stream is transport, not token generation.
  */
 
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
+import { useChat } from 'ai/react';
+import type { JSONValue } from 'ai';
 import { Send, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRegion } from '@/components/region/region-provider';
-import { requestDealFinder } from '@/lib/deal-finder-stream';
+import { fetchDealFinderJson } from '@/lib/deal-finder-stream';
 
 interface ChatProduct {
   id: string;
@@ -31,84 +41,128 @@ interface ChatProduct {
   price: number | null;
 }
 
-interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  products?: ChatProduct[];
-}
+const WELCOME_TEXT =
+  'Hi! Ask me for a deal — a product, a budget, or a category — and I will find real matches from the catalog.';
 
 const SUGGESTIONS = ['Best laptop under $1000', 'Cheapest headphones', 'Show me deals'];
 
+const ERROR_LINE = 'Sorry, I could not find deals right now. Please try again.';
+
+function isChatProduct(value: unknown): value is ChatProduct {
+  if (!value || typeof value !== 'object') return false;
+  const p = value as Record<string, unknown>;
+  return (
+    typeof p.id === 'string' &&
+    typeof p.name === 'string' &&
+    typeof p.slug === 'string' &&
+    (p.brand === null || typeof p.brand === 'string') &&
+    (p.imageUrl === null || typeof p.imageUrl === 'string') &&
+    (p.price === null || typeof p.price === 'number')
+  );
+}
+
+function productsFromDataEntry(entry: unknown): ChatProduct[] {
+  if (!entry || typeof entry !== 'object') return [];
+  const products = (entry as { products?: unknown }).products;
+  if (!Array.isArray(products)) return [];
+  return products.filter(isChatProduct);
+}
+
 export function AIChatPanel() {
   const { region } = useRegion();
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: 'assistant',
-      content:
-        'Hi! Ask me for a deal — a product, a budget, or a category — and I will find real matches from the catalog.',
-    },
-  ]);
   const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
+  // The query behind the in-flight turn, for the JSON fallback in
+  // onError (the hook's error callback does not receive it).
+  const pendingMessageRef = useRef('');
 
-  // Patch the last (assistant placeholder) message in place.
-  const updateLastAssistant = (patch: (m: ChatMessage) => ChatMessage) => {
-    setMessages((prev) => {
-      const next = [...prev];
-      const last = next[next.length - 1];
-      if (last && last.role === 'assistant') {
-        next[next.length - 1] = patch(last);
-      }
-      return next;
-    });
-  };
+  const { messages, append, status, data, setMessages, setData } = useChat({
+    api: '/api/v1/deal-finder',
+    initialMessages: [{ id: 'welcome', role: 'assistant', content: WELCOME_TEXT }],
+    // Keep the user message and any partial answer visible when the
+    // stream fails, so the fallback can complete them in place.
+    keepLastMessageOnError: true,
+    onError: async () => {
+      const query = pendingMessageRef.current;
+      const result = query
+        ? await fetchDealFinderJson({ message: query, country: region.code })
+        : null;
+      // One data entry per assistant turn keeps the products
+      // mapping aligned, even when the turn failed. The products
+      // are re-shaped into plain JSON values: the typed
+      // DealFinderProduct interface has no index signature, so it
+      // is not assignable to the hook's JSONValue data state.
+      const productsEntry: JSONValue = {
+        products: (result?.metadata?.products ?? []).map((p) => ({
+          id: p.id,
+          name: p.name,
+          slug: p.slug,
+          brand: p.brand,
+          imageUrl: p.imageUrl,
+          price: p.price,
+        })),
+      };
+      setData((prev) => [...(prev ?? []), productsEntry]);
+      setMessages((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (!last || last.role !== 'assistant') return prev;
+        if (result) {
+          next[next.length - 1] = { ...last, content: result.response };
+        } else if (last.content === '') {
+          next[next.length - 1] = { ...last, content: ERROR_LINE };
+        }
+        // A partial stream already rendered stays as-is (genuine
+        // answer text, just incomplete).
+        return next;
+      });
+    },
+  });
+
+  const sending = status === 'submitted' || status === 'streaming';
+
+  // Attach product chips to each assistant message from the `data`
+  // entries (see the header comment for the mapping).
+  let assistantOrdinal = -1;
+  const view = messages.map((m) => {
+    if (m.role === 'assistant') assistantOrdinal += 1;
+    return {
+      id: m.id,
+      role: m.role === 'user' ? 'user' : ('assistant' as const),
+      content: m.content,
+      products:
+        m.role === 'assistant' && assistantOrdinal >= 1
+          ? productsFromDataEntry(data?.[assistantOrdinal - 1])
+          : [],
+    };
+  });
 
   // "Thinking" only until the first streamed chunk arrives — the
   // placeholder is empty until then, and grows after that.
-  const lastMessage = messages[messages.length - 1];
+  const lastMessage = view[view.length - 1];
   const awaitingFirstChunk =
     sending && lastMessage?.role === 'assistant' && lastMessage.content === '';
 
   async function send(text: string) {
     const message = text.trim();
     if (!message || sending) return;
-    setMessages((prev) => [...prev, { role: 'user', content: message }]);
+    pendingMessageRef.current = message;
     setInput('');
-    setSending(true);
-    // Empty assistant placeholder: filled chunk by chunk as the
-    // stream arrives, or all at once on the JSON fallback.
-    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
     try {
-      const result = await requestDealFinder(
-        { message, country: region.code },
-        (chunk) => {
-          updateLastAssistant((m) => ({ ...m, content: m.content + chunk }));
-        }
+      await append(
+        { role: 'user', content: message },
+        { body: { country: region.code } }
       );
-      if (result) {
-        updateLastAssistant(() => ({
-          role: 'assistant',
-          content: result.response,
-          products: result.metadata?.products ?? [],
-        }));
-      } else {
-        // A partial stream already rendered stays as-is (genuine
-        // answer text); only an empty placeholder becomes the
-        // honest error line.
-        updateLastAssistant((m) =>
-          m.content === ''
-            ? { role: 'assistant', content: 'Sorry, I could not find deals right now. Please try again.' }
-            : m
-        );
-      }
     } catch {
-      updateLastAssistant((m) =>
-        m.content === ''
-          ? { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' }
-          : m
-      );
-    } finally {
-      setSending(false);
+      // Stream failures surface through onError (which runs the
+      // JSON fallback); this only guards an unexpected throw.
+      setMessages((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last && last.role === 'assistant' && last.content === '') {
+          next[next.length - 1] = { ...last, content: 'Sorry, something went wrong. Please try again.' };
+        }
+        return next;
+      });
     }
   }
 
@@ -119,8 +173,8 @@ export function AIChatPanel() {
         <p className="text-sm font-semibold">AI Assistant</p>
       </div>
       <div className="flex max-h-80 min-h-48 flex-col gap-2 overflow-y-auto p-3">
-        {messages.map((m, i) => (
-          <div key={i} className={m.role === 'user' ? 'ml-6 text-right' : 'mr-6'}>
+        {view.map((m) => (
+          <div key={m.id} className={m.role === 'user' ? 'ml-6 text-right' : 'mr-6'}>
             <p
               className={`inline-block rounded-2xl px-3 py-2 text-sm leading-relaxed ${
                 m.role === 'user'

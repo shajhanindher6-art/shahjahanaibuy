@@ -319,6 +319,8 @@ export async function embedText(text: string): Promise<HfResult<number[]>> {
  * The same shape must be used by the backfill route and by any
  * future re-embed, so a product's stored vector always means the
  * same thing. Empty parts are skipped, never replaced with guesses.
+ * scripts/embed-products-local.mjs carries a plain-JS copy of this
+ * exact shape — keep the two in sync.
  */
 export function productEmbeddingText(input: {
   name: string;
@@ -329,4 +331,110 @@ export function productEmbeddingText(input: {
     .map((part) => (part ?? '').trim())
     .filter((part) => part !== '')
     .join(' — ');
+}
+
+// =====================================================================
+// CLIP space (512 dims) — separate from the MiniLM space (384 dims)
+// =====================================================================
+//
+// CLIP text embeddings are 512-dimensional and live in their own
+// table (product_clip_embeddings) and RPC (match_clip_products).
+// The two embedding spaces are NOT comparable and must never be
+// mixed: a 512-dim CLIP vector goes only into the 512-dim table,
+// and a query is matched only against its own space.
+//
+// The CLIP vectors are generated OFFLINE by
+// scripts/embed-products-local.mjs (local CLIP text encoder, zero
+// API calls). The serverless route never runs the CLIP model — the
+// model (~150-250 MB text encoder alone) cannot load inside a
+// Vercel Hobby function. The route only embeds the caption TEXT
+// via the Hugging Face Inference API (feature-extraction) and
+// matches it against the stored CLIP vectors.
+
+export const CLIP_EMBEDDING_DIMS = 512;
+/** HF Inference API repo id for the CLIP model (original weights). */
+export const CLIP_EMBED_MODEL = 'openai/clip-vit-base-patch32';
+/** Local transformers.js model id (verified from the installed
+ * @huggingface/transformers v4.3.2 package's own pipeline registry,
+ * which defaults zero-shot-image-classification to this ID). */
+export const CLIP_MODEL_ID = 'Xenova/clip-vit-base-patch32';
+
+/**
+ * Normalize a CLIP embedding response into a flat 512-dim vector.
+ * The Inference API's feature-extraction output shape is not
+ * guaranteed: a single text may come back as a flat 512 vector, as
+ * per-token vectors [seq][512], or as a batched [1][seq][512]
+ * tensor. Token-level outputs are mean-pooled (the standard
+ * sentence-embedding fallback). Anything else returns null — the
+ * caller falls back to the MiniLM path, never a guessed vector.
+ */
+export function normalizeClipEmbedding(data: unknown): number[] | null {
+  const isFiniteVec = (v: unknown): v is number[] =>
+    Array.isArray(v) &&
+    v.length === CLIP_EMBEDDING_DIMS &&
+    v.every((n) => typeof n === 'number' && Number.isFinite(n));
+
+  if (isFiniteVec(data)) return [...data];
+
+  // 2D: [seq][512] — mean-pool over tokens.
+  if (
+    Array.isArray(data) &&
+    data.length > 0 &&
+    data.every((row) => isFiniteVec(row))
+  ) {
+    const pooled: number[] = new Array(CLIP_EMBEDDING_DIMS).fill(0);
+    for (const row of data as number[][]) {
+      for (let i = 0; i < CLIP_EMBEDDING_DIMS; i++) pooled[i] += row[i];
+    }
+    for (let i = 0; i < CLIP_EMBEDDING_DIMS; i++) pooled[i] /= data.length;
+    return pooled;
+  }
+
+  // 3D: [1][seq][512] — unwrap the batch dim, then as 2D above.
+  if (
+    Array.isArray(data) &&
+    data.length === 1 &&
+    Array.isArray(data[0]) &&
+    (data[0] as unknown[]).length > 0 &&
+    (data[0] as unknown[]).every((row) => isFiniteVec(row))
+  ) {
+    return normalizeClipEmbedding(data[0]);
+  }
+
+  return null;
+}
+
+/**
+ * Embed plain text with CLIP's text encoder (512 dims) via the
+ * Hugging Face Inference API feature-extraction endpoint. Returns
+ * the embedding vector, or an error — the route falls back to the
+ * MiniLM path on any failure. The text is never stored.
+ */
+export async function embedTextClip(text: string): Promise<HfResult<number[]>> {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { ok: false, error: 'Nothing to embed: the text is empty.', retryable: false };
+  }
+  const fetched = await hfFetch(
+    CLIP_EMBED_MODEL,
+    JSON.stringify({ inputs: trimmed }),
+    'application/json'
+  );
+  if (!fetched.ok) return fetched;
+  const res = fetched.value;
+  const bodyText = await res.text();
+  if (!res.ok) {
+    const { error, retryable } = hfErrorMessage(res.status, bodyText);
+    return { ok: false, error, retryable };
+  }
+  try {
+    const data = JSON.parse(bodyText) as unknown;
+    const vector = normalizeClipEmbedding(data);
+    if (!vector) {
+      return { ok: false, error: 'The CLIP embedding service returned an unexpected response.', retryable: true };
+    }
+    return { ok: true, value: vector };
+  } catch {
+    return { ok: false, error: 'The CLIP embedding service returned an unexpected response.', retryable: true };
+  }
 }
