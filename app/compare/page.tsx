@@ -14,6 +14,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { cn } from '@/lib/utils';
 import { Price } from '@/components/region/price';
 import { DecisionMatrix } from '@/components/comparison/decision-matrix';
+import { SpecMatrix } from '@/components/comparison/spec-matrix';
+import { ComparisonSummaryBanner } from '@/components/comparison/comparison-summary-banner';
 
 interface ComparisonRetailer {
   retailerName: string;
@@ -364,9 +366,19 @@ export default function ComparePage() {
               </table>
             </div>
 
+            {/* Summary banner (Option 14-B): deterministic badges
+                earned from real specs/prices only — renders nothing
+                when no badge is earned. */}
+            <ComparisonSummaryBanner products={comparison.products} />
+
             {/* Decision Matrix (Enterprise #7): the same products in a
                 metric-first table built from recorded data only. */}
             <DecisionMatrix products={comparison.products} />
+
+            {/* Spec Matrix (Option 14-B): the same products side by
+                side on their seeded specifications (RAM, Storage,
+                Battery, …). */}
+            <SpecMatrix products={comparison.products} />
           </div>
         )}
       </div>

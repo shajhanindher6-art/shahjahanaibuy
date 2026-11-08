@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft, Star, TrendingDown, TrendingUp, Minus,
@@ -73,6 +73,10 @@ import {
   groupAttributes,
   formatAttributeValue,
 } from '@/lib/product-attributes';
+// Option 14-A: "Prices last checked" — derived only from the recorded
+// price_history points the page already warms below. Pure helpers in
+// lib/price-freshness.ts; no scraping, no new endpoint, no scheduler.
+import { latestRecordedAt, formatLastChecked } from '@/lib/price-freshness';
 
 interface Product {
   id: string;
@@ -181,6 +185,12 @@ export default function ProductDetailsPage() {
   // failed, so the stores section can say its priced-merchant filter could
   // not be applied instead of silently showing an unfiltered list.
   const [merchantsFailed, setMerchantsFailed] = useState(false);
+  // Option 14-A: latest recorded_at across the price history (set
+  // from the warm-up fetch below). Null until that fetch resolves,
+  // and null forever when the product has no price history — the
+  // line in "Where to Buy" then renders nothing (no invented date).
+  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
+  const lastCheckedLabel = useMemo(() => formatLastChecked(lastCheckedAt), [lastCheckedAt]);
   // Best currently-valid coupon per merchant id, so each "Where to
   // Buy" row can show its retailer's code with a copy button. Coupons
   // are merchant-level (not product-level). Selection is deterministic
@@ -227,6 +237,7 @@ export default function ProductDetailsPage() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     setImageFailed(false);
+    setLastCheckedAt(null);
     try {
       // 1. Product first, on its own: as soon as it is known, render the
       // page (header, image, name) instead of waiting for everything else.
@@ -246,10 +257,23 @@ export default function ProductDetailsPage() {
       // Warm the prices server cache in the background now, so the
       // Price History tab does not start its first fetch only when
       // the user clicks it (live audit: ~20s after the click, mostly
-      // cold-start + first DB query). Fire-and-forget: its result is
-      // ignored, the graph still fetches on mount and renders from
-      // the warmed cache when it can.
-      void fetchTimed(`/api/v1/products/${slug}/prices?limit=100`, 15000).catch(() => {});
+      // cold-start + first DB query). The warmed response also
+      // carries the last-checked time: the latest recorded_at across
+      // the loaded history points (Option 14-A). Fire-and-forget and
+      // failure-tolerant: a failed parse only leaves the timestamp
+      // line hidden, it never blocks the page.
+      void (async () => {
+        const pricesRes = await fetchTimed(`/api/v1/products/${slug}/prices?limit=100`, 15000);
+        if (!pricesRes || !pricesRes.ok) return;
+        try {
+          const pricesData = await pricesRes.json();
+          if (pricesData?.success && Array.isArray(pricesData.data)) {
+            setLastCheckedAt(latestRecordedAt(pricesData.data));
+          }
+        } catch {
+          // Ignore: no timestamp rather than a wrong one.
+        }
+      })();
 
       // 2. Ancillary data (summary, prediction, reviews) loads in the
       // background and fills in as it arrives; a slow or failed one only
@@ -619,6 +643,15 @@ export default function ProductDetailsPage() {
                   ? `${merchants.length} retailer${merchants.length !== 1 ? 's' : ''} listing this product. Prices are the latest recorded merchant prices; the retailer sets the final price at checkout.`
                   : tFor(language, 'noListings')}
               </CardDescription>
+              {/* Option 14-A: when prices were last checked, from the
+                  recorded price history (max recorded_at). Renders
+                  nothing when there is no price history — no invented
+                  date, no fake timestamp. */}
+              {lastCheckedLabel && (
+                <p className="text-xs text-muted-foreground">
+                  Prices last checked: {lastCheckedLabel}
+                </p>
+              )}
             </CardHeader>
             {merchants.length > 0 && (
               <CardContent className="space-y-3">
