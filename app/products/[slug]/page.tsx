@@ -267,8 +267,9 @@ export default function ProductDetailsPage() {
         if (!pricesRes || !pricesRes.ok) return;
         try {
           const pricesData = await pricesRes.json();
-          if (pricesData?.success && Array.isArray(pricesData.data)) {
-            setLastCheckedAt(latestRecordedAt(pricesData.data));
+          const history = pricesData?.data?.history;
+          if (pricesData?.success && Array.isArray(history)) {
+            setLastCheckedAt(latestRecordedAt(history));
           }
         } catch {
           // Ignore: no timestamp rather than a wrong one.
