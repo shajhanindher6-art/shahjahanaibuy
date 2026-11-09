@@ -16,6 +16,10 @@ import { Price } from '@/components/region/price';
 import { DecisionMatrix } from '@/components/comparison/decision-matrix';
 import { SpecMatrix } from '@/components/comparison/spec-matrix';
 import { ComparisonSummaryBanner } from '@/components/comparison/comparison-summary-banner';
+import {
+  CompareValueChecks,
+  lowestPrice,
+} from '@/components/comparison/compare-value-checks';
 
 interface ComparisonRetailer {
   retailerName: string;
@@ -379,6 +383,17 @@ export default function ComparePage() {
                 side on their seeded specifications (RAM, Storage,
                 Battery, …). */}
             <SpecMatrix products={comparison.products} />
+
+            {/* Value checks (batch 2): estimated total ownership cost,
+                fake-sale verdict, and simulated 24-month resale — all
+                from each product's recorded prices. */}
+            <CompareValueChecks
+              products={comparison.products.map((p) => ({
+                slug: p.slug,
+                name: p.name,
+                lowestPriceUsd: lowestPrice(p.retailers.map((r) => r.price)),
+              }))}
+            />
           </div>
         )}
       </div>

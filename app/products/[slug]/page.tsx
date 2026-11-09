@@ -14,7 +14,9 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PriceHistoryGraph } from '@/components/products/price-history-graph';
 import { BuyVsWait } from '@/components/products/buy-vs-wait';
+import { ResalePredictor } from '@/components/products/resale-predictor';
 import { PersonaMatcher } from '@/components/products/persona-matcher';
+import { TotalOwnershipCalculator } from '@/components/products/total-ownership-calculator';
 import { TaxEstimator } from '@/components/products/tax-estimator';
 import { DutyOptimizer } from '@/components/products/duty-optimizer';
 import { LandedCostCalculator } from '@/components/products/landed-cost-calculator';
@@ -25,6 +27,7 @@ import { DurabilityPredictor } from '@/components/products/durability-predictor'
 import { ReviewAuthenticity } from '@/components/products/review-authenticity';
 import { EcoFootprint } from '@/components/products/eco-footprint';
 import { TrustCheckSection } from '@/components/products/trust-check-section';
+import { FakeNessChecker } from '@/components/products/fake-ness-checker';
 import { SmartPool } from '@/components/pools/smart-pool';
 import { UpcyclingBlueprints } from '@/components/products/upcycling-blueprints';
 import { DropWindowSimulator } from '@/components/products/drop-window-simulator';
@@ -875,6 +878,10 @@ export default function ProductDetailsPage() {
             an on-device link checker, and the per-retailer Fake Sale
             scan. This REPLACES the old standalone TrustSignals render
             so the trust score lives in exactly one place. */}
+        {/* Batch 2 Module 2: fake-ness & inflation verdict — renders
+            nothing while loading or on fetch failure; muted card when
+            history is too thin to judge. */}
+        <FakeNessChecker slug={slug} />
         {product && (
           <TrustCheckSection
             slug={slug}
@@ -1156,6 +1163,9 @@ export default function ProductDetailsPage() {
                     as a fact — only a recommendation + capped confidence
                     + a reason tied to the recorded points. */}
                 <BuyVsWait slug={slug} />
+                {/* Batch 2 Module 3: resale projection from the product's own
+                    recorded decline — simulated, never a resale quote. */}
+                <ResalePredictor slug={slug} currentPriceUsd={heroPrice ?? null} />
                 {/* (g) The legacy-engine StatBoxes lived here next to
                     BuyVsWait, so one tab showed TWO confidences for one
                     verdict (BuyVsWait 25% vs legacy 20% on the MacBook
@@ -1176,6 +1186,14 @@ export default function ProductDetailsPage() {
                 loading or on fetch failure; honest empty state when the
                 product has no recorded specifications yet. */}
             <PersonaMatcher slug={slug} category={product?.category ?? null} productName={product?.name ?? ''} />
+
+            {/* Batch 2 Module 1: total ownership — base price plus the
+                viewer's own accessories / warranty / maintenance estimates. */}
+            <TotalOwnershipCalculator
+              slug={slug}
+              productName={product?.name ?? ''}
+              basePriceUsd={heroPrice ?? null}
+            />
           </TabsContent>
 
           <TabsContent value="reviews" className="mt-4">
