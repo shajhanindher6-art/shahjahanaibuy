@@ -76,11 +76,18 @@ export function TotalOwnershipCalculator({
   slug,
   productName,
   basePriceUsd,
+  mandatoryAccessoriesUsd,
 }: {
   slug: string;
   productName: string;
   /** Cheapest recorded merchant price in USD, or null when unpriced. */
   basePriceUsd: number | null;
+  /**
+   * RECORDED mandatory accessories cost in USD (Option 19 override).
+   * A separate recorded line in the total — the shopper's own
+   * accessories estimate above stays user-entered and separate.
+   */
+  mandatoryAccessoriesUsd?: number | null;
 }) {
   const [inputs, setInputs] = useState<SavedOwnershipInputs>(EMPTY_INPUTS);
   const [loaded, setLoaded] = useState(false);
@@ -143,6 +150,7 @@ export function TotalOwnershipCalculator({
         accessoriesUsd: inputs.accessories,
         warrantyUsd: inputs.warranty,
         maintenanceUsd: inputs.maintenance,
+        mandatoryAccessoriesUsd: mandatoryAccessoriesUsd ?? 0,
       })
     : null;
 
@@ -177,8 +185,8 @@ export function TotalOwnershipCalculator({
         </CardTitle>
         <CardDescription>
           Base price plus your own estimates for accessories, protection
-          and maintenance — a budget-planning total, not a checkout
-          total or a quote.
+          and maintenance, plus any recorded mandatory accessories — a
+          budget-planning total, not a checkout total or a quote.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -234,10 +242,29 @@ export function TotalOwnershipCalculator({
                   <span className="text-muted-foreground">Maintenance</span>
                   <span className="font-medium">{fmtUsd(result.maintenanceUsd)}</span>
                 </div>
+                {result.mandatoryAccessoriesUsd > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">
+                      Mandatory accessories (recorded)
+                    </span>
+                    <span className="font-medium">
+                      {fmtUsd(result.mandatoryAccessoriesUsd)}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between border-t pt-1.5 font-bold">
                   <span>Estimated total</span>
                   <span>{fmtUsd(result.totalUsd)}</span>
                 </div>
+                {result.mandatoryAccessoriesUsd > 0 && (
+                  <p className="pt-1 text-xs text-muted-foreground">
+                    Recorded mandatory accessories are a cost recorded for
+                    this product. They may overlap with your own
+                    accessories estimate above — if you entered the same
+                    items, adjust your estimate so they are not counted
+                    twice.
+                  </p>
+                )}
                 <p className="pt-1 text-xs text-muted-foreground">
                   Hidden costs (accessories + protection + maintenance) are{' '}
                   {result.extrasSharePct}% of the estimated total

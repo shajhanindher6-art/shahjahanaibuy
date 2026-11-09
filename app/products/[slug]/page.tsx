@@ -55,6 +55,9 @@ import type { HardwareEnduranceData } from '@/services/hardware-endurance';
 import { FakeDeal90Card } from '@/components/products/fake-deal-90-card';
 import { WeightPowerCard } from '@/components/products/weight-power-card';
 import type { PhysicalAttributesData } from '@/services/physical-attributes';
+// Option 19: recorded overrides for resale & TCO (fail-safe, all nulls
+// until migration 022 data exists).
+import type { RecordedOverridesData } from '@/services/recorded-overrides';
 import { SimilarProducts } from '@/components/products/similar-products';
 import { CashbackCouponsSection } from '@/components/products/cashback-coupons-section';
 import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
@@ -123,6 +126,9 @@ interface Product {
   // Option 18: physical attributes from the same endpoint (all nulls
   // until migration 021 data exists — honest empty states).
   physical?: PhysicalAttributesData | null;
+  // Option 19: recorded overrides from the same endpoint (all nulls
+  // until migration 022 data exists — engines run derived as before).
+  recorded?: RecordedOverridesData | null;
 }
 
 interface AISummary {
@@ -1199,8 +1205,14 @@ export default function ProductDetailsPage() {
                     + a reason tied to the recorded points. */}
                 <BuyVsWait slug={slug} />
                 {/* Batch 2 Module 3: resale projection from the product's own
-                    recorded decline — simulated, never a resale quote. */}
-                <ResalePredictor slug={slug} currentPriceUsd={heroPrice ?? null} />
+                    recorded decline — simulated, never a resale quote.
+                    Option 19: a recorded annual rate overrides the
+                    derived decline when present. */}
+                <ResalePredictor
+                  slug={slug}
+                  currentPriceUsd={heroPrice ?? null}
+                  recordedAnnualRate={product?.recorded?.annualDepreciationRate ?? null}
+                />
                 {/* (g) The legacy-engine StatBoxes lived here next to
                     BuyVsWait, so one tab showed TWO confidences for one
                     verdict (BuyVsWait 25% vs legacy 20% on the MacBook
@@ -1223,11 +1235,14 @@ export default function ProductDetailsPage() {
             <PersonaMatcher slug={slug} category={product?.category ?? null} productName={product?.name ?? ''} />
 
             {/* Batch 2 Module 1: total ownership — base price plus the
-                viewer's own accessories / warranty / maintenance estimates. */}
+                viewer's own accessories / warranty / maintenance estimates.
+                Option 19: recorded mandatory accessories are a separate
+                line in the total when present. */}
             <TotalOwnershipCalculator
               slug={slug}
               productName={product?.name ?? ''}
               basePriceUsd={heroPrice ?? null}
+              mandatoryAccessoriesUsd={product?.recorded?.mandatoryAccessoriesCost ?? null}
             />
 
             {/* Option 16: Next-Gen Decision Suite — regret risk (budget

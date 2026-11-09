@@ -113,6 +113,8 @@ export interface ComparisonProduct {
   endurance?: import('@/services/hardware-endurance').HardwareEnduranceData | null;
   /** Option 18 physical attributes (all nulls until migration 021 data exists). */
   physical?: import('@/services/physical-attributes').PhysicalAttributesData | null;
+  /** Option 19 recorded overrides (all nulls until migration 022 data exists). */
+  recorded?: import('@/services/recorded-overrides').RecordedOverridesData | null;
 }
 
 export interface ComparisonRetailer {

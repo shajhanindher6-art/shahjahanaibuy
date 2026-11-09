@@ -15,9 +15,16 @@ import { predictResaleValue, type ResalePrediction } from '@/services/resale-pre
 export function ResalePredictor({
   slug,
   currentPriceUsd,
+  recordedAnnualRate,
 }: {
   slug: string;
   currentPriceUsd: number | null;
+  /**
+   * Recorded annual depreciation rate as a fraction (0–1, Option 19).
+   * When present it OVERRIDES the decline derived from recorded
+   * prices; when absent the projection derives from price history.
+   */
+  recordedAnnualRate?: number | null;
 }) {
   const [prediction, setPrediction] = useState<ResalePrediction | null>(null);
   const [failed, setFailed] = useState(false);
@@ -38,7 +45,7 @@ export function ResalePredictor({
         const points = history
           .map((h) => ({ price: Number(h.price), recordedAt: h.recordedAt }))
           .filter((h) => Number.isFinite(h.price) && h.recordedAt);
-        if (!cancelled) setPrediction(predictResaleValue(points, currentPriceUsd));
+        if (!cancelled) setPrediction(predictResaleValue(points, currentPriceUsd, recordedAnnualRate ?? null));
       } catch {
         if (!cancelled) setFailed(true);
       }
@@ -47,7 +54,7 @@ export function ResalePredictor({
     return () => {
       cancelled = true;
     };
-  }, [slug, currentPriceUsd]);
+  }, [slug, currentPriceUsd, recordedAnnualRate]);
 
   // Loading or fetch failure: render nothing (never a fake projection).
   if (failed || !prediction) return null;
@@ -62,6 +69,12 @@ export function ResalePredictor({
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
               {prediction.reason}
             </p>
+            {recordedAnnualRate === null || recordedAnnualRate === undefined ? (
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                No recorded annual depreciation rate yet — depreciation data
+                is still accumulating.
+              </p>
+            ) : null}
           </div>
         </div>
       </div>
@@ -114,13 +127,26 @@ export function ResalePredictor({
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
             {prediction.reason}
           </p>
+          {prediction.source === 'recorded' && prediction.recordedAnnualRatePct !== null && (
+            <p className="mt-1 text-sm font-medium text-slate-700 dark:text-slate-300">
+              Recorded rate: {prediction.recordedAnnualRatePct}% per year —
+              this overrides the decline derived from recorded prices.
+            </p>
+          )}
           <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-            Simulated — not a resale quote or guarantee. Based on{' '}
-            {prediction.pointCount} recorded price point
-            {prediction.pointCount === 1 ? '' : 's'} over {prediction.spanDays} days
-            {prediction.monthlyDeclinePct !== null &&
-              `, declining about ${prediction.monthlyDeclinePct}% per month`}
-            .
+            Simulated — not a resale quote or guarantee.{' '}
+            {prediction.source === 'recorded' ? (
+              <>Based on the recorded annual depreciation rate.</>
+            ) : (
+              <>
+                Based on {prediction.pointCount} recorded price point
+                {prediction.pointCount === 1 ? '' : 's'} over{' '}
+                {prediction.spanDays} days
+                {prediction.monthlyDeclinePct !== null &&
+                  `, declining about ${prediction.monthlyDeclinePct}% per month`}
+                .
+              </>
+            )}
           </p>
         </div>
       </div>

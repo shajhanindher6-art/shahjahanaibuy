@@ -32,6 +32,8 @@ import type { HardwareEnduranceData } from '@/services/hardware-endurance';
 // Option 18: weight & power per compared product.
 import { WeightPowerCard } from '@/components/products/weight-power-card';
 import type { PhysicalAttributesData } from '@/services/physical-attributes';
+// Option 19: recorded overrides per compared product.
+import type { RecordedOverridesData } from '@/services/recorded-overrides';
 
 interface ComparisonRetailer {
   retailerName: string;
@@ -61,6 +63,8 @@ interface ComparisonProduct {
   endurance?: HardwareEnduranceData | null;
   /** Option 18 physical attributes (all nulls until migration 021 data exists). */
   physical?: PhysicalAttributesData | null;
+  /** Option 19 recorded overrides (all nulls until migration 022 data exists). */
+  recorded?: RecordedOverridesData | null;
 }
 
 interface Comparison {
@@ -411,6 +415,8 @@ export default function ComparePage() {
                 slug: p.slug,
                 name: p.name,
                 lowestPriceUsd: lowestPrice(p.retailers.map((r) => r.price)),
+                recordedAnnualRate: p.recorded?.annualDepreciationRate ?? null,
+                mandatoryAccessoriesCost: p.recorded?.mandatoryAccessoriesCost ?? null,
               }))}
             />
 

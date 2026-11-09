@@ -26,6 +26,13 @@ export interface OwnershipInputs {
   warrantyUsd: number;
   /** User-entered maintenance budget in USD. */
   maintenanceUsd: number;
+  /**
+   * RECORDED mandatory accessories cost in USD (Option 19 override).
+   * A separate recorded line in the total — the shopper's own
+   * accessories estimate above stays user-entered and separate.
+   * Optional; 0 when absent.
+   */
+  mandatoryAccessoriesUsd?: number;
 }
 
 export interface OwnershipResult {
@@ -33,7 +40,9 @@ export interface OwnershipResult {
   accessoriesUsd: number;
   warrantyUsd: number;
   maintenanceUsd: number;
-  /** accessories + warranty + maintenance, after sanitization. */
+  /** Recorded mandatory accessories cost in USD (0 when none recorded). */
+  mandatoryAccessoriesUsd: number;
+  /** accessories + warranty + maintenance + mandatory, after sanitization. */
   extrasUsd: number;
   /** base + extras, after sanitization. */
   totalUsd: number;
@@ -52,9 +61,10 @@ function sanitizeAmount(value: number): number {
 
 /**
  * Total cost of ownership from a real base price plus the shopper's
- * own extra budgets. total = base + accessories + warranty +
- * maintenance; extrasSharePct = round(100 * extras / total), or 0
- * when the total is 0. Non-finite or negative inputs count as 0.
+ * own extra budgets — and, when recorded (Option 19), a separate
+ * mandatory-accessories line. total = base + accessories + warranty +
+ * maintenance + mandatory; extrasSharePct = round(100 * extras / total),
+ * or 0 when the total is 0. Non-finite or negative inputs count as 0.
  */
 export function computeTotalOwnership(
   inputs: OwnershipInputs
@@ -63,7 +73,8 @@ export function computeTotalOwnership(
   const accessoriesUsd = sanitizeAmount(inputs.accessoriesUsd);
   const warrantyUsd = sanitizeAmount(inputs.warrantyUsd);
   const maintenanceUsd = sanitizeAmount(inputs.maintenanceUsd);
-  const extrasUsd = accessoriesUsd + warrantyUsd + maintenanceUsd;
+  const mandatoryAccessoriesUsd = sanitizeAmount(inputs.mandatoryAccessoriesUsd ?? 0);
+  const extrasUsd = accessoriesUsd + warrantyUsd + maintenanceUsd + mandatoryAccessoriesUsd;
   const totalUsd = basePriceUsd + extrasUsd;
   const extrasSharePct =
     totalUsd > 0 ? Math.round((100 * extrasUsd) / totalUsd) : 0;
@@ -72,6 +83,7 @@ export function computeTotalOwnership(
     accessoriesUsd,
     warrantyUsd,
     maintenanceUsd,
+    mandatoryAccessoriesUsd,
     extrasUsd,
     totalUsd,
     extrasSharePct,

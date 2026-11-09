@@ -34,6 +34,15 @@ export interface ResaleCurvePoint {
 export interface ResalePrediction {
   /** 'ok' | 'insufficient' — nothing else. */
   status: 'ok' | 'insufficient';
+  /**
+   * Where the monthly decline came from: 'recorded' when a recorded
+   * annual depreciation rate (Option 19) overrode the derived decline,
+   * 'derived' when it was computed from the product's own recorded
+   * price history.
+   */
+  source: 'recorded' | 'derived';
+  /** Recorded annual depreciation rate as a percent (e.g. 12), or null. */
+  recordedAnnualRatePct: number | null;
   /** Projected retention at 24 months, whole percent (null when insufficient). */
   retentionPct24: number | null;
   /** Recorded decline per month, percent, rounded to 2 decimals (null when insufficient). */
@@ -71,6 +80,8 @@ function toMs(iso: string): number {
 function insufficient(pointCount: number, spanDays: number): ResalePrediction {
   return {
     status: 'insufficient',
+    source: 'derived',
+    recordedAnnualRatePct: null,
     retentionPct24: null,
     monthlyDeclinePct: null,
     spanDays,
@@ -81,9 +92,21 @@ function insufficient(pointCount: number, spanDays: number): ResalePrediction {
   };
 }
 
+/**
+ * Predict resale value from recorded price history — or from a
+ * RECORDED annual depreciation rate (Option 19) when one is supplied.
+ *
+ * Precedence (approved override-first design): a valid recorded rate
+ * (fraction per year, 0–1) WINS over the derived decline. The recorded
+ * path needs no price history at all — the rate itself is recorded
+ * data — only a valid current price. With no recorded rate the
+ * engine behaves exactly as before (derived from the product's own
+ * recorded decline).
+ */
 export function predictResaleValue(
   points: ResalePoint[],
-  currentPriceUsd: number | null
+  currentPriceUsd: number | null,
+  recordedAnnualRate?: number | null
 ): ResalePrediction {
   const valid = points
     .filter(
@@ -97,6 +120,43 @@ export function predictResaleValue(
     valid.length >= 2
       ? Math.max(0, Math.round((valid[valid.length - 1].ms - valid[0].ms) / DAY_MS))
       : 0;
+
+  const hasValidPrice =
+    currentPriceUsd !== null &&
+    currentPriceUsd !== undefined &&
+    Number.isFinite(currentPriceUsd) &&
+    currentPriceUsd > 0;
+
+  // Option 19 recorded override: a valid recorded annual rate wins
+  // over the derived decline and needs no price history.
+  const rate =
+    typeof recordedAnnualRate === 'number' &&
+    Number.isFinite(recordedAnnualRate) &&
+    recordedAnnualRate >= 0 &&
+    recordedAnnualRate <= 1
+      ? recordedAnnualRate
+      : null;
+  if (rate !== null && hasValidPrice) {
+    const monthlyDeclinePct = round2((rate * 100) / 12);
+    const curve: ResaleCurvePoint[] = RESALE_CURVE_MONTHS.map((month) => ({
+      month,
+      retentionPct: Math.min(100, Math.max(0, Math.round(100 - monthlyDeclinePct * month))),
+    }));
+    const retentionPct24 = curve.find((c) => c.month === 24)?.retentionPct ?? 0;
+    const ratePct = round2(rate * 100);
+    return {
+      status: 'ok',
+      source: 'recorded',
+      recordedAnnualRatePct: ratePct,
+      retentionPct24,
+      monthlyDeclinePct,
+      spanDays,
+      pointCount: valid.length,
+      curve,
+      projectedValueUsd24: round2((currentPriceUsd as number) * retentionPct24 / 100),
+      reason: `Using the recorded annual depreciation rate of ${ratePct}% (about ${monthlyDeclinePct}% per month). Projected retention is a straight-line extension of that recorded rate — not a resale quote or a guarantee.`,
+    };
+  }
 
   if (
     valid.length < RESALE_MIN_POINTS ||
@@ -118,6 +178,8 @@ export function predictResaleValue(
   if (totalDeclinePct <= 0) {
     return {
       status: 'ok',
+      source: 'derived',
+      recordedAnnualRatePct: null,
       retentionPct24: 100,
       monthlyDeclinePct: 0,
       spanDays,
@@ -137,6 +199,8 @@ export function predictResaleValue(
 
   return {
     status: 'ok',
+    source: 'derived',
+    recordedAnnualRatePct: null,
     retentionPct24,
     monthlyDeclinePct,
     spanDays,

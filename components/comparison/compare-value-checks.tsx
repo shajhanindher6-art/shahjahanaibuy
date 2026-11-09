@@ -13,6 +13,10 @@ export interface CompareValueProduct {
   slug: string;
   name: string;
   lowestPriceUsd: number | null;
+  /** Recorded annual depreciation rate as a fraction (0–1, Option 19). */
+  recordedAnnualRate?: number | null;
+  /** Recorded mandatory accessories cost in USD (Option 19). */
+  mandatoryAccessoriesCost?: number | null;
 }
 
 /** Lowest finite retailer price, or null when no priced retailer exists. */
@@ -133,7 +137,11 @@ export function CompareValueChecks({
               label: 'Not enough history',
               tone: 'muted' as const,
             };
-            const resale = predictResaleValue(points, p.lowestPriceUsd);
+            const resale = predictResaleValue(
+              points,
+              p.lowestPriceUsd,
+              p.recordedAnnualRate ?? null
+            );
             const extras = ownershipExtrasFor(p.slug);
             const ownership =
               p.lowestPriceUsd === null
@@ -143,6 +151,7 @@ export function CompareValueChecks({
                     accessoriesUsd: extras.accessoriesUsd,
                     warrantyUsd: extras.warrantyUsd,
                     maintenanceUsd: extras.maintenanceUsd,
+                    mandatoryAccessoriesUsd: p.mandatoryAccessoriesCost ?? 0,
                   }).totalUsd;
             next[p.slug] = {
               status: 'ready',
@@ -153,7 +162,7 @@ export function CompareValueChecks({
                 resale.status === 'insufficient' ||
                 resale.retentionPct24 === null
                   ? 'Not enough history'
-                  : `${resale.retentionPct24}% kept (${fmtUsd(resale.projectedValueUsd24 ?? 0)} in 24 mo, simulated)`,
+                  : `${resale.retentionPct24}% kept (${fmtUsd(resale.projectedValueUsd24 ?? 0)} in 24 mo, simulated${resale.source === 'recorded' ? ' · recorded rate' : ''})`,
             };
           } catch {
             next[p.slug] = { status: 'failed' };

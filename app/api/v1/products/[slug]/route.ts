@@ -15,6 +15,7 @@ import {
 import { getProductRepairability } from '@/services/repairability';
 import { getProductEndurance } from '@/services/hardware-endurance';
 import { getProductPhysical } from '@/services/physical-attributes';
+import { getProductRecordedOverrides } from '@/services/recorded-overrides';
 
 export async function GET(
   request: NextRequest,
@@ -39,16 +40,19 @@ export async function GET(
     // reads — they return nulls when migrations 019/020 have not been
     // run yet, so the product still loads and the page shows honest
     // empty states. Option 18: physical attributes are the same
-    // pattern (nulls until migration 021 runs).
-    const [images, attributes, repairability, endurance, physical] = await Promise.all([
-      getProductImages(supabase, product.id),
-      getProductAttributes(supabase, product.id),
-      getProductRepairability(supabase, product.id),
-      getProductEndurance(supabase, product.id),
-      getProductPhysical(supabase, product.id),
-    ]);
+    // pattern (nulls until migration 021 runs). Option 19: recorded
+    // overrides are the same pattern (nulls until migration 022 runs).
+    const [images, attributes, repairability, endurance, physical, recorded] =
+      await Promise.all([
+        getProductImages(supabase, product.id),
+        getProductAttributes(supabase, product.id),
+        getProductRepairability(supabase, product.id),
+        getProductEndurance(supabase, product.id),
+        getProductPhysical(supabase, product.id),
+        getProductRecordedOverrides(supabase, product.id),
+      ]);
 
-    return apiSuccess({ ...product, images, attributes, repairability, endurance, physical });
+    return apiSuccess({ ...product, images, attributes, repairability, endurance, physical, recorded });
   } catch {
     return internalError('Failed to fetch product');
   }
