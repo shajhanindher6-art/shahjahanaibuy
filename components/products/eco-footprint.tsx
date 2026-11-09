@@ -6,6 +6,10 @@ import { Leaf } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { estimateFootprint, bandLabel, type EcoBand } from '@/services/eco-footprint';
+import {
+  recordedBandLabel,
+  sustainabilityFromRecorded,
+} from '@/services/hardware-endurance';
 
 interface SimilarProduct {
   slug: string;
@@ -37,23 +41,39 @@ const BAND_STYLES: Record<EcoBand, string> = {
 };
 
 /**
- * Eco-footprint module (Option 8, Feature 1). All figures are ESTIMATES
+ * Eco-footprint module (Option 8, Feature 1). Figures are ESTIMATES
  * from services/eco-footprint.ts (category baseline × price proxy) — never
- * a certification, never measured data. Alternatives are REAL catalog
- * products with a lower estimate; when none exist the UI says so.
+ * a certification, never measured data — UNLESS a recorded carbon
+ * footprint exists (Option 17, `recordedCarbonKg`): recorded data
+ * supersedes the estimate, so the module then shows the RECORDED value
+ * (same A+–E thresholds, "recorded" wording) and never the estimate
+ * number. One product, one carbon number — the two are never mixed.
+ * Alternatives are REAL catalog products with a lower estimate; when
+ * none exist the UI says so. Alternatives are estimate-ranked, so they
+ * are hidden while a recorded footprint is shown.
  */
 export function EcoFootprint({
   slug,
   category,
   cheapestPriceUsd,
+  recordedCarbonKg,
 }: {
   slug: string;
   category: string | null;
   cheapestPriceUsd: number | null;
+  /** Recorded carbon_footprint_kg (Option 17) — null when not recorded. */
+  recordedCarbonKg?: number | null;
 }) {
   const [alternatives, setAlternatives] = useState<Alternative[] | null>(null);
 
-  const estimate = estimateFootprint(category, cheapestPriceUsd);
+  const recorded = sustainabilityFromRecorded({
+    carbonFootprintKg: recordedCarbonKg ?? null,
+    category,
+  });
+  // Non-null only when a real recorded value exists; otherwise the
+  // module falls back to the estimate exactly as before.
+  const recordedKg = recorded.status === 'recorded' ? recorded.kgCO2e : null;
+  const estimate = recordedKg !== null ? null : estimateFootprint(category, cheapestPriceUsd);
 
   const loadAlternatives = useCallback(async () => {
     if (!estimate) return;
@@ -98,16 +118,45 @@ export function EcoFootprint({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Leaf className="h-5 w-5 text-green-600" /> Eco footprint (estimated)
+          <Leaf className="h-5 w-5 text-green-600" /> Eco footprint
+          {recordedKg !== null ? ' (recorded)' : ' (estimated)'}
         </CardTitle>
         <CardDescription>
-          Estimate only — not a certified lifecycle assessment. Computed from a category baseline
-          adjusted by price (see services/eco-footprint.ts); it is a catalogue comparison aid, not
-          a scientific measurement.
+          {recordedKg !== null
+            ? 'Recorded carbon footprint — recorded data supersedes the category estimate, so no estimate is shown here. Recorded data only — not a certified lifecycle assessment.'
+            : 'Estimate only — not a certified lifecycle assessment. Computed from a category baseline adjusted by price (see services/eco-footprint.ts); it is a catalogue comparison aid, not a scientific measurement.'}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!estimate ? (
+        {recordedKg !== null ? (
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-2xl font-bold">{recordedKg} kg CO₂e</span>
+              {recorded.band && (
+                <Badge className={BAND_STYLES[recorded.band]}>Sustainability {recorded.band}</Badge>
+              )}
+            </div>
+            {recorded.band && (
+              <p className="text-sm text-muted-foreground">{recordedBandLabel(recorded.band)}.</p>
+            )}
+            {recorded.categoryBaseKg !== null ? (
+              <p className="text-sm text-muted-foreground">
+                Recorded footprint vs a {recorded.categoryBaseKg} kg category baseline (ratio{' '}
+                {recorded.ratio?.toFixed(2)}). Recorded data only — not a certified lifecycle
+                assessment.
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Recorded footprint — no category baseline exists to rank it against. Recorded data
+                only — not a certified lifecycle assessment.
+              </p>
+            )}
+            <p className="text-sm text-muted-foreground">
+              Eco-friendly alternatives are ranked by estimate, so they are not listed next to a
+              recorded footprint.
+            </p>
+          </>
+        ) : !estimate ? (
           <p className="text-sm text-muted-foreground">
             Cannot estimate a carbon footprint for this product — its category is unknown or it has
             no priced listing to base the estimate on.

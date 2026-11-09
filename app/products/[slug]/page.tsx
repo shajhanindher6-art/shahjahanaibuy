@@ -913,12 +913,15 @@ export default function ProductDetailsPage() {
         )}
 
         {/* Option 8: eco footprint (estimate only, real alternatives),
-            and SmartPool group buying (no discount is ever promised). */}
+            and SmartPool group buying (no discount is ever promised).
+            A recorded carbon footprint (Option 17) supersedes the
+            estimate in this module — one product, one carbon number. */}
         {product && (
           <EcoFootprint
             slug={slug}
             category={product.category}
             cheapestPriceUsd={merchantsLoaded && merchants.length > 0 ? merchants[0].price : null}
+            recordedCarbonKg={product?.endurance?.carbonFootprintKg ?? null}
           />
         )}
         {/* Option 11 Phase 2: unified Trust Check — the Option 8 trust
