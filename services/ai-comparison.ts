@@ -8,6 +8,7 @@ import { logger } from '@/lib/config/logger';
 import { swrGet, cacheKey } from '@/lib/cache';
 import type { ProductComparison, ComparisonProduct } from '@/types/ai';
 import type { Product } from '@/types';
+import { getProductRepairability } from '@/services/repairability';
 
 export async function compareProducts(
   supabase: AnySupabaseClient,
@@ -154,6 +155,11 @@ export async function compareProducts(
         }
       }
 
+      // Option 16: repairability is a separate fail-safe read per
+      // product — nulls when migration 019 has not been run yet, so
+      // the comparison never breaks on a missing column.
+      const repairability = await getProductRepairability(supabase, productId);
+
       products.push({
         productId,
         slug: product.slug as string,
@@ -161,6 +167,7 @@ export async function compareProducts(
         brand: product.brand as string | null,
         image: product.image_url as string | null,
         retailers: retailerEntries,
+        repairability,
       });
     }
 

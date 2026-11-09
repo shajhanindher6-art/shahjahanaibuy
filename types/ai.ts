@@ -106,6 +106,8 @@ export interface ComparisonProduct {
   brand: string | null;
   image: string | null;
   retailers: ComparisonRetailer[];
+  /** Option 16 repairability (all nulls until migration 019 data exists). */
+  repairability?: import('@/services/repairability').RepairabilityData | null;
 }
 
 export interface ComparisonRetailer {

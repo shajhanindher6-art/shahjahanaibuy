@@ -20,6 +20,10 @@ import {
   CompareValueChecks,
   lowestPrice,
 } from '@/components/comparison/compare-value-checks';
+// Option 16: repairability + regret risk per compared product.
+import { RepairabilityMatrix } from '@/components/analytics/RepairabilityMatrix';
+import { RegretRiskBadge } from '@/components/analytics/RegretRiskBadge';
+import type { RepairabilityData } from '@/services/repairability';
 
 interface ComparisonRetailer {
   retailerName: string;
@@ -42,6 +46,8 @@ interface ComparisonProduct {
   brand: string | null;
   image: string | null;
   retailers: ComparisonRetailer[];
+  /** Option 16 repairability (all nulls until migration 019 data exists). */
+  repairability?: RepairabilityData | null;
 }
 
 interface Comparison {
@@ -394,6 +400,29 @@ export default function ComparePage() {
                 lowestPriceUsd: lowestPrice(p.retailers.map((r) => r.price)),
               }))}
             />
+
+            {/* Option 16: repairability + regret risk per product.
+                SpecTradeoffTable stays on the product page — the
+                comparison API carries no spec rows (SpecMatrix above
+                already covers specs here). */}
+            <div>
+              <h3 className="mb-3 text-lg font-semibold">Repairability &amp; Regret Risk</h3>
+              <div className="grid gap-6 lg:grid-cols-2">
+                {comparison.products.map((p) => (
+                  <div key={p.productId} className="space-y-6">
+                    <RepairabilityMatrix
+                      repairability={p.repairability ?? null}
+                      title={p.name}
+                    />
+                    <RegretRiskBadge
+                      priceUsd={lowestPrice(p.retailers.map((r) => r.price))}
+                      specTier={null}
+                      specsRecorded={false}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </div>

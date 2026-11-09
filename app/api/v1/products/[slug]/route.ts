@@ -12,6 +12,7 @@ import {
   getProductImages,
   getProductAttributes,
 } from '@/services/products';
+import { getProductRepairability } from '@/services/repairability';
 
 export async function GET(
   request: NextRequest,
@@ -32,12 +33,16 @@ export async function GET(
     // the table is missing, RLS blocks the read, or the product simply
     // has no seeded rows — so a product without specs still renders
     // exactly as before, with only the base Brand/Category/GTIN rows.
-    const [images, attributes] = await Promise.all([
+    // Option 16: repairability is a separate fail-safe read — it
+    // returns nulls when migration 019 has not been run yet, so the
+    // product still loads and the page shows an honest empty state.
+    const [images, attributes, repairability] = await Promise.all([
       getProductImages(supabase, product.id),
       getProductAttributes(supabase, product.id),
+      getProductRepairability(supabase, product.id),
     ]);
 
-    return apiSuccess({ ...product, images, attributes });
+    return apiSuccess({ ...product, images, attributes, repairability });
   } catch {
     return internalError('Failed to fetch product');
   }

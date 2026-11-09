@@ -38,6 +38,14 @@ import { ProductVisualizer } from '@/components/products/product-visualizer';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
 import { BestTimeToBuyIndicator } from '@/components/products/best-time-to-buy';
 import { PricePredictionBadge } from '@/components/products/price-prediction-badge';
+// Option 16: Next-Gen Decision Suite — deterministic analytics only.
+import { RegretRiskBadge } from '@/components/analytics/RegretRiskBadge';
+import { CostPerHourCard } from '@/components/analytics/CostPerHourCard';
+import { RepairabilityMatrix } from '@/components/analytics/RepairabilityMatrix';
+import { SpecTradeoffTable } from '@/components/analytics/SpecTradeoffTable';
+import { specTierFromAttributes } from '@/lib/analytics/specTradeoffs';
+import { lifespanForCategory } from '@/services/durability';
+import type { RepairabilityData } from '@/services/repairability';
 import { SimilarProducts } from '@/components/products/similar-products';
 import { CashbackCouponsSection } from '@/components/products/cashback-coupons-section';
 import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
@@ -97,6 +105,9 @@ interface Product {
   // Absent or empty when the product has no seeded specs — the Specs
   // tab then renders exactly the base rows below, nothing invented.
   attributes?: ProductAttribute[];
+  // Option 16: repairability from the same endpoint (all nulls until
+  // migration 019 data exists — the matrix shows an honest empty state).
+  repairability?: RepairabilityData | null;
 }
 
 interface AISummary {
@@ -448,6 +459,15 @@ export default function ProductDetailsPage() {
   const namedAttributeGroups = attributeGroups.filter(
     (g) => g.group !== null
   );
+  // Option 16: lifespan midpoint from the Option 9 category range
+  // (typical for the category, never this product's measured life)
+  // feeds the daily-cost math; spec tier feeds the regret-risk
+  // overkill check. Both are null when no data supports them.
+  const lifespanRange = lifespanForCategory(product?.category ?? null);
+  const lifespanYears = lifespanRange
+    ? (lifespanRange.minYears + lifespanRange.maxYears) / 2
+    : null;
+  const specTier = specTierFromAttributes(product?.attributes ?? []);
   // Structured data must never claim what is not known: availability
   // comes from the real merchant rows (only once they have loaded —
   // never a hardcoded InStock), and an aggregate rating is emitted
@@ -1194,6 +1214,28 @@ export default function ProductDetailsPage() {
               productName={product?.name ?? ''}
               basePriceUsd={heroPrice ?? null}
             />
+
+            {/* Option 16: Next-Gen Decision Suite — regret risk (budget
+                slider + needs), true cost per hour, repairability, and
+                plain-language spec trade-offs. Every card renders an
+                honest empty state when its inputs are not recorded. */}
+            <div className="mt-6 space-y-6">
+              <h3 className="text-lg font-semibold">Decision Suite</h3>
+              <div className="grid gap-6 lg:grid-cols-2">
+                <RegretRiskBadge
+                  priceUsd={heroPrice ?? null}
+                  specTier={specTier}
+                  specsRecorded={(product?.attributes?.length ?? 0) > 0}
+                />
+                <CostPerHourCard
+                  slug={slug}
+                  priceUsd={heroPrice ?? null}
+                  lifespanYears={lifespanYears}
+                />
+              </div>
+              <RepairabilityMatrix repairability={product?.repairability ?? null} />
+              <SpecTradeoffTable attributes={product?.attributes ?? []} />
+            </div>
           </TabsContent>
 
           <TabsContent value="reviews" className="mt-4">

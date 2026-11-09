@@ -31,6 +31,7 @@ import {
   type DropToWatch,
 } from '@/components/dashboard/drops-to-watch-section';
 import { LandedCostWidget } from '@/components/dashboard/landed-cost-widget';
+import { TechBudgetWidget } from '@/components/dashboard/tech-budget-widget';
 import { DigestGrid } from '@/components/dashboard/digest-grid';
 
 interface QuickAction {
@@ -267,6 +268,11 @@ export default function DashboardPage() {
               delta) — compact, links out to the full calculator on
               each product page. */}
           <LandedCostWidget />
+
+          {/* Option 16: monthly tech budget vs wishlist total cost.
+              Signed-in totals come from the server; guests get a
+              device-only budget editor. */}
+          <TechBudgetWidget />
 
           {/* Personal shopping digest (Enterprise #13) — saved items,
               alerts, and vector-matched recommendations in one grid.
