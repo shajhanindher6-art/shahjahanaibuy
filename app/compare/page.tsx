@@ -24,6 +24,11 @@ import {
 import { RepairabilityMatrix } from '@/components/analytics/RepairabilityMatrix';
 import { RegretRiskBadge } from '@/components/analytics/RegretRiskBadge';
 import type { RepairabilityData } from '@/services/repairability';
+// Option 17: endurance, sustainability & modularity per compared product.
+import { EnduranceCard } from '@/components/products/endurance-card';
+import { SustainabilityCard } from '@/components/products/sustainability-card';
+import { ModularityMatrix } from '@/components/products/modularity-matrix';
+import type { HardwareEnduranceData } from '@/services/hardware-endurance';
 
 interface ComparisonRetailer {
   retailerName: string;
@@ -45,9 +50,12 @@ interface ComparisonProduct {
   name: string;
   brand: string | null;
   image: string | null;
+  category: string | null;
   retailers: ComparisonRetailer[];
   /** Option 16 repairability (all nulls until migration 019 data exists). */
   repairability?: RepairabilityData | null;
+  /** Option 17 hardware endurance (all nulls until migration 020 data exists). */
+  endurance?: HardwareEnduranceData | null;
 }
 
 interface Comparison {
@@ -419,6 +427,28 @@ export default function ComparePage() {
                       specTier={null}
                       specsRecorded={false}
                     />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Option 17: endurance, sustainability & modularity per
+                product — all honest empty states until migration 020
+                data exists. */}
+            <div>
+              <h3 className="mb-3 text-lg font-semibold">
+                Hardware Endurance &amp; Sustainability
+              </h3>
+              <div className="grid gap-6 lg:grid-cols-2">
+                {comparison.products.map((p) => (
+                  <div key={p.productId} className="space-y-6">
+                    <EnduranceCard endurance={p.endurance ?? null} title={p.name} />
+                    <SustainabilityCard
+                      carbonFootprintKg={p.endurance?.carbonFootprintKg ?? null}
+                      category={p.category ?? null}
+                      title={p.name}
+                    />
+                    <ModularityMatrix endurance={p.endurance ?? null} title={p.name} />
                   </div>
                 ))}
               </div>

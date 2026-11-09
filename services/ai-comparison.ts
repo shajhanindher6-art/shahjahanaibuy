@@ -9,6 +9,7 @@ import { swrGet, cacheKey } from '@/lib/cache';
 import type { ProductComparison, ComparisonProduct } from '@/types/ai';
 import type { Product } from '@/types';
 import { getProductRepairability } from '@/services/repairability';
+import { getProductEndurance } from '@/services/hardware-endurance';
 
 export async function compareProducts(
   supabase: AnySupabaseClient,
@@ -155,10 +156,11 @@ export async function compareProducts(
         }
       }
 
-      // Option 16: repairability is a separate fail-safe read per
-      // product — nulls when migration 019 has not been run yet, so
-      // the comparison never breaks on a missing column.
+      // Option 16/17: repairability + endurance are separate fail-safe
+      // reads per product — nulls when migrations 019/020 have not
+      // been run yet, so the comparison never breaks on a missing column.
       const repairability = await getProductRepairability(supabase, productId);
+      const endurance = await getProductEndurance(supabase, productId);
 
       products.push({
         productId,
@@ -166,8 +168,10 @@ export async function compareProducts(
         name: product.name as string,
         brand: product.brand as string | null,
         image: product.image_url as string | null,
+        category: product.category as string | null,
         retailers: retailerEntries,
         repairability,
+        endurance,
       });
     }
 

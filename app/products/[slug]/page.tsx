@@ -46,6 +46,11 @@ import { SpecTradeoffTable } from '@/components/analytics/SpecTradeoffTable';
 import { specTierFromAttributes } from '@/lib/analytics/specTradeoffs';
 import { lifespanForCategory } from '@/services/durability';
 import type { RepairabilityData } from '@/services/repairability';
+// Option 17: Hardware Endurance, Sustainability & Modularity.
+import { EnduranceCard } from '@/components/products/endurance-card';
+import { SustainabilityCard } from '@/components/products/sustainability-card';
+import { ModularityMatrix } from '@/components/products/modularity-matrix';
+import type { HardwareEnduranceData } from '@/services/hardware-endurance';
 import { SimilarProducts } from '@/components/products/similar-products';
 import { CashbackCouponsSection } from '@/components/products/cashback-coupons-section';
 import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
@@ -108,6 +113,9 @@ interface Product {
   // Option 16: repairability from the same endpoint (all nulls until
   // migration 019 data exists — the matrix shows an honest empty state).
   repairability?: RepairabilityData | null;
+  // Option 17: hardware endurance from the same endpoint (all nulls
+  // until migration 020 data exists — honest empty states).
+  endurance?: HardwareEnduranceData | null;
 }
 
 interface AISummary {
@@ -1235,6 +1243,22 @@ export default function ProductDetailsPage() {
               </div>
               <RepairabilityMatrix repairability={product?.repairability ?? null} />
               <SpecTradeoffTable attributes={product?.attributes ?? []} />
+            </div>
+
+            {/* Option 17: Hardware Endurance, Sustainability & Modularity
+                — endurance index, recorded carbon footprint, and
+                upgradeability. Every card renders an honest empty state
+                when its inputs are not recorded. */}
+            <div className="mt-6 space-y-6">
+              <h3 className="text-lg font-semibold">Hardware Endurance &amp; Sustainability</h3>
+              <div className="grid gap-6 lg:grid-cols-2">
+                <EnduranceCard endurance={product?.endurance ?? null} />
+                <SustainabilityCard
+                  carbonFootprintKg={product?.endurance?.carbonFootprintKg ?? null}
+                  category={product?.category ?? null}
+                />
+              </div>
+              <ModularityMatrix endurance={product?.endurance ?? null} />
             </div>
           </TabsContent>
 

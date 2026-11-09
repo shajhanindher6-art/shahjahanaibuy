@@ -105,9 +105,12 @@ export interface ComparisonProduct {
   name: string;
   brand: string | null;
   image: string | null;
+  category: string | null;
   retailers: ComparisonRetailer[];
   /** Option 16 repairability (all nulls until migration 019 data exists). */
   repairability?: import('@/services/repairability').RepairabilityData | null;
+  /** Option 17 hardware endurance (all nulls until migration 020 data exists). */
+  endurance?: import('@/services/hardware-endurance').HardwareEnduranceData | null;
 }
 
 export interface ComparisonRetailer {
