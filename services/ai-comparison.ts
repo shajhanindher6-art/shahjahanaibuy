@@ -12,6 +12,7 @@ import { getProductRepairability } from '@/services/repairability';
 import { getProductEndurance } from '@/services/hardware-endurance';
 import { getProductPhysical } from '@/services/physical-attributes';
 import { getProductRecordedOverrides } from '@/services/recorded-overrides';
+import { getProductGlobalReadiness } from '@/services/global-readiness';
 
 export async function compareProducts(
   supabase: AnySupabaseClient,
@@ -163,10 +164,12 @@ export async function compareProducts(
       // been run yet, so the comparison never breaks on a missing column.
       // Option 18: physical attributes are the same pattern (021).
       // Option 19: recorded overrides are the same pattern (022).
+      // Option 20: global readiness is the same pattern (023).
       const repairability = await getProductRepairability(supabase, productId);
       const endurance = await getProductEndurance(supabase, productId);
       const physical = await getProductPhysical(supabase, productId);
       const recorded = await getProductRecordedOverrides(supabase, productId);
+      const globalReadiness = await getProductGlobalReadiness(supabase, productId);
 
       products.push({
         productId,
@@ -180,6 +183,7 @@ export async function compareProducts(
         endurance,
         physical,
         recorded,
+        globalReadiness,
       });
     }
 

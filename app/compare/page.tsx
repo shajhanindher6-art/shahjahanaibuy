@@ -34,6 +34,9 @@ import { WeightPowerCard } from '@/components/products/weight-power-card';
 import type { PhysicalAttributesData } from '@/services/physical-attributes';
 // Option 19: recorded overrides per compared product.
 import type { RecordedOverridesData } from '@/services/recorded-overrides';
+// Option 20: global readiness per compared product.
+import { GlobalReadinessCard } from '@/components/products/global-readiness-card';
+import type { GlobalReadinessData } from '@/services/global-readiness';
 
 interface ComparisonRetailer {
   retailerName: string;
@@ -65,6 +68,8 @@ interface ComparisonProduct {
   physical?: PhysicalAttributesData | null;
   /** Option 19 recorded overrides (all nulls until migration 022 data exists). */
   recorded?: RecordedOverridesData | null;
+  /** Option 20 global readiness (all nulls until migration 023 data exists). */
+  globalReadiness?: GlobalReadinessData | null;
 }
 
 interface Comparison {
@@ -473,6 +478,22 @@ export default function ComparePage() {
                 {comparison.products.map((p) => (
                   <div key={p.productId} className="space-y-6">
                     <WeightPowerCard physical={p.physical ?? null} title={p.name} />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Option 20: global readiness per product — all honest empty
+                states until migration 023 data exists. */}
+            <div>
+              <h3 className="mb-3 text-lg font-semibold">Global Readiness</h3>
+              <div className="grid gap-6 lg:grid-cols-2">
+                {comparison.products.map((p) => (
+                  <div key={p.productId} className="space-y-6">
+                    <GlobalReadinessCard
+                      globalReadiness={p.globalReadiness ?? null}
+                      title={p.name}
+                    />
                   </div>
                 ))}
               </div>

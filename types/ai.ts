@@ -115,6 +115,8 @@ export interface ComparisonProduct {
   physical?: import('@/services/physical-attributes').PhysicalAttributesData | null;
   /** Option 19 recorded overrides (all nulls until migration 022 data exists). */
   recorded?: import('@/services/recorded-overrides').RecordedOverridesData | null;
+  /** Option 20 global readiness (all nulls until migration 023 data exists). */
+  globalReadiness?: import('@/services/global-readiness').GlobalReadinessData | null;
 }
 
 export interface ComparisonRetailer {

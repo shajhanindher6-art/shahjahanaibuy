@@ -58,6 +58,10 @@ import type { PhysicalAttributesData } from '@/services/physical-attributes';
 // Option 19: recorded overrides for resale & TCO (fail-safe, all nulls
 // until migration 022 data exists).
 import type { RecordedOverridesData } from '@/services/recorded-overrides';
+// Option 20: global readiness (fail-safe, all nulls until migration
+// 023 data exists).
+import { GlobalReadinessCard } from '@/components/products/global-readiness-card';
+import type { GlobalReadinessData } from '@/services/global-readiness';
 import { SimilarProducts } from '@/components/products/similar-products';
 import { CashbackCouponsSection } from '@/components/products/cashback-coupons-section';
 import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
@@ -129,6 +133,9 @@ interface Product {
   // Option 19: recorded overrides from the same endpoint (all nulls
   // until migration 022 data exists — engines run derived as before).
   recorded?: RecordedOverridesData | null;
+  // Option 20: global readiness from the same endpoint (all nulls
+  // until migration 023 data exists — honest empty states).
+  globalReadiness?: GlobalReadinessData | null;
 }
 
 interface AISummary {
@@ -1291,6 +1298,18 @@ export default function ProductDetailsPage() {
               <h3 className="text-lg font-semibold">Anti-Trap Checks</h3>
               <FakeDeal90Card slug={slug} />
               <WeightPowerCard physical={product?.physical ?? null} />
+            </div>
+
+            {/* Option 20: Global Readiness — recorded regional
+                availability, warranty scope & next-gen release
+                schedule. Honest empty state until migration 023 data
+                exists; FX, landed cost and Buy vs Wait live elsewhere
+                and are not duplicated here. */}
+            <div className="mt-6 space-y-6">
+              <h3 className="text-lg font-semibold">Global Readiness</h3>
+              <GlobalReadinessCard
+                globalReadiness={product?.globalReadiness ?? null}
+              />
             </div>
           </TabsContent>
 
