@@ -111,6 +111,8 @@ export interface ComparisonProduct {
   repairability?: import('@/services/repairability').RepairabilityData | null;
   /** Option 17 hardware endurance (all nulls until migration 020 data exists). */
   endurance?: import('@/services/hardware-endurance').HardwareEnduranceData | null;
+  /** Option 18 physical attributes (all nulls until migration 021 data exists). */
+  physical?: import('@/services/physical-attributes').PhysicalAttributesData | null;
 }
 
 export interface ComparisonRetailer {

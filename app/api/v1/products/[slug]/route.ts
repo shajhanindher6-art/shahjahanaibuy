@@ -14,6 +14,7 @@ import {
 } from '@/services/products';
 import { getProductRepairability } from '@/services/repairability';
 import { getProductEndurance } from '@/services/hardware-endurance';
+import { getProductPhysical } from '@/services/physical-attributes';
 
 export async function GET(
   request: NextRequest,
@@ -37,15 +38,17 @@ export async function GET(
     // Option 16/17: repairability + endurance are separate fail-safe
     // reads — they return nulls when migrations 019/020 have not been
     // run yet, so the product still loads and the page shows honest
-    // empty states.
-    const [images, attributes, repairability, endurance] = await Promise.all([
+    // empty states. Option 18: physical attributes are the same
+    // pattern (nulls until migration 021 runs).
+    const [images, attributes, repairability, endurance, physical] = await Promise.all([
       getProductImages(supabase, product.id),
       getProductAttributes(supabase, product.id),
       getProductRepairability(supabase, product.id),
       getProductEndurance(supabase, product.id),
+      getProductPhysical(supabase, product.id),
     ]);
 
-    return apiSuccess({ ...product, images, attributes, repairability, endurance });
+    return apiSuccess({ ...product, images, attributes, repairability, endurance, physical });
   } catch {
     return internalError('Failed to fetch product');
   }

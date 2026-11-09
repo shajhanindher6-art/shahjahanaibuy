@@ -29,6 +29,9 @@ import { EnduranceCard } from '@/components/products/endurance-card';
 import { SustainabilityCard } from '@/components/products/sustainability-card';
 import { ModularityMatrix } from '@/components/products/modularity-matrix';
 import type { HardwareEnduranceData } from '@/services/hardware-endurance';
+// Option 18: weight & power per compared product.
+import { WeightPowerCard } from '@/components/products/weight-power-card';
+import type { PhysicalAttributesData } from '@/services/physical-attributes';
 
 interface ComparisonRetailer {
   retailerName: string;
@@ -56,6 +59,8 @@ interface ComparisonProduct {
   repairability?: RepairabilityData | null;
   /** Option 17 hardware endurance (all nulls until migration 020 data exists). */
   endurance?: HardwareEnduranceData | null;
+  /** Option 18 physical attributes (all nulls until migration 021 data exists). */
+  physical?: PhysicalAttributesData | null;
 }
 
 interface Comparison {
@@ -449,6 +454,19 @@ export default function ComparePage() {
                       title={p.name}
                     />
                     <ModularityMatrix endurance={p.endurance ?? null} title={p.name} />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Option 18: weight & power per product — all honest empty
+                states until migration 021 data exists. */}
+            <div>
+              <h3 className="mb-3 text-lg font-semibold">Weight &amp; Power</h3>
+              <div className="grid gap-6 lg:grid-cols-2">
+                {comparison.products.map((p) => (
+                  <div key={p.productId} className="space-y-6">
+                    <WeightPowerCard physical={p.physical ?? null} title={p.name} />
                   </div>
                 ))}
               </div>

@@ -51,6 +51,10 @@ import { EnduranceCard } from '@/components/products/endurance-card';
 import { SustainabilityCard } from '@/components/products/sustainability-card';
 import { ModularityMatrix } from '@/components/products/modularity-matrix';
 import type { HardwareEnduranceData } from '@/services/hardware-endurance';
+// Option 18: Anti-Trap checks — 90-day lowest + fake-deal, weight & power.
+import { FakeDeal90Card } from '@/components/products/fake-deal-90-card';
+import { WeightPowerCard } from '@/components/products/weight-power-card';
+import type { PhysicalAttributesData } from '@/services/physical-attributes';
 import { SimilarProducts } from '@/components/products/similar-products';
 import { CashbackCouponsSection } from '@/components/products/cashback-coupons-section';
 import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
@@ -116,6 +120,9 @@ interface Product {
   // Option 17: hardware endurance from the same endpoint (all nulls
   // until migration 020 data exists — honest empty states).
   endurance?: HardwareEnduranceData | null;
+  // Option 18: physical attributes from the same endpoint (all nulls
+  // until migration 021 data exists — honest empty states).
+  physical?: PhysicalAttributesData | null;
 }
 
 interface AISummary {
@@ -1259,6 +1266,16 @@ export default function ProductDetailsPage() {
                 />
               </div>
               <ModularityMatrix endurance={product?.endurance ?? null} />
+            </div>
+
+            {/* Option 18: Anti-Trap Checks — derived 90-day lowest +
+                fake-deal check (recorded price history only) and
+                recorded weight & power. Every card renders an honest
+                empty state when its inputs are not recorded. */}
+            <div className="mt-6 space-y-6">
+              <h3 className="text-lg font-semibold">Anti-Trap Checks</h3>
+              <FakeDeal90Card slug={slug} />
+              <WeightPowerCard physical={product?.physical ?? null} />
             </div>
           </TabsContent>
 

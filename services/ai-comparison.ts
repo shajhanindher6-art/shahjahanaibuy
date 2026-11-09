@@ -10,6 +10,7 @@ import type { ProductComparison, ComparisonProduct } from '@/types/ai';
 import type { Product } from '@/types';
 import { getProductRepairability } from '@/services/repairability';
 import { getProductEndurance } from '@/services/hardware-endurance';
+import { getProductPhysical } from '@/services/physical-attributes';
 
 export async function compareProducts(
   supabase: AnySupabaseClient,
@@ -159,8 +160,10 @@ export async function compareProducts(
       // Option 16/17: repairability + endurance are separate fail-safe
       // reads per product — nulls when migrations 019/020 have not
       // been run yet, so the comparison never breaks on a missing column.
+      // Option 18: physical attributes are the same pattern (021).
       const repairability = await getProductRepairability(supabase, productId);
       const endurance = await getProductEndurance(supabase, productId);
+      const physical = await getProductPhysical(supabase, productId);
 
       products.push({
         productId,
@@ -172,6 +175,7 @@ export async function compareProducts(
         retailers: retailerEntries,
         repairability,
         endurance,
+        physical,
       });
     }
 
