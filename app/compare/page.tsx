@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { cn } from '@/lib/utils';
+import { fetchTimed } from '@/lib/fetch-timed';
 import { Price } from '@/components/region/price';
 import { DecisionMatrix } from '@/components/comparison/decision-matrix';
 import { SpecMatrix } from '@/components/comparison/spec-matrix';
@@ -97,7 +98,9 @@ export default function ComparePage() {
     if (!term.trim()) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/products?search=${encodeURIComponent(term)}&pageSize=10`);
+      // P0 fix (2026-11-09 audit): 15s hard timeout — a hanging search
+      // used to leave the compare search spinner running forever.
+      const res = await fetchTimed(`/api/v1/products?search=${encodeURIComponent(term)}&pageSize=10`, 15000);
       const data = await res.json();
       if (data.success) {
         // Products API returns the list directly in `data` (meta holds
@@ -142,7 +145,9 @@ export default function ComparePage() {
     setComparing(true);
     setCompareError(null);
     try {
-      const res = await fetch('/api/v1/comparison', {
+      // P0 fix (2026-11-09 audit): 30s hard timeout — a hanging
+      // comparison used to leave the page on its spinner forever.
+      const res = await fetchTimed('/api/v1/comparison', 30000, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ productIds: selectedProducts.map((p) => p.id) }),

@@ -6,7 +6,17 @@ import { Providers } from '@/components/providers';
 import type { Language } from '@/lib/region';
 import { Toaster } from '@/components/ui/toaster';
 import { ServiceWorkerRegister } from '@/components/pwa/service-worker-register';
-import { AIDealFinderWidget } from '@/components/chat/ai-deal-finder-widget';
+import dynamic from 'next/dynamic';
+// P0 fix (2026-11-09 audit): the AI chat widget (Vercel AI SDK
+// useChat) was statically mounted on every page. It now loads as a
+// separate chunk instead of inflating the first-paint bundle. (No
+// ssr:false here — that is not allowed in a Server Component — but
+// the chunk split alone removes it from the initial JS.)
+const AIDealFinderWidget = dynamic(() =>
+  import('@/components/chat/ai-deal-finder-widget').then(
+    (m) => m.AIDealFinderWidget
+  )
+);
 import { appConfig } from '@/lib/config/app';
 import { toJsonLd } from '@/lib/json-ld';
 import { Analytics } from '@vercel/analytics/react';

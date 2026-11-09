@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Price } from '@/components/region/price';
 import { cn } from '@/lib/utils';
+import { fetchTimed } from '@/lib/fetch-timed';
 import {
   buildMatrixRows,
   type MatrixCell,
@@ -62,7 +63,10 @@ function toDealCoupon(row: Record<string, unknown>): DealCoupon | null {
 }
 
 async function fetchJson(url: string): Promise<unknown> {
-  const res = await fetch(url);
+  // P0 fix (2026-11-09 audit): 15s hard timeout — a hanging API used
+  // to keep this matrix on "Loading…" forever; on timeout the caller
+  // falls back to the comparison data with "—" cells and an honest note.
+  const res = await fetchTimed(url, 15000);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }

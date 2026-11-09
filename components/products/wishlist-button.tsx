@@ -12,10 +12,17 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth';
 import { cn } from '@/lib/utils';
+import {
+  GUEST_WISHLIST_EVENT,
+  isGuestWishlisted,
+  toggleGuestWishlist,
+} from '@/lib/guest-wishlist';
 
 interface WishlistButtonProps {
   productId: string;
   productName: string;
+  /** Slug for the guest (localStorage) wishlist entry; optional for callers that only have an id. */
+  productSlug?: string;
   variant?: 'default' | 'outline' | 'ghost';
   size?: 'default' | 'sm' | 'lg' | 'icon';
 }
@@ -27,7 +34,7 @@ interface Wishlist {
   createdAt: string;
 }
 
-export function WishlistButton({ productId, productName, variant = 'outline', size = 'default' }: WishlistButtonProps) {
+export function WishlistButton({ productId, productName, productSlug, variant = 'outline', size = 'default' }: WishlistButtonProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -36,6 +43,45 @@ export function WishlistButton({ productId, productName, variant = 'outline', si
   const [addedTo, setAddedTo] = useState<Set<string>>(new Set());
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
+  // Guest (signed-out) wishlist state, kept in sync across every
+  // WishlistButton on the page via the guest-wishlist event.
+  const [guestSaved, setGuestSaved] = useState(false);
+
+  useEffect(() => {
+    const sync = () => setGuestSaved(isGuestWishlisted(productId));
+    sync();
+    window.addEventListener(GUEST_WISHLIST_EVENT, sync);
+    return () => window.removeEventListener(GUEST_WISHLIST_EVENT, sync);
+  }, [productId]);
+
+  const handleGuestToggle = () => {
+    const saved = toggleGuestWishlist({
+      id: productId,
+      slug: productSlug ?? '',
+      name: productName,
+    });
+    setGuestSaved(saved);
+    toast({
+      title: saved ? 'Saved on this device' : 'Removed from wishlist',
+      description: saved
+        ? `${productName} is in your wishlist on this device. Sign in to keep it across devices.`
+        : `${productName} was removed from your device wishlist.`,
+    });
+  };
+
+  // P0 fix (2026-11-09 audit): guests used to hit a sign-in wall with
+  // no way to save anything. A guest tap now toggles the device-local
+  // wishlist directly; the dialog (server wishlists) is signed-in only.
+  if (!user) {
+    return (
+      <Button variant={variant} size={size} onClick={handleGuestToggle}>
+        <Heart
+          className={cn('mr-2 h-4 w-4', guestSaved && 'fill-red-500 text-red-500')}
+        />
+        {guestSaved ? 'Saved' : 'Wishlist'}
+      </Button>
+    );
+  }
 
   const fetchWishlists = async () => {
     try {
@@ -114,23 +160,12 @@ export function WishlistButton({ productId, productName, variant = 'outline', si
           </DialogDescription>
         </DialogHeader>
 
-        {!user ? (
-          <div className="flex flex-col items-center gap-3 py-6 text-center">
-            <Heart className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              Sign in to save products to your wishlists.
+        <div className="space-y-2">
+          {wishlists.length === 0 && !showCreate && (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              You don't have any wishlists yet. Create one to get started.
             </p>
-            <Button asChild>
-              <a href="/sign-in">Sign In</a>
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {wishlists.length === 0 && !showCreate && (
-              <p className="py-4 text-center text-sm text-muted-foreground">
-                You don't have any wishlists yet. Create one to get started.
-              </p>
-            )}
+          )}
 
             {wishlists.map((wl) => (
               <div
@@ -181,14 +216,11 @@ export function WishlistButton({ productId, productName, variant = 'outline', si
                 Create New Wishlist
               </Button>
             )}
-          </div>
-        )}
+        </div>
 
-        {user && (
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Done</Button>
-          </DialogFooter>
-        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Done</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

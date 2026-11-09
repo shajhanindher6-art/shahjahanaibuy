@@ -833,6 +833,7 @@ export default function SearchPage() {
                       <WishlistButton
                         productId={result.product.id}
                         productName={result.product.name}
+                        productSlug={result.product.slug}
                         variant="outline"
                         size="sm"
                       />

@@ -11,6 +11,7 @@
  */
 
 import type { ProductAttribute } from '@/types/catalog';
+import { fetchTimed } from '@/lib/fetch-timed';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -51,7 +52,10 @@ export interface FetchAttributesResult {
  */
 export async function fetchProductAttributes(slug: string): Promise<FetchAttributesResult> {
   try {
-    const res = await fetch(`/api/v1/products/${encodeURIComponent(slug)}`);
+    // P0 fix (2026-11-09 audit): 15s hard timeout — a hanging API
+    // used to keep the Spec Matrix on "Loading…" forever; on timeout
+    // this returns ok:false and the section hides instead of hanging.
+    const res = await fetchTimed(`/api/v1/products/${encodeURIComponent(slug)}`, 15000);
     if (!res.ok) return { ok: false, attributes: [] };
     const json: unknown = await res.json();
     const data = asRecord(json)?.data;
