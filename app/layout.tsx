@@ -12,10 +12,14 @@ import dynamic from 'next/dynamic';
 // separate chunk instead of inflating the first-paint bundle. (No
 // ssr:false here — that is not allowed in a Server Component — but
 // the chunk split alone removes it from the initial JS.)
-const AIDealFinderWidget = dynamic(() =>
-  import('@/components/chat/ai-deal-finder-widget').then(
-    (m) => m.AIDealFinderWidget
-  )
+// CRASH FIX (2026-11-09, same day): NO `.then(m => m.X)` selector
+// here. This file is a Server Component, and the RSC runtime forbids
+// dotting into a client module — `.then` on the import threw
+// "Cannot access AIDealFinderWidget.then on the server" and crashed
+// every page. Plain dynamic() resolves the module's DEFAULT export,
+// so the widget file now has one (named export kept).
+const AIDealFinderWidget = dynamic(
+  () => import('@/components/chat/ai-deal-finder-widget')
 );
 import { appConfig } from '@/lib/config/app';
 import { toJsonLd } from '@/lib/json-ld';

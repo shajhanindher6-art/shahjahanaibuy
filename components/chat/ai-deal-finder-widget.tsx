@@ -380,3 +380,9 @@ export function AIDealFinderWidget() {
     </div>
   );
 }
+
+// Default export for the root layout's plain dynamic() import (see the
+// crash-fix note in app/layout.tsx): a Server Component may not use a
+// `.then(m => m.X)` selector on a client module. Named export kept for
+// any other importer.
+export default AIDealFinderWidget;
