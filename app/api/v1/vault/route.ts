@@ -24,7 +24,7 @@ import {
   internalError,
   serviceUnavailable,
 } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 
 function isMissingTable(error: { code?: string } | null | undefined): boolean {
   return error?.code === '42P01';
@@ -35,6 +35,10 @@ const SELECT =
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'vault' });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`vault:${getClientIp(request)}`, 120);
+  if (limited) return limited;
+
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;
 
@@ -57,6 +61,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'vault.create' });
+  // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`vault:${getClientIp(request)}`, 30);
+  if (limited) return limited;
+
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;
 

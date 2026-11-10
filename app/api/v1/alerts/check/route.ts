@@ -34,7 +34,7 @@
 
 import type { NextRequest } from 'next/server';
 import { apiSuccess, unauthorized, internalError } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { refreshTrackedPrices } from '@/services/price-refresh';
 import { checkPriceAlerts } from '@/services/alert-checker';
@@ -42,6 +42,9 @@ import { processNotificationQueue } from '@/services/notification-dispatch';
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'alerts.check' });
+  // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`alerts.check:${getClientIp(request)}`, 30);
+  if (limited) return limited;
 
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) {

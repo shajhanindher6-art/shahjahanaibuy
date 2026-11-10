@@ -28,7 +28,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, internalError } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getRegionByCountry, type Region } from '@/lib/region';
 import { getUserTracking } from '@/services/tracking';
 import {
@@ -59,6 +59,9 @@ export interface LandedCostWidgetItem {
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'dashboard.landed-cost' });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`dashboard.landed-cost:${getClientIp(request)}`, 120);
+  if (limited) return limited;
 
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;

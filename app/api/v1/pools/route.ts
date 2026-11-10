@@ -22,7 +22,7 @@ import {
   internalError,
   serviceUnavailable,
 } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 
 // PostgREST reports a table missing from its schema cache as PGRST205
 // (not Postgres 42P01) on the REST path, so both codes must count as
@@ -56,6 +56,10 @@ function normalizePool(p: Record<string, unknown>): Record<string, unknown> {
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'pools' });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`pools:${getClientIp(request)}`, 120);
+  if (limited) return limited;
+
   const productId = request.nextUrl.searchParams.get('productId');
 
   try {
@@ -119,6 +123,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'pools.create' });
+  // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`pools:${getClientIp(request)}`, 30);
+  if (limited) return limited;
+
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;
 

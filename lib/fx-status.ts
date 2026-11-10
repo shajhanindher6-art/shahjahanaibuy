@@ -49,3 +49,30 @@ export function formatFxStatus(fx: FxStatusInput | null, failed: boolean): strin
   }
   return 'FX: rates loading — showing approximate static rates (≈) until the live feed responds';
 }
+
+/**
+ * Short one-line FX label for inline use next to a converted price
+ * (the <Price> component's `showFxNote` line and `title` tooltip).
+ * Same honesty rules as formatFxStatus, condensed: a live rate
+ * always carries its date ("live daily rate · 10 Nov 2026"), a
+ * static fallback says so, and nothing here ever says "real-time".
+ * Returns null while the fetch is still in flight (no label yet —
+ * the price itself already renders from static rates).
+ */
+export function formatFxShortLabel(fx: FxStatusInput | null, failed: boolean): string | null {
+  if (fx && fx.source === 'live') {
+    if (fx.fetchedAt) {
+      const when = new Date(fx.fetchedAt);
+      if (!Number.isNaN(when.getTime())) {
+        return `live daily rate · ${when.toLocaleDateString('en-US', {
+          dateStyle: 'medium',
+        })}`;
+      }
+    }
+    return 'live daily rate';
+  }
+  if (failed || fx?.source === 'static') {
+    return 'approx. static rate';
+  }
+  return null;
+}

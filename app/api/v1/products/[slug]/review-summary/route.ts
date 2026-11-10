@@ -16,15 +16,20 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, notFound, internalError } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getCachedProductBySlug } from '@/services/products';
 import { getReviewAISummary } from '@/services/review-summary';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { slug: string } }
 ) {
   logApiRequest(request, { endpoint: 'products.review-summary', slug: params.slug });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`products.slug.review-summary:${getClientIp(request)}`, 120);
+  if (limited) return limited;
 
   try {
     const supabase = await createSupabaseServerClient();

@@ -61,6 +61,10 @@ const config: Config = {
         destructive: {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
+          // Wave 2 (2026-11-10): readable destructive TEXT on tinted
+          // dark backgrounds — `text-destructive-text`. Light mode
+          // equals the base token; dark mode is a lighter red.
+          text: 'hsl(var(--destructive-text))',
         },
         success: {
           DEFAULT: 'hsl(var(--success))',
@@ -104,11 +108,30 @@ const config: Config = {
         },
       },
       animation: {
-        'accordion-down': 'accordion-down 0.2s ease-out',
-        'accordion-up': 'accordion-up 0.2s ease-out',
-        'fade-in': 'fade-in 0.4s ease-out',
-        'slide-in-right': 'slide-in-right 0.3s ease-out',
-        shimmer: 'shimmer 1.2s ease-in-out infinite alternate',
+        // Motion system (Section 4 item 3): ONE easing
+        // (cubic-bezier(0.4, 0, 0.2, 1), the "standard" curve) and
+        // ONE duration scale (150 / 200 / 300 / 400ms) for every
+        // animation on the site. The old per-animation `ease-out`
+        // values were unified to the standard curve — visually
+        // near-identical, now consistent. See app/globals.css and
+        // docs/design-system.md.
+        'accordion-down': 'accordion-down 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+        'accordion-up': 'accordion-up 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+        'fade-in': 'fade-in 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+        'slide-in-right': 'slide-in-right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        shimmer: 'shimmer 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate',
+      },
+      // Motion duration scale (Section 4 item 3) — use these
+      // tokens (duration-motion-fast etc.) instead of ad-hoc
+      // duration-150/300 values in new code.
+      transitionDuration: {
+        'motion-fast': '150ms',
+        'motion-base': '200ms',
+        'motion-slow': '300ms',
+        'motion-page': '400ms',
+      },
+      transitionTimingFunction: {
+        'motion-standard': 'cubic-bezier(0.4, 0, 0.2, 1)',
       },
     },
   },

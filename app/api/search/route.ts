@@ -24,7 +24,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { FALLBACK_REGION, getRegionByCountry } from '@/lib/region';
 import { resolveGeoCountry } from '@/services/affiliate-geo';
 import { getCachedAISearch } from '@/services/ai-search';
@@ -37,6 +37,9 @@ import {
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'search' });
+  // Rate limit: 60 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`search:${getClientIp(request)}`, 60);
+  if (limited) return limited;
 
   const validated = validateLocalFirstQuery(request.nextUrl.searchParams.get('q'));
   if (!validated.ok) return badRequest(validated.error);

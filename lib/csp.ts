@@ -20,6 +20,8 @@
  *   official Next.js strict-CSP example.
  */
 
+import { getGa4Id, getMetaPixelId } from '@/components/providers/analytics-config';
+
 export function buildCsp(nonce: string): string {
   // PostHog analytics host (P0 fix, 2026-11-09 audit): the configured
   // api_host when set, else the default US cloud host. Without this
@@ -28,13 +30,38 @@ export function buildCsp(nonce: string): string {
   const posthogHost = (
     process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com'
   ).replace(/\/$/, '');
+  // GA4 + Meta Pixel (Section 3 item 16): vendor hosts are allowed
+  // ONLY when the matching env ID is set and valid — while dormant
+  // (no ID, the state on every environment today) the policy stays
+  // exactly as tight as before. The provider
+  // (components/providers/analytics-provider.tsx) applies the same
+  // gate plus cookie-consent gating, so a host here never means
+  // tracking runs without consent.
+  const scriptSrcHosts: string[] = [];
+  const connectSrcHosts: string[] = [];
+  if (getGa4Id()) {
+    scriptSrcHosts.push('https://www.googletagmanager.com');
+    connectSrcHosts.push(
+      'https://www.google-analytics.com',
+      'https://region1.google-analytics.com'
+    );
+  }
+  if (getMetaPixelId()) {
+    scriptSrcHosts.push('https://connect.facebook.net');
+    connectSrcHosts.push(
+      'https://www.facebook.com',
+      'https://graph.facebook.com'
+    );
+  }
+  // img-src already allows https: everywhere, which covers the
+  // Meta Pixel noscript image and GA4 beacons.
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}'`,
+    `script-src 'self' 'nonce-${nonce}'${scriptSrcHosts.length ? ` ${scriptSrcHosts.join(' ')}` : ''}`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     'img-src \'self\' blob: data: https:',
     "font-src 'self' https://fonts.gstatic.com",
-    `connect-src 'self' https://*.supabase.co https://*.supabase.in https://*.ingest.sentry.io ${posthogHost}`,
+    `connect-src 'self' https://*.supabase.co https://*.supabase.in https://*.ingest.sentry.io ${posthogHost}${connectSrcHosts.length ? ` ${connectSrcHosts.join(' ')}` : ''}`,
     "frame-ancestors 'self'",
     "base-uri 'self'",
     "form-action 'self'",

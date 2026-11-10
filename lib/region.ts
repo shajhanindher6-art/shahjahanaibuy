@@ -23,14 +23,38 @@
 import { USD_PER_UNIT, type CurrencyCode } from '@/services/currency';
 
 /**
- * Supported UI languages (Option 4 Part 1). Chrome strings only —
- * see lib/i18n.ts. Adding a language is a small, obvious change:
- * one entry here, one dictionary in lib/i18n.ts, and one
- * COUNTRY_LANGUAGE entry per country that speaks it (below).
- * Japanese/Arabic and other languages are deliberately NOT here
- * yet: they need RTL/CJK handling, which is a later part.
+ * Supported UI languages (Option 4 Part 1 + S5#12, 2026-11-10).
+ * Chrome strings only — see lib/i18n.ts. The original 8 languages
+ * (en, ur, de, fr, es, it, pt, tr) are human-written functional
+ * chrome strings. The 12 added by S5#12 (ar, zh, ja, ko, hi, bn,
+ * nl, sv, pl, ru, id, vi) are machine translations, labelled
+ * "auto-translated" in the UI (LanguageMeta.autoTranslated) — they
+ * have not been professionally reviewed. Adding a language is a
+ * small, obvious change: one entry here, one dictionary in
+ * lib/i18n.ts, and one COUNTRY_LANGUAGE entry per country that
+ * speaks it (below).
  */
-export type Language = 'en' | 'ur' | 'de' | 'fr' | 'es' | 'it' | 'pt' | 'tr';
+export type Language =
+  | 'en'
+  | 'ur'
+  | 'de'
+  | 'fr'
+  | 'es'
+  | 'it'
+  | 'pt'
+  | 'tr'
+  | 'ar'
+  | 'zh'
+  | 'ja'
+  | 'ko'
+  | 'hi'
+  | 'bn'
+  | 'nl'
+  | 'sv'
+  | 'pl'
+  | 'ru'
+  | 'id'
+  | 'vi';
 
 export const SUPPORTED_LANGUAGES: Language[] = [
   'en',
@@ -41,12 +65,61 @@ export const SUPPORTED_LANGUAGES: Language[] = [
   'it',
   'pt',
   'tr',
+  'ar',
+  'zh',
+  'ja',
+  'ko',
+  'hi',
+  'bn',
+  'nl',
+  'sv',
+  'pl',
+  'ru',
+  'id',
+  'vi',
 ];
+
+/** Languages whose dictionaries are machine translations (S5#12). */
+export const AUTO_TRANSLATED_LANGUAGES: Language[] = [
+  'ar',
+  'zh',
+  'ja',
+  'ko',
+  'hi',
+  'bn',
+  'nl',
+  'sv',
+  'pl',
+  'ru',
+  'id',
+  'vi',
+];
+
+export function isAutoTranslatedLanguage(code: string): boolean {
+  return (AUTO_TRANSLATED_LANGUAGES as string[]).includes(code);
+}
+
+/** Right-to-left UI languages (S5#12). Arabic is RTL; Roman Urdu
+ * ('ur') is written left-to-right in this project (Latin script),
+ * so it is NOT in this set. */
+export const RTL_LANGUAGES: Language[] = ['ar'];
+
+export function isRtlLanguage(code: string | null | undefined): boolean {
+  return !!code && (RTL_LANGUAGES as string[]).includes(code);
+}
 
 export interface LanguageMeta {
   code: Language;
   /** Native name, as shown in the header Language Switcher. */
   nativeName: string;
+  /**
+   * True when the dictionary is a machine translation (S5#12).
+   * The switcher / settings UI appends "(auto-translated)" so
+   * shoppers are never misled about its quality.
+   */
+  autoTranslated?: boolean;
+  /** True when the language reads right-to-left. */
+  rtl?: boolean;
 }
 
 export const LANGUAGES: LanguageMeta[] = [
@@ -58,6 +131,18 @@ export const LANGUAGES: LanguageMeta[] = [
   { code: 'it', nativeName: 'Italiano' },
   { code: 'pt', nativeName: 'Português' },
   { code: 'tr', nativeName: 'Türkçe' },
+  { code: 'ar', nativeName: 'العربية', autoTranslated: true, rtl: true },
+  { code: 'zh', nativeName: '中文', autoTranslated: true },
+  { code: 'ja', nativeName: '日本語', autoTranslated: true },
+  { code: 'ko', nativeName: '한국어', autoTranslated: true },
+  { code: 'hi', nativeName: 'हिन्दी', autoTranslated: true },
+  { code: 'bn', nativeName: 'বাংলা', autoTranslated: true },
+  { code: 'nl', nativeName: 'Nederlands', autoTranslated: true },
+  { code: 'sv', nativeName: 'Svenska', autoTranslated: true },
+  { code: 'pl', nativeName: 'Polski', autoTranslated: true },
+  { code: 'ru', nativeName: 'Русский', autoTranslated: true },
+  { code: 'id', nativeName: 'Bahasa Indonesia', autoTranslated: true },
+  { code: 'vi', nativeName: 'Tiếng Việt', autoTranslated: true },
 ];
 
 export function languageMeta(code: Language): LanguageMeta {
@@ -83,9 +168,14 @@ export function isSupportedLanguage(value: string | null | undefined): value is 
  * - IT → it. BR → pt (PT is listed too, although Portugal is not
  *   itself a region code, so a PT detection still resolves).
  * - TR → tr. PK → ur.
- * - Everything else (US, GB, CA, AU, IN, JP, KR, NL, PL, …) → en:
- *   either English-speaking or a language not yet supported
- *   (Japanese, Arabic, Dutch, Polish, … are later parts).
+ * - S5#12: AE/SA/QA/EG/MA → ar; JP → ja; KR → ko; TW → zh;
+ *   ID → id; VN → vi; BD → bn; NL → nl; PL → pl. IN stays 'en'
+ *   (English is an official language; Hindi is reachable via the
+ *   browser-language path, 'hi'/'hi-IN' → hi). RU/SV/HI have no
+ *   region in the registry, so they resolve only from the browser
+ *   language, never from a country code.
+ * - Everything else (US, GB, CA, AU, …) → en: either
+ *   English-speaking or a language not yet supported.
  * Unlisted codes (outside the registry, e.g. IS) also resolve
  * to 'en' via languageForCountry's fallback.
  */
@@ -96,8 +186,8 @@ export const COUNTRY_LANGUAGE: Record<string, Language> = {
   CA: 'en',
   AU: 'en',
   IN: 'en',
-  AE: 'en',
-  SA: 'en',
+  AE: 'ar',
+  SA: 'ar',
   IE: 'en',
   SG: 'en',
   PH: 'en',
@@ -107,25 +197,25 @@ export const COUNTRY_LANGUAGE: Record<string, Language> = {
   GH: 'en',
   ZA: 'en',
   NZ: 'en',
-  // Languages not yet supported → honest English fallback.
-  JP: 'en',
-  KR: 'en',
-  TW: 'en',
-  ID: 'en',
+  // S5#12 languages (machine-translated dictionaries, lib/i18n.ts).
+  JP: 'ja',
+  KR: 'ko',
+  TW: 'zh',
+  ID: 'id',
   MY: 'en',
   TH: 'en',
-  VN: 'en',
-  BD: 'en',
+  VN: 'vi',
+  BD: 'bn',
   LK: 'en',
   NP: 'en',
-  QA: 'en',
-  EG: 'en',
-  MA: 'en',
-  PL: 'en',
+  QA: 'ar',
+  EG: 'ar',
+  MA: 'ar',
+  PL: 'pl',
   CZ: 'en',
   GR: 'en',
   BE: 'en',
-  NL: 'en',
+  NL: 'nl',
   // Supported non-English languages.
   PK: 'ur',
   DE: 'de',
@@ -203,8 +293,8 @@ export const REGIONS: Region[] = [
   { code: 'IT', name: 'Italy', currency: 'EUR', amazonDomain: 'amazon.it', locale: 'it-IT', suggestedLanguage: 'it' },
   { code: 'ES', name: 'Spain', currency: 'EUR', amazonDomain: 'amazon.es', locale: 'es-ES', suggestedLanguage: 'es' },
   { code: 'IN', name: 'India', currency: 'INR', amazonDomain: 'amazon.in', locale: 'en-IN', suggestedLanguage: 'en' },
-  { code: 'AE', name: 'United Arab Emirates', currency: 'AED', amazonDomain: 'amazon.ae', locale: 'en-AE', suggestedLanguage: 'en' },
-  { code: 'SA', name: 'Saudi Arabia', currency: 'SAR', amazonDomain: 'amazon.sa', locale: 'en-SA', suggestedLanguage: 'en' },
+  { code: 'AE', name: 'United Arab Emirates', currency: 'AED', amazonDomain: 'amazon.ae', locale: 'en-AE', suggestedLanguage: 'ar' },
+  { code: 'SA', name: 'Saudi Arabia', currency: 'SAR', amazonDomain: 'amazon.sa', locale: 'en-SA', suggestedLanguage: 'ar' },
   { code: 'CA', name: 'Canada', currency: 'CAD', amazonDomain: 'amazon.ca', locale: 'en-CA', suggestedLanguage: 'en' },
   { code: 'AU', name: 'Australia', currency: 'AUD', amazonDomain: 'amazon.com.au', locale: 'en-AU', suggestedLanguage: 'en' },
   // --- Worldwide expansion (2026-11-02): 48 more regions. Amazon
@@ -212,27 +302,27 @@ export const REGIONS: Region[] = [
   // 'amazon.com' (same fallback PK already used). VE/EC use USD
   // (dollarized); all others use their real local currency.
   // East Asia
-  { code: 'JP', name: 'Japan', currency: 'JPY', amazonDomain: 'amazon.co.jp', locale: 'ja-JP', suggestedLanguage: 'en' },
-  { code: 'KR', name: 'South Korea', currency: 'KRW', amazonDomain: 'amazon.com', locale: 'ko-KR', suggestedLanguage: 'en' },
-  { code: 'TW', name: 'Taiwan', currency: 'TWD', amazonDomain: 'amazon.com', locale: 'zh-TW', suggestedLanguage: 'en' },
+  { code: 'JP', name: 'Japan', currency: 'JPY', amazonDomain: 'amazon.co.jp', locale: 'ja-JP', suggestedLanguage: 'ja' },
+  { code: 'KR', name: 'South Korea', currency: 'KRW', amazonDomain: 'amazon.com', locale: 'ko-KR', suggestedLanguage: 'ko' },
+  { code: 'TW', name: 'Taiwan', currency: 'TWD', amazonDomain: 'amazon.com', locale: 'zh-TW', suggestedLanguage: 'zh' },
   // Southeast Asia
-  { code: 'ID', name: 'Indonesia', currency: 'IDR', amazonDomain: 'amazon.com', locale: 'id-ID', suggestedLanguage: 'en' },
+  { code: 'ID', name: 'Indonesia', currency: 'IDR', amazonDomain: 'amazon.com', locale: 'id-ID', suggestedLanguage: 'id' },
   { code: 'MY', name: 'Malaysia', currency: 'MYR', amazonDomain: 'amazon.com', locale: 'ms-MY', suggestedLanguage: 'en' },
   { code: 'SG', name: 'Singapore', currency: 'SGD', amazonDomain: 'amazon.sg', locale: 'en-SG', suggestedLanguage: 'en' },
   { code: 'TH', name: 'Thailand', currency: 'THB', amazonDomain: 'amazon.com', locale: 'th-TH', suggestedLanguage: 'en' },
-  { code: 'VN', name: 'Vietnam', currency: 'VND', amazonDomain: 'amazon.com', locale: 'vi-VN', suggestedLanguage: 'en' },
+  { code: 'VN', name: 'Vietnam', currency: 'VND', amazonDomain: 'amazon.com', locale: 'vi-VN', suggestedLanguage: 'vi' },
   { code: 'PH', name: 'Philippines', currency: 'PHP', amazonDomain: 'amazon.com', locale: 'en-PH', suggestedLanguage: 'en' },
   // South Asia
-  { code: 'BD', name: 'Bangladesh', currency: 'BDT', amazonDomain: 'amazon.com', locale: 'en-BD', suggestedLanguage: 'en' },
+  { code: 'BD', name: 'Bangladesh', currency: 'BDT', amazonDomain: 'amazon.com', locale: 'en-BD', suggestedLanguage: 'bn' },
   { code: 'LK', name: 'Sri Lanka', currency: 'LKR', amazonDomain: 'amazon.com', locale: 'en-LK', suggestedLanguage: 'en' },
   { code: 'NP', name: 'Nepal', currency: 'NPR', amazonDomain: 'amazon.com', locale: 'en-NP', suggestedLanguage: 'en' },
   // Middle East & Africa
-  { code: 'QA', name: 'Qatar', currency: 'QAR', amazonDomain: 'amazon.com', locale: 'ar-QA', suggestedLanguage: 'en' },
+  { code: 'QA', name: 'Qatar', currency: 'QAR', amazonDomain: 'amazon.com', locale: 'ar-QA', suggestedLanguage: 'ar' },
   { code: 'TR', name: 'Turkey', currency: 'TRY', amazonDomain: 'amazon.com.tr', locale: 'tr-TR', suggestedLanguage: 'tr' },
-  { code: 'EG', name: 'Egypt', currency: 'EGP', amazonDomain: 'amazon.eg', locale: 'ar-EG', suggestedLanguage: 'en' },
+  { code: 'EG', name: 'Egypt', currency: 'EGP', amazonDomain: 'amazon.eg', locale: 'ar-EG', suggestedLanguage: 'ar' },
   { code: 'NG', name: 'Nigeria', currency: 'NGN', amazonDomain: 'amazon.com', locale: 'en-NG', suggestedLanguage: 'en' },
   { code: 'KE', name: 'Kenya', currency: 'KES', amazonDomain: 'amazon.com', locale: 'en-KE', suggestedLanguage: 'en' },
-  { code: 'MA', name: 'Morocco', currency: 'MAD', amazonDomain: 'amazon.com', locale: 'ar-MA', suggestedLanguage: 'en' },
+  { code: 'MA', name: 'Morocco', currency: 'MAD', amazonDomain: 'amazon.com', locale: 'ar-MA', suggestedLanguage: 'ar' },
   { code: 'CI', name: 'Côte d’Ivoire', currency: 'XOF', amazonDomain: 'amazon.com', locale: 'fr-CI', suggestedLanguage: 'fr' },
   { code: 'SN', name: 'Senegal', currency: 'XOF', amazonDomain: 'amazon.com', locale: 'fr-SN', suggestedLanguage: 'fr' },
   { code: 'UG', name: 'Uganda', currency: 'UGX', amazonDomain: 'amazon.com', locale: 'en-UG', suggestedLanguage: 'en' },
@@ -257,13 +347,13 @@ export const REGIONS: Region[] = [
   { code: 'HN', name: 'Honduras', currency: 'HNL', amazonDomain: 'amazon.com', locale: 'es-HN', suggestedLanguage: 'es' },
   { code: 'NI', name: 'Nicaragua', currency: 'NIO', amazonDomain: 'amazon.com', locale: 'es-NI', suggestedLanguage: 'es' },
   // Europe (new)
-  { code: 'PL', name: 'Poland', currency: 'PLN', amazonDomain: 'amazon.pl', locale: 'pl-PL', suggestedLanguage: 'en' },
+  { code: 'PL', name: 'Poland', currency: 'PLN', amazonDomain: 'amazon.pl', locale: 'pl-PL', suggestedLanguage: 'pl' },
   { code: 'CZ', name: 'Czechia', currency: 'CZK', amazonDomain: 'amazon.com', locale: 'cs-CZ', suggestedLanguage: 'en' },
   { code: 'GR', name: 'Greece', currency: 'EUR', amazonDomain: 'amazon.com', locale: 'el-GR', suggestedLanguage: 'en' },
   { code: 'IE', name: 'Ireland', currency: 'EUR', amazonDomain: 'amazon.ie', locale: 'en-IE', suggestedLanguage: 'en' },
   { code: 'AT', name: 'Austria', currency: 'EUR', amazonDomain: 'amazon.de', locale: 'de-AT', suggestedLanguage: 'de' },
   { code: 'BE', name: 'Belgium', currency: 'EUR', amazonDomain: 'amazon.com.be', locale: 'en-BE', suggestedLanguage: 'en' },
-  { code: 'NL', name: 'Netherlands', currency: 'EUR', amazonDomain: 'amazon.nl', locale: 'nl-NL', suggestedLanguage: 'en' },
+  { code: 'NL', name: 'Netherlands', currency: 'EUR', amazonDomain: 'amazon.nl', locale: 'nl-NL', suggestedLanguage: 'nl' },
   { code: 'CH', name: 'Switzerland', currency: 'CHF', amazonDomain: 'amazon.de', locale: 'de-CH', suggestedLanguage: 'de' },
 ];
 
@@ -349,6 +439,75 @@ export function formatPriceForRegion(
     }).format(converted),
     approximate: true,
   };
+}
+
+/**
+ * Live daily FX rates, in the shape GET /api/v1/fx-rates returns
+ * (units of currency per 1 USD — the inverse direction of
+ * USD_PER_UNIT). Defined here, structurally, so client components
+ * can use it WITHOUT importing the server-only services/fx-rates.ts:
+ * the client fetches /api/v1/fx-rates and passes the JSON through.
+ * `fetchedAt` is the feed's own last-update timestamp (live only),
+ * or null for the static fallback.
+ */
+export interface LiveFxRates {
+  rates: Partial<Record<CurrencyCode, number>>;
+  source: 'live' | 'static';
+  fetchedAt: string | null;
+}
+
+/**
+ * Format a USD price for a region using LIVE daily FX rates when a
+ * usable live rate exists for the region currency, falling back to
+ * the APPROXIMATE static table (formatPriceForRegion) otherwise —
+ * a missing/stale/zero live rate never blocks the price, it just
+ * means the static estimate is shown and `source` says so.
+ * Converted prices are always approximate ("≈" in the UI); the
+ * feed publishes DAILY rates, never real-time ones, so callers must
+ * label them "live daily rate" with `rateDate`, never "real-time".
+ */
+export function formatPriceForRegionWithRates(
+  usd: number,
+  region: Region,
+  fx: LiveFxRates | null
+): {
+  display: string;
+  approximate: boolean;
+  source: 'live' | 'static';
+  /** Feed last-update timestamp (live only), else null. */
+  rateDate: string | null;
+} {
+  if (region.currency === 'USD') {
+    return {
+      display: new Intl.NumberFormat(region.locale, {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(usd),
+      approximate: false,
+      source: fx?.source ?? 'static',
+      rateDate: fx?.fetchedAt ?? null,
+    };
+  }
+  const liveRate = fx?.source === 'live' ? fx.rates[region.currency] : undefined;
+  if (typeof liveRate === 'number' && Number.isFinite(liveRate) && liveRate > 0) {
+    const converted = usd * liveRate;
+    const digits = ZERO_DECIMAL.has(region.currency) ? 0 : 2;
+    return {
+      display: new Intl.NumberFormat(region.locale, {
+        style: 'currency',
+        currency: region.currency,
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      }).format(converted),
+      approximate: true,
+      source: 'live',
+      rateDate: fx?.fetchedAt ?? null,
+    };
+  }
+  const fallback = formatPriceForRegion(usd, region);
+  return { ...fallback, source: 'static', rateDate: null };
 }
 
 /** Format a plain USD amount (the small "original price" text). */

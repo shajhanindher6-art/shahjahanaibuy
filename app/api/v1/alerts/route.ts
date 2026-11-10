@@ -11,7 +11,7 @@ import {
   badRequest,
   internalError,
 } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import {
   getAlerts,
   createAlert,
@@ -21,6 +21,9 @@ import { getCachedProductBySlug } from '@/services/products';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'alerts' });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`alerts:${getClientIp(request)}`, 120);
+  if (limited) return limited;
 
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;
@@ -37,6 +40,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'alerts.create' });
+  // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`alerts:${getClientIp(request)}`, 30);
+  if (limited) return limited;
 
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;

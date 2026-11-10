@@ -6,11 +6,14 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, internalError } from '@/lib/api/responses';
-import { logApiRequest, requireAdmin } from '@/lib/api/middleware';
+import { logApiRequest, requireAdmin, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getAllUsers } from '@/services/admin';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'admin.users' });
+  // Rate limit: 60 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`admin.users:${getClientIp(request)}`, 60);
+  if (limited) return limited;
 
   const auth = await requireAdmin(request);
   if ('error' in auth) return auth.error;

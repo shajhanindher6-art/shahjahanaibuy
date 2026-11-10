@@ -21,6 +21,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Camera, ImagePlus, Search, ScanLine, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -217,7 +218,7 @@ export default function ScanPage() {
                 <video ref={videoRef} autoPlay playsInline muted className="w-full rounded-lg bg-black" />
               )}
               {preview && (
-                <img src={preview} alt="Your scanned product preview" className="max-h-64 rounded-lg object-contain" />
+                <Image src={preview} alt="Your scanned product preview" width={800} height={600} unoptimized className="max-h-64 w-auto rounded-lg object-contain" />
               )}
               {photoNote && <p className="text-sm text-red-600">{photoNote}</p>}
               <p className="text-xs text-muted-foreground">
@@ -276,7 +277,7 @@ export default function ScanPage() {
                 )}
                 {result.visual.map((m, i) => (
                   <div key={i} className="flex items-center gap-3 rounded-lg border p-3">
-                    {m.thumbnail && <img src={m.thumbnail} alt="" className="h-12 w-12 rounded object-cover" />}
+                    {m.thumbnail && <Image src={m.thumbnail} alt="" width={48} height={48} unoptimized className="h-12 w-12 rounded object-cover" />}
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{m.title}</p>
                       {m.source && <p className="text-xs text-muted-foreground">{m.source}</p>}

@@ -12,7 +12,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, internalError, serviceUnavailable, validationError } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 
 function isMissingTable(error: { code?: string } | null | undefined): boolean {
   return error?.code === '42P01';
@@ -20,6 +20,9 @@ function isMissingTable(error: { code?: string } | null | undefined): boolean {
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   logApiRequest(request, { endpoint: 'community-deals/vote' });
+  // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`community-deals.id.vote:${getClientIp(request)}`, 30);
+  if (limited) return limited;
 
   try {
     const auth = await requireAuth(request);

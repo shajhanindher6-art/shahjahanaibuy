@@ -39,6 +39,21 @@
  *   than that was omitted.
  */
 
+export interface StorePaymentMethod {
+  /** Stable id, e.g. "cod", "upi", "card", "wallet". */
+  id: string;
+  /** Display label, e.g. "Cash on Delivery". */
+  label: string;
+  /** What the shopper should know (limits, conditions). */
+  detail?: string;
+  /**
+   * True only when the method was verified against the store's own
+   * published payment information (2026-11-10). Anything not
+   * verified is simply absent from this list — never guessed.
+   */
+  verified: boolean;
+}
+
 export interface LocalStore {
   /** Display name, e.g. "Daraz". */
   name: string;
@@ -54,6 +69,16 @@ export interface LocalStore {
    * `{slug}` (where used) is the hyphenated lower-case slug.
    */
   searchUrlTemplate: string;
+  /**
+   * Payment methods verified for this store (Section 5, item 11).
+   * OMITTED when nothing is verified — the UI then says "Payment
+   * methods not verified for this store", never a guessed list.
+   * Only Daraz (PK) and Flipkart (IN) carry verified entries today,
+   * checked against their published payment pages 2026-11-10; every
+   * other store is unverified until someone checks its own payment
+   * page and records it here with `verified: true`.
+   */
+  paymentMethods?: StorePaymentMethod[];
 }
 
 export const LOCAL_STORES: LocalStore[] = [
@@ -64,7 +89,16 @@ export const LOCAL_STORES: LocalStore[] = [
 
   // Pakistan — Amazon has no local domain here; the priced Amazon
   // row stays amazon.com, so Daraz is a genuine additional store.
-  { name: 'Daraz', slug: 'daraz', countryCode: 'PK', websiteUrl: 'https://www.daraz.pk', searchUrlTemplate: 'https://www.daraz.pk/catalog/?q={q}' },
+  // Payment methods verified 2026-11-10 against Daraz's published
+  // payment information (COD nationwide, cards, Easypaisa/JazzCash,
+  // Daraz Wallet, bank transfer). Availability can vary by listing
+  // and city — the shopper confirms at Daraz checkout.
+  { name: 'Daraz', slug: 'daraz', countryCode: 'PK', websiteUrl: 'https://www.daraz.pk', searchUrlTemplate: 'https://www.daraz.pk/catalog/?q={q}', paymentMethods: [
+    { id: 'cod', label: 'Cash on Delivery', detail: 'Pay in cash when the order arrives; availability varies by listing and city.', verified: true },
+    { id: 'card', label: 'Credit / Debit Card', detail: 'Visa and Mastercard.', verified: true },
+    { id: 'wallet', label: 'Mobile Wallet', detail: 'Easypaisa, JazzCash, and Daraz Wallet.', verified: true },
+    { id: 'bank-transfer', label: 'Bank Transfer', verified: true },
+  ] },
   // PriceOye — verbatim, live-verified 2026-11-07 ~13:15 PKT:
   // /search?q=iphone loaded "Search Result" with listings.
   { name: 'PriceOye', slug: 'priceoye', countryCode: 'PK', websiteUrl: 'https://www.priceoye.pk', searchUrlTemplate: 'https://www.priceoye.pk/search?q={q}' },
@@ -86,7 +120,18 @@ export const LOCAL_STORES: LocalStore[] = [
   { name: 'eBay', slug: 'ebay', countryCode: 'ES', websiteUrl: 'https://www.ebay.es', searchUrlTemplate: 'https://www.ebay.es/sch/i.html?_nkw={q}' },
 
   // India — Amazon IN excluded (priced row, localised domain).
-  { name: 'Flipkart', slug: 'flipkart', countryCode: 'IN', websiteUrl: 'https://www.flipkart.com', searchUrlTemplate: 'https://www.flipkart.com/search?q={q}' },
+  // Payment methods verified 2026-11-10 against Flipkart's own
+  // payments page: COD capped at Rs. 50,000 (cash only, only on
+  // listings showing the COD icon), UPI including QR pay-on-delivery,
+  // cards, net banking, wallet. Availability varies by order — the
+  // shopper confirms at Flipkart checkout.
+  { name: 'Flipkart', slug: 'flipkart', countryCode: 'IN', websiteUrl: 'https://www.flipkart.com', searchUrlTemplate: 'https://www.flipkart.com/search?q={q}', paymentMethods: [
+    { id: 'cod', label: 'Cash on Delivery', detail: 'Cash only, max order value Rs. 50,000, only on listings showing the COD option.', verified: true },
+    { id: 'upi', label: 'UPI', detail: 'Pay by UPI at checkout, or by QR scan at delivery (pay-on-delivery).', verified: true },
+    { id: 'card', label: 'Credit / Debit Card', detail: 'Visa, Mastercard, Maestro, American Express.', verified: true },
+    { id: 'net-banking', label: 'Net Banking', verified: true },
+    { id: 'wallet', label: 'Wallet', detail: 'Flipkart Wallet.', verified: true },
+  ] },
   // Myntra — verbatim, live-verified 2026-11-07 ~13:15 PKT
   // (single-word: /shoes?rawQuery=shoes, 289,312 items) and
   // ~13:17 PKT (two-word: /running-shoes?rawQuery=running%20shoes,

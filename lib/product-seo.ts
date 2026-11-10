@@ -18,7 +18,10 @@
  */
 
 import type { Metadata } from 'next';
-import { toJsonLd } from '@/lib/json-ld';
+import {
+  buildBreadcrumbJsonLd,
+  toJsonLdGraph,
+} from '@/lib/json-ld';
 
 export interface ProductSeoData {
   id: string;
@@ -32,6 +35,15 @@ export interface ProductSeoData {
   confidenceScore: number;
   /** Cheapest recorded merchant price, or null when no priced listing exists. */
   lowestPrice: number | null;
+  /**
+   * ISO date until which the recorded price is valid, or null.
+   * Merchant data carries no validity window, so this is null today
+   * and the Offer omits priceValidUntil rather than inventing one
+   * (seed prices are demo figures — claiming they hold until a date
+   * would misrepresent them). When a live price source with a real
+   * validity window arrives, populate it in lib/product-seo-server.ts.
+   */
+  priceValidUntil: string | null;
   /** True when any listing is in stock; null when no listings exist. */
   inStock: boolean | null;
   averageRating: number;
@@ -94,6 +106,7 @@ export function buildProductMetadata(
       description,
       url,
       type: 'website',
+      locale: 'en_US',
       images: seo.imageUrl
         ? [{ url: seo.imageUrl, alt: seo.name }]
         : undefined,
@@ -103,22 +116,30 @@ export function buildProductMetadata(
       title: ogTitle,
       description,
       images: seo.imageUrl ? [seo.imageUrl] : undefined,
+      // NOTE: no `site` / `creator` here — those need a real @handle
+      // and SmartBuy AI has no verified X/Twitter handle on record.
+      // Inventing one would put a false handle in every product
+      // page's metadata. Owner step: add the real handle here (and
+      // in the root layout) once the account exists — see docs/seo.md.
     },
   };
 }
 
 /**
- * Server-rendered Product JSON-LD. Same honesty rules as the client
- * page used to apply: offers only with a recorded price, availability
- * only when listings are known, aggregateRating only with ≥1 review.
+ * Server-rendered Product JSON-LD, plus a BreadcrumbList, in one
+ * `@graph` document. Same honesty rules as the client page used to
+ * apply: offers only with a recorded price, availability only when
+ * listings are known, aggregateRating only with ≥1 review,
+ * priceValidUntil only when a real validity date is recorded.
+ * There is no /products index page, so the breadcrumb is
+ * Home → this product.
  */
 export function buildProductJsonLd(
   seo: ProductSeoData,
   siteUrl: string
 ): string {
   const url = `${siteUrl}/products/${seo.slug}`;
-  return toJsonLd({
-    '@context': 'https://schema.org',
+  const product: Record<string, unknown> = {
     '@type': 'Product',
     name: seo.name,
     description: seo.description ?? undefined,
@@ -134,6 +155,9 @@ export function buildProductJsonLd(
             price: seo.lowestPrice,
             priceCurrency: 'USD',
             url,
+            ...(seo.priceValidUntil
+              ? { priceValidUntil: seo.priceValidUntil }
+              : {}),
             availability:
               seo.inStock === null
                 ? undefined
@@ -150,5 +174,10 @@ export function buildProductJsonLd(
             reviewCount: seo.reviewCount,
           }
         : undefined,
-  });
+  };
+  const breadcrumb = buildBreadcrumbJsonLd(siteUrl, [
+    { name: 'Home', path: '/' },
+    { name: seo.name },
+  ]);
+  return toJsonLdGraph(product, breadcrumb);
 }

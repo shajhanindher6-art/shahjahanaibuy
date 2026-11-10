@@ -12,7 +12,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { logger } from '@/lib/config/logger';
 import {
   computeCategoryInflation,
@@ -25,6 +25,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'category-inflation' });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`category-inflation:${getClientIp(request)}`, 120);
+  if (limited) return limited;
 
   try {
     const supabase = await createSupabaseServerClient();

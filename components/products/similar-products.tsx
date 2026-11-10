@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ProductCard, type ProductCardData } from '@/components/products/product-card';
+import { computeDealScoreFromPrediction } from '@/lib/deal-score';
 
 interface SimilarProductsProps {
   productId: string;
@@ -25,7 +26,36 @@ export function SimilarProducts({ productId, productSlug, category, brand }: Sim
       const res = await fetch(`/api/v1/products/${productSlug}/similar?limit=4`);
       const data = await res.json();
       if (data.success) {
-        setProducts(data.data ?? []);
+        const items = (data.data ?? []) as ProductCardData[];
+        setProducts(items);
+        // S2#10: attach the canonical Deal Score (lib/deal-score.ts)
+        // to each card, from GET /api/v1/predictions/[slug] — the
+        // same prediction the product page scores from. One fetch per
+        // card (max 4), in parallel, 15s timeout; a failed or
+        // missing prediction leaves dealScore null and the card
+        // simply shows no badge (its Match chip instead) — never a
+        // synthesized score. The similar API's matchScore is a
+        // similarity signal, not a Deal Score, and is never passed
+        // through this badge (see ProductCard).
+        void Promise.all(
+          items.map(async (item) => {
+            try {
+              const predRes = await fetch(`/api/v1/predictions/${item.slug}`, {
+                signal: AbortSignal.timeout(15000),
+              });
+              if (!predRes.ok) return;
+              const predData = await predRes.json();
+              if (!predData.success || !predData.data) return;
+              const score = computeDealScoreFromPrediction(predData.data);
+              if (score === null) return;
+              setProducts((prev) =>
+                prev.map((p) => (p.id === item.id ? { ...p, dealScore: score } : p))
+              );
+            } catch {
+              // No prediction for this card — no badge, no error.
+            }
+          })
+        );
       } else {
         setProducts([]);
       }

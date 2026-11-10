@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Star, TrendingDown, TrendingUp, Minus,
@@ -51,13 +51,53 @@ const TotalOwnershipCalculator = dynamic(
     ),
   { loading: () => <LoadingSpinner /> }
 );
-import { TaxEstimator } from '@/components/products/tax-estimator';
-import { DutyOptimizer } from '@/components/products/duty-optimizer';
-import { LandedCostCalculator } from '@/components/products/landed-cost-calculator';
-import { RegionArbitrageTable } from '@/components/products/region-arbitrage-table';
-import { PriceNegotiator } from '@/components/products/price-negotiator';
-import { ReturnWarrantyMatrix } from '@/components/products/return-warranty-matrix';
-import { DurabilityPredictor } from '@/components/products/durability-predictor';
+// Below-fold calculators (Options 7/9/11): loaded on demand with
+// ssr:false so they stay out of the First Load bundle (350 kB
+// budget). They render unconditionally in the scroll flow, so plain
+// dynamic() would still preload them; ssr:false defers them until
+// after hydration, with the same LoadingSpinner fallback the tab
+// components use. All seven sit well below the hero/Where-to-Buy.
+const TaxEstimator = dynamic(
+  () => import('@/components/products/tax-estimator').then((m) => m.TaxEstimator),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const DutyOptimizer = dynamic(
+  () => import('@/components/products/duty-optimizer').then((m) => m.DutyOptimizer),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const LandedCostCalculator = dynamic(
+  () =>
+    import('@/components/products/landed-cost-calculator').then(
+      (m) => m.LandedCostCalculator
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const RegionArbitrageTable = dynamic(
+  () =>
+    import('@/components/products/region-arbitrage-table').then(
+      (m) => m.RegionArbitrageTable
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const PriceNegotiator = dynamic(
+  () =>
+    import('@/components/products/price-negotiator').then((m) => m.PriceNegotiator),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const ReturnWarrantyMatrix = dynamic(
+  () =>
+    import('@/components/products/return-warranty-matrix').then(
+      (m) => m.ReturnWarrantyMatrix
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const DurabilityPredictor = dynamic(
+  () =>
+    import('@/components/products/durability-predictor').then(
+      (m) => m.DurabilityPredictor
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
 const ReviewAuthenticity = dynamic(
   () =>
     import('@/components/products/review-authenticity').then(
@@ -65,7 +105,13 @@ const ReviewAuthenticity = dynamic(
     ),
   { loading: () => <LoadingSpinner /> }
 );
-import { EcoFootprint } from '@/components/products/eco-footprint';
+// Eco footprint module (Option 8): below-fold section, loaded on
+// demand with ssr:false for the same First Load reason as the
+// calculators above (350 kB budget).
+const EcoFootprint = dynamic(
+  () => import('@/components/products/eco-footprint').then((m) => m.EcoFootprint),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
 import { TrustCheckSection } from '@/components/products/trust-check-section';
 import { FakeNessChecker } from '@/components/products/fake-ness-checker';
 import { SmartPool } from '@/components/pools/smart-pool';
@@ -215,6 +261,59 @@ import {
   type DealCoupon,
 } from '@/lib/deal-math';
 import { useAuth } from '@/features/auth/auth-provider';
+// Wave-2 wiring (combined batch): canonical Deal Score, forecast,
+// Q&A, carbon label, translations, payment handoff, merchant trust,
+// agent memory — components/libs already exist, mounted here.
+import { computeDealScoreFromPrediction } from '@/lib/deal-score';
+import { resolveCarbonLabel } from '@/lib/sustainability';
+// Wave-2 components load on demand (same P0 pattern as the tab
+// components above): the forecast card lives in the Prediction tab,
+// the Q&A section sits below the tabs, and the carbon label is in
+// the lower eco section — none of them is first-paint content, so
+// they stay out of the First Load bundle (350 kB budget).
+const ForecastCard = dynamic(
+  () =>
+    import('@/components/forecast/forecast-card').then(
+      (m) => m.ForecastCard
+    ),
+  { loading: () => <LoadingSpinner /> }
+);
+const QaSection = dynamic(
+  () => import('@/components/products/qa-section').then((m) => m.QaSection),
+  { loading: () => <LoadingSpinner /> }
+);
+const CarbonLabelCard = dynamic(
+  () =>
+    import('@/components/sustainability/carbon-label').then(
+      (m) => m.CarbonLabelCard
+    ),
+  { loading: () => <LoadingSpinner /> }
+);
+import {
+  translationSourceLabel,
+  type ProductTranslation,
+} from '@/lib/product-translations';
+import {
+  checkoutHandoffHint,
+  estimateLandedCostForCheckout,
+} from '@/lib/local-payments';
+import { TrustScoreCard } from '@/components/merchant/trust-score-card';
+import { VerifiedMerchantBadge } from '@/components/merchant/verified-badge';
+import { AccuracyFlag } from '@/components/merchant/accuracy-flag';
+import {
+  computeTrustGrade,
+  type TrustGradeResult,
+} from '@/lib/merchant-trust';
+import {
+  accuracyScore,
+  ACCURACY_MIN_SAMPLES_FOR_CAUTION,
+  type AccuracyCheck,
+} from '@/lib/price-accuracy';
+import {
+  loadGuestMemory,
+  saveGuestMemory,
+  mergeSeenProducts,
+} from '@/lib/agent-memory';
 // Enterprise #9 Verified Buyer (receipt-backed) + #11 Deal Urgency.
 import {
   fetchOwnVaultProductIds,
@@ -330,7 +429,7 @@ export default function ProductDetailClient({
 }) {
   const router = useRouter();
   const { region, language, detectedCountryCode } = useRegion();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
 
   // fetchAll below still refreshes the full data on mount (attributes,
   // prices, prediction, merchants, coupons) — this is only the
@@ -341,6 +440,10 @@ export default function ProductDetailClient({
   const [summary, setSummary] = useState<AISummary | null>(null);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
+  // Review-photo URLs, keyed by review id (GET reviews returns
+  // { reviews, summary, photos }). {} when the table/bucket is
+  // missing — reviews still render, just without photos.
+  const [reviewPhotos, setReviewPhotos] = useState<Record<string, string[]>>({});
   // Enterprise #9: product ids the signed-in viewer holds a vault
   // receipt for. Empty when logged out or when the vault is not
   // live — the Verified Buyer badge simply never renders then.
@@ -381,6 +484,34 @@ export default function ProductDetailClient({
   // one, since the API filters only the active flag.
   const [couponsByMerchant, setCouponsByMerchant] = useState<Record<string, DealCoupon>>({});
   const [copiedCoupon, setCopiedCoupon] = useState<string | null>(null);
+  // Translated description for the current UI language (GET
+  // /api/v1/translations?productId&language&field=description).
+  // English is the source language — no translation is fetched for
+  // it. 'not-translated' is the normal honest state (the table
+  // starts empty); 'failed' renders nothing rather than a false
+  // "not translated" claim.
+  const [translation, setTranslation] = useState<ProductTranslation | null>(null);
+  const [translationState, setTranslationState] = useState<
+    'idle' | 'loading' | 'translated' | 'not-translated' | 'failed'
+  >('idle');
+  // Per-merchant trust data for the Where-to-Buy rows: trust grade
+  // + price-accuracy check (fetched by merchant slug via the
+  // merchants list) + verified-merchant status. Any fetch failure
+  // falls back to the honest empty states (all-null policy →
+  // "Not enough data", zero samples → "No audits yet") — never a
+  // guessed grade or score.
+  const [merchantTrust, setMerchantTrust] = useState<
+    Record<
+      string,
+      {
+        trust: TrustGradeResult;
+        accuracy: AccuracyCheck;
+        verified: boolean;
+        verifiedUntil: string | null;
+      }
+    >
+  >({});
+  const [merchantTrustLoaded, setMerchantTrustLoaded] = useState(false);
   const [loading, setLoading] = useState(!initialProduct);
   const [activeTab, setActiveTab] = useState('overview');
   // (c) A non-null but dead image URL must fall back to the same
@@ -414,6 +545,247 @@ export default function ProductDetailClient({
       cancelled = true;
     };
   }, [user?.id, product?.id]);
+
+  // Translated description for the current UI language. English is
+  // the source language, so nothing is fetched for it. The API
+  // returns { translation: null, status: 'not-translated' } when no
+  // admin-verified translation is recorded — the honest state, never
+  // a machine translation presented as real.
+  useEffect(() => {
+    const productId = product?.id;
+    if (!productId || language === 'en') {
+      setTranslation(null);
+      setTranslationState('idle');
+      return;
+    }
+    let cancelled = false;
+    setTranslationState('loading');
+    void (async () => {
+      try {
+        const res = await fetchTimed(
+          `/api/v1/translations?productId=${encodeURIComponent(productId)}&language=${encodeURIComponent(language)}&field=description`,
+          15000
+        );
+        if (!res || !res.ok) {
+          if (!cancelled) setTranslationState('failed');
+          return;
+        }
+        const json = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (json?.success && json.data?.translation) {
+          setTranslation(json.data.translation as ProductTranslation);
+          setTranslationState('translated');
+        } else {
+          setTranslation(null);
+          setTranslationState('not-translated');
+        }
+      } catch {
+        if (!cancelled) setTranslationState('failed');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [product?.id, language, fetchTimed]);
+
+  // Agent memory: record this product as seen — ONLY when memory is
+  // already on. Signed-in: the memory row must already exist with
+  // consent granted (GET first; a PUT with consent:true would create
+  // a row for someone who never opted in). Guest: the device-only
+  // localStorage memory must already carry consent — the API is
+  // never called for guests. Fire-and-forget; a failure here never
+  // breaks the page.
+  const seenRecordedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (authLoading) return;
+    const key = `${user?.id ?? 'guest'}::${slug}`;
+    if (seenRecordedRef.current === key) return;
+    seenRecordedRef.current = key;
+    if (user?.id) {
+      void (async () => {
+        try {
+          const res = await fetch('/api/v1/agent/memory');
+          const json = await res.json().catch(() => null);
+          const memory = json?.data?.memory ?? json?.memory ?? null;
+          if (res.ok && memory?.consentGrantedAt) {
+            await fetch('/api/v1/agent/memory', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ consent: true, addSeenSlug: slug }),
+            }).catch(() => {});
+          }
+        } catch {
+          // Memory recording must never break the product page.
+        }
+      })();
+    } else {
+      try {
+        const guest = loadGuestMemory();
+        if (guest?.consentGrantedAt) {
+          saveGuestMemory({
+            ...guest,
+            seenProductSlugs: mergeSeenProducts(guest.seenProductSlugs, slug),
+          });
+        }
+      } catch {
+        // Guest memory is best-effort only.
+      }
+    }
+  }, [user?.id, authLoading, slug]);
+
+  // Merchant trust for the Where-to-Buy rows. The product merchants
+  // endpoint returns only merchantId + name, while the trust /
+  // accuracy endpoints are keyed by merchant slug — so the merchant
+  // directory (id → slug) and the verified list are fetched first,
+  // then trust + accuracy per listed merchant in parallel. Any
+  // failure falls back to the honest empty states (all-null policy
+  // → "Not enough data"; zero audit samples → "No audits yet").
+  useEffect(() => {
+    if (!merchantsLoaded || merchants.length === 0) return;
+    let cancelled = false;
+    const emptyTrust = (): {
+      trust: TrustGradeResult;
+      accuracy: AccuracyCheck;
+    } => ({
+      trust: computeTrustGrade({
+        returnWindowDays: null,
+        warrantyMonths: null,
+        reputationScore: null,
+      }),
+      accuracy: accuracyScore([]),
+    });
+    void (async () => {
+      try {
+        const [listRes, verifiedRes] = await Promise.all([
+          fetchTimed('/api/v1/merchants?pageSize=100', 15000),
+          fetchTimed('/api/v1/merchants/verified', 15000),
+        ]);
+        const slugById = new Map<string, string>();
+        if (listRes?.ok) {
+          const listJson = await listRes.json().catch(() => null);
+          if (Array.isArray(listJson?.data)) {
+            for (const m of listJson.data as Array<{ id?: unknown; slug?: unknown }>) {
+              if (typeof m?.id === 'string' && typeof m?.slug === 'string') {
+                slugById.set(m.id, m.slug);
+              }
+            }
+          }
+        }
+        const verifiedById = new Map<string, string | null>();
+        if (verifiedRes?.ok) {
+          const verifiedJson = await verifiedRes.json().catch(() => null);
+          if (Array.isArray(verifiedJson?.data?.merchants)) {
+            for (const m of verifiedJson.data.merchants as Array<{ id?: unknown; verifiedUntil?: unknown }>) {
+              if (typeof m?.id === 'string') {
+                verifiedById.set(
+                  m.id,
+                  typeof m.verifiedUntil === 'string' ? m.verifiedUntil : null
+                );
+              }
+            }
+          }
+        }
+        const next: Record<
+          string,
+          {
+            trust: TrustGradeResult;
+            accuracy: AccuracyCheck;
+            verified: boolean;
+            verifiedUntil: string | null;
+          }
+        > = {};
+        await Promise.all(
+          merchants.map(async (listing) => {
+            const merchantSlug = slugById.get(listing.merchantId);
+            const verified = verifiedById.has(listing.merchantId);
+            const verifiedUntil = verifiedById.get(listing.merchantId) ?? null;
+            if (!merchantSlug) {
+              next[listing.merchantId] = { ...emptyTrust(), verified, verifiedUntil };
+              return;
+            }
+            const [trustRes, accRes] = await Promise.all([
+              fetchTimed(
+                `/api/v1/merchants/${encodeURIComponent(merchantSlug)}/trust`,
+                15000
+              ),
+              fetchTimed(
+                `/api/v1/merchants/${encodeURIComponent(merchantSlug)}/accuracy`,
+                15000
+              ),
+            ]);
+            const entry = { ...emptyTrust(), verified, verifiedUntil };
+            if (trustRes?.ok) {
+              const trustJson = await trustRes.json().catch(() => null);
+              if (trustJson?.success && trustJson.data) {
+                entry.trust = {
+                  grade: trustJson.data.grade ?? null,
+                  score: trustJson.data.score ?? null,
+                  missing: Array.isArray(trustJson.data.missing)
+                    ? trustJson.data.missing
+                    : ['returnWindowDays', 'warrantyMonths', 'reputationScore'],
+                  breakdown: trustJson.data.breakdown ?? null,
+                  reasons: Array.isArray(trustJson.data.reasons)
+                    ? trustJson.data.reasons
+                    : [],
+                };
+              }
+            }
+            if (accRes?.ok) {
+              const accJson = await accRes.json().catch(() => null);
+              if (accJson?.success && accJson.data) {
+                const sampleCount =
+                  typeof accJson.data.sampleCount === 'number'
+                    ? accJson.data.sampleCount
+                    : 0;
+                entry.accuracy = {
+                  score: accJson.data.score ?? null,
+                  sampleCount,
+                  matchCount: accJson.data.matchCount ?? 0,
+                  mismatchCount: accJson.data.mismatchCount ?? 0,
+                  caution: accJson.data.caution ?? false,
+                  insufficientSamples:
+                    sampleCount < ACCURACY_MIN_SAMPLES_FOR_CAUTION,
+                  status: accJson.data.status ?? 'insufficient',
+                  reasons: Array.isArray(accJson.data.reasons)
+                    ? accJson.data.reasons
+                    : [],
+                };
+              }
+            }
+            next[listing.merchantId] = entry;
+          })
+        );
+        if (!cancelled) {
+          setMerchantTrust(next);
+          setMerchantTrustLoaded(true);
+        }
+      } catch {
+        if (!cancelled) {
+          const fallback: Record<
+            string,
+            {
+              trust: TrustGradeResult;
+              accuracy: AccuracyCheck;
+              verified: boolean;
+              verifiedUntil: string | null;
+            }
+          > = {};
+          for (const listing of merchants) {
+            fallback[listing.merchantId] = {
+              ...emptyTrust(),
+              verified: false,
+              verifiedUntil: null,
+            };
+          }
+          setMerchantTrust(fallback);
+          setMerchantTrustLoaded(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [merchantsLoaded, merchants, fetchTimed]);
 
   const fetchAll = useCallback(async () => {
     // With server-provided initial data the hero is already on
@@ -524,6 +896,7 @@ export default function ProductDetailClient({
         const reviewsData = await reviewsRes.json();
         if (reviewsData.success) {
           setReviews(reviewsData.data.reviews ?? []);
+          setReviewPhotos(normalizeReviewPhotos(reviewsData.data.photos));
           const s = reviewsData.data.summary as Record<string, unknown> | null;
           setReviewSummary(
             s
@@ -567,6 +940,7 @@ export default function ProductDetailClient({
       const reviewsData = await reviewsRes.json();
       if (reviewsData.success) {
         setReviews(reviewsData.data.reviews ?? []);
+        setReviewPhotos(normalizeReviewPhotos(reviewsData.data.photos));
         const s = reviewsData.data.summary as Record<string, unknown> | null;
         setReviewSummary(
           s
@@ -617,6 +991,38 @@ export default function ProductDetailClient({
   const heroPrice =
     prediction?.currentPrice ??
     (merchantsLoaded && merchants.length > 0 ? merchants[0].price : null);
+  // Canonical Deal Score (lib/deal-score.ts) — the ONE formula every
+  // surface uses, extracted verbatim from the inline version that
+  // used to live here. Null when the prediction inputs are missing
+  // or not finite: no badge then, never a synthesized default. The
+  // discount % shown alongside it (merchant rows below) is the
+  // merchant compare-at basis (lib/deal-math discountPercent),
+  // never the deals-table % — the two numbers answer different
+  // questions and must never be mixed into one.
+  const dealScore = computeDealScoreFromPrediction(prediction);
+  // Carbon label (lib/sustainability.ts resolveCarbonLabel — the pure
+  // core of getSustainabilitySummary, which itself needs a Supabase
+  // client and cannot run in this client component): recorded
+  // footprint first, estimate labeled as an estimate, no number
+  // when neither exists.
+  const carbonLabel = resolveCarbonLabel({
+    recordedKg: product?.endurance?.carbonFootprintKg ?? null,
+    category: product?.category ?? null,
+    priceUsd: heroPrice ?? null,
+  });
+  // Full landed cost for the checkout handoff (lib/local-payments.ts
+  // — reuses the tax estimator; duty is the documented 10%
+  // placeholder, shipping is 0 when unknown, never guessed).
+  const destinationCountryCode = detectedCountryCode ?? region.code;
+  const landedCost =
+    merchantsLoaded && merchants.length > 0
+      ? estimateLandedCostForCheckout({
+          priceUsd: merchants[0].price,
+          countryCode: destinationCountryCode,
+        })
+      : null;
+  const landedCountryName =
+    getRegionByCountry(destinationCountryCode)?.name ?? destinationCountryCode;
   // Seeded specs for the Specs tab, grouped by their stored group.
   // [] when the product has no attribute rows — the tab then shows
   // only the base Brand/Category/GTIN/Confidence rows, exactly as
@@ -677,6 +1083,26 @@ export default function ProductDetailClient({
               {product.description && (
                 <p className="mt-2 text-muted-foreground">{product.description}</p>
               )}
+              {/* Translated description for the current UI language
+                  (admin-verified only, source labeled). English is
+                  the source language; "Not translated yet" is the
+                  honest state when nothing is recorded — a
+                  translation is never claimed when it does not
+                  exist. A failed fetch renders nothing rather than
+                  a false "not translated" claim. */}
+              {language !== 'en' && translationState === 'translated' && translation && (
+                <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+                  <p className="text-sm leading-relaxed">{translation.text}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {translationSourceLabel(translation.source)} · {language}
+                  </p>
+                </div>
+              )}
+              {language !== 'en' && translationState === 'not-translated' && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Not translated yet — this description is shown in English.
+                </p>
+              )}
             </div>
 
             {heroPrice && (
@@ -697,27 +1123,14 @@ export default function ProductDetailClient({
               </div>
             )}
 
-            {prediction && (
+            {prediction && dealScore !== null && (
               <div className="flex items-center gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-                {/* (g) Clamped here, not only inside the badge: the raw
-                    formula can exceed 100 (100 − prob×0.4 + up to 30 +
-                    up to 30), so an unclamped pass-through displayed a
-                    perfect 100 that the formula never computed. The
+                {/* Canonical Deal Score (lib/deal-score.ts
+                    computeDealScoreFromPrediction): 100 − prob×0.4 +
+                    price term + confidence×0.3, clamped 0–100. The
                     badge still clamps as a second line of defence. */}
                 <DealScoreBadge
-                  score={Math.max(
-                    0,
-                    Math.min(
-                      100,
-                      Math.round(
-                        100 - prediction.discountProbability * 0.4 +
-                        (prediction.currentPrice && prediction.lowestPrice
-                          ? ((prediction.lowestPrice / prediction.currentPrice) * 30)
-                          : 20) +
-                        (prediction.confidenceScore * 0.3)
-                      )
-                    )
-                  )}
+                  score={dealScore}
                   size="lg"
                   showLabel
                 />
@@ -942,9 +1355,61 @@ export default function ProductDetailClient({
                           <Button disabled>{tFor(language, 'buy')}</Button>
                         )}
                       </div>
+                      {/* Merchant trust (Section 3 #14, Section 5 #7 &
+                          #15): verified badge (renders nothing until a
+                          merchant earns it), price-accuracy flag
+                          ("No audits yet" until samples exist) and
+                          the trust grade ("Not enough data" until
+                          policy facts are recorded). The empty states
+                          are the correct render — they are never
+                          hidden or replaced with a guessed score. */}
+                      {merchantTrustLoaded && merchantTrust[listing.merchantId] && (
+                        <div className="w-full space-y-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <VerifiedMerchantBadge
+                              verified={merchantTrust[listing.merchantId].verified}
+                              verifiedUntil={merchantTrust[listing.merchantId].verifiedUntil}
+                            />
+                            <AccuracyFlag
+                              result={merchantTrust[listing.merchantId].accuracy}
+                              merchantName={listing.merchantName ?? 'Retailer'}
+                            />
+                          </div>
+                          <TrustScoreCard
+                            merchantName={listing.merchantName ?? 'Retailer'}
+                            result={merchantTrust[listing.merchantId].trust}
+                          />
+                        </div>
+                      )}
                     </div>
                   );
                 })}
+                {/* Checkout handoff: full landed cost for the
+                    cheapest recorded price at the visitor's
+                    destination (lib/local-payments.ts — reuses the
+                    tax estimator; duty is the documented 10%
+                    placeholder, VAT is the standard rate or
+                    shopper-entered, shipping excluded until the
+                    retailer states it). Estimate only — never a
+                    customs quote, and the retailer sets the final
+                    price at checkout. */}
+                {landedCost && (
+                  <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                    <p className="text-sm">
+                      <span className="font-medium">Estimated landed cost in {landedCountryName}: </span>
+                      <Price usd={landedCost.estimate.totalUsd} className="font-bold" />
+                      <span className="text-muted-foreground">
+                        {' '}on the cheapest recorded price of <Price usd={landedCost.estimate.priceUsd} showOriginal={false} />
+                        {landedCost.vatPct !== null
+                          ? ` (includes ${landedCost.dutyPct}% duty and ${landedCost.vatPct}% tax)`
+                          : ` (includes ${landedCost.dutyPct}% duty; no single tax rate recorded for this country)`}
+                      </span>
+                    </p>
+                    {landedCost.notes.map((note) => (
+                      <p key={note} className="mt-1 text-xs text-muted-foreground">{note}</p>
+                    ))}
+                  </div>
+                )}
                 {/* Phase 3 Prep: affiliate disclosure, rendered ONLY
                     when the server reports a real tag/publisher id
                     configured. With nothing configured there is no
@@ -1033,6 +1498,15 @@ export default function ProductDetailClient({
             cheapestPriceUsd={merchantsLoaded && merchants.length > 0 ? merchants[0].price : null}
             recordedCarbonKg={product?.endurance?.carbonFootprintKg ?? null}
           />
+        )}
+        {/* One carbon label per product (lib/sustainability.ts):
+            recorded footprint first, estimate labeled as an
+            estimate, no number when neither exists. Recorded and
+            estimated values are never mixed on one card. */}
+        {product && (
+          <div className="mt-6">
+            <CarbonLabelCard carbon={carbonLabel} productName={product.name} />
+          </div>
         )}
         {/* Option 11 Phase 2: unified Trust Check — the Option 8 trust
             card (same component, same props) plus review-authenticity,
@@ -1193,6 +1667,15 @@ export default function ProductDetailClient({
                         Search results on {store.name} — price and stock shown by the
                         store, not by SmartBuy.
                       </p>
+                      {/* Checkout handoff (lib/local-payments.ts):
+                          what to expect at this store's checkout —
+                          verified payment options when the directory
+                          carries them, otherwise an honest
+                          "not verified" note. SmartBuy never takes
+                          payment; the retailer sets the final price. */}
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {checkoutHandoffHint(store, product.name)}
+                      </p>
                     </div>
                     <Button asChild variant="outline">
                       <a
@@ -1349,6 +1832,12 @@ export default function ProductDetailClient({
               </CardContent>
             </Card>
 
+            {/* Price forecast (ranges only, never an exact future price
+                or date): 7 / 30 / 90-day ranges from the recorded
+                price history plus the 30-day backtest. Honest empty
+                state while history is too thin. */}
+            <ForecastCard productIdOrSlug={slug} />
+
             {/* Option 15 Module 2: persona matcher — renders nothing while
                 loading or on fetch failure; honest empty state when the
                 product has no recorded specifications yet. */}
@@ -1480,6 +1969,19 @@ export default function ProductDetailClient({
                         </div>
                         {review.title && <h4 className="mt-1 font-medium">{review.title}</h4>}
                         {review.content && <p className="mt-1 text-sm text-muted-foreground">{review.content}</p>}
+                        {(reviewPhotos[review.id] ?? []).length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {reviewPhotos[review.id].map((url, i) => (
+                              <img
+                                key={`${review.id}-photo-${i}`}
+                                src={url}
+                                alt={`Photo attached to the review by ${review.authorName ?? 'Anonymous'}`}
+                                className="h-20 w-20 rounded-md object-cover"
+                                loading="lazy"
+                              />
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1561,6 +2063,11 @@ export default function ProductDetailClient({
           </TabsContent>
         </Tabs>
 
+        {/* Product Q&A: questions and answers from the SmartBuy team
+            (never auto-generated). Honest empty state until the first
+            question arrives. */}
+        <QaSection slug={slug} />
+
         <div className="mt-8">
           <SimilarProducts
             productId={product.id}
@@ -1573,6 +2080,22 @@ export default function ProductDetailClient({
       <SiteFooter />
     </div>
   );
+}
+
+/** Review-photo URLs from the reviews API, keyed by review id.
+    Anything malformed is dropped — a bad photos map must never
+    break the reviews list. */
+function normalizeReviewPhotos(value: unknown): Record<string, string[]> {
+  if (typeof value !== 'object' || value === null) return {};
+  const out: Record<string, string[]> = {};
+  for (const [key, urls] of Object.entries(value as Record<string, unknown>)) {
+    if (!Array.isArray(urls)) continue;
+    const clean = urls.filter(
+      (u): u is string => typeof u === 'string' && u.length > 0
+    );
+    if (clean.length > 0) out[key] = clean;
+  }
+  return out;
 }
 
 function SpecRow({ label, value }: { label: string; value: string | null }) {

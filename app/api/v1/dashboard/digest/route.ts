@@ -26,7 +26,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { apiSuccess, internalError } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getUserTracking, type TrackedAlert, type TrackedItem } from '@/services/tracking';
 import {
   DIGEST_RECOMMENDATION_MAX,
@@ -240,6 +240,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'dashboard.digest' });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`dashboard.digest:${getClientIp(request)}`, 120);
+  if (limited) return limited;
 
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;

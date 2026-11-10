@@ -22,9 +22,15 @@
  */
 
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { appConfig } from '@/lib/config/app';
+import { SUPPORTED_LANGUAGES } from '@/lib/region';
+import {
+  ProductHeroSkeleton,
+  WhereToBuySkeleton,
+} from '@/components/ui/skeleton';
 import {
   buildProductJsonLd,
   buildProductMetadata,
@@ -42,7 +48,22 @@ export async function generateMetadata({
   if (!seo) {
     return { title: 'Product not found' };
   }
-  return buildProductMetadata(seo, appConfig.url);
+  const meta = buildProductMetadata(seo, appConfig.url);
+  // Per-product hreflang (Section 2 item 13): x-default + one
+  // alternate per supported UI language. There are NO localized
+  // routes — language is chosen client-side — so every alternate
+  // points at the same product URL rather than inventing /de/,
+  // /ur/ … paths that do not exist (same pattern as the root
+  // layout). The canonical URL is unchanged.
+  const url = `${appConfig.url}/products/${seo.slug}`;
+  const languages: Record<string, string> = { 'x-default': url };
+  for (const lang of SUPPORTED_LANGUAGES) {
+    languages[lang] = url;
+  }
+  return {
+    ...meta,
+    alternates: { canonical: url, languages },
+  };
 }
 
 export default async function ProductPage({
@@ -69,10 +90,25 @@ export default async function ProductPage({
           __html: buildProductJsonLd(seo, appConfig.url),
         }}
       />
-      <ProductDetailClient
-        slug={params.slug}
-        initialProduct={toInitialProduct(seo)}
-      />
+      {/* Section skeletons (Section 4, item 2): the hero renders from
+          server-provided initial data, so this fallback is a safety
+          net for a slow client boundary — never a blank area or a
+          full-page spinner. */}
+      <Suspense
+        fallback={
+          <div className="container mx-auto max-w-6xl px-4 py-8">
+            <ProductHeroSkeleton />
+            <div className="mt-8">
+              <WhereToBuySkeleton />
+            </div>
+          </div>
+        }
+      >
+        <ProductDetailClient
+          slug={params.slug}
+          initialProduct={toInitialProduct(seo)}
+        />
+      </Suspense>
     </>
   );
 }

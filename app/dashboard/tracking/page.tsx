@@ -23,6 +23,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Heart, Bell, TrendingDown, Target, Trash2, ArrowRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -248,7 +249,7 @@ export default function TrackingPage() {
                   <Link href={`/products/${item.product.slug}`}>
                     <div className="mb-3 h-32 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
                       {item.product.imageUrl ? (
-                        <img src={item.product.imageUrl} alt={item.product.name} className="h-full w-full object-cover" />
+                        <Image src={item.product.imageUrl} alt={item.product.name} width={512} height={256} className="h-full w-full object-cover" />
                       ) : (
                         <div className="flex h-full items-center justify-center">
                           <Heart className="h-8 w-8 text-muted-foreground" />

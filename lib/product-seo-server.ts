@@ -47,6 +47,9 @@ export async function getProductSeo(
       gtin: product.gtin,
       confidenceScore: product.confidenceScore,
       lowestPrice: cheapest ? cheapest.price : null,
+      // No validity window exists in merchant data — see
+      // ProductSeoData.priceValidUntil in lib/product-seo.ts.
+      priceValidUntil: null,
       inStock:
         listings.length === 0
           ? null

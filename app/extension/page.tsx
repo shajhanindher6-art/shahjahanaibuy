@@ -8,16 +8,17 @@ import { SiteFooter } from '@/components/layout/site-footer';
 /**
  * Browser extension guide page: /extension
  *
- * The extension (extension/ folder in the repo) runs on Amazon,
- * Walmart, Best Buy, eBay and AliExpress product + checkout pages:
- * a better-price banner on product pages, and a coupon panel with
- * Apply buttons on checkout pages. It is NOT on the Chrome Web
- * Store yet (publishing needs a developer account, a fee and a
- * review), so this page documents the honest install route:
- * load the folder as an unpacked extension in developer mode.
- * No login is required and no account data is collected — the
- * extension only sends a product title to SmartBuy's public
- * search API and reads public coupon codes.
+ * The extension (extension/ folder in the repo, v2.0.0) runs on
+ * Amazon, Walmart, Best Buy, eBay and AliExpress product +
+ * checkout pages: a better-price overlay on product pages (best
+ * recorded price + recorded price-history sparkline + browser-local
+ * price alert), and a coupon panel with Apply buttons on checkout
+ * pages. It is NOT on the Chrome Web Store yet (publishing needs a
+ * developer account, a fee and a review), so this page documents
+ * the honest install route: load the folder as an unpacked
+ * extension in developer mode. No login is required and no account
+ * data is collected — the extension only sends a product title to
+ * SmartBuy's public API and reads public coupon codes.
  */
 export default function ExtensionPage() {
   return (
@@ -43,9 +44,12 @@ export default function ExtensionPage() {
               <p className="flex items-start gap-2">
                 <Search className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
                 <span>
-                  <strong>Better-price banner:</strong> on a product page, it compares the
-                  retailer&apos;s price with SmartBuy&apos;s catalog and shows a banner when
-                  SmartBuy has it cheaper, with a link to the deal.
+                  <strong>Better-price overlay:</strong> on a product page, it compares the
+                  retailer&apos;s price with SmartBuy&apos;s recorded catalog price and shows an
+                  overlay when SmartBuy has it cheaper — with a recorded price-history
+                  sparkline and a browser-local price-alert button. The overlay can also be
+                  opened on demand from the extension popup (&ldquo;Show Price History&rdquo;),
+                  even when SmartBuy is not cheaper.
                 </span>
               </p>
               <p className="flex items-start gap-2">
@@ -62,7 +66,7 @@ export default function ExtensionPage() {
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
                 <span>
                   <strong>Privacy:</strong> no login, no account data. Only the product title is
-                  sent to SmartBuy&apos;s public search API for the price check, and coupon codes
+                  sent to SmartBuy&apos;s public API for the price check, and coupon codes
                   are read from the public coupons API.
                 </span>
               </p>
@@ -71,12 +75,12 @@ export default function ExtensionPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Integration Hub — feature status (extension v1.3.0)</CardTitle>
+              <CardTitle className="text-base">Integration Hub — feature status (extension v2.0.0)</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <p className="flex justify-between gap-4">
-                <span><strong>Better-price banner</strong> — on retailer product pages</span>
-                <span className="shrink-0 font-medium text-green-700">Available</span>
+                <span><strong>Better-price overlay</strong> — best recorded price, price-history sparkline and price-alert button on retailer product pages</span>
+                <span className="shrink-0 font-medium text-green-700">Available in v2.0.0</span>
               </p>
               <p className="flex justify-between gap-4">
                 <span><strong>Checkout coupon panel</strong> — tap Apply, retailer applies the code</span>
@@ -87,7 +91,7 @@ export default function ExtensionPage() {
                   <strong>Background price-drop sync</strong> — re-checks products you viewed, hourly,
                   and notifies you in the browser when SmartBuy&apos;s price drops
                 </span>
-                <span className="shrink-0 font-medium text-green-700">Available in v1.3.0</span>
+                <span className="shrink-0 font-medium text-green-700">Available in v2.0.0</span>
               </p>
               <p className="flex justify-between gap-4">
                 <span>
@@ -115,12 +119,23 @@ export default function ExtensionPage() {
               </p>
               <ul className="list-disc space-y-1 pl-5">
                 <li>
-                  <code>GET /api/v1/extension/coupons?domain=amazon.com</code> — that merchant&apos;s
-                  currently-valid coupons (expired coupons are never served).
+                  <code>GET /api/v1/public/products?search=product name</code> — resolve a
+                  retailer product title to a catalog product (slug).
                 </li>
                 <li>
-                  <code>GET /api/v1/extension/price?slug=macbook-air-13</code> (or{' '}
-                  <code>?q=product name</code>) — cheapest in-stock merchant listings for one product.
+                  <code>GET /api/v1/public/products/&lt;slug&gt;</code> — the product with its
+                  latest recorded price (the overlay&apos;s best price; recorded data, not a
+                  live retailer quote, and with no merchant attribution — the public API
+                  does not expose per-merchant offers).
+                </li>
+                <li>
+                  <code>GET /api/v1/public/prices?slug=&lt;slug&gt;</code> — recorded price
+                  history for the overlay sparkline.
+                </li>
+                <li>
+                  <code>GET /api/v1/extension/coupons?domain=amazon.com</code> — that merchant&apos;s
+                  currently-valid coupons (expired coupons are never served). Coupons have no
+                  public-API equivalent yet, so the extension still uses this route.
                 </li>
               </ul>
             </CardContent>
@@ -157,7 +172,7 @@ export default function ExtensionPage() {
                   folder. The SmartBuy icon appears in your toolbar.
                 </li>
                 <li>
-                  Open any supported product page — the banner appears when a better price exists.
+                  Open any supported product page — the overlay appears when a better price exists.
                   On a checkout page, the coupon panel appears when SmartBuy has a code for that
                   retailer.
                 </li>

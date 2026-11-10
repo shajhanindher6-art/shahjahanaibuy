@@ -4,6 +4,7 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { ShoppingBasket } from 'lucide-react';
 import { BundleAllocator } from '@/components/bundle/bundle-allocator';
+import { ComboBundles } from '@/components/bundle/combo-bundles';
 
 /**
  * Budget-to-Cart Allocator page — Enterprise feature #4.
@@ -28,6 +29,9 @@ export default function BundlesPage() {
           </p>
         </div>
         <BundleAllocator />
+        <div className="mt-8">
+          <ComboBundles />
+        </div>
       </div>
       <SiteFooter />
     </div>

@@ -15,6 +15,7 @@
 import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { ExternalLink, Search, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -50,8 +51,7 @@ function TrackContent() {
         </CardHeader>
         <CardContent className="space-y-3">
           {image && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={image} alt={title || 'Product'} className="h-40 w-auto rounded-md object-contain" />
+<Image src={image} alt={title || 'Product'} width={400} height={200} unoptimized className="h-40 w-auto rounded-md object-contain" />
           )}
           <p className="font-medium">{title || 'No product title was detected.'}</p>
           {price !== null && <p className="text-lg font-semibold text-green-600">${price.toFixed(2)}</p>}

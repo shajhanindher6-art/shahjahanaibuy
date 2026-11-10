@@ -26,12 +26,32 @@ export interface Post {
   slug: string;
   title: string;
   excerpt: string;
-  /** ISO date. All ten launch articles publish 2026-11-06. */
+  /** ISO date. All ten launch articles publish 2026-11-06; ten more publish 2026-11-10. */
   datePublished: string;
   readMinutes: number;
   tags: string[];
   content: Block[];
+  /**
+   * Author — always the generic SmartBuy Editorial Team. No individual
+   * person is named anywhere on the blog: no author name, bio, or photo
+   * has been confirmed, and none is invented here. See
+   * /editorial-policy for the review process behind every article.
+   */
+  author: { name: string; role: string; bio: string } | undefined;
+  /** ISO date of the last content update, when it differs from datePublished. */
+  lastUpdated?: string;
 }
+
+/** The only author used on the blog. See the `author` note on Post. */
+export const EDITORIAL_TEAM_AUTHOR: {
+  name: string;
+  role: string;
+  bio: string;
+} = {
+  name: 'SmartBuy Editorial Team',
+  role: 'Editorial Team',
+  bio: 'The SmartBuy Editorial Team writes the buying guides and explainers on this blog from SmartBuy\'s own recorded data and features. Every article is checked against the site\'s data before it is published, and corrections are published openly — see the editorial policy page for how that works.',
+};
 
 export const POSTS: Post[] = [
   {
@@ -40,6 +60,8 @@ export const POSTS: Post[] = [
     excerpt:
       "A laptop's price today means little on its own. Here's how to read its price history — using the MacBook Air 13 as shown on SmartBuy — and decide whether now is a good time to buy.",
     datePublished: '2026-11-06',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-06',
     readMinutes: 4,
     tags: ['price history', 'laptops', 'MacBook Air', 'buying guide'],
     content: [
@@ -124,6 +146,8 @@ export const POSTS: Post[] = [
     excerpt:
       'Some "sales" start with a quiet price rise. SmartBuy\'s fake-sale check looks for a specific pattern — a rise of 10% or more within 30 days, then a drop that still leaves the price above where it started. Here is how it works.',
     datePublished: '2026-11-06',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-06',
     readMinutes: 4,
     tags: ['fake sale', 'price history', 'deals', 'buying guide'],
     content: [
@@ -200,6 +224,8 @@ export const POSTS: Post[] = [
     excerpt:
       'The sticker price is not the final price when a laptop crosses a border. SmartBuy\'s landed-cost calculator puts a $999 laptop at $1,296.70 delivered in Pakistan — here is what makes up the difference.',
     datePublished: '2026-11-06',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-06',
     readMinutes: 4,
     tags: ['landed cost', 'Pakistan', 'import duty', 'cross-border'],
     content: [
@@ -281,6 +307,8 @@ export const POSTS: Post[] = [
     excerpt:
       'SmartBuy lists exactly two coupons today — SAVE10 for Amazon and BESTBUY15 for Best Buy, both valid until January 29, 2027. Here is what each one is worth and where the discount actually happens.',
     datePublished: '2026-11-06',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-06',
     readMinutes: 4,
     tags: ['coupons', 'deals', 'Amazon', 'Best Buy'],
     content: [
@@ -356,6 +384,8 @@ export const POSTS: Post[] = [
     excerpt:
       'Nobody can promise you a future price. SmartBuy\'s Buy vs Wait guidance turns a product\'s real price history into a confidence score — here is how to read it, and what to do at each level.',
     datePublished: '2026-11-06',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-06',
     readMinutes: 4,
     tags: ['buy vs wait', 'price history', 'buying guide'],
     content: [
@@ -434,6 +464,8 @@ export const POSTS: Post[] = [
     excerpt:
       'The best time to buy a laptop is when the laptop you actually want drops in price. Price history tells you what happened; a price-drop alert watches for what happens next.',
     datePublished: '2026-11-06',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-06',
     readMinutes: 4,
     tags: ['timing', 'price-drop alerts', 'laptops', 'buying guide'],
     content: [
@@ -502,6 +534,8 @@ export const POSTS: Post[] = [
     excerpt:
       'Daraz, Amazon, and Best Buy are three different kinds of shopping for a buyer in Pakistan. Here is what SmartBuy shows for each — and, just as importantly, what it does not.',
     datePublished: '2026-11-06',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-06',
     readMinutes: 4,
     tags: ['Pakistan', 'Daraz', 'Amazon', 'Best Buy', 'cross-border'],
     content: [
@@ -574,6 +608,8 @@ export const POSTS: Post[] = [
     excerpt:
       'A price-drop alert watches a product for you and tells you when it reaches the price you would actually pay. Here is how to set one up on SmartBuy, and how to pick a target worth waiting for.',
     datePublished: '2026-11-06',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-06',
     readMinutes: 4,
     tags: ['price-drop alerts', 'how-to', 'deals'],
     content: [
@@ -653,6 +689,8 @@ export const POSTS: Post[] = [
     excerpt:
       'Reviews can mislead as easily as they can help. Here are the signals worth watching — and an honest fact to start with: SmartBuy has no real reviews yet, and it says so rather than inventing any.',
     datePublished: '2026-11-06',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-06',
     readMinutes: 4,
     tags: ['reviews', 'trust', 'buying guide'],
     content: [
@@ -722,6 +760,8 @@ export const POSTS: Post[] = [
     excerpt:
       'A budget is a promise. SmartBuy\'s gift finder treats your budget as a hard filter — nothing above it is ever recommended. Here is how it works, and what fits under $100 as shown on SmartBuy.',
     datePublished: '2026-11-06',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-06',
     readMinutes: 4,
     tags: ['gifts', 'budget', 'under $100'],
     content: [
@@ -781,6 +821,655 @@ export const POSTS: Post[] = [
         type: 'callout',
         title: 'Prices as shown on SmartBuy',
         text: 'Gift prices in this article are as shown on SmartBuy at the time of writing — the site\'s catalog figures, not live retailer prices. Check the retailer\'s page before you buy.',
+      },
+    ],
+  },
+  {
+    slug: 'best-laptops-under-1000-2026',
+    title: 'Best Laptops Under $1000 in 2026: What $999 Actually Buys',
+    excerpt:
+      'A $1000 budget is a hard line, not a suggestion. As shown on SmartBuy, exactly one laptop in the catalog sits under it — the MacBook Air 13 at $999 — and this guide explains what that buys, what to check before you spend it, and where the real costs hide.',
+    datePublished: '2026-11-10',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-10',
+    readMinutes: 4,
+    tags: ['laptops', 'under $1000', 'MacBook Air', 'buying guide'],
+    content: [
+      {
+        type: 'p',
+        text: 'A thousand dollars is the most common laptop budget there is, and it is also the most misleading one. Laptops cluster just above and just below the line, and a laptop listed at $1,099 is not a $999 laptop with a small stretch — it is a different purchase, with different trade-offs. This guide works with the budget as a hard line, and with the prices SmartBuy actually shows, not with wishful rounding.',
+      },
+      { type: 'h2', text: 'What is actually under $1000, as shown on SmartBuy' },
+      {
+        type: 'p',
+        text: 'Start with the honest answer. As shown on SmartBuy, exactly one laptop in the catalog is priced under $1000: the MacBook Air 13, listed at $999 on Amazon against a compare-at price of $1,099, and $1,018.98 on Best Buy. The other laptops in the catalog sit above the line — the Dell XPS 13 at $1,099 and the Lenovo ThinkPad X1 at $1,399, both as shown on SmartBuy. That is the whole under-$1000 laptop list today, and pretending otherwise would be inventing products that are not there.',
+      },
+      {
+        type: 'p',
+        text: 'The MacBook Air 13 at $999 is not a compromise pick, though. Its recorded figures on SmartBuy are strong: it weighs 1.24 kg, draws 30 W, and carries a repairability index of 76 out of 100 — rated Excellent — with spare parts recorded as available for 8 years. Its hardware endurance index is 96 out of 100, also Excellent, and its recorded carbon footprint is 185 kg of CO2e against a 250 kg category baseline, which earns it a sustainability grade of A. Those are recorded values for this one product, not claims about laptops in general.',
+      },
+      { type: 'h2', text: 'The total cost is not $999' },
+      {
+        type: 'p',
+        text: 'The sticker price is the start of the cost, not the end of it. SmartBuy records $49 of mandatory accessories for the MacBook Air 13, which takes the total cost of ownership to $1,048 on a $999 base — before you add anything of your own, like a case or a charger you actually need. That $49 is a recorded figure, shown as its own line so you can see it, and the product page warns you if you enter the same accessories again yourself, so the cost is not counted twice.',
+      },
+      {
+        type: 'p',
+        text: 'Then there is the cost of running it. At 30 W and eight hours of use a day, the MacBook Air 13 uses about 87.6 kWh of electricity a year — simple arithmetic on recorded power draw. What that costs in money depends on your own electricity tariff, which SmartBuy never guesses: you enter your own rate, and it stays on your device.',
+      },
+      { type: 'h2', text: 'What to check before you buy any laptop under $1000' },
+      {
+        type: 'list',
+        items: [
+          'Weight and portability: 1.24 kg is genuinely light. If you carry the laptop daily, a kilogram matters more than a slightly faster chip.',
+          'Repairability: a laptop you can repair lasts longer. The MacBook Air 13 scores 76 out of 100 on SmartBuy\'s repairability index, with 8 years of spare parts recorded — check the same figure for any laptop you consider.',
+          'Battery and power: low power draw means longer battery life and lower running costs. 30 W is low; compare it before you assume.',
+          'Warranty scope: the MacBook Air 13 carries a recorded "1-Year Official International Warranty". Check whether a warranty is honoured where you live before you buy across a border.',
+          'Resale value: SmartBuy\'s resale predictor, using a recorded annual depreciation rate of 12%, estimates the MacBook Air 13 keeps 76% of its value — $759.24 — after 24 months. That figure is simulated, not a resale quote, but it is built on a recorded rate, not a guess.',
+        ],
+      },
+      { type: 'h2', text: 'Timing: is $999 a good price right now?' },
+      {
+        type: 'p',
+        text: 'The MacBook Air 13 as shown on SmartBuy has a recorded price history of four points over about a month: $1,048.95, then $1,018.98, then $999, then $999, with the main drop on October 26, 2026. The current price equals the lowest recorded price, and the product page marks it "At lowest". That is useful, but it is a short history — four points is the lowest confidence band in SmartBuy\'s Buy vs Wait guidance, at 25% — so treat it as a good price today rather than a promise about tomorrow.',
+      },
+      {
+        type: 'p',
+        text: 'Two coupons also apply to this laptop: SAVE10, worth 10% off at Amazon, and BESTBUY15, worth $15 off at Best Buy, both valid until January 29, 2027. On the $999 Amazon price, SAVE10 is worth $99.90 in simple arithmetic — but the discount is applied at the retailer\'s checkout, not on SmartBuy.',
+      },
+      { type: 'h2', text: 'If your budget is $1000 and the laptop is $1,099' },
+      {
+        type: 'p',
+        text: 'The Dell XPS 13 at $1,099 as shown on SmartBuy is $100 over a $1000 budget. That is not a rounding error, and this guide will not tell you to stretch. Either the budget moves — honestly, to $1,100, with the extra $100 found somewhere real — or the laptop changes. What you should not do is buy the $1,099 laptop while telling yourself it cost $999, because that is how budgets fail quietly.',
+      },
+      {
+        type: 'callout',
+        title: 'Prices as shown on SmartBuy',
+        text: 'All prices in this article are as shown on SmartBuy at the time of writing — the site\'s catalog figures, not live retailer prices. The under-$1000 list reflects the catalog as it stands today; check the retailer\'s page before you buy.',
+      },
+    ],
+  },
+  {
+    slug: 'headphones-buying-guide-2026',
+    title: 'Headphones Buying Guide 2026: Noise Cancelling, Battery, and Fit',
+    excerpt:
+      'Two headphones in the SmartBuy catalog anchor this guide — the Sony WH-1000XM5 at $399 and the Bose QuietComfort Ultra at $429, as shown on SmartBuy. Here is how to choose between them, and what to check on any pair before you buy.',
+    datePublished: '2026-11-10',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-10',
+    readMinutes: 4,
+    tags: ['headphones', 'buying guide', 'Sony', 'Bose'],
+    content: [
+      {
+        type: 'p',
+        text: 'Headphones are the rare tech purchase where the specification sheet matters less than your own ears and your own day. A pair that sounds superb but hurts after an hour is a bad purchase, and a pair with great battery life that you never wear because it slips off is worse. This guide starts with the two headphones SmartBuy actually lists, then covers what to check on any pair.',
+      },
+      { type: 'h2', text: 'The two headphones as shown on SmartBuy' },
+      {
+        type: 'table',
+        headers: ['Headphones', 'Price as shown (Amazon)', 'Compare-at price', 'Recorded deal'],
+        rows: [
+          ['Sony WH-1000XM5', '$399', '$449', '20% off, flash deal (demo)'],
+          ['Bose QuietComfort Ultra', '$429', '$479', '15% off, flash deal (demo)'],
+        ],
+      },
+      {
+        type: 'p',
+        text: 'Both are over-ear noise-cancelling headphones, and both are priced within $30 of each other as shown on SmartBuy — $399 for the Sony and $429 for the Bose, against compare-at prices of $449 and $479. The $30 gap is real but small, and it should not decide the purchase on its own. What should decide it is fit, and how and where you will use them.',
+      },
+      {
+        type: 'p',
+        text: 'One honest note about the table: the "recorded deal" column comes from SmartBuy\'s deals table, which lists demo launch deals — the Sony at 20% off and the Bose at 15% off, both labelled demo. Those percentages are the deals as recorded, not a claim about a live retailer discount, and they are measured on a different basis from the compare-at prices in the same table. Check the product page and the retailer before you treat any deal percentage as the price you will pay.',
+      },
+      { type: 'h2', text: 'Noise cancelling: what it does and what it does not' },
+      {
+        type: 'p',
+        text: 'Active noise cancelling is best at steady, low sounds — engine hum on a plane, air conditioning, the drone of a train. It is much less effective against sudden sounds: a door slamming, a person speaking next to you, a dog barking. If you buy noise-cancelling headphones expecting silence, you will be disappointed; if you buy them expecting the world turned down, you will be pleased.',
+      },
+      {
+        type: 'p',
+        text: 'Try before you buy if you can. Noise cancelling also creates a slight pressure sensation for some people, and it varies from person to person. No review, including this one, can tell you whether you will feel it — only wearing the headphones for twenty minutes can.',
+      },
+      { type: 'h2', text: 'Fit matters more than the spec sheet' },
+      {
+        type: 'list',
+        items: [
+          'Wear them for at least twenty minutes before deciding. Discomfort that is invisible in the first minute appears by the twentieth.',
+          'If you wear glasses, check the seal around the arms. A broken seal leaks sound in and lets bass out, and it hurts after an hour.',
+          'Check the weight on your head, not in your hand. A pair that feels light in the shop can feel heavy after a long call.',
+          'If you run or commute, check how firmly they stay put. Over-ear headphones that slide are a constant distraction.',
+          'Ear cup size matters: small cups press on the ear itself, large cups sit around it. Around is almost always more comfortable.',
+        ],
+      },
+      { type: 'h2', text: 'Battery, charging, and the things people forget' },
+      {
+        type: 'p',
+        text: 'Battery life is quoted in ideal conditions — noise cancelling on, volume at a moderate level, no calls. Real use is usually shorter, and cold weather shortens it further. Treat a quoted figure as a ceiling, not a promise, and check two practical things instead: how the headphones charge, and whether they still work with a cable when the battery is dead. A pair that becomes useless at 0% is a pair that will strand you once.',
+      },
+      {
+        type: 'p',
+        text: 'Also check the warranty and the return window before you buy, and read the retailer\'s own terms rather than assuming. Headphones are a fit-dependent purchase, and a return policy that covers "I wore them for a week and they hurt" is worth more than a slightly lower price with no returns.',
+      },
+      { type: 'h2', text: 'How to decide between the Sony and the Bose' },
+      {
+        type: 'p',
+        text: 'On price alone as shown on SmartBuy, the Sony is $30 cheaper at $399 against the Bose at $429, and both carry recorded demo deals. But price is the weakest reason to choose between two headphones this close. Choose on fit first — wear both if you can — then on how you use them: long calls favour comfort and microphone quality, travel favours noise cancelling and battery, and the gym favours a firm fit you will not get from either over-ear pair. If you cannot try them, buy from the retailer with the return policy you trust most, and use the first week as the real test.',
+      },
+      {
+        type: 'callout',
+        title: 'Prices as shown on SmartBuy',
+        text: 'Headphone prices in this article are as shown on SmartBuy at the time of writing — the site\'s catalog figures, not live retailer prices. The deals listed are recorded demo launch deals. Check the retailer\'s page before you buy.',
+      },
+    ],
+  },
+  {
+    slug: 'tv-buying-guide-2026',
+    title: 'TV Buying Guide 2026: Size, Panel, and the Features That Actually Matter',
+    excerpt:
+      'SmartBuy does not list TVs in its catalog today, so this guide names no TV prices — it explains size, panel types, refresh rates, and HDR in plain language, so you can judge any TV on its own merits.',
+    datePublished: '2026-11-10',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-10',
+    readMinutes: 4,
+    tags: ['TV', 'buying guide', 'home entertainment'],
+    content: [
+      {
+        type: 'p',
+        text: 'A television is the biggest screen most people will ever buy, and the easiest purchase to get wrong — because the showroom is designed to mislead you. Bright lights, vivid demo footage, and every set turned up to maximum make all of them look good and none of them look like they will in your living room. This guide explains what actually matters, and starts with an honest fact: SmartBuy does not list TVs in its catalog today, so no TV prices appear here. What follows is general buying guidance, not a price list.',
+      },
+      { type: 'h2', text: 'Size first: measure the room, not the wall' },
+      {
+        type: 'p',
+        text: 'Size is the decision that matters most and the one people most often get wrong, usually by buying too small. The rule is simple: sit where you will actually watch, measure the distance to the screen, and buy the largest size that fits that distance comfortably. A television that is too small for the room is a permanent regret; a television that is slightly too large is something your eyes adjust to within a week.',
+      },
+      {
+        type: 'p',
+        text: 'As a rough guide, a viewing distance of about 2 metres suits a 55-inch screen, and about 2.5 to 3 metres suits a 65-inch screen. These are starting points, not rules — if you watch mostly films, go bigger; if the room is bright and you sit close, be more careful. And measure the furniture too: a 65-inch television needs a stand wider than 65 inches of television, and a wall mount needs a wall that can hold it.',
+      },
+      { type: 'h2', text: 'Panel types in plain language' },
+      {
+        type: 'table',
+        headers: ['Panel type', 'Strengths', 'Watch out for'],
+        rows: [
+          ['OLED', 'Deep blacks, wide viewing angles', 'Usually the most expensive; bright rooms can wash it out'],
+          ['QLED / Mini-LED', 'Very bright, good for sunny rooms', 'Blacks are not as deep as OLED'],
+          ['Standard LED / LCD', 'Cheapest, plenty bright', 'Narrower viewing angles, weaker contrast'],
+        ],
+      },
+      {
+        type: 'p',
+        text: 'If you watch in a dark room and care about films, OLED is the panel to beat. If your room is bright with big windows, a bright QLED or Mini-LED set will hold up better. If the budget is tight, a standard LED set is perfectly watchable — the panel matters less than the size, and a big standard LED television beats a small premium one for most viewers.',
+      },
+      { type: 'h2', text: 'Resolution, refresh rate, and HDR — what the numbers mean' },
+      {
+        type: 'p',
+        text: 'Resolution is the simplest number: 4K is the standard to buy in 2026, and 8K is not worth paying extra for, because there is almost no 8K content to watch on it. Refresh rate matters if you watch sport or play games — 120 Hz is visibly smoother than 60 Hz for fast motion, and worth having if the price gap is small. HDR is the feature that most improves the picture after size: it is the difference between a bright sky that is one flat white and a sky with detail in the clouds. Look for HDR10 or Dolby Vision support, and be wary of sets that claim HDR on paper but cannot get bright enough to show it.',
+      },
+      { type: 'h2', text: 'The features that actually matter' },
+      {
+        type: 'list',
+        items: [
+          'Ports: count the HDMI ports and check at least one is HDMI 2.1 if you own a modern games console. Running out of ports is a permanent annoyance.',
+          'Sound: built-in TV speakers are almost always mediocre. Budget for a soundbar, or check the TV\'s audio output options before you buy.',
+          'Smart system: check that the apps you actually use are available on the TV\'s own system, so you do not need an extra streaming stick.',
+          'Viewing angle: if people watch from the sides, check the picture from an angle in the shop, not just head-on.',
+          'Warranty and returns: a television is large, heavy, and hard to return. Read the retailer\'s delivery, installation, and returns terms before you order, not after.',
+        ],
+      },
+      { type: 'h2', text: 'What to do in the shop' },
+      {
+        type: 'p',
+        text: 'In the shop, ask to see the television with normal content, not the demo reel, and ask to turn the picture mode to the standard or cinema setting rather than the vivid shop mode. Step to the side and check the angle. Check the remote — you will hold it every day, and a bad remote is a daily irritation. And check the price history habit you would use for any purchase: a television that was "on sale" last week at the same price is not on sale, whatever the badge says.',
+      },
+      {
+        type: 'callout',
+        title: 'No TV prices on SmartBuy — yet',
+        text: 'SmartBuy does not list televisions in its catalog today, so this guide gives you the knowledge to judge any TV rather than prices for specific models. If TVs are added to the catalog, their prices will appear as shown on SmartBuy, labelled as catalog figures.',
+      },
+    ],
+  },
+  {
+    slug: 'gaming-accessories-buying-guide',
+    title: 'Gaming Accessories Buying Guide: Mouse, Keyboard, Headset, and Monitor',
+    excerpt:
+      'SmartBuy\'s catalog holds no dedicated gaming gear today, so this guide is honest about that — it explains what matters in a gaming mouse, keyboard, headset, and monitor, and where the catalog\'s own accessories fit in.',
+    datePublished: '2026-11-10',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-10',
+    readMinutes: 4,
+    tags: ['gaming', 'accessories', 'buying guide'],
+    content: [
+      {
+        type: 'p',
+        text: 'Gaming accessories are where small differences become big ones. A mouse that is five grams too heavy, a keyboard whose keys feel wrong, or a headset that hurts after an hour will bother you every single session — and unlike a graphics card, no specification sheet can tell you whether any of them will suit you. Start with the honest fact: SmartBuy does not list dedicated gaming gear in its catalog today. What it does list, and what this guide uses as its anchor, is the Logitech MX Master 3S at $99 as shown on SmartBuy — a superb productivity mouse that is not a gaming mouse, and the difference is exactly the point.',
+      },
+      { type: 'h2', text: 'The mouse: weight, sensor, and shape' },
+      {
+        type: 'p',
+        text: 'A gaming mouse is judged on three things: weight, sensor, and shape. Weight matters because you move it thousands of times a session — lighter is usually better for fast games, and anything under about 70 grams is considered light. The sensor matters because it must track accurately at speed, without acceleration or jitter; any modern gaming sensor does this, and the differences between good ones are smaller than the marketing suggests. Shape matters most of all, because it is the only one of the three that is personal: a mouse shaped for a palm grip will cramp a claw-grip hand, and no review can feel your hand for you.',
+      },
+      {
+        type: 'p',
+        text: 'That is why the Logitech MX Master 3S at $99 as shown on SmartBuy is a useful contrast. It is a heavy, sculpted productivity mouse with extra buttons and a free-spinning scroll wheel — wonderful for work, wrong for fast gaming. If your main use is work with some gaming on the side, it is a fine choice. If gaming is the main use, buy a mouse designed for it, and hold it before you commit.',
+      },
+      { type: 'h2', text: 'The keyboard: switches are the whole decision' },
+      {
+        type: 'p',
+        text: 'A gaming keyboard is its switches. Linear switches press smoothly and are favoured for fast games; tactile switches give a small bump you can feel; clicky switches add a sound as well. None is objectively best — it is a preference, and the only way to know yours is to type on each kind. Beyond switches, check three practical things: whether the keycaps are replaceable, whether the board is hot-swappable (so you can change switches without soldering), and whether it has a layout you can live with — a compact board saves desk space but loses keys you may miss.',
+      },
+      { type: 'h2', text: 'The headset: comfort first, sound second' },
+      {
+        type: 'table',
+        headers: ['What to check', 'Why it matters'],
+        rows: [
+          ['Comfort after an hour', 'A headset that hurts ends the session early'],
+          ['Microphone quality', 'Your teammates hear the microphone, not the drivers'],
+          ['Wired vs wireless', 'Wired never needs charging; wireless needs a battery you remember'],
+          ['Open vs closed back', 'Open sounds wider but leaks sound; closed keeps it in'],
+        ],
+      },
+      {
+        type: 'p',
+        text: 'Headset sound quality is the least important difference between good headsets, because most of them sound good enough. Comfort and the microphone matter more: you wear the headset for hours, and your teammates hear only the microphone. If you already own good headphones — the Sony WH-1000XM5 at $399 and the Bose QuietComfort Ultra at $429 as shown on SmartBuy are both in the catalog — a separate microphone may serve you better than a gaming headset, and it will sound better on calls too.',
+      },
+      { type: 'h2', text: 'The monitor: refresh rate beats resolution' },
+      {
+        type: 'p',
+        text: 'For gaming, refresh rate matters more than resolution. A 144 Hz monitor at 1080p will feel smoother and more responsive than a 60 Hz monitor at 4K, and for competitive games the difference is not subtle. Check the panel type too: fast IPS panels are the safe all-round choice, VA panels have better contrast but can smear in fast motion, and OLED is superb but expensive. And check the ports — a monitor without the right connection for your console or PC is a problem no setting can fix.',
+      },
+      { type: 'h2', text: 'A sensible order to buy in' },
+      {
+        type: 'list',
+        items: [
+          'Mouse first — it is the cheapest upgrade and the one you touch most.',
+          'Headset or microphone second — comfort and communication change every session.',
+          'Keyboard third — switches are personal, so try before you buy.',
+          'Monitor last — it is the most expensive, so buy it once you know what your games actually need.',
+          'Set a price-drop alert on SmartBuy for anything you decide to wait for, and buy when the alert fires rather than checking daily.',
+        ],
+      },
+      {
+        type: 'callout',
+        title: 'Prices as shown on SmartBuy',
+        text: 'The Logitech MX Master 3S at $99 and the Sony and Bose headphones are as shown on SmartBuy at the time of writing — the site\'s catalog figures, not live retailer prices. SmartBuy lists no dedicated gaming gear today; this guide covers what to look for when you shop for it elsewhere.',
+      },
+    ],
+  },
+  {
+    slug: 'kitchen-appliances-buying-guide',
+    title: 'Kitchen Appliances Buying Guide: What to Check Before You Spend',
+    excerpt:
+      'SmartBuy lists no kitchen appliances today, so this guide names no prices. It covers capacity, power, materials, and warranty — the four checks that decide whether a kitchen appliance earns its counter space.',
+    datePublished: '2026-11-10',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-10',
+    readMinutes: 4,
+    tags: ['kitchen', 'appliances', 'buying guide', 'home'],
+    content: [
+      {
+        type: 'p',
+        text: 'Kitchen appliances fail in a particular way: they do not break, they just stop being used. The bread maker gathers dust, the juicer lives in a cupboard, the elaborate coffee machine is used twice and then abandoned for the simple one. The honest question before buying any kitchen appliance is not whether it is good — it is whether you will use it on a normal Tuesday. Start with the plain fact: SmartBuy lists no kitchen appliances in its catalog today, so this guide gives you the checks, not prices.',
+      },
+      { type: 'h2', text: 'Capacity: buy for your real household' },
+      {
+        type: 'p',
+        text: 'Capacity is the most common mistake. A mixer bought for a family of five is too big for a household of one, and a small air fryer that cooks for two is useless for four. Count the people who will actually eat from it, not the people who might visit one day. And measure the counter: an appliance that does not fit where you will use it will live in a cupboard, and an appliance in a cupboard is an appliance you do not use. Check the height under your cabinets too — many appliances are taller than the gap they must slide into.',
+      },
+      { type: 'h2', text: 'Power and energy: read the watts' },
+      {
+        type: 'p',
+        text: 'Power ratings tell you two things: how fast the appliance works, and how much electricity it uses. A higher wattage usually means faster heating or stronger mixing, but it also means higher running costs. For appliances you use daily, the running cost matters more than the purchase price over a year — a kettle used four times a day costs more to run in a year than the difference between a cheap kettle and a good one. Check the energy label where one exists, and be honest about how often you will actually use it before paying extra for power you do not need.',
+      },
+      { type: 'h2', text: 'Materials: what touches your food' },
+      {
+        type: 'table',
+        headers: ['Material', 'Good for', 'Watch out for'],
+        rows: [
+          ['Stainless steel', 'Durability, easy cleaning', 'Heavier, can show fingerprints'],
+          ['Glass', 'Seeing what is happening inside', 'Breakable, heavier'],
+          ['Non-stick coating', 'Easy release and cleaning', 'Coating wears; check if it is replaceable'],
+          ['Plastic', 'Light, cheap', 'Can stain and hold smells; check it is food-safe'],
+        ],
+      },
+      {
+        type: 'p',
+        text: 'The material that touches your food is the part worth caring about. Stainless steel and glass last longest and clean easiest; non-stick coatings are convenient but wear out, so check whether the coated part can be replaced on its own. And check which parts can go in the dishwasher — an appliance whose parts must all be hand-washed will be used less than one you can rinse and load.',
+      },
+      { type: 'h2', text: 'Warranty, parts, and the repair question' },
+      {
+        type: 'list',
+        items: [
+          'Check the warranty length and what it covers — a one-year warranty on a motor that should last five years is a warning.',
+          'Ask whether spare parts are available: a jug, a blade, or a seal that cannot be replaced turns a small failure into a dead appliance.',
+          'Check the returns policy before you buy, especially for large appliances — returning a fridge is not like returning a mouse.',
+          'Read the retailer\'s own terms for delivery and installation; a heavy appliance may need two people and a booked slot.',
+          'Keep the receipt. SmartBuy\'s receipt vault records purchase plus warranty months and flags expiry within 30 days — but the receipt itself is yours to keep.',
+        ],
+      },
+      { type: 'h2', text: 'The Tuesday test' },
+      {
+        type: 'p',
+        text: 'Before you buy, run the Tuesday test: imagine a normal weekday, not a dinner party. Will you take this appliance out, use it, clean it, and put it away on a Tuesday? If the answer is no, the appliance will live in a cupboard, and the money is better spent on the simpler version you will actually use — or on nothing at all. The best kitchen appliance is the one that earns its counter space every week, and the most expensive mistake is the impressive one you never touch.',
+      },
+      {
+        type: 'callout',
+        title: 'No kitchen prices on SmartBuy — yet',
+        text: 'SmartBuy does not list kitchen appliances in its catalog today, so this guide gives you the checks rather than prices for specific models. If kitchen appliances are added, their prices will appear as shown on SmartBuy, labelled as catalog figures.',
+      },
+    ],
+  },
+  {
+    slug: 'fitness-trackers-buying-guide-2026',
+    title: 'Fitness Trackers Buying Guide 2026: Sensors, Battery, and Honest Expectations',
+    excerpt:
+      'One wearable anchors this guide — the Garmin Venu 3 at $449 as shown on SmartBuy. Here is what a fitness tracker can and cannot tell you, and how to choose one you will still wear in six months.',
+    datePublished: '2026-11-10',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-10',
+    readMinutes: 4,
+    tags: ['fitness', 'wearables', 'buying guide', 'Garmin'],
+    content: [
+      {
+        type: 'p',
+        text: 'A fitness tracker is a promise you wear on your wrist: that numbers will make you healthier. Sometimes they do. Often they do not, because the tracker ends up in a drawer by February — not because it was bad, but because the habit it was supposed to support never formed. This guide starts with the one wearable SmartBuy lists, the Garmin Venu 3 at $449 as shown on SmartBuy against a compare-at price of $499, and then covers what any tracker can and cannot do for you.',
+      },
+      { type: 'h2', text: 'What a tracker measures — and how much to trust it' },
+      {
+        type: 'p',
+        text: 'A wrist tracker measures a few things well and several things approximately. Step counts are usually close. Heart rate during steady exercise is usually reasonable. Sleep stages, stress scores, and "body battery" figures are estimates built from those measurements, not direct readings — useful as trends, misleading as precise numbers. The honest way to use a tracker is to watch the direction over weeks, not the number on any single day: is your resting heart rate falling, is your sleep getting longer, are you moving more than last month?',
+      },
+      {
+        type: 'p',
+        text: 'One thing a tracker cannot do is diagnose. A heart-rate reading is not a medical opinion, and a sleep score is not a sleep study. If a tracker shows something worrying, the next step is a clinician, not a different tracker. And a tracker is not a substitute for the activity itself — the person who walks without a tracker is healthier than the person who wears one and does not walk.',
+      },
+      { type: 'h2', text: 'Sensors and features worth checking' },
+      {
+        type: 'list',
+        items: [
+          'Heart-rate sensor: check it works during your kind of exercise, not just at rest. Wrist sensors struggle with some activities, and a chest strap is more accurate if that matters to you.',
+          'GPS: built-in GPS means you can leave your phone behind on a run. Phone-dependent GPS means you cannot.',
+          'Water resistance: check the actual rating, not the word "waterproof". A tracker rated for swimming is different from one rated for splashes.',
+          'Battery life: a tracker you charge every night is a tracker that misses your sleep. Longer battery life is worth paying for if you want sleep data.',
+          'Screen: check you can read it in sunlight, because that is where you will use it most.',
+        ],
+      },
+      { type: 'h2', text: 'Battery, charging, and the sleep trade-off' },
+      {
+        type: 'p',
+        text: 'Battery life is the feature that decides whether a tracker stays on your wrist. A tracker that needs charging every day will be on the charger on the nights you most want sleep data, and the habit breaks. When you compare trackers, ask how many days of real use you get — not the headline figure, which is usually measured with features switched off — and how long a full charge takes. A tracker that charges in an hour during your shower is a tracker that never misses a night.',
+      },
+      { type: 'h2', text: 'The app matters as much as the hardware' },
+      {
+        type: 'p',
+        text: 'You will spend more time in the tracker\'s app than looking at the tracker itself, so check the app before you buy the hardware. Is your history easy to find? Can you export your data? Does the app require a subscription for the features you actually want — some trackers charge monthly for the insights that made you buy them, and that subscription is a cost the sticker price hides. Check the app\'s reviews and the subscription terms on the maker\'s own site before you commit.',
+      },
+      { type: 'h2', text: 'Will you still wear it in six months?' },
+      {
+        type: 'p',
+        text: 'The most honest test of a fitness tracker has nothing to do with sensors. It is whether you will still wear it in six months. Comfort decides that more than features do: a tracker that pinches, itches, or looks wrong with your clothes will come off, and once it comes off, it stays off. Try it on, wear it for a day if the return policy allows, and pay attention to the strap, the weight, and whether you notice it at all by the evening. The Garmin Venu 3 at $449 as shown on SmartBuy is the catalog\'s one wearable — but the question is the same for any tracker at any price: will it still be on your wrist when the novelty wears off?',
+      },
+      {
+        type: 'callout',
+        title: 'Prices as shown on SmartBuy',
+        text: 'The Garmin Venu 3 price in this article is as shown on SmartBuy at the time of writing — the site\'s catalog figure, not a live retailer price. Sensor and battery details are general guidance, not recorded specifications for this product. Check the retailer\'s page before you buy.',
+      },
+    ],
+  },
+  {
+    slug: 'camera-buying-guide-2026',
+    title: 'Camera Buying Guide 2026: Mirrorless, Action Cameras, and the Lens Trap',
+    excerpt:
+      'Two cameras anchor this guide — the Canon EOS R10 at $979 and the GoPro Hero 12 at $399, as shown on SmartBuy. One is for photographs, one is for action, and the guide explains how to tell which kind of camera you actually need.',
+    datePublished: '2026-11-10',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-10',
+    readMinutes: 4,
+    tags: ['cameras', 'buying guide', 'Canon', 'GoPro'],
+    content: [
+      {
+        type: 'p',
+        text: 'The first question in buying a camera is not which camera — it is whether you need a camera at all. A modern phone takes photographs that would have seemed miraculous ten years ago, and for most people, most of the time, it is enough. A dedicated camera earns its place when the phone cannot do the job: fast action in poor light, a distant subject, a lens you can change, or video that needs to survive being dropped in a river. This guide covers the two cameras SmartBuy lists, and the trap that catches almost every first-time buyer.',
+      },
+      { type: 'h2', text: 'The two cameras as shown on SmartBuy' },
+      {
+        type: 'table',
+        headers: ['Camera', 'Price as shown (Amazon)', 'Compare-at price', 'Best for'],
+        rows: [
+          ['Canon EOS R10', '$979', '$1,079', 'Photographs, learning photography'],
+          ['GoPro Hero 12', '$399', '$449', 'Action video, water, mounting anywhere'],
+        ],
+      },
+      {
+        type: 'p',
+        text: 'These two cameras are not competitors — they are answers to different questions. The Canon EOS R10 at $979 as shown on SmartBuy is a mirrorless camera: interchangeable lenses, a large sensor, and controls that reward learning. The GoPro Hero 12 at $399 as shown on SmartBuy is an action camera: tiny, waterproof, mountable anywhere, and built to be knocked about. Buying the wrong kind is the most expensive mistake in this guide, and it has nothing to do with quality.',
+      },
+      { type: 'h2', text: 'Mirrorless: the lens trap' },
+      {
+        type: 'p',
+        text: 'Here is the trap. A mirrorless camera body is only the start of the cost. The lens that comes in the box is a beginning, not a kit — and the lenses you will want next cost real money, sometimes more than the body itself. Before you buy the Canon EOS R10, or any mirrorless camera, price the whole kit: the body, the lens you will want for the photographs you actually take, a spare battery, and a memory card fast enough for the video you plan to shoot. A $979 body with a $600 lens you need is a $1,579 purchase, and it should be budgeted as one.',
+      },
+      {
+        type: 'p',
+        text: 'The second part of the trap is the system. Lenses do not transfer between camera makers, so the brand you choose is the brand you are buying into for years. Check the lens range and the second-hand market before you choose a body, because the body is the cheapest part of the system you are joining.',
+      },
+      { type: 'h2', text: 'Action cameras: small, tough, and limited on purpose' },
+      {
+        type: 'p',
+        text: 'An action camera is a specialist. The GoPro Hero 12 is built for video in motion — on a bike, in the sea, on a helmet — and it is superb at exactly that. It is not a general camera: its small sensor struggles in low light, it has no zoom worth using, and its photographs are a convenience, not a reason to buy it. If your need is "record what I am doing", it is the right tool. If your need is "take beautiful photographs", it is the wrong one, however good the video looks.',
+      },
+      { type: 'h2', text: 'What to check on any camera' },
+      {
+        type: 'list',
+        items: [
+          'Sensor size: bigger sensors gather more light and give better results in poor light. It matters more than megapixels.',
+          'Megapixels: beyond a point, more megapixels mostly mean bigger files. Do not pay extra for a number you will never use.',
+          'Video: check the resolution and frame rate you actually need, and whether the camera overheats during long recordings.',
+          'Battery: camera batteries are small and video drains them fast. Budget for a spare from the start.',
+          'Weight: a camera you leave at home takes no photographs. Hold it, with the lens attached, before you decide.',
+          'Warranty and returns: check the retailer\'s own terms, and keep the receipt — SmartBuy\'s receipt vault records purchase plus warranty months.',
+        ],
+      },
+      { type: 'h2', text: 'The phone test' },
+      {
+        type: 'p',
+        text: 'Before you spend anything, run the phone test: look at your last hundred photographs and ask what the phone could not do. If the answer is "nothing, really", you do not need a camera yet — spend the money on a trip to somewhere worth photographing instead. If the answer is specific — "the indoor photographs are all blurry", "the birds are too far away", "the video shakes" — then you know what kind of camera to buy, and this guide has done its job. The Canon EOS R10 and the GoPro Hero 12 as shown on SmartBuy cover the two most common honest answers; everything else is a variation on one of them.',
+      },
+      {
+        type: 'callout',
+        title: 'Prices as shown on SmartBuy',
+        text: 'Camera prices in this article are as shown on SmartBuy at the time of writing — the site\'s catalog figures, not live retailer prices. Lens prices are not listed on SmartBuy; check the retailer\'s page before you buy.',
+      },
+    ],
+  },
+  {
+    slug: 'tablet-vs-laptop-which-to-buy',
+    title: 'Tablet vs Laptop: Which One Should You Actually Buy?',
+    excerpt:
+      'SmartBuy lists laptops but no tablets today, so this comparison is honest about that. It lays out what each device does well, who each one suits, and the three questions that settle the choice.',
+    datePublished: '2026-11-10',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-10',
+    readMinutes: 4,
+    tags: ['tablets', 'laptops', 'comparison', 'buying guide'],
+    content: [
+      {
+        type: 'p',
+        text: 'Tablet or laptop? It is a question that sounds like a choice between two similar things, but it is really a question about how you work. A tablet and a laptop are not two versions of the same device — they are two different answers to the question of what a computer is for. Start with the honest fact: SmartBuy lists laptops in its catalog but no tablets today, so the laptop side of this comparison uses real SmartBuy figures and the tablet side uses general guidance. That asymmetry is itself part of the answer.',
+      },
+      { type: 'h2', text: 'What a laptop does that a tablet cannot' },
+      {
+        type: 'p',
+        text: 'A laptop is a general-purpose computer with a keyboard attached. It runs full desktop software, manages files properly, connects to anything, and lets you work with several windows open at once. The MacBook Air 13 at $999 as shown on SmartBuy illustrates the point: it weighs 1.24 kg, runs all day on 30 W, carries a repairability index of 76 out of 100, and its recorded carbon footprint is 185 kg against a 250 kg category baseline. It is a complete working machine, and it is priced as one.',
+      },
+      {
+        type: 'p',
+        text: 'If your work involves writing long documents, spreadsheets, code, photo editing, or anything with many files and windows, a laptop is not the better choice — it is the only practical one. A tablet can do these things with accessories and patience, but "can, with accessories and patience" is not the same as "does well".',
+      },
+      { type: 'h2', text: 'What a tablet does better' },
+      {
+        type: 'list',
+        items: [
+          'Reading, watching, and browsing: a tablet is lighter in the hand, better on a sofa, and nicer on a plane.',
+          'Drawing and handwriting: a stylus on a tablet is a natural tool; a stylus on a laptop is an afterthought.',
+          'Battery and standby: tablets wake instantly and sip power when idle, which suits carrying around all day.',
+          'Simplicity: there is less to manage, fewer settings to break, and less that can go wrong — which matters for children and for older relatives.',
+          'Price at the low end: a basic tablet costs far less than a basic laptop, and for browsing and video that is all some people need.',
+        ],
+      },
+      { type: 'h2', text: 'The hidden cost of a tablet' },
+      {
+        type: 'p',
+        text: 'A tablet\'s sticker price is rarely its real price. The keyboard, the stylus, and the case are usually sold separately, and together they can add a large fraction to the cost — sometimes enough to close the gap with a laptop entirely. Before you compare a tablet\'s price with a laptop\'s, add the accessories that make the tablet do the job you bought it for. The MacBook Air 13 at $999 as shown on SmartBuy includes its keyboard; a tablet at a lower headline price may not, and the comparison that matters is the total, not the headline.',
+      },
+      { type: 'h2', text: 'Three questions that settle it' },
+      {
+        type: 'table',
+        headers: ['Question', 'If yes, lean toward'],
+        rows: [
+          ['Will you type for hours most days?', 'Laptop'],
+          ['Is drawing, reading, or watching the main use?', 'Tablet'],
+          ['Do you need full desktop software?', 'Laptop'],
+        ],
+      },
+      {
+        type: 'p',
+        text: 'If you answered laptop twice, buy the laptop. If you answered tablet twice, buy the tablet. If you are split, the honest answer is usually the laptop — because the things a laptop does that a tablet cannot are harder to work around than the things a tablet does that a laptop cannot. A laptop is worse at reading on the sofa; a tablet is worse at writing a report. One of those is an inconvenience and the other is a blocked afternoon.',
+      },
+      { type: 'h2', text: 'If you already own one' },
+      {
+        type: 'p',
+        text: 'If you already own a laptop that works, a tablet is a genuinely useful second device — for reading, for travel, for the sofa. If you already own a tablet and it is not enough, that is the answer too: you need the laptop. And if you own neither and the budget only stretches to one, buy the device that does the hard work, not the device that does the easy work more pleasantly. The laptop is the hard-work device, and the MacBook Air 13 at $999 as shown on SmartBuy is the catalog\'s example of one.',
+      },
+      {
+        type: 'callout',
+        title: 'Prices as shown on SmartBuy',
+        text: 'The MacBook Air 13 price in this article is as shown on SmartBuy at the time of writing — the site\'s catalog figure, not a live retailer price. SmartBuy lists no tablets today; tablet guidance here is general, not priced.',
+      },
+    ],
+  },
+  {
+    slug: 'back-to-school-tech-checklist-2026',
+    title: 'Back-to-School Tech Checklist 2026: What Students Actually Need',
+    excerpt:
+      'A student does not need the most expensive tech — they need the right tech, bought once, that survives the year. This checklist uses the SmartBuy catalog as shown to price a realistic student kit, and explains what to skip.',
+    datePublished: '2026-11-10',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-10',
+    readMinutes: 4,
+    tags: ['students', 'back to school', 'checklist', 'budget'],
+    content: [
+      {
+        type: 'p',
+        text: 'Back-to-school shopping has a way of expanding. What starts as "a laptop for classes" becomes a laptop, a tablet, a smartwatch, a printer, and a bag full of accessories — most of which will be used once, if at all. This checklist works the other way: start with what a student actually does every day, buy for that, and skip the rest. Prices below are as shown on SmartBuy, and every total is simple arithmetic on those figures.',
+      },
+      { type: 'h2', text: 'The essentials: laptop, mouse, headphones' },
+      {
+        type: 'table',
+        headers: ['Item', 'Price as shown (Amazon)', 'Why it is on the list'],
+        rows: [
+          ['MacBook Air 13', '$999', 'Light at 1.24 kg, all-day machine for classes'],
+          ['Logitech MX Master 3S', '$99', 'A proper mouse for long study sessions'],
+          ['Sony WH-1000XM5', '$399', 'Noise cancelling for libraries and shared rooms'],
+        ],
+      },
+      {
+        type: 'p',
+        text: 'The three essentials add up to $1,497 as shown on SmartBuy — $999 plus $99 plus $399. That is the honest total for a complete kit, and it is worth stating plainly, because back-to-school budgets fail when the extras are added silently. Note what the list does not include: the MacBook Air 13 at $999 is the catalog\'s laptop under $1000, and the other laptops in the catalog — the Dell XPS 13 at $1,099 and the Lenovo ThinkPad X1 at $1,399 as shown on SmartBuy — would push the total higher for no benefit a student would notice.',
+      },
+      { type: 'h2', text: 'What the laptop needs to survive the year' },
+      {
+        type: 'p',
+        text: 'A student laptop lives a hard life: carried every day, dropped, charged in lecture halls, used for hours on end. Three recorded figures for the MacBook Air 13 matter here. It weighs 1.24 kg, so it is genuinely portable in a bag that already holds books. Its repairability index is 76 out of 100 — Excellent — with spare parts recorded as available for 8 years, which matters when a screen or battery eventually needs replacing. And its recorded carbon footprint is 185 kg against a 250 kg category baseline, which is a small comfort but a real one. What the catalog does not record is any laptop\'s battery life in hours, so do not take a battery claim from anywhere that cannot show its source.',
+      },
+      {
+        type: 'p',
+        text: 'Total cost matters too. SmartBuy records $49 of mandatory accessories for the MacBook Air 13, taking its total cost of ownership to $1,048 on a $999 base — and the page warns you if you enter the same accessories again yourself. Budget the $1,048, not the $999, and you will not be surprised.',
+      },
+      { type: 'h2', text: 'What to skip' },
+      {
+        type: 'list',
+        items: [
+          'A second screen or a tablet "for notes" — the laptop does the job, and the money is better kept for the term.',
+          'The most expensive headphones — the Sony WH-1000XM5 at $399 as shown on SmartBuy is already a premium choice; the Bose QuietComfort Ultra at $429 as shown is the alternative, not an upgrade you need.',
+          'Extended warranties sold at checkout — read what they cover first, and check the recorded warranty on the product page. The MacBook Air 13 carries a recorded "1-Year Official International Warranty".',
+          'Accessories bought "just in case" — buy them when you need them, not before the first lecture.',
+          'Anything that needs a subscription to work — check whether the app or service charges monthly before you depend on it for study.',
+        ],
+      },
+      { type: 'h2', text: 'Timing the purchase' },
+      {
+        type: 'p',
+        text: 'Do not buy everything the week before term starts. Prices move, and the MacBook Air 13 as shown on SmartBuy has a recorded history of falling from $1,048.95 to $999, with the main drop on October 26, 2026 — the current price equals the lowest recorded. Set a price-drop alert on SmartBuy at the price you would pay, and buy when it fires. Two coupons are also listed for this laptop — SAVE10 at Amazon and BESTBUY15 at Best Buy, both valid until January 29, 2027 — and on the $999 Amazon price, SAVE10 is worth $99.90 in simple arithmetic, applied at the retailer\'s checkout.',
+      },
+      {
+        type: 'p',
+        text: 'And keep the receipts. SmartBuy\'s receipt vault records purchase plus warranty months and flags expiry within 30 days — useful when a student laptop needs a warranty claim in the middle of term and nobody can find the paperwork.',
+      },
+      {
+        type: 'callout',
+        title: 'Prices as shown on SmartBuy',
+        text: 'All prices in this article are as shown on SmartBuy at the time of writing — the site\'s catalog figures, not live retailer prices. The $1,497 total is arithmetic on those figures. Check the retailer\'s page before you buy.',
+      },
+    ],
+  },
+  {
+    slug: 'warranty-returns-guide-online-shopping',
+    title: 'Warranty and Returns Guide for Online Shopping: Read This Before You Buy',
+    excerpt:
+      'The price is only half the purchase — the warranty and the return policy are the other half. This guide explains what to check before you order, using the MacBook Air 13\'s recorded warranty as its example.',
+    datePublished: '2026-11-10',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-10',
+    readMinutes: 4,
+    tags: ['warranty', 'returns', 'buying guide', 'consumer rights'],
+    content: [
+      {
+        type: 'p',
+        text: 'Most people read the price, read the reviews, and click buy — and then discover the warranty and the return policy only when something goes wrong. By then it is too late: the return window has closed, the warranty does not cover what broke, or the warranty is not honoured where they live. This guide explains what to check before you order, and it starts with the one recorded warranty SmartBuy can actually show you.',
+      },
+      { type: 'h2', text: 'The recorded example: the MacBook Air 13' },
+      {
+        type: 'p',
+        text: 'SmartBuy records a warranty for exactly one product today: the MacBook Air 13 carries a recorded "1-Year Official International Warranty". That is a real recorded value, and it tells you three things: the length (one year), the scope (official), and the geography (international). The other products in the catalog have no warranty recorded, and SmartBuy shows an honest empty state for them rather than inventing one. If a warranty matters to you — and it should — check the retailer\'s own page for any product whose warranty is not recorded here.',
+      },
+      {
+        type: 'p',
+        text: '"International" is the word to pause on. An international warranty sounds comprehensive, but what it means in practice depends on the maker and the country: it may mean service at authorised centres worldwide, or it may mean service only in certain regions with the rest handled by mail. Read the maker\'s own warranty terms for your country before you rely on the word.',
+      },
+      { type: 'h2', text: 'Warranty: five questions to ask' },
+      {
+        type: 'list',
+        items: [
+          'How long is it, and from when — the purchase date, or the delivery date?',
+          'What does it cover — defects only, or accidental damage as well? Batteries and screens are often treated differently.',
+          'Where is it honoured — locally, in your country, or only where the product was bought? A US warranty may not be honoured locally.',
+          'Who performs the repair — the maker, an authorised centre, or the retailer? And how long does it take?',
+          'What voids it — unauthorised repair, a replaced battery, or opening the device? Check before you let anyone else open it.',
+        ],
+      },
+      { type: 'h2', text: 'Returns: the window, the condition, and the cost' },
+      {
+        type: 'p',
+        text: 'A return policy has three parts, and all three matter. The window is how long you have — often 14 or 30 days, sometimes less for opened electronics. The condition is what state the product must be in — sealed, unopened, or merely undamaged — and opened electronics are often treated differently from unopened ones. The cost is who pays for the return shipping, and whether there is a restocking fee. A "free returns" policy that excludes opened electronics is not free returns for a laptop you have tried for a week.',
+      },
+      {
+        type: 'p',
+        text: 'Cross-border returns are a different job entirely. Sending a faulty item back to a local store is straightforward; sending one back across a border means international shipping, customs forms, and a wait — and the cost of that return can be a large fraction of the item\'s price. Before you order from another country, read the retailer\'s own returns page and ask yourself whether you would actually send it back if it arrived faulty. If the answer is no, the warranty and return policy have to be good enough to make the risk acceptable, or the purchase is not worth it.',
+      },
+      { type: 'h2', text: 'Keep the proof: receipts and records' },
+      {
+        type: 'p',
+        text: 'A warranty claim without proof of purchase is a difficult conversation. Keep the receipt, the order confirmation, and the serial number, and keep them somewhere you can find them in a year. SmartBuy\'s receipt vault records the purchase date plus the warranty months and flags expiry within 30 days — but it stores metadata only, never the file itself, and it sends no automatic warranty alerts. The record is a reminder you set yourself, not a service that watches for you. The habit that matters is simple: when you buy something with a warranty, record the purchase date and the warranty end date the same day, before you forget.',
+      },
+      { type: 'h2', text: 'What SmartBuy does and does not track' },
+      {
+        type: 'p',
+        text: 'SmartBuy tracks what it can verify: a recorded warranty where one exists, the product\'s price history, and the retailer\'s listing. It does not track return policies, warranty terms in full, or whether a warranty is honoured in your country — those change by retailer and by region, and the only reliable source is the retailer\'s and the maker\'s own pages. A site that claimed to know every return policy for every retailer would be guessing. SmartBuy shows you what is recorded, says plainly what is not, and leaves the checking to you — which is the honest division of labour.',
+      },
+      {
+        type: 'callout',
+        title: 'Check the retailer\'s own terms',
+        text: 'Warranty and return terms vary by retailer, product, and country, and SmartBuy does not track them in full. The MacBook Air 13 warranty quoted here is the one recorded value on the site. For anything else, read the retailer\'s and the maker\'s own pages before you buy.',
       },
     ],
   },

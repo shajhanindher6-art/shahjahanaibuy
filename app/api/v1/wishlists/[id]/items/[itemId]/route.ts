@@ -6,7 +6,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, notFound, internalError } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { removeWishlistItem } from '@/services/wishlists';
 
 export async function DELETE(
@@ -18,6 +18,10 @@ export async function DELETE(
     id: params.id,
     itemId: params.itemId,
   });
+  // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`wishlists.id.items.itemId:${getClientIp(request)}`, 30);
+  if (limited) return limited;
+
 
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;

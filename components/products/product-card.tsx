@@ -38,8 +38,8 @@ export function ProductCard({ product, href, className, showReason }: ProductCar
   const [imageFailed, setImageFailed] = useState(false);
 
   return (
-    <Card className={cn('group cursor-pointer overflow-hidden transition-all hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-800', className)}>
-      <Link href={link}>
+    <Card className={cn('group cursor-pointer overflow-hidden transition-all hover:shadow-lg hover:border-blue-200 focus-within:ring-2 focus-within:ring-blue-600 dark:hover:border-blue-800', className)}>
+      <Link href={link} aria-label={`View ${product.name}`} className="block focus-visible:outline-none">
         <div className="relative h-40 overflow-hidden bg-slate-100 dark:bg-slate-800">
           {product.imageUrl && !imageFailed ? (
             <img

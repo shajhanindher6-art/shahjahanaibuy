@@ -7,16 +7,21 @@ import { useRouter } from 'next/navigation';
 import { Search, SlidersHorizontal, X, Star, TrendingDown, Link2, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { buildItemListJsonLd, toJsonLd } from '@/lib/json-ld';
+import { appConfig } from '@/lib/config/app';
 import { WishlistButton } from '@/components/products/wishlist-button';
 import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
 import { Price } from '@/components/region/price';
+import { DealScoreBadge } from '@/components/products/deal-score-badge';
+import { PriceTrendSparkline } from '@/components/products/price-trend-sparkline';
+import { computeDealScoreFromPrediction } from '@/lib/deal-score';
 import {
   VoiceSearchButton,
   speakSearchSummary,
@@ -152,6 +157,18 @@ export default function SearchPage() {
       // Ignore storage errors.
     }
   }, []);
+
+  // S2#10: canonical Deal Scores for the displayed results, from
+  // GET /api/v1/predictions/[id] — the same prediction the product
+  // page scores from (lib/deal-score.ts). The search API returns no
+  // prediction data, so scores are fetched per displayed result
+  // (not per raw result, so filters/sort never waste calls) and
+  // cached by product id for the session; a failed or missing
+  // prediction simply leaves that card without a badge — never a
+  // synthesized score. The "% search match" badge stays separate:
+  // it is a relevance signal, not a Deal Score.
+  const [dealScores, setDealScores] = useState<Record<string, number>>({});
+  const dealScoreAttemptedRef = useRef<Set<string>>(new Set());
 
   // Spoken reply for a voice-started search: once the results land,
   // speak the count in the voice input's language, then clear the flag
@@ -372,6 +389,53 @@ export default function SearchPage() {
   const clientFiltersActive =
     sort !== 'relevance' || storeFilter !== '' || filters.minRating !== '';
 
+  // ItemList JSON-LD for the displayed catalog results (S4#15):
+  // real result URLs only (/products/<slug>). Web results are not
+  // catalog pages, so they are never listed here.
+  const itemListJsonLd = useMemo(
+    () =>
+      displayedResults.length > 0
+        ? toJsonLd(
+            buildItemListJsonLd(
+              appConfig.url,
+              displayedResults.map((r) => ({
+                name: r.product.name,
+                path: `/products/${r.product.slug}`,
+              }))
+            )
+          )
+        : null,
+    [displayedResults]
+  );
+
+  // S2#10: fetch Deal Scores for whatever is currently displayed
+  // (see the state above). Runs on the displayed set only, and each
+  // product is attempted at most once per page session.
+  useEffect(() => {
+    const pending = displayedResults.filter(
+      (r) => !dealScoreAttemptedRef.current.has(r.product.id)
+    );
+    if (pending.length === 0) return;
+    for (const r of pending) dealScoreAttemptedRef.current.add(r.product.id);
+    void Promise.all(
+      pending.map(async (r) => {
+        try {
+          const predRes = await fetch(`/api/v1/predictions/${r.product.id}`, {
+            signal: AbortSignal.timeout(15000),
+          });
+          if (!predRes.ok) return;
+          const predData = await predRes.json();
+          if (!predData.success || !predData.data) return;
+          const score = computeDealScoreFromPrediction(predData.data);
+          if (score === null) return;
+          setDealScores((prev) => ({ ...prev, [r.product.id]: score }));
+        } catch {
+          // No prediction for this card — no badge, no error.
+        }
+      })
+    );
+  }, [displayedResults]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
       <SiteHeader />
@@ -391,7 +455,7 @@ export default function SearchPage() {
               type="button"
               onClick={() => setSearchMode('text')}
               className={cn(
-                'flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                'flex min-h-[44px] items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all',
                 searchMode === 'text'
                   ? 'bg-blue-600 text-white'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'
@@ -403,7 +467,7 @@ export default function SearchPage() {
               type="button"
               onClick={() => setSearchMode('url')}
               className={cn(
-                'flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                'flex min-h-[44px] items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all',
                 searchMode === 'url'
                   ? 'bg-blue-600 text-white'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'
@@ -428,17 +492,19 @@ export default function SearchPage() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={searchMode === 'url' ? 'Paste a product URL (e.g. https://...)' : tFor(language, 'searchPlaceholder')}
+                aria-label={searchMode === 'url' ? 'Paste a product URL to search' : 'Search for products'}
                 className="pl-10"
                 autoFocus
               />
             </div>
-            <Button type="submit" disabled={loading || !query.trim()}>
+            <Button type="submit" disabled={loading || !query.trim()} className="min-h-[44px]">
               {loading ? <LoadingSpinner size="sm" /> : 'Search'}
             </Button>
             <Button
               type="button"
               variant="outline"
               onClick={() => setShowFilters(!showFilters)}
+              className="min-h-[44px]"
             >
               <SlidersHorizontal className="mr-2 h-4 w-4" />
               Filters
@@ -476,7 +542,7 @@ export default function SearchPage() {
                   setSearchMode('text');
                   performSearch(recent, 'text');
                 }}
-                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-sm transition-all hover:border-blue-300 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-blue-700 dark:hover:bg-slate-700"
+                className="flex min-h-[44px] items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-sm transition-all hover:border-blue-300 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-blue-700 dark:hover:bg-slate-700"
               >
                 {recent}
               </button>
@@ -484,7 +550,7 @@ export default function SearchPage() {
             <button
               type="button"
               onClick={clearRecentSearches}
-              className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+              className="flex min-h-[44px] items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
             >
               <X className="h-3 w-3" /> Clear
             </button>
@@ -495,7 +561,7 @@ export default function SearchPage() {
           <Card className="mb-6">
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base">Search Filters</CardTitle>
+                <h2 className="text-base font-semibold leading-none tracking-tight">Search Filters</h2>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -619,7 +685,7 @@ export default function SearchPage() {
                 <button
                   key={q}
                   onClick={() => handleSuggestedQuery(q)}
-                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm transition-all hover:border-blue-300 hover:bg-blue-50 hover:shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:hover:border-blue-700 dark:hover:bg-slate-700"
+                  className="flex min-h-[44px] items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm transition-all hover:border-blue-300 hover:bg-blue-50 hover:shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:hover:border-blue-700 dark:hover:bg-slate-700"
                 >
                   {q}
                 </button>
@@ -713,6 +779,15 @@ export default function SearchPage() {
 
         {!loading && displayedResults.length > 0 && (
           <div className="grid gap-4">
+            {/* h2 for the h3 product names below; JSON-LD for the
+                same real result URLs (S4#15). */}
+            <h2 className="sr-only">Search results</h2>
+            {itemListJsonLd && (
+              <script
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{ __html: itemListJsonLd }}
+              />
+            )}
             <div className="text-sm text-muted-foreground">
               {displayedResults.length} result{displayedResults.length !== 1 ? 's' : ''} found
               {displayedResults.length !== results.length && ` (of ${results.length} before filters)`}
@@ -732,10 +807,19 @@ export default function SearchPage() {
             {displayedResults.map((result) => (
               <Card
                 key={result.product.id}
-                className="cursor-pointer transition-all hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-800"
+                role="button"
+                tabIndex={0}
+                aria-label={`View ${result.product.name}`}
+                className="cursor-pointer transition-all hover:shadow-lg hover:border-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 dark:hover:border-blue-800"
                 onClick={() => handleProductClick(result.product.slug)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleProductClick(result.product.slug);
+                  }
+                }}
               >
-                <CardContent className="flex gap-4 p-4">
+                <CardContent className="flex flex-col gap-4 p-4 sm:flex-row">
                   <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
                     {result.product.imageUrl && !failedImages.has(result.product.id) ? (
                       <img
@@ -779,10 +863,22 @@ export default function SearchPage() {
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         {result.currentPrice !== null && result.currentPrice !== undefined ? (
-                          <Price usd={result.currentPrice} className="text-lg font-bold text-blue-600" />
+                          <Price usd={result.currentPrice} className="text-lg font-bold text-blue-600" showFxNote />
                         ) : (
                           <span className="text-xs text-muted-foreground">Price not listed</span>
                         )}
+                        {/* S2#10: canonical Deal Score (lib/deal-score.ts),
+                            from the product's price-drop prediction.
+                            Renders only when a real prediction exists;
+                            the "% search match" badge below it is a
+                            relevance signal, not a Deal Score. */}
+                        {dealScores[result.product.id] !== undefined && (
+                          <DealScoreBadge score={dealScores[result.product.id]} size="sm" showLabel />
+                        )}
+                        {/* S3#4: real price-history sparkline; renders
+                            nothing when the product has fewer than 2
+                            recorded points. */}
+                        <PriceTrendSparkline slug={result.product.slug} showChange />
                         {/* A2 label fix: this is the SEARCH relevance
                             score (services/ai-search.ts: product
                             confidenceScore + 15 per matched attribute,
@@ -911,7 +1007,7 @@ export default function SearchPage() {
                       </div>
                       <div className="mt-2 flex items-center gap-3">
                         {web.price !== null ? (
-                          <Price usd={web.price} className="text-lg font-bold text-blue-600" />
+                          <Price usd={web.price} className="text-lg font-bold text-blue-600" showFxNote />
                         ) : (
                           <span className="text-sm text-muted-foreground">Price not shown by retailer</span>
                         )}

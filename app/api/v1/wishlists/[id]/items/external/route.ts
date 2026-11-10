@@ -22,7 +22,7 @@ import {
   notFound,
   serviceUnavailable,
 } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getCachedProductBySlug } from '@/services/products';
 import { storeDomainFromUrl } from '@/services/external-wishlist';
 
@@ -52,6 +52,10 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   logApiRequest(request, { endpoint: 'wishlists.items.external', id: params.id });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`wishlists.id.items.external:${getClientIp(request)}`, 120);
+  if (limited) return limited;
+
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;
 
@@ -81,6 +85,10 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   logApiRequest(request, { endpoint: 'wishlists.items.external.add', id: params.id });
+  // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`wishlists.id.items.external:${getClientIp(request)}`, 30);
+  if (limited) return limited;
+
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;
 

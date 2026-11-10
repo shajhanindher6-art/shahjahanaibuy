@@ -66,6 +66,67 @@ const BLOG_COPY: Record<Language, { title: string; empty: string }> = {
     empty:
       'Henüz yazı yok. Alışveriş rehberleri, fırsat açıklamaları ve ürün güncellemeleri burada yer alacak. Yakında tekrar uğrayın.',
   },
+  // Added 2026-11-10 (i18n 8→20): machine translations, not
+  // professionally reviewed — same scope as the 8 above.
+  ar: {
+    title: 'المدونة',
+    empty:
+      'لا توجد مقالات بعد. هنا ستظهر أدلة التسوق وشروحات العروض وتحديثات المنتجات. عُد قريبًا.',
+  },
+  zh: {
+    title: '博客',
+    empty: '暂无文章。这里将发布购物指南、优惠解析和产品更新。敬请期待。',
+  },
+  ja: {
+    title: 'ブログ',
+    empty:
+      'まだ記事がありません。ここにはショッピングガイド、お得情報の解説、製品アップデートが掲載されます。またお越しください。',
+  },
+  ko: {
+    title: '블로그',
+    empty:
+      '아직 게시물이 없습니다. 쇼핑 가이드, 특가 설명, 제품 업데이트가 이곳에 표시됩니다. 곧 다시 확인해 주세요.',
+  },
+  hi: {
+    title: 'ब्लॉग',
+    empty:
+      'अभी कोई पोस्ट नहीं है। यहाँ शॉपिंग गाइड, डील एक्सप्लेनर और प्रोडक्ट अपडेट दिखेंगे। जल्द फिर देखें।',
+  },
+  bn: {
+    title: 'ব্লগ',
+    empty:
+      'এখনও কোনো পোস্ট নেই। এখানে শপিং গাইড, ডিল ব্যাখ্যা এবং পণ্যের আপডেট আসবে। শীঘ্রই আবার দেখুন।',
+  },
+  nl: {
+    title: 'Blog',
+    empty:
+      'Nog geen berichten. Hier verschijnen binnenkort koopgidsen, uitleg over aanbiedingen en productupdates. Kom binnenkort terug.',
+  },
+  sv: {
+    title: 'Blogg',
+    empty:
+      'Inga inlägg ännu. Här kommer köpguider, förklaringar av erbjudanden och produktuppdateringar att visas. Kom tillbaka snart.',
+  },
+  pl: {
+    title: 'Blog',
+    empty:
+      'Nie ma jeszcze wpisów. Tutaj pojawią się przewodniki zakupowe, wyjaśnienia ofert i aktualizacje produktów. Zajrzyj wkrótce ponownie.',
+  },
+  ru: {
+    title: 'Блог',
+    empty:
+      'Пока нет публикаций. Здесь появятся руководства по покупкам, объяснения предложений и новости о товарах. Загляните позже.',
+  },
+  id: {
+    title: 'Blog',
+    empty:
+      'Belum ada postingan. Di sinilah panduan belanja, penjelasan penawaran, dan pembaruan produk akan muncul. Silakan kembali lagi.',
+  },
+  vi: {
+    title: 'Blog',
+    empty:
+      'Chưa có bài viết nào. Đây là nơi sẽ xuất hiện hướng dẫn mua sắm, giải thích ưu đãi và cập nhật sản phẩm. Hãy quay lại sau.',
+  },
 };
 
 function formatDate(iso: string): string {
@@ -107,7 +168,11 @@ export default function BlogPage() {
                     </Link>
                   </h2>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    {formatDate(post.datePublished)} · {post.readMinutes} min read
+                    {formatDate(post.datePublished)} · {post.readMinutes} min read · By{' '}
+                    {post.author?.name ?? 'SmartBuy Editorial Team'}
+                    {post.lastUpdated && post.lastUpdated !== post.datePublished
+                      ? ` · Updated ${formatDate(post.lastUpdated)}`
+                      : ''}
                   </p>
                   <p className="mt-3 leading-relaxed text-foreground/90">
                     {post.excerpt}

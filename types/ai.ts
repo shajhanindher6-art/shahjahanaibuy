@@ -117,6 +117,12 @@ export interface ComparisonProduct {
   recorded?: import('@/services/recorded-overrides').RecordedOverridesData | null;
   /** Option 20 global readiness (all nulls until migration 023 data exists). */
   globalReadiness?: import('@/services/global-readiness').GlobalReadinessData | null;
+  /**
+   * Canonical Deal Score (lib/deal-score.ts) from the product's
+   * price-drop prediction — the same formula the product page uses.
+   * Null when the product has no usable prediction.
+   */
+  dealScore?: number | null;
 }
 
 export interface ComparisonRetailer {

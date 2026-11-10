@@ -6,11 +6,14 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, serviceUnavailable } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { checkHealth } from '@/services/health';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'health' });
+  // Rate limit: 300 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`health:${getClientIp(request)}`, 300);
+  if (limited) return limited;
 
   const supabase = await createSupabaseServerClient();
   const health = await checkHealth(supabase);

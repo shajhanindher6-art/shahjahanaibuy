@@ -6,13 +6,17 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, internalError, notFound } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   logApiRequest(request, { endpoint: 'vault.delete', id: params.id });
+  // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`vault.id:${getClientIp(request)}`, 30);
+  if (limited) return limited;
+
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;
 

@@ -13,13 +13,17 @@ import {
   notFound,
   serviceUnavailable,
 } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 
 export async function POST(
   _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   logApiRequest(_request, { endpoint: 'pools.join', id: params.id });
+  // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`pools.id.join:${getClientIp(_request)}`, 30);
+  if (limited) return limited;
+
   const auth = await requireAuth(_request);
   if ('error' in auth) return auth.error;
 

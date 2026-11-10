@@ -6,10 +6,13 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'affiliate.click' });
+  // Rate limit: 60 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`affiliate.click:${getClientIp(request)}`, 60);
+  if (limited) return limited;
 
   try {
     const body = await request.json();

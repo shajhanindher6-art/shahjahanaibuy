@@ -8,11 +8,14 @@
 
 import type { NextRequest } from 'next/server';
 import { apiSuccess, internalError } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getFxRates } from '@/services/fx-rates';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'fx-rates' });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`fx-rates:${getClientIp(request)}`, 120);
+  if (limited) return limited;
 
   try {
     const fx = await getFxRates();

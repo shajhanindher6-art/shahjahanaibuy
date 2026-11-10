@@ -1,41 +1,124 @@
+/**
+ * Single combined sitemap at /sitemap.xml (S2#13 + S4#16).
+ *
+ * One file covers all three sections: public static pages (hand list
+ * below), product pages (live DB slugs, real updated_at), and blog
+ * posts (static data file, real datePublished). This is the same
+ * single-file shape the site served before the 2026-11-10 batch
+ * (verified 32/32 URLs live at the time).
+ *
+ * WHY NOT THE THREE-FILE SPLIT — READ BEFORE CHANGING THIS: the
+ * batch first split this into /sitemap/static.xml,
+ * /sitemap/products.xml and /sitemap/blog.xml via the multi-file sitemap API.
+ * Central verification (2026-11-10) found all three children
+ * prerender as HTTP 404 bodies: in Next 13.5.9 the metadata-route
+ * loader's GET compares `item.id.toString() === targetId` where
+ * `targetId = __metadata_id__[0]`, but `generateStaticParams`
+ * produces `__metadata_id__` values with the `.xml` suffix appended
+ * (`'static.xml'` vs id `'static'`), so no id ever matches and the
+ * loader returns `new NextResponse('Not Found', { status: 404 })`
+ * for every child (see
+ * node_modules/next/dist/build/webpack/loaders/next-metadata-route-loader.js,
+ * `getDynamicSiteMapRouteCode`). The split is therefore unusable on
+ * this Next version and was reverted the same day; do NOT re-add
+ * the multi-file sitemap API without first proving a child URL returns 200
+ * from a production build. A split can be revisited after a Next.js
+ * upgrade, or with hand-written route files instead of the metadata
+ * convention. robots.txt (app/robots.ts) lists this single
+ * /sitemap.xml, and the owner submits that one URL in Search
+ * Console (docs/search-console.md).
+ *
+ * lastModified — REAL DATES ONLY (S2#13): the old file stamped
+ * `new Date()` on every static page, so every generation falsely
+ * claimed all pages were just modified. Now:
+ *   - products: real `updated_at` from the DB, omitted when null;
+ *   - blog posts: real `datePublished`; /blog: latest post's date;
+ *   - every other static page: OMITTED — no per-page modification
+ *     date is recorded anywhere, and guessing one would be invented
+ *     data. (MetadataRoute.Sitemap entries allow lastModified to be
+ *     absent; crawlers treat that as "unknown", which is honest.)
+ */
+
+import type { MetadataRoute } from 'next';
 import { appConfig } from '@/lib/config/app';
 import { createClient } from '@supabase/supabase-js';
 import { env } from '@/lib/config/env';
 import { getAllPosts } from '@/lib/blog/posts';
 
-export default async function sitemap() {
-  const baseUrl = appConfig.url;
-  const lastModified = new Date();
+type ChangeFrequency = NonNullable<
+  MetadataRoute.Sitemap[number]['changeFrequency']
+>;
 
-  const staticPages = [
-    { url: '', priority: 1.0, changeFrequency: 'daily' as const },
-    { url: '/search', priority: 0.9, changeFrequency: 'daily' as const },
-    { url: '/compare', priority: 0.8, changeFrequency: 'weekly' as const },
-    { url: '/deals', priority: 0.9, changeFrequency: 'daily' as const },
-    { url: '/sign-in', priority: 0.5, changeFrequency: 'monthly' as const },
-    { url: '/sign-up', priority: 0.6, changeFrequency: 'monthly' as const },
-    { url: '/about', priority: 0.5, changeFrequency: 'monthly' as const },
-    { url: '/contact', priority: 0.5, changeFrequency: 'monthly' as const },
-    { url: '/support', priority: 0.5, changeFrequency: 'monthly' as const },
-    { url: '/docs', priority: 0.5, changeFrequency: 'monthly' as const },
-    { url: '/blog', priority: 0.5, changeFrequency: 'weekly' as const },
+const STATIC_PAGES: Array<{
+  path: string;
+  priority: number;
+  changeFrequency: ChangeFrequency;
+  /**
+   * Fixed ISO date only when the last change is actually known.
+   * Leave undefined (omitted) when unknown — never `new Date()`.
+   */
+  lastModified?: string;
+}> = [
+  { path: '', priority: 1.0, changeFrequency: 'daily' },
+  { path: '/search', priority: 0.9, changeFrequency: 'daily' },
+  { path: '/deals', priority: 0.9, changeFrequency: 'daily' },
+  { path: '/compare', priority: 0.8, changeFrequency: 'weekly' },
+  { path: '/gifts', priority: 0.7, changeFrequency: 'weekly' },
+  { path: '/bundles', priority: 0.7, changeFrequency: 'weekly' },
+  { path: '/track', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/p2p-match', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/scan', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/extension', priority: 0.6, changeFrequency: 'monthly' },
+  { path: '/sign-up', priority: 0.6, changeFrequency: 'monthly' },
+  { path: '/sign-in', priority: 0.5, changeFrequency: 'monthly' },
+  { path: '/events/black-friday', priority: 0.6, changeFrequency: 'monthly' },
+  { path: '/events/11-11', priority: 0.6, changeFrequency: 'monthly' },
+  { path: '/events/eid', priority: 0.6, changeFrequency: 'monthly' },
+  { path: '/events', priority: 0.5, changeFrequency: 'monthly' },
+  { path: '/help', priority: 0.6, changeFrequency: 'monthly' },
+  { path: '/methodology', priority: 0.5, changeFrequency: 'monthly' },
+  { path: '/press', priority: 0.4, changeFrequency: 'monthly' },
+  { path: '/changelog', priority: 0.5, changeFrequency: 'weekly' },
+  { path: '/editorial-policy', priority: 0.3, changeFrequency: 'yearly' },
+  { path: '/price-index', priority: 0.7, changeFrequency: 'weekly' },
+  { path: '/market-reports', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/widgets', priority: 0.5, changeFrequency: 'monthly' },
+  { path: '/status', priority: 0.4, changeFrequency: 'daily' },
+  { path: '/api-docs', priority: 0.5, changeFrequency: 'monthly' },
+  { path: '/sustainability', priority: 0.4, changeFrequency: 'monthly' },
+  { path: '/about', priority: 0.5, changeFrequency: 'monthly' },
+  { path: '/contact', priority: 0.5, changeFrequency: 'monthly' },
+  { path: '/support', priority: 0.5, changeFrequency: 'monthly' },
+  { path: '/docs', priority: 0.5, changeFrequency: 'monthly' },
+  { path: '/privacy', priority: 0.3, changeFrequency: 'yearly' },
+  { path: '/terms', priority: 0.3, changeFrequency: 'yearly' },
+  { path: '/cookies', priority: 0.3, changeFrequency: 'yearly' },
+];
+
+function staticSitemap(baseUrl: string): MetadataRoute.Sitemap {
+  // /blog's last change is the latest post's publish date — real data.
+  const posts = getAllPosts();
+  const latestPostDate = posts[0]?.datePublished;
+  return [
+    ...STATIC_PAGES.map((page) => ({
+      url: `${baseUrl}${page.path}`,
+      ...(page.lastModified
+        ? { lastModified: page.lastModified }
+        : {}),
+      changeFrequency: page.changeFrequency,
+      priority: page.priority,
+    })),
+    {
+      url: `${baseUrl}/blog`,
+      ...(latestPostDate ? { lastModified: latestPostDate } : {}),
+      changeFrequency: 'weekly' as const,
+      priority: 0.5,
+    },
   ];
+}
 
-  const staticEntries = staticPages.map((page) => ({
-    url: `${baseUrl}${page.url}`,
-    lastModified,
-    changeFrequency: page.changeFrequency,
-    priority: page.priority,
-  }));
-
-  // Dynamically fetch product slugs for sitemap inclusion
-  const productEntries: Array<{
-    url: string;
-    lastModified: Date;
-    changeFrequency: 'weekly';
-    priority: number;
-  }> = [];
-
+async function productSitemap(baseUrl: string): Promise<MetadataRoute.Sitemap> {
+  const entries: MetadataRoute.Sitemap = [];
   try {
     const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey, {
       auth: { persistSession: false },
@@ -49,26 +132,40 @@ export default async function sitemap() {
       .limit(500);
 
     if (products) {
-      for (const product of products as Array<{ slug: string; updated_at: string | null }>) {
-        productEntries.push({
+      for (const product of products as Array<{
+        slug: string;
+        updated_at: string | null;
+      }>) {
+        entries.push({
           url: `${baseUrl}/products/${product.slug}`,
-          lastModified: product.updated_at ? new Date(product.updated_at) : lastModified,
+          // Real updated_at only — never fall back to "now".
+          ...(product.updated_at
+            ? { lastModified: product.updated_at }
+            : {}),
           changeFrequency: 'weekly',
           priority: 0.7,
         });
       }
     }
   } catch {
-    // If DB is unavailable, return static-only sitemap
+    // If DB is unavailable, return an empty products sitemap rather
+    // than failing the whole sitemap route.
   }
+  return entries;
+}
 
+function blogSitemap(baseUrl: string): MetadataRoute.Sitemap {
   // Blog posts (static data file — always available, no DB needed).
-  const blogEntries = getAllPosts().map((post) => ({
+  return getAllPosts().map((post) => ({
     url: `${baseUrl}/blog/${post.slug}`,
-    lastModified: new Date(`${post.datePublished}T00:00:00Z`),
+    lastModified: post.datePublished,
     changeFrequency: 'monthly' as const,
     priority: 0.6,
   }));
+}
 
-  return [...staticEntries, ...productEntries, ...blogEntries];
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const baseUrl = appConfig.url;
+  const products = await productSitemap(baseUrl);
+  return [...staticSitemap(baseUrl), ...products, ...blogSitemap(baseUrl)];
 }

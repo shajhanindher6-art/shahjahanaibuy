@@ -6,7 +6,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, notFound, internalError } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getCachedProductBySlug } from '@/services/products';
 import { getMerchantProducts, getMerchants } from '@/services/commerce';
 import {
@@ -20,6 +20,9 @@ export async function GET(
   { params }: { params: { slug: string } }
 ) {
   logApiRequest(request, { endpoint: 'products.merchants', slug: params.slug });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`products.slug.merchants:${getClientIp(request)}`, 120);
+  if (limited) return limited;
 
   try {
     const supabase = await createSupabaseServerClient();

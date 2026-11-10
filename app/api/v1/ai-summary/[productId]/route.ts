@@ -6,7 +6,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, notFound, internalError } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getProductById, getProductBySlug } from '@/services/products';
 import { getAISummary } from '@/services/ai-summary';
 
@@ -15,6 +15,9 @@ export async function GET(
   { params }: { params: { productId: string } }
 ) {
   logApiRequest(request, { endpoint: 'ai-summary', productId: params.productId });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`ai-summary.productId:${getClientIp(request)}`, 120);
+  if (limited) return limited;
 
   try {
     const supabase = await createSupabaseServerClient();

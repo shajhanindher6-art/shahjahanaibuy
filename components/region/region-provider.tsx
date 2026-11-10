@@ -90,6 +90,7 @@ import {
   getRegionByCountry,
   guessCountryFromBrowser,
   isSupportedLanguage,
+  isRtlLanguage,
   languageForCountry,
   languageFromBrowserLanguage,
   resolveRegion,
@@ -350,11 +351,14 @@ export function RegionProvider({
     };
   }, []);
 
-  // Keep <html lang> in sync with the UI language (accessibility
-  // + correct rendering of localized chrome strings).
+  // Keep <html lang> and <html dir> in sync with the UI language
+  // (accessibility + correct rendering of localized chrome strings,
+  // incl. RTL for Arabic — applied live on switch, not just on the
+  // next page load).
   useEffect(() => {
     try {
       document.documentElement.lang = language;
+      document.documentElement.dir = isRtlLanguage(language) ? 'rtl' : 'ltr';
     } catch {
       // Non-DOM environment — ignore.
     }

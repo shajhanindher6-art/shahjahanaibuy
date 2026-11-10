@@ -13,6 +13,8 @@ import { getProductEndurance } from '@/services/hardware-endurance';
 import { getProductPhysical } from '@/services/physical-attributes';
 import { getProductRecordedOverrides } from '@/services/recorded-overrides';
 import { getProductGlobalReadiness } from '@/services/global-readiness';
+import { predictPriceDrop } from '@/services/ai-predictions';
+import { computeDealScoreFromPrediction } from '@/lib/deal-score';
 
 export async function compareProducts(
   supabase: AnySupabaseClient,
@@ -171,6 +173,16 @@ export async function compareProducts(
       const recorded = await getProductRecordedOverrides(supabase, productId);
       const globalReadiness = await getProductGlobalReadiness(supabase, productId);
 
+      // S2#10: canonical Deal Score from the same price-drop
+      // prediction the product page renders (lib/deal-score.ts) —
+      // null when the product has no usable prediction, so the
+      // compare table says "Not enough history" instead of a
+      // synthesized score. predictPriceDrop is cached (swrGet) and
+      // fail-safe (null on no price history), so a product without
+      // history never breaks the comparison.
+      const prediction = await predictPriceDrop(supabase, productId);
+      const dealScore = computeDealScoreFromPrediction(prediction);
+
       products.push({
         productId,
         slug: product.slug as string,
@@ -184,6 +196,7 @@ export async function compareProducts(
         physical,
         recorded,
         globalReadiness,
+        dealScore,
       });
     }
 

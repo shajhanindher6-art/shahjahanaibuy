@@ -10,9 +10,14 @@ import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { getStripe } from '@/lib/stripe';
 import { env } from '@/lib/config/env';
 import { processWebhookEvent } from '@/services/stripe';
+import { rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { logger } from '@/lib/config/logger';
 
 export async function POST(request: NextRequest) {
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`webhooks.stripe:${getClientIp(request)}`, 120);
+  if (limited) return limited;
+
   const stripe = getStripe();
   if (!stripe) {
     return badRequest('Stripe is not configured');

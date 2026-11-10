@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   Brain,
   TrendingDown,
@@ -33,6 +34,9 @@ import {
 import { LandedCostWidget } from '@/components/dashboard/landed-cost-widget';
 import { TechBudgetWidget } from '@/components/dashboard/tech-budget-widget';
 import { DigestGrid } from '@/components/dashboard/digest-grid';
+import { AccuracyDashboard } from '@/components/accuracy/accuracy-dashboard';
+import { DashboardCardsSkeleton } from '@/components/ui/skeleton';
+import type { AccuracySummary } from '@/lib/prediction-accuracy';
 
 interface QuickAction {
   icon: LucideIcon;
@@ -112,9 +116,14 @@ export default function DashboardPage() {
   const [loadingRecs, setLoadingRecs] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [loadingDrops, setLoadingDrops] = useState(true);
+  // S4#8 accuracy summary + S4#2 stat-card skeleton state. The
+  // accuracy fetch is independent: a failure hides the section,
+  // never a guessed percentage.
+  const [accuracy, setAccuracy] = useState<AccuracySummary | null>(null);
+  const [loadingTracking, setLoadingTracking] = useState(true);
 
   const fetchDashboardData = useCallback(async () => {
-    const [recsRes, historyRes, trackingRes, dropsRes] = await Promise.all([
+    const [recsRes, historyRes, trackingRes, dropsRes, accuracyRes] = await Promise.all([
       fetch('/api/v1/recommendations?limit=4').catch(() => null),
       fetch('/api/v1/search-history?limit=5').catch(() => null),
       // Real counts for the overview cards, from the user's own data.
@@ -122,6 +131,8 @@ export default function DashboardPage() {
       fetch('/api/v1/tracking').catch(() => null),
       // Simulated drop windows for the user's tracked products.
       fetch('/api/v1/dashboard/drops-to-watch').catch(() => null),
+      // Public prediction-accuracy summary (S4#8).
+      fetch('/api/v1/predictions/accuracy').catch(() => null),
     ]);
 
     try {
@@ -155,6 +166,19 @@ export default function DashboardPage() {
       }
     } catch {
       // Overview cards stay hidden; other sections still render.
+    } finally {
+      setLoadingTracking(false);
+    }
+
+    try {
+      if (accuracyRes && accuracyRes.ok) {
+        const accuracyData = await accuracyRes.json();
+        if (accuracyData.success && accuracyData.data) {
+          setAccuracy(accuracyData.data as AccuracySummary);
+        }
+      }
+    } catch {
+      // Accuracy section stays hidden on failure.
     }
 
     try {
@@ -239,8 +263,11 @@ export default function DashboardPage() {
               (tracking endpoint). Rendered only when the fetch succeeds;
               a failed fetch hides the section instead of showing demo
               numbers. Numbers count up; reduced-motion users see the
-              final value immediately. */}
-          {trackingSummary && (
+              final value immediately. While the counts load, the
+              stat-card skeleton (S4#2) holds the space. */}
+          {loadingTracking ? (
+            <DashboardCardsSkeleton />
+          ) : trackingSummary ? (
             <div>
               <h2 className="mb-4 text-lg font-semibold">Your activity at a glance</h2>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -255,7 +282,14 @@ export default function DashboardPage() {
                 ))}
               </div>
             </div>
-          )}
+          ) : null}
+
+          {/* Prediction accuracy (S4#8) — from GET
+              /api/v1/predictions/accuracy. Until 20 outcomes have
+              resolved the component shows "Not enough history yet",
+              never a percentage. Hidden entirely when the fetch
+              fails. */}
+          {accuracy && <AccuracyDashboard summary={accuracy} />}
 
           <ActiveDealsSection />
 
@@ -313,7 +347,7 @@ export default function DashboardPage() {
                   >
                     <div className="mb-2 h-32 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
                       {rec.product.imageUrl ? (
-                        <img src={rec.product.imageUrl} alt={rec.product.name} className="h-full w-full object-cover" />
+                        <Image src={rec.product.imageUrl} alt={rec.product.name} width={512} height={256} className="h-full w-full object-cover" />
                       ) : (
                         <div className="flex h-full items-center justify-center">
                           <Brain className="h-8 w-8 text-muted-foreground" />

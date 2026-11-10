@@ -21,6 +21,18 @@
  * so a logged-out visitor can use it immediately. Quick chips
  * cover the most common asks for visitors who do not know what
  * to type.
+ *
+ * Multi-turn (S5#2 — conversational commerce): the hook posts the
+ * full turn history, and every request also carries
+ * `contextProducts` — the product names from the previous
+ * assistant turn — so follow-ups ("aur sasta dikhao", "which is
+ * the cheapest?") are resolved into self-contained queries by
+ * resolveFollowUpQuery (client-side, and again in the route).
+ * Compare turns (2–3 products) render an in-chat compare table
+ * instead of stacked cards. Voice-first mode uses the browser's
+ * Web Speech API only (see lib/voice-languages.ts): dictate to
+ * send, and spoken replies when enabled — no audio ever leaves
+ * the browser, and a failed or denied mic falls back to typing.
  */
 
 'use client';
@@ -30,14 +42,22 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useChat } from 'ai/react';
 import type { JSONValue } from 'ai';
-import { MessageCircle, Send, Sparkles, X } from 'lucide-react';
+import { MessageCircle, Mic, Send, Sparkles, Volume2, VolumeX, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { cn } from '@/lib/utils';
 import { formatPriceForRegion, formatUsd, type Region } from '@/lib/region';
 import { useRegion } from '@/components/region/region-provider';
-import { fetchDealFinderJson } from '@/lib/deal-finder-stream';
+import { fetchDealFinderJson, resolveFollowUpQuery } from '@/lib/deal-finder-stream';
+import {
+  VOICE_LANGUAGES,
+  createSpeechRecognition,
+  isSpeechRecognitionSupported,
+  isSpeechSynthesisSupported,
+  speakText,
+} from '@/lib/voice-languages';
+import { InChatCompareTable } from '@/components/chat/in-chat-compare-table';
 
 /**
  * Product-card price in the visitor's currency — the same
@@ -111,7 +131,21 @@ export function AIDealFinderWidget() {
   // The query behind the in-flight turn, for the JSON fallback in
   // onError (the hook's error callback does not receive it).
   const pendingMessageRef = useRef('');
+  // Product names from the previous assistant turn at send time,
+  // for the same fallback's follow-up resolution.
+  const pendingContextRef = useRef<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Voice-first mode (S5#2): browser-native Web Speech only.
+  const [voiceLang, setVoiceLang] = useState('en-US');
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [voiceReplies, setVoiceReplies] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const recognitionRef = useRef<ReturnType<typeof createSpeechRecognition>>(null);
+  // Last assistant message id already spoken, so a re-render never
+  // repeats a reply.
+  const lastSpokenIdRef = useRef('');
 
   const { messages, append, status, data, setMessages, setData } = useChat({
     api: '/api/v1/deal-finder',
@@ -122,7 +156,14 @@ export function AIDealFinderWidget() {
     onError: async () => {
       const query = pendingMessageRef.current;
       const result = query
-        ? await fetchDealFinderJson({ message: query, country: region.code })
+        ? await fetchDealFinderJson({
+            message: query,
+            country: region.code,
+            history: messages
+              .filter((m) => m.role === 'user' || m.role === 'assistant')
+              .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+            contextProducts: pendingContextRef.current,
+          })
         : null;
       // One data entry per assistant turn keeps the products
       // mapping aligned, even when the turn failed. The products
@@ -161,10 +202,16 @@ export function AIDealFinderWidget() {
   // Attach product cards to each assistant message from the `data`
   // entries (same mapping as the dashboard AIChatPanel: the welcome
   // message is assistant ordinal 0 with no entry; the k-th
-  // assistant message after it maps to data[k - 1]).
+  // assistant message after it maps to data[k - 1]). `isCompareTurn`
+  // marks answers to a compare question, which render the in-chat
+  // compare table instead of stacked cards.
   let assistantOrdinal = -1;
-  const view = messages.map((m) => {
+  const view = messages.map((m, idx) => {
     if (m.role === 'assistant') assistantOrdinal += 1;
+    const prevUser = [...messages.slice(0, idx)]
+      .reverse()
+      .find((p) => p.role === 'user');
+    const prevText = (prevUser?.content ?? '').toLowerCase();
     return {
       id: m.id,
       role: m.role === 'user' ? 'user' : ('assistant' as const),
@@ -173,6 +220,9 @@ export function AIDealFinderWidget() {
         m.role === 'assistant' && assistantOrdinal >= 1
           ? productsFromDataEntry(data?.[assistantOrdinal - 1])
           : [],
+      isCompareTurn:
+        m.role === 'assistant' &&
+        (prevText.includes('compare') || prevText.includes(' vs ') || prevText.includes('versus')),
     };
   });
 
@@ -222,24 +272,123 @@ export function AIDealFinderWidget() {
         ]
       : [];
 
-  // Dashboard has its own full chat page; do not duplicate it there.
-  if (pathname?.startsWith('/dashboard')) return null;
-
   // Spinner only until the first streamed chunk arrives — the
   // placeholder is empty until then, and grows after that.
   const lastMessage = view[view.length - 1];
   const awaitingFirstChunk =
     sending && lastMessage?.role === 'assistant' && lastMessage.content === '';
 
+  // Spoken replies (voice-first): when the stream finishes and the
+  // latest message is a fresh assistant answer, speak it once in
+  // the chosen voice language. Browser synthesis only — nothing
+  // is sent anywhere.
+  const speakRepliesOn = voiceMode || voiceReplies;
+  useEffect(() => {
+    if (!open || !speakRepliesOn || status !== 'ready') return;
+    if (!isSpeechSynthesisSupported()) return;
+    const last = view[view.length - 1];
+    if (!last || last.role !== 'assistant' || !last.content.trim()) return;
+    if (last.id === lastSpokenIdRef.current) return;
+    lastSpokenIdRef.current = last.id;
+    speakText(last.content, voiceLang);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, messages, open, speakRepliesOn, voiceLang]);
+
+  // Stop any in-progress recognition when the panel closes.
+  useEffect(() => {
+    if (!open) {
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        // Already stopped — nothing to do.
+      }
+      setListening(false);
+    }
+  }, [open ]);
+
+  /**
+   * One-shot dictation into the input box. In voice-first mode the
+   * final transcript is sent automatically; otherwise it just fills
+   * the input for the user to send (or edit) themselves. The
+   * transcript comes only from a real recognition result — never
+   * fabricated, and a denied/unavailable mic falls back to typing
+   * with an honest note.
+   */
+  function startDictation() {
+    setVoiceError(null);
+    if (!isSpeechRecognitionSupported()) {
+      setVoiceError('Voice input is not available in this browser — please type instead.');
+      return;
+    }
+    const recognition = createSpeechRecognition();
+    if (!recognition) {
+      setVoiceError('Voice input is not available in this browser — please type instead.');
+      return;
+    }
+    recognitionRef.current = recognition;
+    recognition.lang = voiceLang;
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.onresult = (event: unknown) => {
+      const results = (event as { results?: ArrayLike<{ 0?: { transcript?: string }; isFinal?: boolean }> })
+        .results;
+      if (!results) return;
+      let interim = '';
+      let finalText = '';
+      for (let i = 0; i < results.length; i += 1) {
+        const result = results[i];
+        const transcript = result?.[0]?.transcript ?? '';
+        if (result?.isFinal) finalText += transcript;
+        else interim += transcript;
+      }
+      const text = (finalText || interim).trim();
+      if (text) setInput(text);
+      if (finalText.trim()) {
+        setListening(false);
+        if (voiceMode) {
+          // Voice-first: speak, then send. Resolve the follow-up
+          // against the previous turn's products first, so "aur
+          // sasta dikhao" works hands-free too.
+          const resolved = resolveFollowUpQuery(
+            finalText.trim(),
+            lastAssistantProducts?.map((p) => p.name) ?? []
+          );
+          void send(resolved);
+        }
+      }
+    };
+    recognition.onerror = (event: unknown) => {
+      const error = (event as { error?: string }).error;
+      setListening(false);
+      setVoiceError(
+        error === 'not-allowed'
+          ? 'Microphone access was denied — please type instead, or allow the microphone and try again.'
+          : 'Voice input did not work — please type instead.'
+      );
+    };
+    recognition.onend = () => setListening(false);
+    try {
+      setListening(true);
+      recognition.start();
+    } catch {
+      setListening(false);
+      setVoiceError('Voice input did not start — please type instead.');
+    }
+  }
+
   async function send(text: string) {
     const message = text.trim();
     if (!message || sending) return;
     pendingMessageRef.current = message;
+    // Product names from the previous assistant turn, so the route
+    // can resolve follow-ups ("which is the cheapest?") even when
+    // the client-side resolution is bypassed.
+    pendingContextRef.current = lastAssistantProducts?.map((p) => p.name) ?? [];
     setInput('');
     try {
       await append(
         { role: 'user', content: message },
-        { body: { country: region.code } }
+        { body: { country: region.code, contextProducts: pendingContextRef.current } }
       );
     } catch {
       // Stream failures surface through onError (which runs the
@@ -254,6 +403,10 @@ export function AIDealFinderWidget() {
       });
     }
   }
+
+  // Dashboard has its own full chat page; do not duplicate it there.
+  // (Kept after all hooks — hooks must run unconditionally.)
+  if (pathname?.startsWith('/dashboard')) return null;
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-3">
@@ -273,9 +426,34 @@ export function AIDealFinderWidget() {
             <p className="flex items-center gap-2 text-sm font-semibold">
               <Sparkles className="h-4 w-4" /> AI Deal Finder
             </p>
-            <button onClick={() => setOpen(false)} aria-label="Close chat" className="rounded p-1 hover:bg-blue-700">
-              <X className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => {
+                  setVoiceMode((v) => !v);
+                  setVoiceError(null);
+                }}
+                aria-label={voiceMode ? 'Turn off voice-first mode' : 'Turn on voice-first mode'}
+                title={
+                  voiceMode
+                    ? 'Voice-first mode on: speak to send, replies are spoken'
+                    : 'Voice-first mode: speak to send, replies are spoken'
+                }
+                className={cn('rounded p-1 hover:bg-blue-700', voiceMode && 'bg-blue-700 ring-1 ring-white')}
+              >
+                <Mic className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setVoiceReplies((v) => !v)}
+                aria-label={speakRepliesOn ? 'Turn off spoken replies' : 'Turn on spoken replies'}
+                title={speakRepliesOn ? 'Spoken replies on' : 'Spoken replies off'}
+                className="rounded p-1 hover:bg-blue-700"
+              >
+                {speakRepliesOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+              </button>
+              <button onClick={() => setOpen(false)} aria-label="Close chat" className="rounded p-1 hover:bg-blue-700">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
@@ -290,20 +468,25 @@ export function AIDealFinderWidget() {
                   )}
                 >
                   <p className="whitespace-pre-line">{m.content}</p>
-                  {m.products && m.products.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      {m.products.map((p) => (
-                        <Link
-                          key={p.id}
-                          href={`/products/${p.slug}`}
-                          className="block rounded-md bg-white px-2 py-1.5 text-slate-800 hover:bg-blue-50 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-                        >
-                          <span className="font-medium">{p.name}</span>
-                          {p.brand && <span className="text-muted-foreground"> · {p.brand}</span>}
-                          {p.price !== null && <CardPrice usd={p.price} region={region} />}
-                        </Link>
-                      ))}
-                    </div>
+                  {m.products && m.products.length > 0 && m.isCompareTurn && m.products.length <= 3 ? (
+                    <InChatCompareTable products={m.products} region={region} />
+                  ) : (
+                    m.products &&
+                    m.products.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {m.products.map((p) => (
+                          <Link
+                            key={p.id}
+                            href={`/products/${p.slug}`}
+                            className="block rounded-md bg-white px-2 py-1.5 text-slate-800 hover:bg-blue-50 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                          >
+                            <span className="font-medium">{p.name}</span>
+                            {p.brand && <span className="text-muted-foreground"> · {p.brand}</span>}
+                            {p.price !== null && <CardPrice usd={p.price} region={region} />}
+                          </Link>
+                        ))}
+                      </div>
+                    )
                   )}
                 </div>
               </div>
@@ -355,17 +538,51 @@ export function AIDealFinderWidget() {
               void send(input);
             }}
           >
+            <select
+              value={voiceLang}
+              onChange={(e) => setVoiceLang(e.target.value)}
+              aria-label="Voice language"
+              title="Voice language (speech recognition and spoken replies)"
+              className="w-24 shrink-0 rounded-md border border-slate-200 bg-white px-1 text-xs dark:border-slate-700 dark:bg-slate-900"
+            >
+              {VOICE_LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="e.g. best laptop under $1000"
+              placeholder={listening ? 'Listening…' : 'e.g. best laptop under $1000'}
               maxLength={500}
               className="flex-1"
             />
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              onClick={startDictation}
+              disabled={sending || listening}
+              aria-label={listening ? 'Listening' : 'Dictate with your voice'}
+              title="Dictate with your voice (browser speech recognition — audio never leaves your device)"
+              className={cn(listening && 'animate-pulse border-red-400 text-red-500')}
+            >
+              <Mic className="h-4 w-4" />
+            </Button>
             <Button type="submit" size="icon" disabled={sending || !input.trim()} aria-label="Send message">
               <Send className="h-4 w-4" />
             </Button>
           </form>
+          {voiceError && (
+            <p className="px-3 pb-2 text-xs text-amber-700 dark:text-amber-400">{voiceError}</p>
+          )}
+          {voiceMode && (
+            <p className="px-3 pb-2 text-xs text-slate-500 dark:text-slate-400">
+              Voice-first mode is on: tap the mic and speak — your words are sent automatically and
+              replies are spoken aloud. Recognition runs in your browser only.
+            </p>
+          )}
         </div>
       )}
 

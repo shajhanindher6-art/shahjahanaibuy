@@ -18,12 +18,27 @@
     --muted-foreground: 215 16% 47%;
     --accent: 210 40% 94%;
     --accent-foreground: 222 47% 11%;
-    --destructive: 0 84% 60%;
+    /* Contrast fix (Section 4 item 4 audit, 2026-11-10): the old
+       destructive red (0 84% 60%) with white text was 3.61:1
+       (WCAG AA fail for normal text). Darkened to 0 72% 51% →
+       white text 4.83:1, and `text-destructive` on tinted
+       backgrounds improves by the same amount. */
+    --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
+    /* Light mode: `text-destructive` on a tinted (destructive/10)
+       background is the same darkened red — readable on light tints,
+       so the text token equals the base token here. */
+    --destructive-text: 0 72% 51%;
     --success: 142 71% 45%;
-    --success-foreground: 0 0% 100%;
+    /* Contrast fix (Section 4 item 4 audit, 2026-11-10): white text
+       on the success green was 2.30:1 (WCAG AA fail). Dark text on
+       the same green is ~5.9:1. No component rendered white-on-green
+       today (bg-success/bg-warning have zero usages outside the
+       token definitions), so this only fixes the token pair. */
+    --success-foreground: 222 47% 11%;
     --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
+    /* Same fix: white on amber was 2.14:1; dark text is ~7.0:1. */
+    --warning-foreground: 222 47% 11%;
     --border: 214 32% 91%;
     --input: 214 32% 91%;
     --ring: 221 83% 53%;
@@ -33,6 +48,15 @@
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
     --radius: 0.5rem;
+    /* Motion system (Section 4 item 3): ONE easing + ONE duration
+       scale for the whole site. New animations use these variables
+       (or the duration-motion and ease-motion-standard Tailwind
+       tokens); never invent a new curve or duration. */
+    --motion-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
+    --motion-duration-fast: 150ms;
+    --motion-duration-base: 200ms;
+    --motion-duration-slow: 300ms;
+    --motion-duration-page: 400ms;
   }
 
   .dark {
@@ -50,12 +74,19 @@
     --muted-foreground: 215 20% 65%;
     --accent: 217 33% 20%;
     --accent-foreground: 210 40% 98%;
+    /* Dark mode keeps the darker destructive (0 63% 31%): white
+       text on it is 9.43:1. (Known remaining issue, fixed 2026-11-10
+       wave 2: `text-destructive` on tinted dark backgrounds was low
+       contrast — use the separate --destructive-text token instead:
+       a lighter red (0 84% 65%) that stays readable on dark red
+       tints. Tailwind class: `text-destructive-text`.) */
     --destructive: 0 63% 31%;
     --destructive-foreground: 210 40% 98%;
+    --destructive-text: 0 84% 65%;
     --success: 142 71% 45%;
-    --success-foreground: 0 0% 100%;
+    --success-foreground: 222 47% 11%;
     --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
+    --warning-foreground: 222 47% 11%;
     --border: 217 33% 20%;
     --input: 217 33% 20%;
     --ring: 217 91% 60%;
@@ -86,14 +117,58 @@
   }
 }
 
+/* Motion guidelines (Section 4 item 3) — the whole site uses ONE
+   easing (var(--motion-easing-standard), cubic-bezier(0.4, 0, 0.2, 1))
+   and ONE duration scale (fast 150ms / base 200ms / slow 300ms /
+   page 400ms). Tailwind tokens: duration-motion-fast/base/slow/page
+   and ease-motion-standard; keyframe animations (fade-in,
+   slide-in-right, shimmer, accordion) all use the standard curve.
+   Hover lifts, button presses and tab transitions stay inside this
+   scale — never invent a new curve or duration.
+   Page transitions: components/layout/page-transition.tsx replays
+   `animate-fade-in` on every route change. */
+
 /* Accessibility: users who prefer reduced motion get no fade,
    slide, shimmer, or count-up transitions anywhere on the site. */
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* RTL (S5#12, 2026-11-10): Arabic ('ar') sets dir="rtl" on <html>
+   from the saved sb-language cookie (app/layout.tsx). Layout uses
+   Tailwind logical-ish utilities (ms-/me-/ps-/pe-, flex, gap) in
+   most places, so flipping dir mirrors the layout without extra
+   CSS. The two rules below cover what dir alone does not:
+   - text stays right-aligned in RTL (Tailwind `text-left` classes
+     on prose do not flip automatically);
+   - the slide-in animation enters from the correct side.
+   No layout breakage was introduced: nothing here changes spacing,
+   widths, or the mobile header (the header switchers are native
+   <select> elements, which mirror natively). Verified by code
+   inspection only — no RTL browser render was run (see
+   docs/responsive-qa.md). */
+[dir='rtl'] body {
+  text-align: right;
+}
+[dir='rtl'] .animate-slide-in-right {
+  animation-name: slide-in-left;
+}
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }

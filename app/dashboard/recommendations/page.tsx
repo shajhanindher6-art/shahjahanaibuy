@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { Brain, Sparkles, ArrowRight } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -82,7 +83,7 @@ export default function RecommendationsPage() {
               <CardContent className="p-4">
                 <div className="mb-3 h-40 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
                   {rec.product.imageUrl ? (
-                    <img src={rec.product.imageUrl} alt={rec.product.name} className="h-full w-full object-cover" />
+                    <Image src={rec.product.imageUrl} alt={rec.product.name} width={480} height={320} className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full items-center justify-center">
                       <Sparkles className="h-10 w-10 text-muted-foreground" />

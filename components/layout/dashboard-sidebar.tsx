@@ -17,6 +17,7 @@ import {
   TrendingDown,
   Shield,
   CreditCard,
+  KeyRound,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -44,6 +45,7 @@ const accountNavItems: NavItem[] = [
   { href: '/dashboard/notifications', label: 'Notifications', icon: Bell },
   { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
   { href: '/dashboard/profile', label: 'Profile', icon: User },
+  { href: '/dashboard/api-keys', label: 'API Keys', icon: KeyRound },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
 ];
 

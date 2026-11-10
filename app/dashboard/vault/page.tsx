@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Archive, Trash2, Plus, Receipt } from 'lucide-react';
+import Image from 'next/image';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -202,8 +203,7 @@ export default function VaultPage() {
                   </p>
                 )}
                 {receiptPreview && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={receiptPreview} alt="Receipt preview" className="mt-2 max-h-48 rounded border" />
+<Image src={receiptPreview} alt="Receipt preview" width={640} height={480} unoptimized className="mt-2 max-h-48 w-auto rounded border" />
                 )}
               </div>
               <div>

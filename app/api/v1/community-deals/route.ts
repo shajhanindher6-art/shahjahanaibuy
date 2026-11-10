@@ -20,7 +20,7 @@ import {
   serviceUnavailable,
   validationError,
 } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { isDealVerified, netScore, type CommunityDealRow, type MerchantPriceRow } from '@/services/community-deals';
 
 // PostgREST reports a table missing from its schema cache as PGRST205
@@ -33,6 +33,9 @@ function isMissingTable(error: { code?: string } | null | undefined): boolean {
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'community-deals' });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`community-deals:${getClientIp(request)}`, 120);
+  if (limited) return limited;
 
   try {
     const supabase = await createSupabaseServerClient();
@@ -99,6 +102,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'community-deals' });
+  // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`community-deals:${getClientIp(request)}`, 30);
+  if (limited) return limited;
 
   try {
     const auth = await requireAuth(request);

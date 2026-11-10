@@ -75,6 +75,74 @@ export function getSkimlinksPublisherId(): string | null {
 }
 
 /**
+ * Amazon marketplace country codes with an Associates program
+ * (public marketplace list — locale codes only, no tag values).
+ * Used to report which locales are actually configured; a locale
+ * is never claimed as "covered" unless its env tag is set.
+ */
+export const AMAZON_MARKETPLACE_LOCALES: string[] = [
+  'US', 'CA', 'MX', 'BR', 'GB', 'DE', 'FR', 'IT', 'ES', 'NL',
+  'SE', 'PL', 'JP', 'AU', 'IN', 'AE', 'SA', 'SG', 'TR',
+];
+
+/**
+ * Locales that actually have a tag configured right now: 'US' when
+ * the base AMAZON_ASSOC_TAG is set, plus every marketplace locale
+ * with its own AMAZON_ASSOC_TAG_<CC> override. Empty = no locale
+ * is covered — links stay plain passthrough everywhere.
+ */
+export function getConfiguredAmazonLocales(): string[] {
+  const configured: string[] = [];
+  for (const cc of AMAZON_MARKETPLACE_LOCALES) {
+    if (getAmazonTag(cc) !== null) configured.push(cc);
+  }
+  return configured;
+}
+
+export type LocaleTagSource = 'base' | 'override' | null;
+
+export interface LocaleTagStatus {
+  country: string;
+  tagConfigured: boolean;
+  source: LocaleTagSource;
+}
+
+/**
+ * Tag status for one visitor country: 'base' for US with the base
+ * tag, 'override' for any other locale with its own override, null
+ * source when nothing is configured (passthrough, never a US tag
+ * stamped on a non-US link).
+ */
+export function getLocaleTagStatus(countryCode: string): LocaleTagStatus {
+  const country = countryCode.trim().toUpperCase();
+  if (country === 'US') {
+    const tag = envNonEmpty(AMAZON_TAG_BASE);
+    return { country, tagConfigured: tag !== null, source: tag !== null ? 'base' : null };
+  }
+  const tag = envNonEmpty(`${AMAZON_TAG_BASE}_${country}`);
+  return { country, tagConfigured: tag !== null, source: tag !== null ? 'override' : null };
+}
+
+export interface AffiliateCoverage {
+  enabled: boolean;
+  configuredLocales: string[];
+  skimlinksConfigured: boolean;
+}
+
+/**
+ * Honest coverage summary for admin/disclosure use: which locales
+ * have a real tag configured and whether Skimlinks is configured.
+ * Nothing here claims coverage that is not configured.
+ */
+export function describeAffiliateCoverage(): AffiliateCoverage {
+  return {
+    enabled: isGeoAffiliateEnabled(),
+    configuredLocales: getConfiguredAmazonLocales(),
+    skimlinksConfigured: getSkimlinksPublisherId() !== null,
+  };
+}
+
+/**
  * True when ANY affiliate path is configured (any AMAZON_ASSOC_TAG*
  * var, or a Skimlinks publisher id). Drives the on-page affiliate
  * disclosure note: no config = no note, no tags, no claims.
@@ -129,7 +197,13 @@ export function resolveGeoCountryOrNull(
  * used here (fixed 2026-11-05 after an allowlist test caught it).
  */
 function isAmazonHostname(host: string): boolean {
-  const h = host.toLowerCase();
+  // Strip a leading www. first: www.amazon.co.uk is Amazon, but the
+  // anchored pattern below would otherwise miss it (caught by the
+  // locale-override tests — a GB tag was never applied to a
+  // www.amazon.co.uk link). The phishing guard is unchanged: the
+  // pattern still only matches amazon.<tld> / amazon.co.<cc> /
+  // amazon.com.<cc> shapes, never amazon.evil.com.
+  const h = host.toLowerCase().replace(/^www\./, '');
   return (
     h === 'amazon.com' ||
     h.endsWith('.amazon.com') ||

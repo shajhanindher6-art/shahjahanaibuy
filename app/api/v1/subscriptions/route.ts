@@ -7,11 +7,14 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { isStripeConfigured } from '@/services/stripe';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'subscriptions' });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`subscriptions:${getClientIp(request)}`, 120);
+  if (limited) return limited;
 
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;
@@ -36,6 +39,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'subscriptions.upsert' });
+  // Rate limit: 10 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`subscriptions:${getClientIp(request)}`, 10);
+  if (limited) return limited;
 
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;

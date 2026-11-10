@@ -10,12 +10,23 @@ const footerLinks = {
   Company: [
     { href: '/about', label: 'About' },
     { href: '/contact', label: 'Contact' },
+    { href: '/press', label: 'Press' },
+    { href: '/changelog', label: 'Changelog' },
     { href: '/privacy', label: 'Privacy Policy' },
   ],
   Resources: [
     { href: '/blog', label: 'Blog' },
     { href: '/docs', label: 'Documentation' },
     { href: '/support', label: 'Support' },
+    { href: '/help', label: 'Help Center' },
+  ],
+  Transparency: [
+    { href: '/methodology', label: 'Methodology' },
+    { href: '/price-index', label: 'Price Index' },
+    { href: '/market-reports', label: 'Market Reports' },
+    { href: '/sustainability', label: 'Sustainability' },
+    { href: '/status', label: 'Status' },
+    { href: '/api-docs', label: 'API Docs' },
   ],
   Legal: [
     { href: '/terms', label: 'Terms of Service' },
@@ -28,7 +39,7 @@ export function SiteFooter() {
   return (
     <footer className="border-t bg-background">
       <div className="container mx-auto px-4 py-12">
-        <div className="grid grid-cols-2 gap-8 md:grid-cols-5">
+        <div className="grid grid-cols-2 gap-8 md:grid-cols-6">
           <div className="col-span-2 md:col-span-1">
             <Link href="/" className="flex items-center gap-2 font-bold text-lg">
               <Sparkles className="h-5 w-5 text-primary" />

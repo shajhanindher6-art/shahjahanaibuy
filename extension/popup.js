@@ -2,6 +2,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const statusDot = document.getElementById('status-dot');
   const statusText = document.getElementById('status-text');
   const searchBtn = document.getElementById('search-btn');
+  const historyBtn = document.getElementById('history-btn');
+  const alertsStatus = document.getElementById('alerts-status');
   const saveBtn = document.getElementById('save-btn');
   const savedList = document.getElementById('saved-list');
   const savedEmpty = document.getElementById('saved-empty');
@@ -64,9 +66,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // v2.0.0: how many products this browser is watching for price
+  // drops (set from the on-page overlay's alert button). Local only.
+  chrome.storage.local.get(['smartbuyTracked'], (stored) => {
+    const tracked = stored.smartbuyTracked || {};
+    const count = Object.keys(tracked).length;
+    alertsStatus.textContent =
+      count === 0
+        ? 'Price alerts: none set in this browser yet.'
+        : `Price alerts: watching ${count} product${count === 1 ? '' : 's'} for drops in this browser.`;
+  });
+
   searchBtn.addEventListener('click', () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       chrome.tabs.sendMessage(tabs[0].id, { action: 'manualSearch' });
+    });
+  });
+
+  // v2.0.0: force the price-history overlay even when SmartBuy is
+  // not cheaper — the history + alert button are the point.
+  historyBtn.addEventListener('click', () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      chrome.tabs.sendMessage(tabs[0].id, { action: 'showOverlay' });
     });
   });
 });

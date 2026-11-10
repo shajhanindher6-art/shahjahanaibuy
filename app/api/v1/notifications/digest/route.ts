@@ -7,12 +7,15 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, unauthorized, internalError } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { generateWeeklyDigest } from '@/services/notifications';
 import { logger } from '@/lib/config/logger';
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'notifications.digest' });
+  // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`notifications.digest:${getClientIp(request)}`, 30);
+  if (limited) return limited;
 
   // Fail CLOSED (security fix 2026-11-05): the old `if (cronSecret)` check
   // let anyone call this endpoint when the secret was unset. Same pattern

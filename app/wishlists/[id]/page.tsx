@@ -13,14 +13,15 @@
  * View-only: no editing, no owner information, no private notes.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Check, Heart, Link2 } from 'lucide-react';
+import { Check, Gift, Heart, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ProductCard } from '@/components/products/product-card';
+import { computeDealScoreFromPrediction } from '@/lib/deal-score';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 
@@ -44,6 +45,8 @@ interface SharedWishlist {
   itemCount: number;
   createdAt: string;
   items: SharedItem[];
+  /** S3#11: link to the gift recommender, from the API. */
+  giftFinderUrl: string | null;
 }
 
 export default function SharedWishlistPage() {
@@ -55,6 +58,43 @@ export default function SharedWishlistPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Deal Scores per item (same pattern as /search S2#10): the
+  // shared-wishlist API returns no prediction data, so scores are
+  // fetched client-side per displayed item from
+  // GET /api/v1/predictions/[productId] — the same prediction the
+  // product page scores from (lib/deal-score.ts). Each product is
+  // attempted at most once per page session; a failed or missing
+  // prediction simply leaves that card without a badge — never a
+  // synthesized score.
+  const [dealScores, setDealScores] = useState<Record<string, number>>({});
+  const dealScoreAttemptedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!wishlist) return;
+    const pending = wishlist.items.filter(
+      (item) => !dealScoreAttemptedRef.current.has(item.product.id)
+    );
+    if (pending.length === 0) return;
+    for (const item of pending) dealScoreAttemptedRef.current.add(item.product.id);
+    void Promise.all(
+      pending.map(async (item) => {
+        try {
+          const predRes = await fetch(`/api/v1/predictions/${item.product.id}`, {
+            signal: AbortSignal.timeout(15000),
+          });
+          if (!predRes.ok) return;
+          const predData = await predRes.json();
+          if (!predData.success || !predData.data) return;
+          const score = computeDealScoreFromPrediction(predData.data);
+          if (score === null) return;
+          setDealScores((prev) => ({ ...prev, [item.product.id]: score }));
+        } catch {
+          // No prediction for this card — no badge, no error.
+        }
+      })
+    );
+  }, [wishlist]);
 
   const fetchShared = useCallback(async () => {
     setLoading(true);
@@ -125,17 +165,28 @@ export default function SharedWishlistPage() {
                   {wishlist.itemCount} item{wishlist.itemCount !== 1 ? 's' : ''} · Shared wishlist · No login needed to view
                 </p>
               </div>
-              <Button variant="outline" onClick={copyLink}>
-                {copied ? (
-                  <>
-                    <Check className="mr-2 h-4 w-4" /> Copied!
-                  </>
-                ) : (
-                  <>
-                    <Link2 className="mr-2 h-4 w-4" /> Copy link
-                  </>
+              <div className="flex flex-wrap gap-2">
+                {/* S3#11: gift-finder link from the API — a visitor
+                    viewing someone's wishlist can find a gift from it. */}
+                {wishlist.giftFinderUrl && (
+                  <Button variant="outline" asChild className="min-h-[44px]">
+                    <a href={wishlist.giftFinderUrl}>
+                      <Gift className="mr-2 h-4 w-4" /> Find a gift from this list
+                    </a>
+                  </Button>
                 )}
-              </Button>
+                <Button variant="outline" onClick={copyLink} className="min-h-[44px]">
+                  {copied ? (
+                    <>
+                      <Check className="mr-2 h-4 w-4" /> Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Link2 className="mr-2 h-4 w-4" /> Copy link
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
 
             {wishlist.items.length > 0 ? (
@@ -150,6 +201,7 @@ export default function SharedWishlistPage() {
                         brand: item.product.brand,
                         category: item.product.category,
                         imageUrl: item.product.imageUrl,
+                        dealScore: dealScores[item.product.id] ?? null,
                       }}
                     />
                     {item.targetPrice !== null && (

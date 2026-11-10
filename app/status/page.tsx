@@ -1,0 +1,162 @@
+/**
+ * Public status page (Section 4, item 11).
+ *
+ * Shows the overall status, uptime % over the last 90 days, and
+ * incident history — all computed from recorded rows in
+ * `uptime_checks` / `uptime_incidents` (migration 032) via
+ * lib/status.ts. Honest states by design:
+ * - Before any check is recorded: "Monitoring started 10 November
+ *   2026 — no checks recorded yet" and NO uptime % (never invented).
+ * - An empty incident list means no incidents have been recorded
+ *   since monitoring started — not a claim about before then.
+ * Fail-safe: if the migration has not been run, the page still
+ * renders the "monitoring not started yet" state instead of erroring.
+ */
+import type { Metadata } from 'next';
+import { SiteHeader } from '@/components/layout/site-header';
+import { SiteFooter } from '@/components/layout/site-footer';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { buildStatusSummary, type StatusIncident } from '@/lib/status';
+import type { UptimeCheckRow } from '@/lib/uptime';
+
+export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = {
+  title: 'Status — SmartBuy AI',
+  description:
+    'SmartBuy AI service status, uptime and incident history. Uptime is computed from recorded checks only.',
+};
+
+const STATUS_STYLES: Record<string, string> = {
+  operational: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100',
+  degraded: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100',
+  outage: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100',
+  unknown: 'bg-muted text-muted-foreground',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  operational: 'All systems operational',
+  degraded: 'Degraded',
+  outage: 'Outage',
+  unknown: 'Monitoring starting up',
+};
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+export default async function StatusPage() {
+  let checks: UptimeCheckRow[] = [];
+  let incidents: StatusIncident[] = [];
+
+  try {
+    const supabase = await createSupabaseServerClient();
+    const [checksRes, incidentsRes] = await Promise.all([
+      supabase
+        .from('uptime_checks')
+        .select('checked_at, target_url, status_code, ok, response_ms, error, source')
+        .order('checked_at', { ascending: false })
+        .limit(2000),
+      supabase
+        .from('uptime_incidents')
+        .select('id, started_at, resolved_at, title, status, description')
+        .order('started_at', { ascending: false })
+        .limit(50),
+    ]);
+    if (!checksRes.error && checksRes.data) {
+      checks = checksRes.data as unknown as UptimeCheckRow[];
+    }
+    if (!incidentsRes.error && incidentsRes.data) {
+      incidents = incidentsRes.data as unknown as StatusIncident[];
+    }
+  } catch {
+    // Fail-safe: render the honest "no data yet" state below.
+  }
+
+  const summary = buildStatusSummary(checks, incidents, 90);
+  const uptime = summary.uptime;
+
+  return (
+    <div className="flex min-h-screen flex-col">
+      <SiteHeader />
+      <main className="container mx-auto flex-1 px-4 py-12">
+        <div className="mx-auto max-w-2xl">
+          <h1 className="text-3xl font-bold">Service status</h1>
+
+          <div className="mt-6 rounded-lg border p-6">
+            <span
+              className={`inline-block rounded-full px-3 py-1 text-sm font-medium ${STATUS_STYLES[summary.overall] ?? STATUS_STYLES.unknown}`}
+            >
+              {STATUS_LABELS[summary.overall] ?? summary.overall}
+            </span>
+            <p className="mt-3 text-muted-foreground">{summary.message}</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Monitoring started{' '}
+              {summary.monitoringStartedAt
+                ? formatDate(summary.monitoringStartedAt)
+                : '10 November 2026'}
+              .
+            </p>
+          </div>
+
+          <h2 className="mt-10 text-xl font-semibold">Uptime — last 90 days</h2>
+          {uptime.hasData && uptime.uptimePercent !== null ? (
+            <div className="mt-4 rounded-lg border p-6">
+              <p className="text-4xl font-bold">{uptime.uptimePercent}%</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {uptime.okChecks} of {uptime.totalChecks} recorded checks passed
+                {uptime.firstCheckAt ? ` since ${formatDate(uptime.firstCheckAt)}` : ''}.
+                {uptime.lastCheckAt ? ` Last check: ${formatDate(uptime.lastCheckAt)}.` : ''}
+              </p>
+            </div>
+          ) : (
+            <p className="mt-4 rounded-lg border border-dashed p-6 text-muted-foreground">
+              No uptime percentage yet — no checks have been recorded. Uptime will appear here
+              once the in-app check runner has accrued checks (see the monitoring setup in the
+              project docs). No percentage is shown until real checks exist.
+            </p>
+          )}
+
+          <h2 className="mt-10 text-xl font-semibold">Incident history</h2>
+          {incidents.length === 0 ? (
+            <p className="mt-4 rounded-lg border border-dashed p-6 text-muted-foreground">
+              No incidents recorded yet. Incidents are recorded here when the team confirms a
+              service problem; an empty list means none have been recorded since monitoring
+              started.
+            </p>
+          ) : (
+            <ul className="mt-4 space-y-4">
+              {incidents.map((incident) => (
+                <li key={incident.id} className="rounded-lg border p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="font-medium">{incident.title}</p>
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
+                      {incident.status}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Started {formatDate(incident.started_at)}
+                    {incident.resolved_at ? ` — resolved ${formatDate(incident.resolved_at)}` : ' — still open'}
+                  </p>
+                  {incident.description ? (
+                    <p className="mt-2 text-sm">{incident.description}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <p className="mt-10 text-xs text-muted-foreground">
+            Uptime is computed from recorded in-app checks only. External monitoring
+            (UptimeRobot) is configured separately by the site owner; see docs/uptime.md.
+          </p>
+        </div>
+      </main>
+      <SiteFooter />
+    </div>
+  );
+}

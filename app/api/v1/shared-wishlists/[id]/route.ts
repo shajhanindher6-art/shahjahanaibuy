@@ -16,14 +16,20 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, notFound, internalError } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getPublicSharedWishlist } from '@/services/wishlists';
+import { appConfig } from '@/lib/config/app';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   logApiRequest(request, { endpoint: 'shared-wishlists', id: params.id });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`shared-wishlists.id:${getClientIp(request)}`, 120);
+  if (limited) return limited;
 
   try {
     const supabase = await createSupabaseServerClient();
@@ -33,7 +39,15 @@ export async function GET(
       return notFound('Shared wishlist not found');
     }
 
-    return apiSuccess(shared);
+    // S3#11: link the public list to the gift recommender so a
+    // visitor viewing someone's wishlist can find a gift from it.
+    // (The /wishlists/[id] page renders this link — wave-2 UI task;
+    // that page is owned by another worker this batch.)
+    return apiSuccess({
+      ...shared,
+      shareUrl: `${appConfig.url}/wishlists/${shared.id}`,
+      giftFinderUrl: '/gifts',
+    });
   } catch {
     return internalError('Failed to fetch shared wishlist');
   }

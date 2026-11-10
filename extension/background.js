@@ -1,4 +1,4 @@
-// SmartBuy AI — Background service worker (v1.3.0, matches manifest.json)
+// SmartBuy AI — Background service worker (v2.0.0, matches manifest.json)
 // Handles extension lifecycle, communication, and the hourly
 // background price-drop sync.
 //
@@ -6,7 +6,10 @@
 // - Every 60 minutes it re-checks the products the content script
 //   saved locally (chrome.storage.local `smartbuyTracked`, written
 //   only when a SmartBuy catalog match was found on a retailer
-//   product page) against the public extension price endpoint.
+//   product page) against the public API (S4#18 —
+//   GET /api/v1/public/products/<slug>, latest recorded price).
+//   The compared price is the latest RECORDED price, not a live
+//   retailer quote, and carries no merchant attribution.
 // - If the cheapest SmartBuy price is now LOWER than the saved
 //   price, it shows one browser notification and updates the saved
 //   price. No email, no account, no server-side tracking: the list
@@ -38,12 +41,13 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     const tracked = stored.smartbuyTracked || {};
     for (const [slug, item] of Object.entries(tracked)) {
       try {
-        const res = await fetch(`${API_BASE}/api/v1/extension/price?slug=${encodeURIComponent(slug)}`);
+        const res = await fetch(`${API_BASE}/api/v1/public/products/${encodeURIComponent(slug)}`);
         if (!res.ok) continue;
         const data = await res.json();
-        const offers = Array.isArray(data.data) ? data.data : [];
-        if (offers.length === 0) continue;
-        const cheapest = Math.min(...offers.map((o) => o.price).filter((p) => typeof p === 'number'));
+        const latest = data?.data?.latestRecordedPrice ?? null;
+        const cheapest =
+          latest && typeof latest.price === 'number' && latest.price > 0 ? latest.price : null;
+        if (cheapest === null) continue;
         if (typeof cheapest === 'number' && cheapest < item.price) {
           const drop = (item.price - cheapest).toFixed(2);
           // No iconUrl: the extension ships no icon files (see

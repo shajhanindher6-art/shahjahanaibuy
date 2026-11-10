@@ -1,10 +1,12 @@
 'use client';
+import Image from 'next/image';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Tag, Zap, Clock, TrendingDown, Sparkles, ChevronRight, Copy, Check } from 'lucide-react';
+import Link from 'next/link';
+import { Tag, Zap, Clock, TrendingDown, Sparkles, ChevronRight, Copy, Check, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,8 +14,13 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { cn } from '@/lib/utils';
 import { Price } from '@/components/region/price';
+import { useRegion } from '@/components/region/region-provider';
 import { CommunityDeals } from '@/components/deals/community-deals';
 import { AutoCouponHub } from '@/components/deals/auto-coupon-hub';
+import { ShareButtons } from '@/components/products/share-buttons';
+import { CuratedDealOfTheDay } from '@/components/curators/curated-deal-of-the-day';
+import { CurationGuidelines } from '@/components/curators/curation-guidelines';
+import { SEASONAL_EVENTS } from '@/components/seasonal/events';
 
 interface RankedDeal {
   id: string;
@@ -72,6 +79,7 @@ interface Coupon {
 
 export default function DealsPage() {
   const router = useRouter();
+  const { region } = useRegion();
   const [deals, setDeals] = useState<RankedDeal[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [merchantNames, setMerchantNames] = useState<Record<string, string>>({});
@@ -147,6 +155,15 @@ export default function DealsPage() {
             product page may show a different saving, calculated from the retailer&apos;s
             compare-at price — the two bases are not the same number.
           </p>
+          {/* S3#10 — share this deals page (WhatsApp / X / Facebook /
+              copy link + your own referral link). */}
+          <div className="mt-5 flex justify-center">
+            <ShareButtons
+              title="SmartBuy AI deals — AI-ranked deals, flash sales and coupons"
+              text="Check out these deals on SmartBuy AI"
+              enableReferral
+            />
+          </div>
         </div>
 
         <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
@@ -157,7 +174,9 @@ export default function DealsPage() {
                 key={cat.key}
                 onClick={() => setActiveCategory(cat.key)}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-all',
+                  // Touch target ≥44px (S3#22): min-h keeps the pill
+                  // look while the hit area meets the minimum.
+                  'flex min-h-[44px] items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-all',
                   activeCategory === cat.key
                     ? 'border-blue-600 bg-blue-600 text-white'
                     : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
@@ -171,7 +190,7 @@ export default function DealsPage() {
           <button
             onClick={() => setFeaturedOnly(!featuredOnly)}
             className={cn(
-              'flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-all',
+              'flex min-h-[44px] items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-all',
               featuredOnly
                 ? 'border-amber-500 bg-amber-500 text-white'
                 : 'border-slate-200 bg-white text-slate-700 hover:border-amber-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
@@ -180,6 +199,36 @@ export default function DealsPage() {
             <Sparkles className="h-4 w-4" />
             Featured Only
           </button>
+        </div>
+
+        {/* S5#13 — curated deal of the day for the visitor's
+            region (honest empty state when nothing is curated yet)
+            + the public curation rules. */}
+        <div className="mb-8 grid gap-4 lg:grid-cols-2">
+          <CuratedDealOfTheDay regionCode={region.code} />
+          <CurationGuidelines />
+        </div>
+
+        {/* Seasonal events (S3#6): the three event pages. */}
+        <div className="mb-8 flex flex-wrap items-center justify-center gap-2">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+            <CalendarDays className="h-4 w-4" /> Seasonal events:
+          </span>
+          {SEASONAL_EVENTS.map((event) => (
+            <Link
+              key={event.slug}
+              href={`/events/${event.slug}`}
+              className="flex min-h-[44px] items-center rounded-full border px-4 py-2 text-sm font-medium transition-all hover:border-blue-300 hover:text-primary"
+            >
+              {event.name}
+            </Link>
+          ))}
+          <Link
+            href="/events"
+            className="flex min-h-[44px] items-center rounded-full border px-4 py-2 text-sm font-medium transition-all hover:border-blue-300 hover:text-primary"
+          >
+            All events
+          </Link>
         </div>
 
         {loading && (
@@ -293,7 +342,7 @@ function CouponCard({ coupon, merchantName }: { coupon: Coupon; merchantName?: s
           {coupon.maxDiscountAmount !== null && <p>Max discount: ${coupon.maxDiscountAmount}</p>}
           {coupon.validUntil && <p>Valid until: {new Date(coupon.validUntil).toLocaleDateString()}</p>}
         </div>
-        <Button size="sm" className="mt-3 w-full" onClick={copyCode}>
+        <Button size="sm" className="mt-3 min-h-[44px] w-full" onClick={copyCode}>
           {copied ? (
             <>
               <Check className="mr-1 h-4 w-4" /> Copied!
@@ -357,8 +406,20 @@ function DealCard({ deal, featured, onClick }: { deal: RankedDeal; featured?: bo
         </div>
 
         {deal.product?.imageUrl && (
-          <div className="mb-3 h-32 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
-            <img src={deal.product.imageUrl} alt={deal.product.name} className="h-full w-full object-cover" />
+          <div className="relative mb-3 h-32 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
+            {/* next/image with `unoptimized`: product image hosts are
+                not in next.config remotePatterns (only Unsplash /
+                Pexels are), so optimization would reject them at
+                runtime — unoptimized keeps the same rendering while
+                adopting next/image (dimensions + lazy loading). */}
+            <Image
+              src={deal.product.imageUrl}
+              alt={deal.product.name}
+              fill
+              sizes="(max-width: 640px) 100vw, 33vw"
+              className="object-cover"
+              unoptimized
+            />
           </div>
         )}
 
@@ -403,7 +464,7 @@ function DealCard({ deal, featured, onClick }: { deal: RankedDeal; featured?: bo
           <p className="mt-2 text-xs text-muted-foreground line-clamp-2">{deal.deal.description}</p>
         )}
 
-        <Button size="sm" variant="outline" className="mt-3 w-full">
+        <Button size="sm" variant="outline" className="mt-3 min-h-[44px] w-full">
           View Deal <ChevronRight className="ml-1 h-4 w-4" />
         </Button>
       </CardContent>

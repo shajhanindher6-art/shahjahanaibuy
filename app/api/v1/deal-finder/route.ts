@@ -27,6 +27,16 @@
  *   `d:` finish_message part. Legacy { message } callers that
  *   send `Accept: text/event-stream` get the same data stream.
  *
+ * Multi-turn (S5#2 — conversational commerce): the widget sends
+ * the full turn history plus `contextProducts` (product names from
+ * the previous assistant turn). Follow-ups ("aur sasta dikhao",
+ * "is se halka kaun sa hai?", "which is the cheapest?") are
+ * resolved into self-contained queries via
+ * resolveFollowUpQuery BEFORE the engine sees them, and the history
+ * is passed through to generateChatResponse for API compatibility.
+ * The engine itself stays deterministic and stateless (no LLM):
+ * the chat is transport, not token generation.
+ *
  * HONEST TRANSPORT NOTE: the deterministic engine produces the
  * whole answer atomically — there is no token-by-token LLM.
  * The text parts are the answer's own lines, written immediately
@@ -45,7 +55,44 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { resolveRegion } from '@/lib/region';
-import { generateChatResponse, type ChatMetadata } from '@/services/chat';
+import { generateChatResponse, type ChatMessage, type ChatMetadata } from '@/services/chat';
+import {
+  resolveFollowUpQuery,
+  type ChatHistoryTurn,
+} from '@/lib/deal-finder-stream';
+
+/** Keep only well-formed history turns ({ role, content } strings). */
+function parseHistoryTurns(value: unknown): ChatHistoryTurn[] {
+  if (!Array.isArray(value)) return [];
+  const turns: ChatHistoryTurn[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const role = (item as { role?: unknown }).role;
+    const content = (item as { content?: unknown }).content;
+    if ((role === 'user' || role === 'assistant') && typeof content === 'string') {
+      turns.push({ role, content });
+    }
+  }
+  return turns;
+}
+
+/** Keep only well-formed product-name strings for follow-up context. */
+function parseContextProducts(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === 'string' && v.trim() !== '').slice(0, 3);
+}
+
+/** Map client history turns onto the engine's ChatMessage shape. */
+function toEngineHistory(turns: ChatHistoryTurn[]): ChatMessage[] {
+  return turns.map((t, i) => ({
+    id: `history-${i}`,
+    conversationId: 'deal-finder',
+    role: t.role,
+    content: t.content,
+    metadata: null,
+    createdAt: new Date().toISOString(),
+  }));
+}
 
 /**
  * Split the computed answer into stream chunks — one per line.
@@ -106,20 +153,26 @@ export async function POST(request: NextRequest) {
     //   country?: string } — the hook posts the full history plus
     //   the `body` option merged in. The engine is stateless, so
     //   the last user message is the query.
+    // Both shapes may also carry `history` (legacy) and
+    // `contextProducts` (product names from the previous assistant
+    // turn) for multi-turn follow-up resolution.
     let message: unknown;
     let useChatShape = false;
+    let historyTurns: ChatHistoryTurn[] = [];
     if (Array.isArray(body?.messages)) {
       useChatShape = true;
-      const lastUser = [...body.messages]
+      historyTurns = parseHistoryTurns(body.messages);
+      const lastUser = [...historyTurns]
         .reverse()
-        .find(
-          (m): m is { role: string; content: unknown } =>
-            !!m && typeof m === 'object' && (m as { role?: unknown }).role === 'user'
-        );
+        .find((m) => m.role === 'user');
       message = lastUser?.content;
+      // The last user turn is the query, not history for the engine.
+      historyTurns = historyTurns.slice(0, historyTurns.length - 1);
     } else {
       message = body?.message;
+      historyTurns = parseHistoryTurns(body?.history);
     }
+    const contextProducts = parseContextProducts(body?.contextProducts);
 
     if (typeof message !== 'string' || message.trim() === '') {
       return badRequest('message is required');
@@ -128,6 +181,12 @@ export async function POST(request: NextRequest) {
       return badRequest('message must be 500 characters or fewer');
     }
 
+    // Multi-turn: resolve follow-ups ("aur sasta dikhao", "which is
+    // the cheapest?") against the previous turn's products into a
+    // self-contained query. A non-follow-up, or a follow-up with no
+    // product context, passes through unchanged.
+    const effectiveMessage = resolveFollowUpQuery(message.trim(), contextProducts);
+
     // Visitor region from the widget's RegionProvider (cookie /
     // IP detection). Unknown or missing codes fall back to US via
     // resolveRegion, so prices stay plain "$999.00" — never a
@@ -135,7 +194,12 @@ export async function POST(request: NextRequest) {
     const region = resolveRegion(typeof body?.country === 'string' ? body.country : null);
 
     const supabase = await createSupabaseServerClient();
-    const { content, metadata } = await generateChatResponse(supabase, message.trim(), [], { region });
+    const { content, metadata } = await generateChatResponse(
+      supabase,
+      effectiveMessage,
+      toEngineHistory(historyTurns),
+      { region }
+    );
 
     // Streaming: the AI SDK data-stream protocol. `useChat` never
     // sends `Accept: text/event-stream` (it posts plain JSON), so

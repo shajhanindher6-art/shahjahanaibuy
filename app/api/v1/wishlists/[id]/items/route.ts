@@ -12,7 +12,7 @@ import {
   notFound,
   internalError,
 } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import {
   getWishlistItems,
   addWishlistItem,
@@ -25,6 +25,9 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   logApiRequest(request, { endpoint: 'wishlists.items', id: params.id });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`wishlists.id.items:${getClientIp(request)}`, 120);
+  if (limited) return limited;
 
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;
@@ -44,6 +47,9 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   logApiRequest(request, { endpoint: 'wishlists.items.add', id: params.id });
+  // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`wishlists.id.items:${getClientIp(request)}`, 30);
+  if (limited) return limited;
 
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;

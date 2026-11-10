@@ -6,7 +6,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import {
   getCachedAISearch,
   recordSearch,
@@ -17,6 +17,9 @@ import type { SearchFilters } from '@/types/ai';
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'ai-search' });
+  // Rate limit: 20 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`ai-search:${getClientIp(request)}`, 20);
+  if (limited) return limited;
 
   try {
     const body = await request.json();

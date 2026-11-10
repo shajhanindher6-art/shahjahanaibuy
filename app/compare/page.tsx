@@ -2,18 +2,22 @@
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { GitCompare, Search, Trophy, Check, X, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { CompareMatrixSkeleton } from '@/components/ui/skeleton';
+import { ShareButtons } from '@/components/products/share-buttons';
 import { EmptyState } from '@/components/ui/empty-state';
 import { cn } from '@/lib/utils';
 import { fetchTimed } from '@/lib/fetch-timed';
 import { Price } from '@/components/region/price';
+import { DealScoreBadge } from '@/components/products/deal-score-badge';
+import { PriceTrendSparkline } from '@/components/products/price-trend-sparkline';
 import { DecisionMatrix } from '@/components/comparison/decision-matrix';
 import { SpecMatrix } from '@/components/comparison/spec-matrix';
 import { ComparisonSummaryBanner } from '@/components/comparison/comparison-summary-banner';
@@ -71,6 +75,14 @@ interface ComparisonProduct {
   recorded?: RecordedOverridesData | null;
   /** Option 20 global readiness (all nulls until migration 023 data exists). */
   globalReadiness?: GlobalReadinessData | null;
+  /**
+   * Canonical Deal Score (lib/deal-score.ts), computed server-side
+   * in services/ai-comparison.ts from the same price-drop prediction
+   * the product page uses. Null when the product has no usable
+   * prediction — the table then says "Not enough history", never a
+   * synthesized score.
+   */
+  dealScore?: number | null;
 }
 
 interface Comparison {
@@ -140,8 +152,8 @@ export default function ComparePage() {
     setCompareError(null);
   };
 
-  const runComparison = async () => {
-    if (selectedProducts.length < 2) return;
+  const runComparison = async (products: Array<{ id: string; name: string; slug: string }> = selectedProducts) => {
+    if (products.length < 2) return;
     setComparing(true);
     setCompareError(null);
     try {
@@ -150,7 +162,7 @@ export default function ComparePage() {
       const res = await fetchTimed('/api/v1/comparison', 30000, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productIds: selectedProducts.map((p) => p.id) }),
+        body: JSON.stringify({ productIds: products.map((p) => p.id) }),
       });
       const data = await res.json();
       if (data.success) {
@@ -166,13 +178,63 @@ export default function ComparePage() {
     }
   };
 
+  // S2#8 deep link: /compare?products=<id1>,<id2> (the product page
+  // Compare button pushes /compare?products=<id>). Pre-select those
+  // products and auto-run the comparison when at least 2 resolve.
+  // IDs are resolved through the products list API — the detail
+  // endpoint is slug-only, so a UUID cannot be fetched there. An
+  // unknown/invalid id is skipped silently (never an error state);
+  // a single resolved id is pre-selected and the shopper adds a
+  // second product, since a comparison needs at least 2. Read via
+  // window.location (not useSearchParams) so the page needs no
+  // Suspense boundary (same pattern as /gifts?budget=).
+  const deepLinkedRef = useRef(false);
+  useEffect(() => {
+    if (deepLinkedRef.current) return;
+    deepLinkedRef.current = true;
+    let ids: string[];
+    try {
+      const raw = new URLSearchParams(window.location.search).get('products');
+      if (!raw) return;
+      ids = [...new Set(raw.split(',').map((s) => s.trim()).filter(Boolean))].slice(0, 5);
+    } catch {
+      return;
+    }
+    if (ids.length === 0) return;
+    (async () => {
+      try {
+        const res = await fetchTimed('/api/v1/products?pageSize=100', 15000);
+        const data = await res.json();
+        if (!data.success) return;
+        const list = Array.isArray(data.data) ? data.data : (data.data?.products ?? []);
+        const byId = new Map<string, Record<string, unknown>>(
+          (list as Array<Record<string, unknown>>).map((p) => [p.id as string, p])
+        );
+        const matched = ids.flatMap((id) => {
+          const p = byId.get(id);
+          return p
+            ? [{ id: p.id as string, name: p.name as string, slug: p.slug as string }]
+            : [];
+        });
+        if (matched.length === 0) return;
+        setSelectedProducts(matched);
+        if (matched.length >= 2) void runComparison(matched);
+      } catch {
+        // Unresolvable deep link: leave the normal empty state.
+      }
+    })();
+    // Runs once on mount; runComparison is stable enough for this
+    // one-shot pre-select (it only reads its argument + setters).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
       <SiteHeader />
       <div className="container mx-auto max-w-6xl px-4 py-8">
         <div className="mb-8 text-center">
           <h1 className="flex items-center justify-center gap-2 text-3xl font-bold sm:text-4xl">
-            <GitCompare className="h-8 w-8 text-blue-600" />
+            <GitCompare className="h-8 w-8 text-blue-600" aria-hidden="true" />
             Product Comparison
           </h1>
           <p className="mt-2 text-muted-foreground">
@@ -182,7 +244,9 @@ export default function ComparePage() {
 
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-base">Select Products to Compare ({selectedProducts.length}/5)</CardTitle>
+            {/* h2, not CardTitle: CardTitle renders an h3, and this
+                page's hierarchy is h1 → h2 (no h2 existed before). */}
+            <h2 className="text-2xl font-semibold leading-none tracking-tight text-base">Select Products to Compare ({selectedProducts.length}/5)</h2>
             <CardDescription>Choose 2-5 products for a detailed comparison</CardDescription>
           </CardHeader>
           <CardContent>
@@ -194,10 +258,11 @@ export default function ComparePage() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), searchProducts(searchTerm))}
                   placeholder="Search for products to compare..."
+                  aria-label="Search for products to compare"
                   className="pl-10"
                 />
               </div>
-              <Button onClick={() => searchProducts(searchTerm)} disabled={loading || !searchTerm.trim()}>
+              <Button onClick={() => searchProducts(searchTerm)} disabled={loading || !searchTerm.trim()} className="min-h-[44px]">
                 {loading ? <LoadingSpinner size="sm" /> : 'Find'}
               </Button>
             </div>
@@ -214,7 +279,8 @@ export default function ComparePage() {
                   <button
                     key={product.id}
                     onClick={() => addProduct({ id: product.id, name: product.name, slug: product.slug })}
-                    className="flex w-full items-center justify-between rounded-md p-2 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+                    aria-label={`Add ${product.name} to comparison`}
+                    className="flex min-h-[44px] w-full items-center justify-between rounded-md p-2 text-left transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 dark:hover:bg-slate-800"
                   >
                     <div>
                       <span className="font-medium">{product.name}</span>
@@ -231,7 +297,11 @@ export default function ComparePage() {
                 {selectedProducts.map((product) => (
                   <Badge key={product.id} variant="secondary" className="flex items-center gap-1 py-1.5">
                     {product.name}
-                    <button onClick={() => removeProduct(product.id)} className="ml-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">
+                    <button
+                      onClick={() => removeProduct(product.id)}
+                      aria-label={`Remove ${product.name} from comparison`}
+                      className="ml-1 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 dark:hover:bg-slate-700"
+                    >
                       <X className="h-3 w-3" />
                     </button>
                   </Badge>
@@ -240,7 +310,7 @@ export default function ComparePage() {
             )}
 
             {selectedProducts.length >= 2 && (
-              <Button onClick={runComparison} disabled={comparing} className="mt-4 w-full">
+              <Button onClick={() => runComparison()} disabled={comparing} className="mt-4 min-h-[44px] w-full">
                 {comparing ? <LoadingSpinner size="sm" /> : <GitCompare className="mr-2 h-4 w-4" />}
                 Compare {selectedProducts.length} Products
               </Button>
@@ -249,9 +319,7 @@ export default function ComparePage() {
         </Card>
 
         {comparing && (
-          <div className="flex justify-center py-12">
-            <LoadingSpinner size="lg" />
-          </div>
+          <CompareMatrixSkeleton className="py-4" />
         )}
 
         {!comparing && compareError && !comparison && (
@@ -272,23 +340,111 @@ export default function ComparePage() {
           <div className="space-y-6">
             <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 dark:border-blue-800 dark:from-blue-950 dark:to-cyan-950">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Trophy className="h-5 w-5 text-yellow-500" />
+                {/* h2, not CardTitle (renders h3): this page's
+                    hierarchy is h1 → h2. */}
+                <h2 className="flex items-center gap-2 text-2xl font-semibold leading-none tracking-tight">
+                  <Trophy className="h-5 w-5 text-yellow-500" aria-hidden="true" />
                   AI Comparison Summary
-                </CardTitle>
+                </h2>
               </CardHeader>
               <CardContent>
                 <p className="text-sm leading-relaxed">{comparison.aiSummary}</p>
               </CardContent>
             </Card>
 
-            <div className="overflow-x-auto">
+            {/* Share this comparison (S3#10): the comparison URL is a
+                deep link (/compare?products=…), so the shared link
+                re-opens the same comparison. Referral opt-in on. */}
+            <div aria-label="Share this comparison">
+              <ShareButtons
+                title={`Product comparison: ${comparison.products.map((p) => p.name).join(' vs ')}`}
+                text={`Compare ${comparison.products.map((p) => p.name).join(', ')} on SmartBuy AI`}
+                enableReferral
+              />
+            </div>
+
+            {/* Mobile cards: the matrix below is a wide table — on
+                phones it becomes one card per product instead of a
+                sideways-scrolling table. Desktop keeps the table. */}
+            <div className="grid gap-4 md:hidden">
+              {comparison.products.map((p) => {
+                const prices = p.retailers.map((r) => r.price);
+                const minPrice = prices.length > 0 ? Math.min(...prices) : null;
+                const allPrices = comparison.products.flatMap((p2) => p2.retailers.map((r) => r.price));
+                const overallMin = allPrices.length > 0 ? Math.min(...allPrices) : null;
+                const rating = p.retailers.find((r) => r.rating !== null && r.rating !== undefined)?.rating;
+                return (
+                  <Card key={p.productId}>
+                    <CardContent className="space-y-2 p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-semibold">{p.name}</p>
+                          {p.brand && <p className="text-xs text-muted-foreground">{p.brand}</p>}
+                        </div>
+                        {comparison.bestChoice === p.productId && (
+                          <Badge className="bg-yellow-500 text-xs">Best Choice</Badge>
+                        )}
+                      </div>
+                      <p className="text-sm">
+                        <span className="font-medium">Best price: </span>
+                        {minPrice !== null ? (
+                          <span className={cn('font-bold', minPrice === overallMin ? 'text-green-600' : '')}>
+                            <Price usd={minPrice} showFxNote />
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">No listings</span>
+                        )}
+                      </p>
+                      <p className="flex items-center gap-2 text-sm">
+                        <span className="font-medium">Deal Score: </span>
+                        {p.dealScore != null ? (
+                          <DealScoreBadge score={p.dealScore} size="sm" showLabel />
+                        ) : (
+                          <span className="text-muted-foreground">Not enough history</span>
+                        )}
+                      </p>
+                      <p className="text-sm">
+                        <span className="font-medium">Rating: </span>
+                        {rating !== null && rating !== undefined ? (
+                          <span className="font-semibold">{rating.toFixed(1)} ★</span>
+                        ) : (
+                          <span className="text-muted-foreground">Not rated</span>
+                        )}
+                      </p>
+                      <p className="text-sm">
+                        <span className="font-medium">Availability: </span>
+                        {p.retailers.length === 0 ? (
+                          <Badge variant="secondary">No listings</Badge>
+                        ) : (
+                          <Badge variant={p.retailers.some((r) => r.availability === 'in_stock') ? 'default' : 'destructive'}>
+                            {p.retailers.some((r) => r.availability === 'in_stock') ? 'In Stock' : 'Out of Stock'}
+                          </Badge>
+                        )}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {p.retailers.length} retailer{p.retailers.length !== 1 ? 's' : ''}
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="min-h-[44px]"
+                        onClick={() => router.push(`/products/${p.slug || p.productId}`)}
+                      >
+                        View Details
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b-2 border-slate-200 dark:border-slate-700">
-                    <th className="p-3 text-left text-sm font-medium text-muted-foreground">Feature</th>
+                    <th scope="col" className="p-3 text-left text-sm font-medium text-muted-foreground">Feature</th>
                     {comparison.products.map((p) => (
-                      <th key={p.productId} className="p-3 text-left">
+                      <th scope="col" key={p.productId} className="p-3 text-left">
                         <div className="space-y-1">
                           <span className="block font-semibold">{p.name}</span>
                           {p.brand && <span className="block text-xs text-muted-foreground">{p.brand}</span>}
@@ -302,7 +458,7 @@ export default function ComparePage() {
                 </thead>
                 <tbody>
                   <tr className="border-b border-slate-100 dark:border-slate-800">
-                    <td className="p-3 text-sm font-medium">Best Price</td>
+                    <td scope="row" className="p-3 text-sm font-medium">Best Price</td>
                     {comparison.products.map((p) => {
                       const prices = p.retailers.map((r) => r.price);
                       const minPrice = prices.length > 0 ? Math.min(...prices) : null;
@@ -312,7 +468,7 @@ export default function ComparePage() {
                         <td key={p.productId} className="p-3">
                           {minPrice !== null ? (
                             <span className={cn('font-bold', minPrice === overallMin ? 'text-green-600' : '')}>
-                              <Price usd={minPrice} />
+                              <Price usd={minPrice} showFxNote />
                             </span>
                           ) : (
                             <span className="text-sm text-muted-foreground">No listings</span>
@@ -322,7 +478,32 @@ export default function ComparePage() {
                     })}
                   </tr>
                   <tr className="border-b border-slate-100 dark:border-slate-800">
-                    <td className="p-3 text-sm font-medium">Rating</td>
+                    <td scope="row" className="p-3 text-sm font-medium">Deal Score</td>
+                    {comparison.products.map((p) => (
+                      <td key={p.productId} className="p-3">
+                        {p.dealScore != null ? (
+                          <DealScoreBadge score={p.dealScore} size="sm" showLabel />
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Not enough history</span>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <td scope="row" className="p-3 text-sm font-medium">Price trend</td>
+                    {comparison.products.map((p) => (
+                      <td key={p.productId} className="p-3">
+                        {/* Self-fetching sparkline from real price
+                            history; renders nothing when a product has
+                            fewer than 2 recorded points, so the cell
+                            stays empty rather than showing a fake
+                            trend. */}
+                        <PriceTrendSparkline slug={p.slug} showChange />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <td scope="row" className="p-3 text-sm font-medium">Rating</td>
                     {comparison.products.map((p) => {
                       // Ratings are shared across a product's retailer
                       // rows (one average from the reviews table); take
@@ -346,7 +527,7 @@ export default function ComparePage() {
                     })}
                   </tr>
                   <tr className="border-b border-slate-100 dark:border-slate-800">
-                    <td className="p-3 text-sm font-medium">Reviews</td>
+                    <td scope="row" className="p-3 text-sm font-medium">Reviews</td>
                     {comparison.products.map((p) => {
                       // Never invent "0": with no retailer rows (or no
                       // count on any row) the honest cell is "No review
@@ -368,17 +549,25 @@ export default function ComparePage() {
                     })}
                   </tr>
                   <tr className="border-b border-slate-100 dark:border-slate-800">
-                    <td className="p-3 text-sm font-medium">Availability</td>
+                    <td scope="row" className="p-3 text-sm font-medium">Availability</td>
                     {comparison.products.map((p) => (
                       <td key={p.productId} className="p-3">
-                        <Badge variant={p.retailers.some((r) => r.availability === 'in_stock') ? 'default' : 'destructive'}>
-                          {p.retailers.some((r) => r.availability === 'in_stock') ? 'In Stock' : 'Out of Stock'}
-                        </Badge>
+                        {/* S2#15: zero retailer rows is "No listings",
+                            never "Out of Stock" — no listing exists to
+                            be out of stock, and the old fallback
+                            badge claimed otherwise. */}
+                        {p.retailers.length === 0 ? (
+                          <Badge variant="secondary">No listings</Badge>
+                        ) : (
+                          <Badge variant={p.retailers.some((r) => r.availability === 'in_stock') ? 'default' : 'destructive'}>
+                            {p.retailers.some((r) => r.availability === 'in_stock') ? 'In Stock' : 'Out of Stock'}
+                          </Badge>
+                        )}
                       </td>
                     ))}
                   </tr>
                   <tr className="border-b border-slate-100 dark:border-slate-800">
-                    <td className="p-3 text-sm font-medium">Retailers</td>
+                    <td scope="row" className="p-3 text-sm font-medium">Retailers</td>
                     {comparison.products.map((p) => (
                       <td key={p.productId} className="p-3 text-sm">
                         {p.retailers.length} retailer{p.retailers.length !== 1 ? 's' : ''}
@@ -386,12 +575,13 @@ export default function ComparePage() {
                     ))}
                   </tr>
                   <tr>
-                    <td className="p-3 text-sm font-medium">Actions</td>
+                    <td scope="row" className="p-3 text-sm font-medium">Actions</td>
                     {comparison.products.map((p) => (
                       <td key={p.productId} className="p-3">
                         <Button
                           size="sm"
                           variant="outline"
+                          className="min-h-[44px]"
                           onClick={() => router.push(`/products/${p.slug || p.productId}`)}
                         >
                           View Details
@@ -435,7 +625,7 @@ export default function ComparePage() {
                 comparison API carries no spec rows (SpecMatrix above
                 already covers specs here). */}
             <div>
-              <h3 className="mb-3 text-lg font-semibold">Repairability &amp; Regret Risk</h3>
+              <h2 className="mb-3 text-lg font-semibold">Repairability &amp; Regret Risk</h2>
               <div className="grid gap-6 lg:grid-cols-2">
                 {comparison.products.map((p) => (
                   <div key={p.productId} className="space-y-6">
@@ -457,9 +647,9 @@ export default function ComparePage() {
                 product — all honest empty states until migration 020
                 data exists. */}
             <div>
-              <h3 className="mb-3 text-lg font-semibold">
+              <h2 className="mb-3 text-lg font-semibold">
                 Hardware Endurance &amp; Sustainability
-              </h3>
+              </h2>
               <div className="grid gap-6 lg:grid-cols-2">
                 {comparison.products.map((p) => (
                   <div key={p.productId} className="space-y-6">
@@ -478,7 +668,7 @@ export default function ComparePage() {
             {/* Option 18: weight & power per product — all honest empty
                 states until migration 021 data exists. */}
             <div>
-              <h3 className="mb-3 text-lg font-semibold">Weight &amp; Power</h3>
+              <h2 className="mb-3 text-lg font-semibold">Weight &amp; Power</h2>
               <div className="grid gap-6 lg:grid-cols-2">
                 {comparison.products.map((p) => (
                   <div key={p.productId} className="space-y-6">
@@ -491,7 +681,7 @@ export default function ComparePage() {
             {/* Option 20: global readiness per product — all honest empty
                 states until migration 023 data exists. */}
             <div>
-              <h3 className="mb-3 text-lg font-semibold">Global Readiness</h3>
+              <h2 className="mb-3 text-lg font-semibold">Global Readiness</h2>
               <div className="grid gap-6 lg:grid-cols-2">
                 {comparison.products.map((p) => (
                   <div key={p.productId} className="space-y-6">

@@ -8,7 +8,6 @@ import {
   LineChart,
   Globe,
   ArrowRight,
-  Check,
   Star,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -16,9 +15,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { SmartDealWidget } from '@/components/deals/smart-deal-widget';
+import { PersonalizedDeals } from '@/components/home/personalized-deals';
+import { ShareButtons } from '@/components/products/share-buttons';
 import { LocalStoresSection } from '@/components/home/local-stores-section';
 import { StatsBar } from '@/components/home/stats-bar';
 import { HeroCopy } from '@/components/home/hero-copy';
+import { TiersSection } from '@/components/pricing/tiers-section';
+import { CurationGuidelines } from '@/components/curators/curation-guidelines';
 
 const features = [
   {
@@ -76,45 +79,6 @@ const steps = [
     title: 'Shop Smarter',
     description:
       'Make confident decisions with explainable recommendations and real-time price alerts.',
-  },
-];
-
-const plans = [
-  {
-    name: 'Free',
-    price: '$0',
-    period: 'forever',
-    description: 'Perfect for getting started with smarter shopping.',
-    features: ['Basic search', 'Up to 5 price alerts', 'Community support'],
-    cta: 'Get Started',
-    href: '/sign-up',
-    highlighted: false,
-  },
-  {
-    name: 'Premium',
-    price: '$9.99',
-    period: 'per month',
-    description: 'Unlock the full power of AI-driven shopping intelligence.',
-    features: [
-      'Unlimited price alerts',
-      'AI recommendations',
-      'Review analysis',
-      'Price prediction',
-      'Priority support',
-    ],
-    cta: 'Start Free Trial',
-    href: '/sign-up',
-    highlighted: true,
-  },
-  {
-    name: 'Business',
-    price: 'Custom',
-    period: 'contact us',
-    description: 'For teams and businesses that need advanced capabilities.',
-    features: ['Everything in Premium', 'API access', 'Team management', 'Dedicated support'],
-    cta: 'Contact Sales',
-    href: '/contact',
-    highlighted: false,
   },
 ];
 
@@ -176,6 +140,32 @@ export default function HomePage() {
         <section className="border-t py-20 md:py-28">
           <div className="container mx-auto px-4">
             <SmartDealWidget limit={6} />
+            {/* S3#10 — share SmartBuy AI (WhatsApp / X / Facebook /
+                copy link + your own referral link). */}
+            <div className="mt-10 flex flex-col items-center gap-3">
+              <p className="text-sm font-medium">Found a good deal? Share SmartBuy AI</p>
+              <ShareButtons
+                title="SmartBuy AI — AI-powered shopping"
+                text="SmartBuy AI tracks prices and finds the best deals — check it out"
+                enableReferral
+              />
+            </div>
+            {/* S5#13 — how curation works: the public rules every
+                curated deal must pass. The curated pick itself lives
+                on /deals (it needs the visitor's region, which the
+                server homepage does not know). */}
+            <div className="mx-auto mt-10 max-w-2xl">
+              <CurationGuidelines />
+            </div>
+          </div>
+        </section>
+
+        {/* S3#18 — personalized deals, built only from the
+            visitor's own wishlist/alerts (privacy-first). Shows an
+            honest empty state when there are no signals yet. */}
+        <section className="border-t py-20 md:py-28">
+          <div className="container mx-auto px-4">
+            <PersonalizedDeals />
           </div>
         </section>
 
@@ -272,61 +262,16 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Pricing */}
-        <section id="pricing" className="border-t bg-muted/30 py-20 md:py-28">
-          <div className="container mx-auto px-4">
-            <div className="mx-auto max-w-2xl text-center">
-              <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-                Simple, transparent pricing
-              </h2>
-              <p className="mt-4 text-lg text-muted-foreground">
-                Start free, upgrade when you need more. No hidden fees.
-              </p>
-            </div>
-            <div className="mt-16 grid gap-6 md:grid-cols-3">
-              {plans.map((plan) => (
-                <Card
-                  key={plan.name}
-                  className={
-                    plan.highlighted
-                      ? 'border-primary shadow-lg ring-1 ring-primary'
-                      : ''
-                  }
-                >
-                  <CardHeader>
-                    {/* No "Most Popular" badge: popularity is not
-                        measured, so claiming one plan is the most
-                        popular would be an invented stat. The
-                        highlighted styling alone marks the plan. */}
-                    <CardTitle className="text-2xl">{plan.name}</CardTitle>
-                    <CardDescription>{plan.description}</CardDescription>
-                    <div className="mt-4">
-                      <span className="text-4xl font-bold">{plan.price}</span>
-                      <span className="text-sm text-muted-foreground"> / {plan.period}</span>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-3">
-                      {plan.features.map((feature) => (
-                        <li key={feature} className="flex items-center gap-2 text-sm">
-                          <Check className="h-4 w-4 text-success" />
-                          {feature}
-                        </li>
-                      ))}
-                    </ul>
-                    <Button
-                      className="mt-6 w-full"
-                      variant={plan.highlighted ? 'default' : 'outline'}
-                      asChild
-                    >
-                      <Link href={plan.href}>{plan.cta}</Link>
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-        </section>
+        {/* Pricing — Premium tiers 2.0 (S5#17, wave 2 wiring).
+            The old 3-plan block (Free / Premium / Business) is
+            replaced by TiersSection (Free / Premium / Family /
+            Team, from lib/tiers.ts — Premium $9.99/month live,
+            Family "To be announced", Team custom). The wrapper
+            keeps id="pricing" so the header/footer #pricing anchor
+            still lands here; the section itself is id="pricing-tiers". */}
+        <div id="pricing">
+          <TiersSection />
+        </div>
 
         {/* CTA */}
         <section className="py-20 md:py-28">

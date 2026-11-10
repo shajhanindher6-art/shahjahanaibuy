@@ -18,7 +18,7 @@ import {
   notFound,
   serviceUnavailable,
 } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 
 // Live DB data must never be served from a stale edge cache.
 export const dynamic = 'force-dynamic';
@@ -28,6 +28,9 @@ export async function GET(
   { params }: { params: { slug: string } }
 ) {
   logApiRequest(request, { endpoint: 'products.budget-alternative' });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`products.slug.budget-alternative:${getClientIp(request)}`, 120);
+  if (limited) return limited;
 
   const rawBudget = request.nextUrl.searchParams.get('budget');
   const budget = rawBudget === null ? NaN : Number(rawBudget);

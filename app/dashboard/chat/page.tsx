@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { Send, Sparkles, Plus, MessageSquare, Trash2, Bot, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -305,7 +306,7 @@ export default function ChatPage() {
                           className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 text-left transition-colors hover:border-blue-300 dark:border-slate-700 dark:bg-slate-900"
                         >
                           {p.imageUrl && (
-                            <img src={p.imageUrl} alt={p.name} className="h-10 w-10 rounded object-cover" />
+                            <Image src={p.imageUrl} alt={p.name} width={40} height={40} className="h-10 w-10 rounded object-cover" />
                           )}
                           <div className="flex-1 overflow-hidden">
                             <p className="truncate text-sm font-medium">{p.name}</p>

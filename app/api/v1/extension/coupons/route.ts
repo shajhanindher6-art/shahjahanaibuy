@@ -14,7 +14,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
-import { logApiRequest } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getCoupons, getMerchants } from '@/services/commerce';
 
 /** Retailer domain fragment → merchant name in the merchants table. */
@@ -28,6 +28,9 @@ const DOMAIN_MERCHANTS: Array<{ fragment: string; name: string }> = [
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'extension/coupons' });
+  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`extension.coupons:${getClientIp(request)}`, 120);
+  if (limited) return limited;
 
   try {
     const domain = (request.nextUrl.searchParams.get('domain') ?? '').toLowerCase();

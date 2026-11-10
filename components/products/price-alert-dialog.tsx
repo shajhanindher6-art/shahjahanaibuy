@@ -19,8 +19,14 @@ import {
   listLocalAlertsForProduct,
   removeLocalAlert,
   saveLocalAlert,
+  submitGuestEmailAlert,
+  isValidEmail,
   type LocalPriceAlert,
 } from '@/lib/local-alerts';
+import {
+  subscribeGuestPush,
+  getGuestPushToken,
+} from '@/lib/push-client';
 
 interface PriceAlertDialogProps {
   productId: string;
@@ -58,6 +64,13 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
   // Option 15 Module 3 — guest (logged-out) alerts, stored on this
   // device only. The signed-in flow below is untouched.
   const [localAlerts, setLocalAlerts] = useState<LocalPriceAlert[]>([]);
+  // S3#7/S3#8 — guest email opt-in + guest push, both optional.
+  const [guestAlertType, setGuestAlertType] = useState<'price_drop' | 'back_in_stock'>('price_drop');
+  const [guestEmail, setGuestEmail] = useState('');
+  const [guestEmailState, setGuestEmailState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [guestEmailError, setGuestEmailError] = useState('');
+  const [pushState, setPushState] = useState<'idle' | 'busy' | 'subscribed' | 'error'>('idle');
+  const [pushMessage, setPushMessage] = useState('');
 
   const refreshLocalAlerts = () => {
     setLocalAlerts(listLocalAlertsForProduct(productId));
@@ -130,17 +143,77 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
   };
 
   // Option 15 Module 3 — guest create/delete. Never calls /api/v1/alerts.
-  const handleCreateLocal = () => {
-    const target = parseFloat(targetPrice);
-    const result = saveLocalAlert({ productId, productName, targetPrice: target });
-    if (result.ok) {
-      toast({
-        title: 'Price alert saved on this device',
-        description: `Target $${target.toFixed(2)} for ${productName} — saved on this device only.`,
-      });
-      refreshLocalAlerts();
-    } else {
+  // S3#7: when the guest also leaves an email, the same alert is
+  // stored server-side (opt-in) so the scheduled price check can
+  // actually email them — the local alert alone can never notify.
+  const handleCreateLocal = async () => {
+    const target = guestAlertType === 'price_drop' ? parseFloat(targetPrice) : null;
+    const result = saveLocalAlert({
+      productId,
+      productName,
+      targetPrice: target,
+      alertType: guestAlertType,
+    });
+    if (!result.ok) {
       toast({ title: 'Could not save alert', description: result.error, variant: 'destructive' });
+      return;
+    }
+    toast({
+      title: 'Price alert saved on this device',
+      description:
+        guestAlertType === 'price_drop'
+          ? `Target $${(target as number).toFixed(2)} for ${productName} — saved on this device only.`
+          : `Back-in-stock alert for ${productName} — saved on this device only.`,
+    });
+    refreshLocalAlerts();
+
+    if (guestEmail.trim() !== '') {
+      if (!isValidEmail(guestEmail)) {
+        setGuestEmailState('error');
+        setGuestEmailError('Enter a valid email address.');
+        return;
+      }
+      setGuestEmailState('saving');
+      setGuestEmailError('');
+      const emailResult = await submitGuestEmailAlert({
+        email: guestEmail,
+        productId,
+        alertType: guestAlertType,
+        targetPrice: target,
+        guestToken: getGuestPushToken(),
+      });
+      if (emailResult.ok) {
+        setGuestEmailState('saved');
+        toast({
+          title: 'Email alert saved',
+          description: `We'll email ${guestEmail.trim()} when this triggers (sent when the scheduled price check runs). Unsubscribe anytime from the email.`,
+        });
+      } else {
+        setGuestEmailState('error');
+        setGuestEmailError(emailResult.error);
+      }
+    }
+  };
+
+  // S3#8 — guest push subscribe (no account needed, token-based).
+  const handleGuestPush = async () => {
+    setPushState('busy');
+    setPushMessage('');
+    const result = await subscribeGuestPush();
+    if (result.ok) {
+      setPushState('subscribed');
+      setPushMessage('Push notifications on — this browser will be notified when your alert triggers.');
+    } else {
+      setPushState('error');
+      setPushMessage(
+        result.reason === 'denied'
+          ? 'Browser notifications are blocked for this site. Allow them in your browser settings and try again.'
+          : result.reason === 'unsupported'
+            ? 'This browser does not support push notifications.'
+            : result.reason === 'no-key'
+              ? 'Push notifications are not configured yet (VAPID public key missing).'
+              : 'Push subscription could not be saved. Please try again.'
+      );
     }
   };
 
@@ -152,7 +225,12 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
   // First stored local target already met by the current price, if any.
   const reachedLocalAlert =
     currentPrice != null
-      ? localAlerts.find((a) => currentPrice <= a.targetPrice)
+      ? localAlerts.find(
+          (a) =>
+            a.alertType === 'price_drop' &&
+            a.targetPrice !== null &&
+            currentPrice <= a.targetPrice
+        )
       : undefined;
 
   return (
@@ -180,21 +258,86 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
             </p>
 
             <div>
-              <Label className="mb-1.5 block text-sm">Target Price ($)</Label>
+              <Label className="mb-1.5 block text-sm">Alert Type</Label>
+              <Select value={guestAlertType} onValueChange={(v) => setGuestAlertType(v as 'price_drop' | 'back_in_stock')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="price_drop">Price Drop</SelectItem>
+                  <SelectItem value="back_in_stock">Back in Stock</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {guestAlertType === 'price_drop' && (
+              <div>
+                <Label className="mb-1.5 block text-sm">Target Price ($)</Label>
+                <Input
+                  type="number"
+                  value={targetPrice}
+                  onChange={(e) => setTargetPrice(e.target.value)}
+                  placeholder="e.g. 199.99"
+                />
+                {currentPrice && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Current price: ${currentPrice.toFixed(2)}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* S3#7 — opt-in email: stored server-side with an
+                unsubscribe token so the scheduled price check can
+                actually notify this guest. Optional — leaving it
+                blank keeps the alert device-only. */}
+            <div>
+              <Label className="mb-1.5 block text-sm">Email for notifications (optional)</Label>
               <Input
-                type="number"
-                value={targetPrice}
-                onChange={(e) => setTargetPrice(e.target.value)}
-                placeholder="e.g. 199.99"
+                type="email"
+                value={guestEmail}
+                onChange={(e) => {
+                  setGuestEmail(e.target.value);
+                  setGuestEmailState('idle');
+                  setGuestEmailError('');
+                }}
+                placeholder="you@example.com"
               />
-              {currentPrice && (
+              {guestEmailState === 'saved' ? (
+                <p className="mt-1 text-xs text-green-600">
+                  Email alert saved — we&apos;ll email you when it triggers. Unsubscribe anytime from the email.
+                </p>
+              ) : guestEmailState === 'error' && guestEmailError ? (
+                <p className="mt-1 text-xs text-red-600">{guestEmailError}</p>
+              ) : (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Current price: ${currentPrice.toFixed(2)}
+                  Only used for this alert. No account needed — delivery happens when the scheduled price check runs.
                 </p>
               )}
             </div>
 
-            {reachedLocalAlert && currentPrice != null && (
+            {/* S3#8 — guest push on this browser (no account needed). */}
+            <div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleGuestPush}
+                disabled={pushState === 'busy' || pushState === 'subscribed'}
+              >
+                <Bell className="mr-2 h-4 w-4" />
+                {pushState === 'subscribed'
+                  ? 'Push notifications on'
+                  : pushState === 'busy'
+                    ? 'Enabling push…'
+                    : 'Notify me by push on this browser'}
+              </Button>
+              {pushMessage && (
+                <p className={`mt-1 text-xs ${pushState === 'subscribed' ? 'text-green-600' : 'text-red-600'}`}>
+                  {pushMessage}
+                </p>
+              )}
+            </div>
+
+            {reachedLocalAlert && currentPrice != null && reachedLocalAlert.targetPrice !== null && (
               <p className="text-sm font-medium text-green-600">
                 Target reached — current price ${currentPrice.toFixed(2)} is at or below your ${reachedLocalAlert.targetPrice.toFixed(2)} target.
               </p>
@@ -207,11 +350,13 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
                   <div key={alert.id} className="flex items-center justify-between rounded-lg border p-2">
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary" className="text-xs capitalize">
-                        Price drop
+                        {alert.alertType === 'back_in_stock' ? 'Back in stock' : 'Price drop'}
                       </Badge>
-                      <span className="text-sm text-muted-foreground">
-                        Below ${alert.targetPrice.toFixed(2)}
-                      </span>
+                      {alert.targetPrice !== null && (
+                        <span className="text-sm text-muted-foreground">
+                          Below ${alert.targetPrice.toFixed(2)}
+                        </span>
+                      )}
                     </div>
                     <Button size="sm" variant="ghost" onClick={() => handleDeleteLocal(alert.id)}>
                       <Trash2 className="h-4 w-4 text-red-500" />
@@ -306,8 +451,14 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
         {!user && (
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreateLocal} disabled={!targetPrice}>
-              Create Alert
+            <Button
+              onClick={handleCreateLocal}
+              disabled={
+                guestEmailState === 'saving' ||
+                (guestAlertType === 'price_drop' && !targetPrice)
+              }
+            >
+              {guestEmailState === 'saving' ? 'Saving…' : 'Create Alert'}
             </Button>
           </DialogFooter>
         )}

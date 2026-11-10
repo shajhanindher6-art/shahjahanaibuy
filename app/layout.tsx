@@ -4,8 +4,12 @@ import { cookies, headers } from 'next/headers';
 import { Inter } from 'next/font/google';
 import { Providers } from '@/components/providers';
 import type { Language } from '@/lib/region';
+import { SUPPORTED_LANGUAGES, isRtlLanguage, isSupportedLanguage } from '@/lib/region';
 import { Toaster } from '@/components/ui/toaster';
 import { ServiceWorkerRegister } from '@/components/pwa/service-worker-register';
+import { InstallPrompt } from '@/components/pwa/install-prompt';
+import { AnalyticsProvider } from '@/components/providers/analytics-provider';
+import { PageTransition } from '@/components/layout/page-transition';
 import dynamic from 'next/dynamic';
 // P0 fix (2026-11-09 audit): the AI chat widget (Vercel AI SDK
 // useChat) was statically mounted on every page. It now loads as a
@@ -22,13 +26,35 @@ const AIDealFinderWidget = dynamic(
   () => import('@/components/chat/ai-deal-finder-widget')
 );
 import { appConfig } from '@/lib/config/app';
-import { toJsonLd } from '@/lib/json-ld';
+import {
+  buildOrganizationJsonLd,
+  buildWebSiteJsonLd,
+  toJsonLdGraph,
+} from '@/lib/json-ld';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import CookieConsentBanner from '@/components/privacy/cookie-consent';
 import PostHogProvider from '@/components/analytics/posthog-provider';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
+
+// hreflang (Section 2 item 13, S2#13 part): x-default + one
+// alternate per supported UI language (lib/i18n.ts dictionaries /
+// lib/region.ts SUPPORTED_LANGUAGES — 20 languages since S5#12). There are NO localized routes — language is chosen
+// client-side (sb-language cookie / localStorage) — so every
+// alternate points at the same canonical URL rather than inventing
+// /de/, /ur/ … paths that do not exist. That is the honest limit
+// of cookie-based i18n: the x-default entry is the useful signal
+// here, and per-language URLs need localized routes first (wave 2).
+// /products/[slug] is dynamic, so it inherits this map and should
+// set its own per-product alternates in its generateMetadata
+// (wave 2 — not this file's scope).
+const languageAlternates: Record<string, string> = {
+  'x-default': appConfig.url,
+};
+for (const lang of SUPPORTED_LANGUAGES) {
+  languageAlternates[lang] = appConfig.url;
+}
 
 export const metadata: Metadata = {
   metadataBase: new URL(appConfig.url),
@@ -63,6 +89,11 @@ export const metadata: Metadata = {
     type: 'website',
     siteName: appConfig.name,
     url: appConfig.url,
+    // Root locale is en_US: the site has no localized routes —
+    // language is a client-side cookie choice — so the default
+    // locale stays English. Per-language og:locale:alternate values
+    // would need real localized URLs first.
+    locale: 'en_US',
     // NOTE: no explicit images here — Next auto-discovers
     // app/opengraph-image.tsx. The old static /og-image.png
     // reference was removed: that file never existed in public/.
@@ -86,6 +117,7 @@ export const metadata: Metadata = {
   },
   alternates: {
     canonical: appConfig.url,
+    languages: languageAlternates,
     types: {
       'application/rss+xml': '/rss.xml',
     },
@@ -134,8 +166,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const nonce = headers().get('x-nonce');
   const initialCountryCode = savedCountry ?? geoCountry ?? null;
   const initialSource = savedCountry ? 'saved' : 'detected';
+  // S5#12 RTL + lang: the saved sb-language cookie is the only
+  // server-known language. A supported saved language sets both
+  // <html lang> and dir (rtl for Arabic); anything else stays
+  // lang="en" dir="ltr". The client provider still owns live
+  // switching — it sets document.documentElement.lang on change
+  // (dir flips on the next load; see lib/i18n.ts).
+  const htmlLang =
+    savedLanguage && isSupportedLanguage(savedLanguage) ? savedLanguage : 'en';
+  const htmlDir = isRtlLanguage(htmlLang) ? 'rtl' : 'ltr';
+  // Site-wide structured data (S4#15 builders, imported only):
+  // WebApplication (existing) + Organization + WebSite in one
+  // @graph. No SearchAction — /search ignores ?q= — and no
+  // social profiles: no verified handle exists.
+  const siteJsonLd = toJsonLdGraph(
+    structuredData,
+    buildOrganizationJsonLd(appConfig.url),
+    buildWebSiteJsonLd(appConfig.url)
+  );
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={htmlLang} dir={htmlDir} suppressHydrationWarning>
       <head>
         <link rel="manifest" href="/manifest.json" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
@@ -145,7 +195,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script
           type="application/ld+json"
           nonce={nonce ?? undefined}
-          dangerouslySetInnerHTML={{ __html: toJsonLd(structuredData) }}
+          dangerouslySetInnerHTML={{ __html: siteJsonLd }}
         />
       </head>
       <body className={`${inter.variable} font-sans antialiased`}>
@@ -155,9 +205,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           initialSource={initialSource}
           nonce={nonce}
         >
-          {children}
+          <PageTransition>{children}</PageTransition>
           <Toaster />
           <ServiceWorkerRegister />
+          <InstallPrompt />
           <AIDealFinderWidget />
         </Providers>
         {/* Vercel Analytics (visitors + page views) + Speed Insights
@@ -170,6 +221,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             key is set AND the visitor accepts analytics. */}
         <CookieConsentBanner />
         <PostHogProvider />
+        {/* GA4 + Meta Pixel (Section 3 item 16): env-gated IDs,
+            cookie-consent gated, nonce-aware. Dormant without IDs
+            and without analytics consent — see
+            components/providers/analytics-provider.tsx. */}
+        <AnalyticsProvider nonce={nonce} />
       </body>
     </html>
   );

@@ -37,8 +37,8 @@ export default function ErrorPage({
       </div>
       <h1 className="text-3xl font-bold tracking-tight mb-3">Something went wrong</h1>
       <p className="text-muted-foreground max-w-md mb-8">
-        An unexpected error occurred. Our team has been notified. Please try again or return
-        home.
+        An unexpected error occurred while loading this page. Please try
+        again — if the problem continues, return home or contact support.
       </p>
       {error.digest && (
         <p className="text-xs text-muted-foreground mb-4">Error ID: {error.digest}</p>

@@ -21,7 +21,7 @@
  */
 
 import { Globe } from 'lucide-react';
-import { LANGUAGES, REGIONS, type Language } from '@/lib/region';
+import { LANGUAGES, REGIONS, isAutoTranslatedLanguage, type Language } from '@/lib/region';
 import { useRegion } from './region-provider';
 import { cn } from '@/lib/utils';
 
@@ -104,6 +104,7 @@ export function LanguageSwitcher() {
         {LANGUAGES.map((l) => (
           <option key={l.code} value={l.code}>
             {l.nativeName}
+            {isAutoTranslatedLanguage(l.code) ? ' (auto-translated)' : ''}
           </option>
         ))}
       </select>

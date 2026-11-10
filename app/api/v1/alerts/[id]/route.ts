@@ -12,7 +12,7 @@ import {
   notFound,
   internalError,
 } from '@/lib/api/responses';
-import { logApiRequest, requireAuth } from '@/lib/api/middleware';
+import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import {
   updateAlert,
   deleteAlert,
@@ -24,6 +24,9 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   logApiRequest(request, { endpoint: 'alerts.update', id: params.id });
+  // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`alerts.id:${getClientIp(request)}`, 30);
+  if (limited) return limited;
 
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;
@@ -60,6 +63,9 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   logApiRequest(request, { endpoint: 'alerts.delete', id: params.id });
+  // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
+  const limited = await rateLimitResponse(`alerts.id:${getClientIp(request)}`, 30);
+  if (limited) return limited;
 
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;
