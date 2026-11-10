@@ -112,6 +112,15 @@ const EcoFootprint = dynamic(
   () => import('@/components/products/eco-footprint').then((m) => m.EcoFootprint),
   { ssr: false, loading: () => <LoadingSpinner /> }
 );
+// Section 8: local-first + international store split — below-fold,
+// loaded on demand with ssr:false so it stays out of the First Load
+// bundle (350 kB budget). Client component, so .then() on the
+// dynamic import is fine here (the crash rule bans it only in
+// Server Components).
+const StoreSplitSection = dynamic(
+  () => import('@/components/products/store-split-section').then((m) => m.StoreSplitSection),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
 import { TrustCheckSection } from '@/components/products/trust-check-section';
 import { FakeNessChecker } from '@/components/products/fake-ness-checker';
 import { SmartPool } from '@/components/pools/smart-pool';
@@ -276,7 +285,7 @@ import { cn } from '@/lib/utils';
 import { Price } from '@/components/region/price';
 import { useRegion } from '@/components/region/region-provider';
 import { localizeAmazonUrl } from '@/lib/region';
-import { getStoresForCountry, buildStoreSearchUrl } from '@/lib/stores';
+import { getStoresForCountry } from '@/lib/stores';
 import { trackAffiliateClick } from '@/lib/affiliate-beacon';
 import { getRegionByCountry } from '@/lib/region';
 import { tFor } from '@/lib/i18n';
@@ -347,10 +356,7 @@ import {
   translationSourceLabel,
   type ProductTranslation,
 } from '@/lib/product-translations';
-import {
-  checkoutHandoffHint,
-  estimateLandedCostForCheckout,
-} from '@/lib/local-payments';
+import { estimateLandedCostForCheckout } from '@/lib/local-payments';
 import { TrustScoreCard } from '@/components/merchant/trust-score-card';
 import { VerifiedMerchantBadge } from '@/components/merchant/verified-badge';
 import { AccuracyFlag } from '@/components/merchant/accuracy-flag';
@@ -489,7 +495,7 @@ export default function ProductDetailClient({
   initialProduct: ProductInitialData | null;
 }) {
   const router = useRouter();
-  const { region, language, detectedCountryCode } = useRegion();
+  const { region, language, detectedCountryCode, source: regionSource } = useRegion();
   const { user, isLoading: authLoading } = useAuth();
 
   // fetchAll below still refreshes the full data on mount (attributes,
@@ -1703,122 +1709,29 @@ export default function ProductDetailClient({
           />
         )}
 
-        {/* Local stores / global fallback — Worldwide expansion:
-            DIRECTORY + SEARCH LINKS ONLY, directly under "Where to
-            Buy". Store lookup uses the visitor's actual country
-            (saved choice or raw detection via detectedCountryCode),
-            NOT the display region: for a country outside the region
-            registry the display region falls back to US, but the
-            lookup must return the global fallback, never US local
-            stores. The section therefore ALWAYS renders for a valid
-            country — local stores when the country has them, the
-            worldwide fallback otherwise. These are outbound links
-            to the stores' own search results for this product name.
-            They carry NO price, NO stock badge and NO discount: the
-            store itself shows its price and availability on its own
-            site. Nothing here is a SmartBuy price or deal, and no
-            partnership or affiliate relationship is claimed.
-            Amazon/Best Buy are never listed here (they are already
-            the priced rows above); as a safety net, any store whose
-            name matches a priced merchant row on this page is also
-            filtered out (this removes the Amazon row from the
-            global fallback, where the priced Amazon row already
-            serves that link). */}
-        {/* (17) Gated on merchantsLoaded: the old code rendered this
-            section on every render, so BEFORE the merchants fetch
-            returned, pricedNames was empty and the priced-merchant
-            filter was a no-op — the global fallback's Amazon row (and
-            any priced merchant present in a registry) flashed
-            unfiltered. The US registry itself contains no Best Buy
-            row at all (eBay/Walmart/Target only), so a US "Best Buy"
-            sighting cannot come from this code; Walmart in that
-            section is by design (directory search link, no price).
-            A failed merchants fetch sets merchantsFailed (distinct
-            from a genuinely empty list), and the section then shows
-            an amber note that priced-merchant filtering could not be
-            applied. */}
-        {product && merchantsLoaded && (() => {
-          const pricedNames = new Set(
-            merchants.map((m) => (m.merchantName ?? '').toLowerCase())
-          );
-          const storeCountryCode = detectedCountryCode ?? region.code;
-          const { kind, stores } = getStoresForCountry(storeCountryCode);
-          const storeRegion = getRegionByCountry(storeCountryCode) ?? region;
-          const visibleStores = stores.filter(
-            (store) => !pricedNames.has(store.name.toLowerCase())
-          );
-          const isLocal = kind === 'local';
-          return (
-            <Card className="mt-8">
-              <CardHeader>
-                <CardTitle className="text-base">
-                  {isLocal
-                    ? `Local stores in ${storeRegion.name}`
-                    : 'Global retailers (worldwide)'}
-                </CardTitle>
-                <CardDescription>
-                  {isLocal ? (
-                    <>
-                      These are links to local stores in {storeRegion.name}. SmartBuy does not show
-                      prices, stock, or deals for these stores — click through to see the
-                      store&apos;s own price and availability on its website. No partnership
-                      or affiliate relationship is claimed.
-                    </>
-                  ) : (
-                    <>
-                      No local stores are listed for your country yet. These are worldwide
-                      retailers — click through to see the retailer&apos;s own price and
-                      availability on its website. SmartBuy does not show prices, stock, or
-                      deals for these stores, and no partnership or affiliate relationship
-                      is claimed.
-                    </>
-                  )}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {merchantsFailed && (
-                  <p className="text-sm text-amber-600 dark:text-amber-400">
-                    Merchant data could not be loaded, so priced merchants could not be
-                    filtered out of this list — a store shown here may duplicate a priced
-                    row above.
-                  </p>
-                )}
-                {visibleStores.map((store) => (
-                  <div
-                    key={store.slug}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700"
-                  >
-                    <div>
-                      <p className="font-medium">{store.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Search results on {store.name} — price and stock shown by the
-                        store, not by SmartBuy.
-                      </p>
-                      {/* Checkout handoff (lib/local-payments.ts):
-                          what to expect at this store's checkout —
-                          verified payment options when the directory
-                          carries them, otherwise an honest
-                          "not verified" note. SmartBuy never takes
-                          payment; the retailer sets the final price. */}
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {checkoutHandoffHint(store, product.name)}
-                      </p>
-                    </div>
-                    <Button asChild variant="outline">
-                      <a
-                        href={buildStoreSearchUrl(store, product.name)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Search on {store.name}
-                      </a>
-                    </Button>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          );
-        })()}
+        {/* Section 8 — local first, then international (StoreSplitSection,
+            dynamically imported with ssr:false above so it stays out of
+            the First Load bundle). Store lookup uses the visitor's
+            actual country (saved choice or raw detection via
+            detectedCountryCode), NOT the display region: for a country
+            outside the region registry the display region falls back
+            to US, but the lookup must return the global fallback,
+            never US local stores. Gated on merchantsLoaded (17):
+            before the merchants fetch returns, the priced-merchant
+            filter would be a no-op and the global fallback's Amazon
+            row would flash unfiltered. */}
+        {product && merchantsLoaded && (
+          <StoreSplitSection
+            productName={product.name}
+            countryCode={detectedCountryCode ?? region.code}
+            regionName={
+              (getRegionByCountry(detectedCountryCode ?? region.code) ?? region).name
+            }
+            geoSource={detectedCountryCode ? regionSource : 'fallback'}
+            pricedMerchantNames={merchants.map((m) => m.merchantName ?? '')}
+            merchantsFailed={merchantsFailed}
+          />
+        )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-8">
           {/* Responsive fix: the old `grid grid-cols-2 sm:grid-cols-6`

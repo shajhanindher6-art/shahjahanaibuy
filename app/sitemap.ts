@@ -95,6 +95,7 @@ const STATIC_PAGES: Array<{
   { path: '/changelog', priority: 0.5, changeFrequency: 'weekly' },
   { path: '/editorial-policy', priority: 0.3, changeFrequency: 'yearly' },
   { path: '/price-index', priority: 0.7, changeFrequency: 'weekly' },
+  { path: '/platforms', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/market-reports', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/widgets', priority: 0.5, changeFrequency: 'monthly' },
   { path: '/status', priority: 0.4, changeFrequency: 'daily' },

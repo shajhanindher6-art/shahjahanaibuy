@@ -1,0 +1,260 @@
+/**
+ * Section 8 — eBay Browse API adapter (SERVER-ONLY).
+ *
+ * The first REAL live catalog beyond the site's own recorded
+ * merchant listings: eBay's official Browse API returns active
+ * listings (asking prices, never sold prices) for a keyword.
+ *
+ * ENV-GATED, OFF BY DEFAULT: without EBAY_CLIENT_ID +
+ * EBAY_CLIENT_SECRET in the hosting dashboard, every call returns
+ * `{ ok: false, reason: 'not-configured' }` and the UI shows the
+ * honest "eBay live search is not configured" state — never a
+ * fake listing, never a scraped page. Keys live only in env vars
+ * (Vercel), never in code, git, chat, or any API response.
+ *
+ * FREE TIER: eBay's developer program is free; the default Browse
+ * limit is 5,000 calls/day. Production access additionally needs
+ * the eBay Partner Network (EPN) + Growth Check — the owner's
+ * signup, not code. The API route in front of this adapter caps
+ * calls at 30/min per IP on top of that.
+ *
+ * PRIVACY: the adapter sends only the search keyword to eBay.
+ * No visitor IP, user id, or cookie is ever sent. Tokens are
+ * OAuth client-credentials (server-to-server), cached in memory
+ * until shortly before expiry and never logged or returned.
+ *
+ * LIMITS, STATED PLAINLY: active listings only (no sold-history —
+ * that needs the separately gated Marketplace Insights API);
+ * prices are the sellers' asking prices at call time, not a
+ * SmartBuy recorded price, so they carry no price history, no
+ * Deal Score, and no "lowest ever" claim.
+ */
+
+export interface EbayListing {
+  itemId: string;
+  title: string;
+  /** Asking price in the listing currency, or null when unparseable. */
+  price: number | null;
+  currency: string | null;
+  condition: string | null;
+  itemWebUrl: string;
+  imageUrl: string | null;
+}
+
+export type EbaySearchFailureReason =
+  | 'not-configured'
+  | 'invalid-query'
+  | 'api-error';
+
+export type EbaySearchResult =
+  | {
+      ok: true;
+      source: 'ebay-browse-api';
+      listings: EbayListing[];
+    }
+  | {
+      ok: false;
+      reason: EbaySearchFailureReason;
+      listings: [];
+    };
+
+const EBAY_TOKEN_URL = 'https://api.ebay.com/identity/v1/oauth2/token';
+const EBAY_BROWSE_URL =
+  'https://api.ebay.com/buy/browse/v1/item_summary/search';
+const EBAY_SCOPE = 'https://api.ebay.com/oauth/api_scope';
+const EBAY_DEFAULT_MARKETPLACE = 'EBAY_US';
+const EBAY_MAX_LIMIT = 10;
+const EBAY_DEFAULT_LIMIT = 5;
+const EBAY_MAX_QUERY_LENGTH = 200;
+/** Refresh the token 60s before eBay says it expires. */
+const TOKEN_EARLY_REFRESH_MS = 60 * 1000;
+
+type FetchFn = typeof fetch;
+
+interface CachedToken {
+  token: string;
+  expiresAtMs: number;
+}
+
+let cachedToken: CachedToken | null = null;
+
+/** Test-only: drop the in-memory token so tests stay independent. */
+export function resetEbayTokenCacheForTests(): void {
+  cachedToken = null;
+}
+
+function envNonEmpty(name: string): string | null {
+  const value = process.env[name];
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export function getEbayCredentials(): {
+  clientId: string;
+  clientSecret: string;
+} | null {
+  const clientId = envNonEmpty('EBAY_CLIENT_ID');
+  const clientSecret = envNonEmpty('EBAY_CLIENT_SECRET');
+  if (!clientId || !clientSecret) return null;
+  return { clientId, clientSecret };
+}
+
+/** True only when both eBay credentials are configured. */
+export function isEbayConfigured(): boolean {
+  return getEbayCredentials() !== null;
+}
+
+function getEbayMarketplaceId(): string {
+  const configured = envNonEmpty('EBAY_MARKETPLACE_ID');
+  if (configured && /^EBAY_[A-Z]{2}$/.test(configured)) return configured;
+  return EBAY_DEFAULT_MARKETPLACE;
+}
+
+function parsePrice(value: unknown, currency: unknown): {
+  price: number | null;
+  currency: string | null;
+} {
+  const parsed =
+    typeof value === 'string' || typeof value === 'number'
+      ? Number(value)
+      : Number.NaN;
+  return {
+    price: Number.isFinite(parsed) && parsed >= 0 ? parsed : null,
+    currency:
+      typeof currency === 'string' && currency.trim().length > 0
+        ? currency.trim()
+        : null,
+  };
+}
+
+function toListing(item: unknown): EbayListing | null {
+  if (!item || typeof item !== 'object') return null;
+  const row = item as Record<string, unknown>;
+  const itemId = typeof row.itemId === 'string' ? row.itemId : '';
+  const title = typeof row.title === 'string' ? row.title : '';
+  const itemWebUrl =
+    typeof row.itemWebUrl === 'string' ? row.itemWebUrl : '';
+  if (!itemId || !title || !itemWebUrl) return null;
+  const priceObj =
+    row.price && typeof row.price === 'object'
+      ? (row.price as Record<string, unknown>)
+      : {};
+  const { price, currency } = parsePrice(priceObj.value, priceObj.currency);
+  const imageObj =
+    row.image && typeof row.image === 'object'
+      ? (row.image as Record<string, unknown>)
+      : {};
+  return {
+    itemId,
+    title,
+    price,
+    currency,
+    condition:
+      typeof row.condition === 'string' ? row.condition : null,
+    itemWebUrl,
+    imageUrl:
+      typeof imageObj.imageUrl === 'string' ? imageObj.imageUrl : null,
+  };
+}
+
+async function getEbayAccessToken(
+  fetchFn: FetchFn
+): Promise<string | null> {
+  const now = Date.now();
+  if (cachedToken && cachedToken.expiresAtMs > now) {
+    return cachedToken.token;
+  }
+  const credentials = getEbayCredentials();
+  if (!credentials) return null;
+  try {
+    const response = await fetchFn(EBAY_TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${Buffer.from(
+          `${credentials.clientId}:${credentials.clientSecret}`
+        ).toString('base64')}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        scope: EBAY_SCOPE,
+      }).toString(),
+    });
+    if (!response.ok) return null;
+    const data: unknown = await response.json().catch(() => null);
+    if (!data || typeof data !== 'object') return null;
+    const body = data as Record<string, unknown>;
+    const token =
+      typeof body.access_token === 'string' ? body.access_token : '';
+    const expiresIn =
+      typeof body.expires_in === 'number' ? body.expires_in : 0;
+    if (!token || expiresIn <= 0) return null;
+    cachedToken = {
+      token,
+      expiresAtMs: now + expiresIn * 1000 - TOKEN_EARLY_REFRESH_MS,
+    };
+    return token;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Search live eBay active listings for a keyword, cheapest first.
+ * Never throws for expected failures — the caller renders the
+ * `reason` as an honest empty state instead.
+ */
+export async function searchEbayListings(
+  rawQuery: string,
+  options?: { limit?: number; fetchFn?: FetchFn }
+): Promise<EbaySearchResult> {
+  const fetchFn = options?.fetchFn ?? fetch;
+  const query = typeof rawQuery === 'string' ? rawQuery.trim() : '';
+  if (query.length === 0 || query.length > EBAY_MAX_QUERY_LENGTH) {
+    return { ok: false, reason: 'invalid-query', listings: [] };
+  }
+  if (!isEbayConfigured()) {
+    return { ok: false, reason: 'not-configured', listings: [] };
+  }
+  const limit = Math.min(
+    Math.max(options?.limit ?? EBAY_DEFAULT_LIMIT, 1),
+    EBAY_MAX_LIMIT
+  );
+  const token = await getEbayAccessToken(fetchFn);
+  if (!token) {
+    return { ok: false, reason: 'api-error', listings: [] };
+  }
+  try {
+    const url = new URL(EBAY_BROWSE_URL);
+    url.searchParams.set('q', query);
+    url.searchParams.set('limit', String(limit));
+    url.searchParams.set('sort', 'price');
+    const response = await fetchFn(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-EBAY-C-MARKETPLACE-ID': getEbayMarketplaceId(),
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!response.ok) {
+      return { ok: false, reason: 'api-error', listings: [] };
+    }
+    const data: unknown = await response.json().catch(() => null);
+    if (!data || typeof data !== 'object') {
+      return { ok: false, reason: 'api-error', listings: [] };
+    }
+    const summaries = (data as Record<string, unknown>).itemSummaries;
+    if (!Array.isArray(summaries)) {
+      return { ok: true, source: 'ebay-browse-api', listings: [] };
+    }
+    const listings: EbayListing[] = [];
+    for (const item of summaries) {
+      const listing = toListing(item);
+      if (listing) listings.push(listing);
+    }
+    return { ok: true, source: 'ebay-browse-api', listings };
+  } catch {
+    return { ok: false, reason: 'api-error', listings: [] };
+  }
+}

@@ -13,17 +13,24 @@
  *   is claimed for any store listed.
  * - Only stores whose public search-URL pattern is known with
  *   confidence are included. Stores whose pattern could not be
- *   confirmed (e.g. Otto DE, Walmart Canada, Cdiscount FR, Bol NL,
- *   Galaxus CH, Takealot ZA, Rozetka UA, eMAG RO, Tokopedia ID,
- *   Noon QA/EG, Jumia TN/DZ) are deliberately OMITTED, not guessed.
+ *   confirmed (Walmart Canada, Takealot ZA, eMAG RO, Jumia TN/DZ)
+ *   are deliberately OMITTED, not guessed. Section 8 (2026-11-10)
+ *   added the previously omitted Otto DE, Cdiscount FR, Bol NL,
+ *   Galaxus CH, Rozetka UA, Tokopedia ID and Noon QA/EG after
+ *   their patterns were verified (see the Section 8 block at the
+ *   end of LOCAL_STORES). Jumia TN/DZ stay omitted: TN/DZ are not
+ *   in the region registry yet (their currencies RON/TND/DZD are
+ *   not in the FX table), so their stores could not be reached by
+ *   geo detection; eMAG RO stays omitted for the same reason.
  * - Amazon and Best Buy are deliberately EXCLUDED from this
  *   registry: they are already the priced "Where to Buy" merchant
  *   rows (Amazon's domain is localised per region), so listing
  *   them again here would duplicate those rows.
- * - Country codes match lib/region.ts exactly (60 regions after the
- *   worldwide expansion, 2026-11-02). 58 of them have ≥1 local
- *   store (72 stores total after PriceOye PK + Myntra IN added 2026-11-07); QA and ZA are regions without a
- *   confirmed local store, so they get the global fallback.
+ * - Country codes match lib/region.ts exactly (61 regions after the
+ *   Section 8 expansion added UA, 2026-11-10). 60 of them have ≥1
+ *   local store (80 stores total after Section 8 added 8 verified
+ *   stores); ZA is the region without a confirmed local store, so
+ *   it gets the global fallback.
  * - GLOBAL FALLBACK: getStoresForCountry() returns the local list
  *   when a country has one, otherwise GLOBAL_STORES (Amazon.com,
  *   eBay.com, AliExpress, Google Shopping — search links only,
@@ -250,6 +257,42 @@ export const LOCAL_STORES: LocalStore[] = [
   { name: 'eBay', slug: 'ebay', countryCode: 'BE', websiteUrl: 'https://www.ebay.be', searchUrlTemplate: 'https://www.ebay.be/sch/i.html?_nkw={q}' },
   { name: 'eBay', slug: 'ebay', countryCode: 'NL', websiteUrl: 'https://www.ebay.nl', searchUrlTemplate: 'https://www.ebay.nl/sch/i.html?_nkw={q}' },
   { name: 'eBay', slug: 'ebay', countryCode: 'CH', websiteUrl: 'https://www.ebay.ch', searchUrlTemplate: 'https://www.ebay.ch/sch/i.html?_nkw={q}' },
+
+  // --- Section 8 expansion (2026-11-10): 8 stores whose search
+  // patterns were verified from public search results/snippets.
+  // "verbatim" = the exact search URL was seen; "platform-family"
+  // = the same platform's confirmed pattern on another country
+  // domain. NOT added: Walmart Canada and Takealot ZA (no search
+  // URL found anywhere — do not guess); eMAG RO and Jumia TN/DZ
+  // (patterns exist, but RO/TN/DZ are not in the region registry
+  // yet — their currencies are not in the FX table — so geo
+  // detection could never reach those stores).
+  // Cdiscount FR — verbatim: /search/10/{q}.html seen on indexed
+  // search pages (e.g. /search/10/vitre%20arriere%20s7.html).
+  { name: 'Cdiscount', slug: 'cdiscount', countryCode: 'FR', websiteUrl: 'https://www.cdiscount.com', searchUrlTemplate: 'https://www.cdiscount.com/search/10/{q}.html' },
+  // Otto DE — verbatim: /suche/{q}/ seen on indexed search pages
+  // (e.g. /suche/msi%20grafikkarte/). Term in the path, {q}
+  // URL-encoded — NOT the hyphenated {slug}.
+  { name: 'Otto', slug: 'otto', countryCode: 'DE', websiteUrl: 'https://www.otto.de', searchUrlTemplate: 'https://www.otto.de/suche/{q}/' },
+  // Bol NL — verbatim: /nl/nl/s/?searchtext={q} seen on indexed
+  // search pages (e.g. ?searchtext=zowie).
+  { name: 'Bol', slug: 'bol', countryCode: 'NL', websiteUrl: 'https://www.bol.com', searchUrlTemplate: 'https://www.bol.com/nl/nl/s/?searchtext={q}' },
+  // Galaxus CH — verbatim: /en/search?q={q} seen on indexed
+  // search pages (e.g. /en/search?q=Nobite+textile).
+  { name: 'Galaxus', slug: 'galaxus', countryCode: 'CH', websiteUrl: 'https://www.galaxus.ch', searchUrlTemplate: 'https://www.galaxus.ch/en/search?q={q}' },
+  // Rozetka UA — verbatim: /search/?text={q} seen on indexed
+  // search pages. UA was added to the region registry in the same
+  // batch (UAH already exists in the FX table).
+  { name: 'Rozetka', slug: 'rozetka', countryCode: 'UA', websiteUrl: 'https://rozetka.com.ua', searchUrlTemplate: 'https://rozetka.com.ua/search/?text={q}' },
+  // Tokopedia ID — verbatim: /search?st=product&q={q} seen on
+  // indexed search pages (e.g. ?st=product&q=surf%20board).
+  { name: 'Tokopedia', slug: 'tokopedia', countryCode: 'ID', websiteUrl: 'https://www.tokopedia.com', searchUrlTemplate: 'https://www.tokopedia.com/search?st=product&q={q}' },
+  // Noon QA/EG — platform-family: /{locale}-en/search/?q= is the
+  // confirmed pattern on AE (uae-en) and SA (saudi-en), and the
+  // qatar-en / egypt-en locales are confirmed verbatim in Noon
+  // product URLs. QA gets its first local store here.
+  { name: 'Noon', slug: 'noon', countryCode: 'QA', websiteUrl: 'https://www.noon.com', searchUrlTemplate: 'https://www.noon.com/qatar-en/search/?q={q}' },
+  { name: 'Noon', slug: 'noon', countryCode: 'EG', websiteUrl: 'https://www.noon.com', searchUrlTemplate: 'https://www.noon.com/egypt-en/search/?q={q}' },
 ];
 
 const BY_COUNTRY = new Map<string, LocalStore[]>();
@@ -295,7 +338,7 @@ export interface StoreListResult {
 
 /**
  * ONLY the country's own confirmed local stores — no fallback.
- * Returns [] for countries with no confirmed local store (QA, ZA)
+ * Returns [] for countries with no confirmed local store (ZA)
  * and for unknown codes. The local-first search route uses this
  * (not getStoresForCountry) so an empty local list is honest and
  * the fallback flag is real instead of silently serving US/global
@@ -320,6 +363,46 @@ export function getStoresForCountry(
   const local = code ? BY_COUNTRY.get(code) : undefined;
   if (local && local.length > 0) return { kind: 'local', stores: local };
   return { kind: 'global', stores: GLOBAL_STORES };
+}
+
+/**
+ * Section 8 — local-first + international split (product pages,
+ * homepage, /api/v1/stores).
+ *
+ * The visitor ALWAYS sees both buckets, in this order:
+ *   1. `local` — the country's own CONFIRMED local stores only
+ *      (getLocalOnlyStores). Empty when the country has none
+ *      (ZA, unknown codes) — never silently filled with US
+ *      or global stores, so "local" stays honest.
+ *   2. `international` — the worldwide fallback (GLOBAL_STORES)
+ *      minus any store already present in `local` by slug, so
+ *      the same store (e.g. eBay in the US/GB/DE) never appears
+ *      twice on one page.
+ *
+ * Both buckets are search links only — no price, stock, deal, or
+ * partnership is claimed for any store in either bucket. The
+ * caller (product page) still filters out priced merchants
+ * (Amazon/Best Buy) from both buckets, because those links are
+ * already the priced "Where to Buy" rows above.
+ */
+export interface StoreSplit {
+  /** The country's own confirmed local stores, in directory order. */
+  local: LocalStore[];
+  /** Worldwide retailers, excluding any store already in `local`. */
+  international: LocalStore[];
+  /** True when the country has at least one confirmed local store. */
+  hasLocal: boolean;
+}
+
+export function getStoresSplit(
+  countryCode: string | null | undefined
+): StoreSplit {
+  const local = getLocalOnlyStores(countryCode);
+  const localSlugs = new Set(local.map((store) => store.slug));
+  const international = GLOBAL_STORES.filter(
+    (store) => !localSlugs.has(store.slug)
+  );
+  return { local, international, hasLocal: local.length > 0 };
 }
 
 /**

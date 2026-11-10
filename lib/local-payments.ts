@@ -140,7 +140,7 @@ export function monthlyInstalment(
 
 /**
  * Payment info for every local store in a country. Countries with no
- * confirmed local store (QA, ZA) fall back to the global stores,
+ * confirmed local store (ZA) fall back to the global stores,
  * which are all unverified — the result is honest about that.
  */
 export function getPaymentMethodsForCountry(

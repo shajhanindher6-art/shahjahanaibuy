@@ -14,7 +14,7 @@
  *     ai-search route) followed by global store links. Each
  *     entry is honestly typed ('product' vs 'store-link').
  * fallbackTriggered is true when the country has no confirmed
- * local store (e.g. QA, ZA) — the UI then auto-switches to the
+ * local store (e.g. ZA) — the UI then auto-switches to the
  * Global tab with the fallback notice.
  *
  * A catalog/DB failure returns no products — never a crash and

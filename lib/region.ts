@@ -13,11 +13,14 @@
  *   value in small text.
  * - No per-country deal data exists: a visitor from any country
  *   sees the same catalog and deals, priced in their currency.
- * - Worldwide expansion (2026-11-02): 60 regions. Venezuela and
- *   Ecuador use USD (both dollarized in practice); every other new
- *   region uses its real local currency. Countries outside this
- *   registry still get the global retailer fallback on product
- *   pages (see lib/stores.ts getStoresForCountry).
+ * - Worldwide expansion (2026-11-02): 60 regions. Section 8
+ *   (2026-11-10) added Ukraine (UA, UAH) as the 61st region so
+ *   its verified local store (Rozetka) is reachable by geo
+ *   detection. Venezuela and Ecuador use USD (both dollarized in
+ *   practice); every other new region uses its real local
+ *   currency. Countries outside this registry still get the
+ *   global retailer fallback on product pages (see
+ *   lib/stores.ts getStoresForCountry).
  */
 
 import { USD_PER_UNIT, type CurrencyCode } from '@/services/currency';
@@ -214,6 +217,7 @@ export const COUNTRY_LANGUAGE: Record<string, Language> = {
   PL: 'pl',
   CZ: 'en',
   GR: 'en',
+  UA: 'en',
   BE: 'en',
   NL: 'nl',
   // Supported non-English languages.
@@ -355,6 +359,11 @@ export const REGIONS: Region[] = [
   { code: 'BE', name: 'Belgium', currency: 'EUR', amazonDomain: 'amazon.com.be', locale: 'en-BE', suggestedLanguage: 'en' },
   { code: 'NL', name: 'Netherlands', currency: 'EUR', amazonDomain: 'amazon.nl', locale: 'nl-NL', suggestedLanguage: 'nl' },
   { code: 'CH', name: 'Switzerland', currency: 'CHF', amazonDomain: 'amazon.de', locale: 'de-CH', suggestedLanguage: 'de' },
+  // Section 8 (2026-11-10): Ukraine, so Rozetka (verified in
+  // lib/stores.ts) is reachable by geo detection. UAH already
+  // exists in the FX table (~42 per USD); Ukrainian is not a
+  // supported UI language, so the suggestion stays English.
+  { code: 'UA', name: 'Ukraine', currency: 'UAH', amazonDomain: 'amazon.com', locale: 'uk-UA', suggestedLanguage: 'en' },
 ];
 
 /** Generic fallback for any country outside the registry. */

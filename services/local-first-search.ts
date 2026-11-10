@@ -13,7 +13,7 @@
  *     typed ('product' vs 'store-link') so the UI renders them
  *     differently.
  *
- * When a country has no confirmed local store (QA, ZA, or an
+ * When a country has no confirmed local store (ZA, or an
  * unknown code), localResults is [] and fallbackTriggered is
  * true — the UI auto-switches to the Global tab with the notice
  * "No local stock found — showing international import options."

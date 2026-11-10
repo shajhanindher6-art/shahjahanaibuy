@@ -41,7 +41,7 @@ describe('local payments from the store directory', () => {
   });
 
   it('falls back to global stores (all unverified) for countries with no local store', () => {
-    const infos = getPaymentMethodsForCountry('QA');
+    const infos = getPaymentMethodsForCountry('ZA');
     expect(infos.length).toBeGreaterThan(0);
     expect(infos.every((i) => i.verified === false)).toBe(true);
   });

@@ -55,10 +55,10 @@ describe('buildLocalFirstResults', () => {
     ]);
   });
 
-  it('QA (no confirmed local store) triggers the fallback', () => {
+  it('ZA (no confirmed local store) triggers the fallback', () => {
     const { localResults, fallbackTriggered } = buildLocalFirstResults({
       query: 'laptop',
-      country: 'QA',
+      country: 'ZA',
       products: [],
     });
     expect(localResults).toEqual([]);
