@@ -1,7 +1,7 @@
 /**
- * API v1 SmartPool endpoints (Option 8, Feature 2).
+ * API v1 SmartPool endpoints (Option 8, Feature 2; Section 6 Item 8).
  * GET  /api/v1/pools?productId=… — open pools for a product, with real
- *        member counts (never invented).
+ *        member counts and real committed quantities (never invented).
  * POST /api/v1/pools — create a pool (auth required). The creator becomes
  *        member #1; the count only grows by real joins.
  *
@@ -9,8 +9,11 @@
  * yet, GET returns { pools: [], poolsEnabled: false } and POST returns
  * 503 with an honest message. If the 018 migration (city +
  * shipping_estimate_usd) has not been run yet, both fields degrade to
- * null and the UI shows the honest empty states. Reaching a threshold
- * NEVER promises a discount — see POOL_NO_GUARANTEE_NOTE in
+ * null and the UI shows the honest empty states. If migration 033
+ * (target_quantity, bulk_note, pool_member_quantities) has not been
+ * run yet, quantities default to 1 per member and target/bulk-note
+ * degrade to null — today's behaviour. Reaching a threshold NEVER
+ * promises a discount — see POOL_NO_GUARANTEE_NOTE in
  * services/smartpool.ts.
  */
 
@@ -23,6 +26,7 @@ import {
   serviceUnavailable,
 } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { normalizeQuantity, poolQuantityProgressText } from '@/lib/pool-quantities';
 
 // PostgREST reports a table missing from its schema cache as PGRST205
 // (not Postgres 42P01) on the REST path, so both codes must count as
@@ -32,25 +36,31 @@ function isMissingTable(error: { code?: string } | null | undefined): boolean {
   return error?.code === '42P01' || error?.code === 'PGRST205';
 }
 
-// The 018 migration columns (city, shipping_estimate_usd) may not
-// exist yet: a missing column is 42703. Callers must degrade to
-// "unknown" for both fields, never crash or fake a value.
+// The 018 migration columns (city, shipping_estimate_usd) and the 033
+// columns (target_quantity, bulk_note) may not exist yet: a missing
+// column is 42703. Callers must degrade to "unknown" for those
+// fields, never crash or fake a value.
 function isMissingColumn(error: { code?: string } | null | undefined): boolean {
   return error?.code === '42703';
 }
 
+const POOL_SELECT_WITH_V3 =
+  'id, product_id, product_name, region_code, city, shipping_estimate_usd, target_quantity, bulk_note, threshold, creator_id, status, created_at';
 const POOL_SELECT_WITH_V2 =
   'id, product_id, product_name, region_code, city, shipping_estimate_usd, threshold, creator_id, status, created_at';
 const POOL_SELECT_BASE =
   'id, product_id, product_name, region_code, threshold, creator_id, status, created_at';
 
-/** Normalize one pool row for the client (camelCase, nulls for missing v2 fields). */
+/** Normalize one pool row for the client (camelCase, nulls for missing v2/v3 fields). */
 function normalizePool(p: Record<string, unknown>): Record<string, unknown> {
   return {
     ...p,
     city: typeof p.city === 'string' && p.city ? p.city : null,
     shippingEstimateUsd:
       typeof p.shipping_estimate_usd === 'number' ? p.shipping_estimate_usd : null,
+    targetQuantity:
+      typeof p.target_quantity === 'number' && p.target_quantity >= 2 ? p.target_quantity : null,
+    bulkNote: typeof p.bulk_note === 'string' && p.bulk_note ? p.bulk_note : null,
   };
 }
 
@@ -77,9 +87,17 @@ export async function GET(request: NextRequest) {
     let pools: Array<Record<string, unknown>> | null = null;
     let error: { code?: string } | null = null;
     {
-      const first = await runQuery(POOL_SELECT_WITH_V2);
+      const first = await runQuery(POOL_SELECT_WITH_V3);
       pools = (first.data ?? null) as Array<Record<string, unknown>> | null;
       error = (first.error ?? null) as { code?: string } | null;
+    }
+    if (error && isMissingColumn(error)) {
+      // 033 columns missing: retry without them (target/bulk-note
+      // stay null — honest unknown, never fake data).
+      console.error('[pools] v3 columns missing, retrying without them', error);
+      const retry = await runQuery(POOL_SELECT_WITH_V2);
+      pools = (retry.data ?? null) as Array<Record<string, unknown>> | null;
+      error = (retry.error ?? null) as { code?: string } | null;
     }
     if (error && isMissingColumn(error)) {
       // 018 migration not run yet: retry without the v2 columns and
@@ -107,11 +125,44 @@ export async function GET(request: NextRequest) {
     for (const m of (members ?? []) as Array<{ pool_id: string }>) {
       counts.set(m.pool_id, (counts.get(m.pool_id) ?? 0) + 1);
     }
+    // Per-member quantities (033). Missing table = every member
+    // counts as 1 unit (today's behaviour); the query error is
+    // swallowed deliberately — quantities are an enhancement, not
+    // a reason to fail the whole list.
+    const quantitiesByPool = new Map<string, number[]>();
+    const { data: quantities, error: quantitiesError } = await supabase
+      .from('pool_member_quantities')
+      .select('pool_id, quantity')
+      .in('pool_id', rows.map((p) => p.id as string));
+    if (!quantitiesError) {
+      for (const q of (quantities ?? []) as Array<{ pool_id: string; quantity: number }>) {
+        const list = quantitiesByPool.get(q.pool_id) ?? [];
+        list.push(normalizeQuantity(q.quantity));
+        quantitiesByPool.set(q.pool_id, list);
+      }
+    }
     return apiSuccess(
-      rows.map((p) => ({
-        ...normalizePool(p),
-        memberCount: counts.get(p.id as string) ?? 0,
-      })),
+      rows.map((p) => {
+        const id = p.id as string;
+        const memberCount = counts.get(id) ?? 0;
+        // Members without a recorded quantity row count as 1 unit.
+        const quantities = quantitiesByPool.get(id) ?? [];
+        const padded = [...quantities];
+        while (padded.length < memberCount) padded.push(1);
+        const targetQuantity =
+          typeof p.target_quantity === 'number' && p.target_quantity >= 2 ? p.target_quantity : null;
+        return {
+          ...normalizePool(p),
+          memberCount,
+          totalQuantity: padded.reduce((sum, q) => sum + q, 0),
+          quantityProgress: poolQuantityProgressText(
+            memberCount,
+            padded,
+            typeof p.threshold === 'number' ? p.threshold : 0,
+            targetQuantity
+          ),
+        };
+      }),
       200,
       { poolsEnabled: true }
     );
@@ -151,6 +202,20 @@ export async function POST(request: NextRequest) {
       Number.isFinite(shippingEstimateRaw) && shippingEstimateRaw > 0
         ? Math.round(shippingEstimateRaw * 100) / 100
         : null;
+    // Optional v3 fields (033 migration): a target quantity
+    // (>= 2 units, else no target) and a free-text bulk note from
+    // the creator. Neither promises any discount or retailer offer.
+    const targetQuantityRaw = Number(body?.targetQuantity);
+    const targetQuantity =
+      Number.isFinite(targetQuantityRaw) && targetQuantityRaw >= 2
+        ? Math.floor(targetQuantityRaw)
+        : null;
+    const bulkNote =
+      typeof body?.bulkNote === 'string' && body.bulkNote.trim()
+        ? body.bulkNote.trim().slice(0, 500)
+        : null;
+    // The creator's own committed quantity (default 1 unit).
+    const quantity = normalizeQuantity(body?.quantity);
     if (!productName) return badRequest('productName is required');
 
     const supabase = await createSupabaseServerClient();
@@ -164,9 +229,18 @@ export async function POST(request: NextRequest) {
     };
     let { data: pool, error } = await supabase
       .from('pools')
-      .insert({ ...insertBase, city, shipping_estimate_usd: shippingEstimateUsd })
-      .select(POOL_SELECT_WITH_V2)
+      .insert({ ...insertBase, city, shipping_estimate_usd: shippingEstimateUsd, target_quantity: targetQuantity, bulk_note: bulkNote })
+      .select(POOL_SELECT_WITH_V3)
       .single();
+    if (error && isMissingColumn(error)) {
+      // 033 columns missing on create: retry without them.
+      console.error('[pools] v3 columns missing on create, retrying without them', error);
+      ({ data: pool, error } = await supabase
+        .from('pools')
+        .insert({ ...insertBase, city, shipping_estimate_usd: shippingEstimateUsd })
+        .select(POOL_SELECT_WITH_V2)
+        .single());
+    }
     if (error && isMissingColumn(error)) {
       // 018 migration not run yet: create the pool without the v2
       // columns. The pool still works; city/shipping stay unknown.
@@ -187,7 +261,28 @@ export async function POST(request: NextRequest) {
     }
     // Creator is member #1 (best effort — the pool exists regardless).
     await supabase.from('pool_members').insert({ pool_id: pool.id, user_id: auth.userId });
-    return apiSuccess({ ...normalizePool(pool as Record<string, unknown>), memberCount: 1 }, 201);
+    // Record the creator's quantity (best effort — missing 033 table
+    // just means the creator counts as 1 unit, today's behaviour).
+    await supabase
+      .from('pool_member_quantities')
+      .upsert({ pool_id: pool.id, user_id: auth.userId, quantity }, { onConflict: 'pool_id,user_id' });
+    const created = normalizePool(pool as Record<string, unknown>);
+    return apiSuccess(
+      {
+        ...created,
+        memberCount: 1,
+        totalQuantity: quantity,
+        quantityProgress: poolQuantityProgressText(
+          1,
+          [quantity],
+          typeof (pool as Record<string, unknown>).threshold === 'number'
+            ? ((pool as Record<string, unknown>).threshold as number)
+            : 0,
+          typeof created.targetQuantity === 'number' ? created.targetQuantity : null
+        ),
+      },
+      201
+    );
   } catch {
     return internalError('Failed to create pool');
   }

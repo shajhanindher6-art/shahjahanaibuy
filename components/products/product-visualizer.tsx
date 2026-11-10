@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, createElement } from 'react';
+import dynamic from 'next/dynamic';
 import { Box, Cuboid, Ruler } from 'lucide-react';
 
 /**
@@ -17,10 +17,21 @@ import { Box, Cuboid, Ruler } from 'lucide-react';
  *   exists for the product. With no model (the expected state for all
  *   catalog products today), the component renders the dimensions
  *   section + the honest "No 3D model available" note and NOTHING that
- *   looks like a 3D model. The model-viewer script is loaded lazily
- *   only in the model case, so the no-model case stays lightweight.
+ *   looks like a 3D model. The bundled @google/model-viewer chunk is
+ *   loaded with next/dynamic ssr:false only in the model case, so the
+ *   no-model case stays lightweight and the viewer never ships in the
+ *   product page's First Load JS (350 kB budget).
  * - No dimension and no 3D model is ever invented or generated here.
  */
+
+// Bundled model-viewer (npm package, no unpkg script, no CSP issue).
+// ssr:false: <model-viewer> is a browser custom element and must not
+// render on the server. The chunk loads only when this component is
+// actually rendered, i.e. only when a real modelUrl exists (see below).
+const ModelViewerElement = dynamic(() => import('./model-viewer-element'), {
+  ssr: false,
+  loading: () => <p className="text-sm text-muted-foreground">Loading 3D viewer…</p>,
+});
 
 export interface ProductDimensions {
   lengthCm: number;
@@ -37,23 +48,6 @@ export function ProductVisualizer({
   dimensions: ProductDimensions | null;
   modelUrl: string | null;
 }) {
-  const [modelViewerReady, setModelViewerReady] = useState(false);
-
-  useEffect(() => {
-    if (!modelUrl) return;
-    if (typeof document === 'undefined') return;
-    if (document.querySelector('script[data-model-viewer]')) {
-      setModelViewerReady(true);
-      return;
-    }
-    const script = document.createElement('script');
-    script.type = 'module';
-    script.dataset.modelViewer = 'true';
-    script.src = 'https://unpkg.com/@google/model-viewer@3.5.0/dist/model-viewer.min.js';
-    script.onload = () => setModelViewerReady(true);
-    document.head.appendChild(script);
-  }, [modelUrl]);
-
   // Scaled box: longest edge maps to 220px, others proportionally.
   let boxStyle: { width: number; height: number; depth: number } | null = null;
   if (dimensions) {
@@ -74,18 +68,7 @@ export function ProductVisualizer({
 
       {modelUrl ? (
         <div>
-          {modelViewerReady ? (
-            createElement('model-viewer', {
-              src: modelUrl,
-              alt: `3D model of ${productName}`,
-              ar: true,
-              'camera-controls': true,
-              'auto-rotate': true,
-              style: { width: '100%', height: '320px', background: '#f8fafc' },
-            })
-          ) : (
-            <p className="text-sm text-muted-foreground">Loading 3D viewer…</p>
-          )}
+          <ModelViewerElement modelUrl={modelUrl} productName={productName} />
           <p className="mt-1 text-xs text-muted-foreground">
             AR view uses the product&apos;s real 3D model file. Tap the AR button on a
             supported phone to place it in your room.

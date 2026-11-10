@@ -35,8 +35,16 @@ interface ChannelStatus {
 
 interface WebhookStatusResponse {
   migrationApplied: boolean;
+  genericMigrationApplied: boolean;
   whatsapp: ChannelStatus;
   telegram: ChannelStatus;
+  /** Generic outbound channel: booleans only — the URL and secret are never returned. */
+  generic: {
+    urlSet: boolean;
+    secretSet: boolean;
+    /** 'ready' | 'not_configured' | 'migration_not_run' */
+    state: string;
+  };
 }
 
 export function WebhookChannelsCard() {
@@ -49,6 +57,12 @@ export function WebhookChannelsCard() {
   const [whatsappPhone, setWhatsappPhone] = useState('');
   const [telegramEnabled, setTelegramEnabled] = useState(false);
   const [telegramChatId, setTelegramChatId] = useState('');
+  // Generic outbound webhook (Section 6, item 16): the user's own
+  // endpoint URL + a shared secret. The secret is stored hashed
+  // only and is never shown back — a blank here means "keep the
+  // saved secret", never "clear it".
+  const [genericUrl, setGenericUrl] = useState('');
+  const [genericSecret, setGenericSecret] = useState('');
 
   const loadStatus = useCallback(async () => {
     try {
@@ -97,6 +111,15 @@ export function WebhookChannelsCard() {
       });
       return;
     }
+    if (status?.generic.urlSet && genericUrl.trim() === '') {
+      toast({
+        title: 'Generic webhook URL not re-entered',
+        description:
+          'A generic webhook URL is already saved but is not shown here. Re-enter it above before saving, or nothing will be changed.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch('/api/v1/settings/webhooks', {
@@ -107,6 +130,10 @@ export function WebhookChannelsCard() {
           whatsappPhone: whatsappPhone.trim() || null,
           telegramEnabled,
           telegramChatId: telegramChatId.trim() || null,
+          genericWebhookUrl: genericUrl.trim() || null,
+          // Only sent when non-empty: a blank secret means "keep the
+          // saved one" — the server never clears it on a blank.
+          ...(genericSecret.trim() !== '' ? { genericWebhookSecret: genericSecret } : {}),
         }),
       });
       const data = await res.json();
@@ -121,6 +148,9 @@ export function WebhookChannelsCard() {
         return;
       }
       toast({ title: 'Webhook settings saved' });
+      // The secret is shown once by design — clear the field so it
+      // is not left sitting in the form.
+      setGenericSecret('');
       await loadStatus();
     } catch {
       toast({
@@ -154,15 +184,28 @@ export function WebhookChannelsCard() {
     return `${label}: not configured (${missing.join(', ')})`;
   }
 
+  function genericLine(): string {
+    const g = status?.generic;
+    if (!g) return 'Generic webhook: status unknown';
+    if (g.state === 'migration_not_run') return 'Generic webhook: setup not live yet (migration 033 pending)';
+    if (g.state === 'ready') {
+      return `Generic webhook: ready — price-drop events are POSTed to your endpoint${g.secretSet ? ' (HMAC-signed)' : ' (unsigned — save a secret to sign posts)'}`;
+    }
+    return 'Generic webhook: not configured (no endpoint URL saved)';
+  }
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>WhatsApp &amp; Telegram alerts</CardTitle>
+        <CardTitle>WhatsApp, Telegram &amp; generic webhook alerts</CardTitle>
         <CardDescription>
-          Get price-drop alerts on WhatsApp or Telegram. Delivery needs both your settings
-          below and the owner&apos;s provider setup (Meta Business app + approved template
-          for WhatsApp; a bot token from BotFather for Telegram). Until both are ready, no
-          message can arrive — and this card will say so.
+          Get price-drop alerts on WhatsApp or Telegram, or POSTed to your
+          own endpoint. Delivery needs both your settings below and the
+          owner&apos;s provider setup (Meta Business app + approved template
+          for WhatsApp; a bot token from BotFather for Telegram). The generic
+          channel needs only your endpoint URL — SmartBuy POSTs the same
+          price-drop event to it, HMAC-signed when you save a secret. Until
+          a channel is ready, no message can arrive — and this card will say so.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -180,7 +223,15 @@ export function WebhookChannelsCard() {
             <div className="space-y-2 text-sm">
               <p>{channelLine('WhatsApp', status.whatsapp)}</p>
               <p>{channelLine('Telegram', status.telegram)}</p>
+              <p>{genericLine()}</p>
             </div>
+            {status.genericMigrationApplied === false && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                The generic webhook channel is not live yet — the owner still
+                needs to run migration 033 once. WhatsApp and Telegram above
+                are unaffected.
+              </p>
+            )}
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="waEnabled">WhatsApp alerts</Label>
@@ -236,6 +287,49 @@ export function WebhookChannelsCard() {
                 value={telegramChatId}
                 onChange={(e) => setTelegramChatId(e.target.value)}
               />
+            </div>
+            <div className="space-y-2 border-t pt-4">
+              <Label htmlFor="genericUrl">Generic webhook URL (your own endpoint)</Label>
+              {status.generic.urlSet && (
+                <p className="text-xs text-muted-foreground">
+                  A URL is already saved (not shown here). Re-enter it if you save anything
+                  on this card, otherwise the save is refused to protect it.
+                </p>
+              )}
+              <Input
+                id="genericUrl"
+                placeholder="e.g. https://example.com/smartbuy-price-drops"
+                value={genericUrl}
+                onChange={(e) => setGenericUrl(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Price-drop events are POSTed here as JSON (product name, triggered
+                price, target price, product URL). No inbound receiver is provided —
+                this is your endpoint, not SmartBuy&apos;s.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="genericSecret">Generic webhook secret (optional, min 16 characters)</Label>
+              {status.generic.secretSet && (
+                <p className="text-xs text-muted-foreground">
+                  A secret is already saved (hashed only, never shown). Enter a new
+                  one to replace it; leave blank to keep it.
+                </p>
+              )}
+              <Input
+                id="genericSecret"
+                type="password"
+                placeholder="Leave blank to keep the saved secret"
+                value={genericSecret}
+                onChange={(e) => setGenericSecret(e.target.value)}
+                autoComplete="new-password"
+              />
+              <p className="text-xs text-muted-foreground">
+                When a secret is saved, posts are signed with HMAC-SHA256 over the
+                request body (header x-smartbuy-signature, keyed by the SHA-256 hash
+                of your secret — hash your secret, then HMAC the body with that
+                hash, to verify). Without a secret, posts are unsigned.
+              </p>
             </div>
             <div className="flex gap-2">
               <Button onClick={handleSave} disabled={saving}>

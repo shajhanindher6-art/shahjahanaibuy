@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useToast } from '@/hooks/use-toast';
 import { warrantyStatus } from '@/services/vault';
+import { nextReorderDate } from '@/lib/vault-reorder';
 
 interface VaultItem {
   id: string;
@@ -25,6 +26,11 @@ interface VaultItem {
   receipt_file_size: number | null;
   receipt_url: string | null;
   extracted_text: string | null;
+  // Section 6, Item 3: reorder fields (migration 033). Null until
+  // the owner runs it — the page treats missing fields as "not set".
+  is_consumable: boolean | null;
+  reorder_interval_days: number | null;
+  reorder_reminder: boolean | null;
 }
 
 /**
@@ -52,6 +58,10 @@ export default function VaultPage() {
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const [receiptUrl, setReceiptUrl] = useState('');
   const [extractedText, setExtractedText] = useState('');
+  // Section 6, Item 3: reorder fields for the add form.
+  const [isConsumable, setIsConsumable] = useState(false);
+  const [reorderIntervalDays, setReorderIntervalDays] = useState('');
+  const [reorderReminder, setReorderReminder] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -88,6 +98,10 @@ export default function VaultPage() {
           amount: amount === '' ? null : Number(amount),
           currency,
           warrantyMonths,
+          isConsumable,
+          reorderIntervalDays:
+            isConsumable && reorderIntervalDays !== '' ? Number(reorderIntervalDays) : null,
+          reorderReminder,
           receiptFileName: receiptFile ? receiptFile.name : null,
           receiptFileType: receiptFile ? receiptFile.type : null,
           receiptFileSize: receiptFile ? receiptFile.size : null,
@@ -103,6 +117,7 @@ export default function VaultPage() {
         setShowForm(false);
         setTitle(''); setStore(''); setPurchaseDate(''); setAmount('');
         setWarrantyMonths(12); onFileChange(null); setReceiptUrl(''); setExtractedText('');
+        setIsConsumable(false); setReorderIntervalDays(''); setReorderReminder(false);
         load();
       }
     } catch {
@@ -189,6 +204,35 @@ export default function VaultPage() {
                   <Input value={currency} onChange={(e) => setCurrency(e.target.value)} placeholder="USD" />
                 </div>
               </div>
+              <div className="rounded-md border p-3">
+                <label className="flex items-center gap-2 text-sm font-medium">
+                  <input type="checkbox" checked={isConsumable} onChange={(e) => setIsConsumable(e.target.checked)} />
+                  Consumable — I reorder this regularly
+                </label>
+                {isConsumable && (
+                  <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <Label className="mb-1.5 block">Reorder every (days)</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={3650}
+                        value={reorderIntervalDays}
+                        onChange={(e) => setReorderIntervalDays(e.target.value)}
+                        placeholder="e.g. 30"
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={reorderReminder} onChange={(e) => setReorderReminder(e.target.checked)} />
+                      Remind me when a reorder is due
+                    </label>
+                  </div>
+                )}
+                <p className="mt-2 text-xs text-muted-foreground">
+                  SmartBuy never orders anything for you — this only shows the next reorder date,
+                  derived from the purchase date plus the interval you enter.
+                </p>
+              </div>
               <div>
                 <Label className="mb-1.5 block">Receipt file (metadata only — not uploaded)</Label>
                 <Input
@@ -244,6 +288,12 @@ export default function VaultPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((item) => {
             const w = warrantyStatus(item.purchase_date, item.warranty_months);
+            // Section 6, Item 3: next reorder derived on view — never stored.
+            const reorder = nextReorderDate(
+              item.purchase_date,
+              item.reorder_interval_days,
+              item.is_consumable
+            );
             return (
               <Card key={item.id}>
                 <CardHeader>
@@ -277,6 +327,17 @@ export default function VaultPage() {
                     Warranty: {item.warranty_months} months
                     {w.expiry ? ` · expires ${w.expiry.toISOString().slice(0, 10)}` : ''}
                   </p>
+                  {reorder ? (
+                    <p>
+                      Next reorder: {reorder.date}
+                      {reorder.daysUntil === 0
+                        ? ' — due today'
+                        : ` — in ${reorder.daysUntil} day${reorder.daysUntil === 1 ? '' : 's'}`}
+                      {item.reorder_reminder ? ' · reminder on' : ''}
+                    </p>
+                  ) : item.is_consumable ? (
+                    <p>Consumable — set a reorder interval to track the next reorder.</p>
+                  ) : null}
                   {item.receipt_file_name && (
                     <p className="flex items-center gap-1">
                       <Receipt className="h-4 w-4" /> {item.receipt_file_name} (metadata only)
@@ -289,6 +350,7 @@ export default function VaultPage() {
                       </a>
                     </p>
                   )}
+                  <VaultReorderEditor item={item} onSaved={load} />
                   <Button size="sm" variant="ghost" onClick={() => remove(item.id)}>
                     <Trash2 className="h-4 w-4 text-red-500" />
                   </Button>
@@ -302,6 +364,98 @@ export default function VaultPage() {
         Note: expiring-soon badges are computed when you open this page. No background or email
         warranty alerts are sent — that is future work.
       </p>
+    </div>
+  );
+}
+
+/**
+ * Inline reorder settings for one vault item (Section 6, Item 3).
+ * PATCHes /api/v1/vault/[id] — nothing is auto-ordered; the fields
+ * only drive the derived next-reorder date above.
+ */
+function VaultReorderEditor({ item, onSaved }: { item: VaultItem; onSaved: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [isConsumable, setIsConsumable] = useState(item.is_consumable ?? false);
+  const [intervalDays, setIntervalDays] = useState(
+    item.reorder_interval_days ? String(item.reorder_interval_days) : ''
+  );
+  const [reminder, setReminder] = useState(item.reorder_reminder ?? false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/v1/vault/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isConsumable,
+          reorderIntervalDays: isConsumable && intervalDays !== '' ? Number(intervalDays) : null,
+          reorderReminder: reminder,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError((data?.error?.message as string) ?? 'Could not save reorder settings');
+        return;
+      }
+      setOpen(false);
+      onSaved();
+    } catch {
+      setError('Could not save reorder settings');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+        Reorder settings
+      </Button>
+    );
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      <label className="flex items-center gap-2 text-sm font-medium">
+        <input
+          type="checkbox"
+          checked={isConsumable}
+          onChange={(e) => setIsConsumable(e.target.checked)}
+        />
+        Consumable — I reorder this regularly
+      </label>
+      {isConsumable && (
+        <>
+          <div>
+            <Label className="mb-1.5 block">Reorder every (days)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={3650}
+              value={intervalDays}
+              onChange={(e) => setIntervalDays(e.target.value)}
+              placeholder="e.g. 30"
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={reminder} onChange={(e) => setReminder(e.target.checked)} />
+            Remind me when a reorder is due
+          </label>
+        </>
+      )}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex gap-2">
+        <Button size="sm" onClick={save} disabled={saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
     </div>
   );
 }

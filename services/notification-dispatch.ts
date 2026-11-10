@@ -10,6 +10,11 @@ import { logger } from '@/lib/config/logger';
 import { sendEmail, sendWeeklyDigestEmail, sendPriceAlertEmail } from '@/services/email';
 import { sendPushNotification } from '@/services/push';
 import { sendTelegramAlert, sendWhatsAppAlert } from '@/services/alert-webhooks';
+import {
+  sendGenericWebhook,
+  GENERIC_WEBHOOK_SIGNATURE_HEADER,
+  type GenericWebhookStatus,
+} from '@/lib/generic-webhook';
 
 /**
  * Option 7: webhook preferences for one user, read from user_settings.
@@ -39,6 +44,41 @@ async function getWebhookPrefs(
       whatsappPhone: (row.whatsapp_phone as string | null) ?? null,
       telegramEnabled: row.telegram_enabled === true,
       telegramChatId: (row.telegram_chat_id as string | null) ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Section 6, item 16: generic outbound webhook prefs for one user,
+ * read from user_settings (migration 033 columns). Read separately
+ * from getWebhookPrefs with its own try/catch, so a missing
+ * migration 033 never breaks the WhatsApp/Telegram legs above.
+ * Returns null when the row is missing, the migration has not been
+ * run, or the read fails — every one of those means "generic leg
+ * not wanted", never a crash.
+ */
+async function getGenericWebhookPrefs(
+  supabase: AnySupabaseClient,
+  userId: string
+): Promise<{
+  url: string | null;
+  secretHash: string | null;
+} | null> {
+  try {
+    const { data, error } = await supabase
+      .from('user_settings')
+      .select('generic_webhook_url, generic_webhook_secret_hash')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error || !data) return null;
+    const row = data as Record<string, unknown>;
+    const url = (row.generic_webhook_url as string | null) ?? null;
+    if (!url || url.trim() === '') return null;
+    return {
+      url: url.trim(),
+      secretHash: (row.generic_webhook_secret_hash as string | null) ?? null,
     };
   } catch {
     return null;
@@ -144,6 +184,14 @@ interface DispatchOutcome {
    * errors are NOT permanent — those keep the existing retry path.
    */
   permanent: boolean;
+  /**
+   * Generic webhook leg outcome (Section 6, item 16): 'sent' only
+   * on an HTTP 2xx from the user's endpoint, 'failed' on a
+   * non-2xx/network error, 'not_configured' when no URL is
+   * registered. Null when the leg did not apply (not a price_alert
+   * or no URL registered).
+   */
+  genericWebhook?: GenericWebhookStatus | null;
 }
 
 async function dispatchNotification(
@@ -177,7 +225,13 @@ async function dispatchNotification(
       webhookPrefs?.telegramEnabled && webhookPrefs?.telegramChatId
     );
 
-    if (!wantsEmail && !wantsPush && !wantsWhatsApp && !wantsTelegram) {
+    // Section 6, item 16: generic outbound webhook leg — price_alert
+    // only, fires when the user registered their own endpoint URL.
+    const genericPrefs =
+      notif.type === 'price_alert' ? await getGenericWebhookPrefs(supabase, notif.user_id) : null;
+    const wantsGeneric = Boolean(genericPrefs?.url);
+
+    if (!wantsEmail && !wantsPush && !wantsWhatsApp && !wantsTelegram && !wantsGeneric) {
       logger.warn('Unknown notification channel', { channel: notif.channel });
       return { delivered: false, permanent: true };
     }
@@ -193,6 +247,9 @@ async function dispatchNotification(
     let telegramOk = false;
     let whatsappPermanent = false;
     let telegramPermanent = false;
+    let genericOk = false;
+    let genericPermanent = false;
+    let genericStatus: GenericWebhookStatus | null = null;
 
     if (wantsEmail) {
       if (!env.resendApiKey) {
@@ -302,17 +359,60 @@ async function dispatchNotification(
       });
     }
 
-    const delivered = emailOk || pushOk || whatsappOk || telegramOk;
+    // Section 6, item 16 generic webhook leg (price_alert only).
+    // POSTs the same PriceDropMessage shape to the user's own
+    // endpoint, HMAC-signed when a secret is registered. Counts as
+    // delivered ONLY on an HTTP 2xx — never claimed otherwise.
+    // Delivery status is recorded in the structured log below (host
+    // only, never the full URL or the secret).
+    if (wantsGeneric && notif.data) {
+      const d = notif.data as Record<string, unknown>;
+      const result = await sendGenericWebhook(
+        genericPrefs?.url ?? null,
+        genericPrefs?.secretHash ?? null,
+        {
+          productName: (d.productName as string) ?? 'a product you track',
+          triggeredPrice: Number(d.triggeredPrice) || 0,
+          targetPrice: Number(d.targetPrice) || 0,
+          productUrl: (d.productUrl as string) ?? '',
+        }
+      );
+      genericStatus = result.status;
+      genericOk = result.status === 'sent';
+      // An invalid registered URL can never deliver — permanent.
+      // A failed POST (non-2xx / network) stays transient (retries).
+      genericPermanent = result.status === 'not_configured';
+      let host = 'unknown';
+      try {
+        host = new URL(genericPrefs?.url ?? '').hostname;
+      } catch {
+        host = 'invalid-url';
+      }
+      logger.info('dispatchNotification: generic webhook delivery', {
+        notifId: notif.id,
+        userId: notif.user_id,
+        host,
+        signed: Boolean(genericPrefs?.secretHash),
+        signatureHeader: GENERIC_WEBHOOK_SIGNATURE_HEADER,
+        status: result.status,
+        detail: result.detail,
+      });
+    }
+
+    const delivered = emailOk || pushOk || whatsappOk || telegramOk || genericOk;
     // Permanent only when EVERY wanted leg is permanently unavailable.
     // If any leg merely failed transiently, the row keeps retrying.
+    // (A generic POST failure is transient; only an invalid
+    // registered URL is permanent.)
     const permanent =
       !delivered &&
       (!wantsEmail || emailPermanent) &&
       (!wantsPush || pushPermanent) &&
       (!wantsWhatsApp || whatsappPermanent) &&
-      (!wantsTelegram || telegramPermanent);
+      (!wantsTelegram || telegramPermanent) &&
+      (!wantsGeneric || genericPermanent);
 
-    return { delivered, permanent };
+    return { delivered, permanent, genericWebhook: genericStatus };
   } catch (err) {
     logger.error('dispatchNotification failed', { error: String(err), notifId: notif.id });
     return { delivered: false, permanent: false };

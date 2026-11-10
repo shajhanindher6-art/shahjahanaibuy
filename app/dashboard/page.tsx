@@ -33,6 +33,13 @@ import {
 } from '@/components/dashboard/drops-to-watch-section';
 import { LandedCostWidget } from '@/components/dashboard/landed-cost-widget';
 import { TechBudgetWidget } from '@/components/dashboard/tech-budget-widget';
+import { BuyListPanel } from '@/components/dashboard/buy-list-panel';
+import { PriceProtectionPanel } from '@/components/dashboard/price-protection-panel';
+import { SavingsWidget } from '@/components/dashboard/savings-widget';
+import { AgentHuntsCard } from '@/components/dashboard/agent-hunts-card';
+import type { BuyListItemView } from '@/lib/buy-list';
+import type { ProtectionWatchView } from '@/lib/price-protection';
+import type { SaverBadge } from '@/lib/savings';
 import { DigestGrid } from '@/components/dashboard/digest-grid';
 import { AccuracyDashboard } from '@/components/accuracy/accuracy-dashboard';
 import { DashboardCardsSkeleton } from '@/components/ui/skeleton';
@@ -121,9 +128,23 @@ export default function DashboardPage() {
   // never a guessed percentage.
   const [accuracy, setAccuracy] = useState<AccuracySummary | null>(null);
   const [loadingTracking, setLoadingTracking] = useState(true);
+  // Section 6: buy-list shortlist, price-protection watches, and the
+  // savings ledger. Each fetch fails independently — a failed section
+  // hides or shows its honest empty state, never a guessed figure.
+  const [buyListItems, setBuyListItems] = useState<BuyListItemView[]>([]);
+  const [loadingBuyList, setLoadingBuyList] = useState(true);
+  const [protectionWatches, setProtectionWatches] = useState<ProtectionWatchView[]>([]);
+  const [loadingProtection, setLoadingProtection] = useState(true);
+  const [savings, setSavings] = useState<{
+    totalSavedUsd: number;
+    eventCount: number;
+    streakWeeks: number;
+    badge: SaverBadge;
+  } | null>(null);
+  const [loadingSavings, setLoadingSavings] = useState(true);
 
   const fetchDashboardData = useCallback(async () => {
-    const [recsRes, historyRes, trackingRes, dropsRes, accuracyRes] = await Promise.all([
+    const [recsRes, historyRes, trackingRes, dropsRes, accuracyRes, buyListRes, protectionRes, savingsRes] = await Promise.all([
       fetch('/api/v1/recommendations?limit=4').catch(() => null),
       fetch('/api/v1/search-history?limit=5').catch(() => null),
       // Real counts for the overview cards, from the user's own data.
@@ -133,6 +154,10 @@ export default function DashboardPage() {
       fetch('/api/v1/dashboard/drops-to-watch').catch(() => null),
       // Public prediction-accuracy summary (S4#8).
       fetch('/api/v1/predictions/accuracy').catch(() => null),
+      // Section 6: buy-list shortlist, protection watches, savings.
+      fetch('/api/v1/buy-list').catch(() => null),
+      fetch('/api/v1/price-protection').catch(() => null),
+      fetch('/api/v1/savings').catch(() => null),
     ]);
 
     try {
@@ -191,6 +216,80 @@ export default function DashboardPage() {
     } finally {
       setLoadingDrops(false);
     }
+
+    try {
+      if (buyListRes && buyListRes.ok) {
+        const buyListData = await buyListRes.json();
+        if (buyListData.success && Array.isArray(buyListData.data)) {
+          setBuyListItems(buyListData.data as BuyListItemView[]);
+        }
+      }
+    } catch {
+      // Buy-list section shows its honest empty state.
+    } finally {
+      setLoadingBuyList(false);
+    }
+
+    try {
+      if (protectionRes && protectionRes.ok) {
+        const protectionData = await protectionRes.json();
+        if (protectionData.success && Array.isArray(protectionData.data)) {
+          setProtectionWatches(protectionData.data as ProtectionWatchView[]);
+        }
+      }
+    } catch {
+      // Protection section shows its honest empty state.
+    } finally {
+      setLoadingProtection(false);
+    }
+
+    try {
+      if (savingsRes && savingsRes.ok) {
+        const savingsData = await savingsRes.json();
+        if (savingsData.success && savingsData.data) {
+          setSavings({
+            totalSavedUsd: savingsData.data.totalSavedUsd ?? 0,
+            eventCount: savingsData.data.eventCount ?? 0,
+            streakWeeks: savingsData.data.streakWeeks ?? 0,
+            badge: (savingsData.data.badge ?? 'none') as SaverBadge,
+          });
+        }
+      }
+    } catch {
+      // Savings widget stays hidden on failure.
+    } finally {
+      setLoadingSavings(false);
+    }
+  }, []);
+
+  // Section 6 handlers: optimistic local update, then the API
+  // call. A failed call leaves the optimistic state — the next
+  // dashboard load re-reads the truth from the server.
+  const handleRemoveBuyListItem = useCallback(async (id: string) => {
+    setBuyListItems((items) => items.filter((i) => i.id !== id));
+    await fetch(`/api/v1/buy-list/${id}`, { method: 'DELETE' }).catch(() => null);
+  }, []);
+
+  const handleBuyListQuantityChange = useCallback(async (id: string, quantity: number) => {
+    setBuyListItems((items) =>
+      items.map((i) => (i.id === id ? { ...i, quantity } : i))
+    );
+    await fetch(`/api/v1/buy-list/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quantity }),
+    }).catch(() => null);
+  }, []);
+
+  const handleSubmitProtectionClaim = useCallback(async (id: string) => {
+    await fetch(`/api/v1/price-protection/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'claim_submitted' }),
+    }).catch(() => null);
+    setProtectionWatches((watches) =>
+      watches.map((w) => (w.id === id ? { ...w, status: 'claim_submitted' } : w))
+    );
   }, []);
 
   useEffect(() => {
@@ -307,6 +406,36 @@ export default function DashboardPage() {
               Signed-in totals come from the server; guests get a
               device-only budget editor. */}
           <TechBudgetWidget />
+
+          {/* Section 6: buy-list shortlist, price-drop protection
+              watches, and the savings ledger. Each section renders
+              its honest empty state until the user has real rows. */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            <BuyListPanel
+              items={buyListItems}
+              loading={loadingBuyList}
+              onRemove={handleRemoveBuyListItem}
+              onQuantityChange={handleBuyListQuantityChange}
+            />
+            <PriceProtectionPanel
+              watches={protectionWatches}
+              loading={loadingProtection}
+              onSubmitClaim={handleSubmitProtectionClaim}
+            />
+          </div>
+
+          {!loadingSavings && savings && (
+            <SavingsWidget
+              totalSaved={savings.totalSavedUsd}
+              eventCount={savings.eventCount}
+              streakWeeks={savings.streakWeeks}
+              badge={savings.badge}
+            />
+          )}
+
+          {/* Section 6, Item 2: autonomous deal hunts — self-fetching
+              card, hides itself when the fetch fails. */}
+          <AgentHuntsCard />
 
           {/* Personal shopping digest (Enterprise #13) — saved items,
               alerts, and vector-matched recommendations in one grid.

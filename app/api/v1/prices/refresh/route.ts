@@ -22,6 +22,12 @@
  *      emails via Resend when configured; when Resend is NOT
  *      configured the rows stay `pending` and are reported as
  *      pending — never claimed as delivered.
+ *   7. (S6#2) runHuntsForConsentedUsers(): autonomous deal hunting
+ *      for users who granted agent-memory consent and have active
+ *      hunts — matches require a real recorded in-stock price at or
+ *      under the stated budget. Fail-safe, inside THIS chain only:
+ *      no second scheduler, and a hunt failure never breaks the
+ *      refresh (see the try/catch at the call site).
  *
  * Steps 4–6 are best-effort and fail-safe: a missing migration 026
  * table (or any error inside them) is counted and reported, never
@@ -53,6 +59,7 @@ import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middlew
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { refreshTrackedPrices } from '@/services/price-refresh';
 import { checkPriceAlerts } from '@/services/alert-checker';
+import { runHuntsForConsentedUsers } from '@/lib/agent-hunt';
 import { processNotificationQueue } from '@/services/notification-dispatch';
 import { sendEmail } from '@/services/email';
 import { env } from '@/lib/config/env';
@@ -684,6 +691,25 @@ export async function POST(request: NextRequest) {
   try {
     const refresh = await refreshTrackedPrices(supabase);
     const alerts = await checkPriceAlerts(supabase);
+
+    // S6#2: autonomous deal hunting, inside THIS refresh chain only
+    // (no second scheduler). Fail-safe by design: the runner never
+    // throws, and this try/catch is the second layer — a hunt
+    // failure must never break the refresh chain.
+    let hunts: Awaited<ReturnType<typeof runHuntsForConsentedUsers>> = {
+      usersChecked: 0,
+      huntsRun: 0,
+      matchesCreated: 0,
+      huntsEnabled: false,
+    };
+    try {
+      hunts = await runHuntsForConsentedUsers(supabase);
+    } catch (err) {
+      logger.warn('prices.refresh: agent hunts failed', {
+        error: String(err),
+      });
+    }
+
     const notifications = await processNotificationQueue(supabase);
 
     // S3#3 + S3#7: fail-safe — these steps report their own counts
@@ -736,7 +762,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return apiSuccess({ refresh, alerts, notifications, stock, guestAlerts, guestEmail });
+    return apiSuccess({ refresh, alerts, hunts, notifications, stock, guestAlerts, guestEmail });
   } catch {
     return internalError('Failed to refresh prices');
   }

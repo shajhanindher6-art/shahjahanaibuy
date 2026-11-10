@@ -48,6 +48,96 @@ export function getPaymentMethodsForStore(store: LocalStore): StorePaymentInfo {
   return { store, methods, verified: methods.length > 0 };
 }
 
+// ---------------------------------------------------------------------------
+// Buy-Now-Pay-Later (Section 6, item 9)
+// ---------------------------------------------------------------------------
+
+/**
+ * Stable id for a verified BNPL payment-method entry. A `bnpl`
+ * entry may appear in a store's `paymentMethods` (lib/stores.ts
+ * StorePaymentMethod) ONLY when verified against that store's own
+ * published payments page — exactly like every other method. No
+ * store carries a verified `bnpl` entry today (checked 2026-11-10:
+ * Daraz PK and Flipkart IN, the only stores with verified payment
+ * methods, publish no BNPL option). An unverified BNPL claim is
+ * simply absent — never guessed, never shown as available.
+ */
+export const BNPL_METHOD_ID = 'bnpl';
+
+/**
+ * The verified BNPL entry for a store, or null when the store has
+ * none verified. An entry with verified:false does not count.
+ */
+export function getBnplMethodForStore(store: LocalStore): StorePaymentMethod | null {
+  const info = getPaymentMethodsForStore(store);
+  return info.methods.find((m) => m.id === BNPL_METHOD_ID && m.verified) ?? null;
+}
+
+export interface MonthlyInstalment {
+  /** Monthly amount in USD, rounded to 2 decimals. */
+  monthlyUsd: number;
+  /** False when no APR was supplied — monthlyUsd is then pre-interest. */
+  aprKnown: boolean;
+  /** Label the UI must show next to the monthly figure. */
+  note: string;
+}
+
+export const BNPL_UNKNOWN_APR_NOTE =
+  'before interest/fees — retailer confirms APR at checkout';
+
+/**
+ * Monthly instalment for a recorded total over a recorded term.
+ *
+ * - months missing, zero, negative or non-finite → null (no term,
+ *   no instalment — never a guessed term).
+ * - totalUsd missing, zero, negative or non-finite → null.
+ * - aprPct null/undefined → total ÷ months, labelled with
+ *   BNPL_UNKNOWN_APR_NOTE (pre-interest split, never a guessed APR).
+ * - aprPct negative or non-finite → null (an APR below zero is not
+ *   a recorded rate).
+ * - aprPct 0 → total ÷ months, labelled as 0% APR.
+ * - aprPct > 0 → standard amortisation: P·r / (1 − (1+r)^−n)
+ *   with r = APR/100/12. No fee is ever added — no fee is recorded.
+ */
+export function monthlyInstalment(
+  totalUsd: number | null | undefined,
+  months: number | null | undefined,
+  aprPct: number | null | undefined
+): MonthlyInstalment | null {
+  if (totalUsd === null || totalUsd === undefined || !Number.isFinite(totalUsd) || totalUsd <= 0) {
+    return null;
+  }
+  if (months === null || months === undefined || !Number.isFinite(months) || months <= 0) {
+    return null;
+  }
+  const n = Math.floor(months);
+  if (n <= 0) return null;
+
+  if (aprPct === null || aprPct === undefined) {
+    return {
+      monthlyUsd: Math.round((totalUsd / n) * 100) / 100,
+      aprKnown: false,
+      note: BNPL_UNKNOWN_APR_NOTE,
+    };
+  }
+  if (!Number.isFinite(aprPct) || aprPct < 0) return null;
+  if (aprPct === 0) {
+    return {
+      monthlyUsd: Math.round((totalUsd / n) * 100) / 100,
+      aprKnown: true,
+      note: 'At 0% APR as recorded — retailer confirms the final terms at checkout.',
+    };
+  }
+  const r = aprPct / 100 / 12;
+  const monthly = (totalUsd * r) / (1 - Math.pow(1 + r, -n));
+  if (!Number.isFinite(monthly) || monthly <= 0) return null;
+  return {
+    monthlyUsd: Math.round(monthly * 100) / 100,
+    aprKnown: true,
+    note: `At ${aprPct}% APR as recorded — retailer confirms the final APR and fees at checkout.`,
+  };
+}
+
 /**
  * Payment info for every local store in a country. Countries with no
  * confirmed local store (QA, ZA) fall back to the global stores,

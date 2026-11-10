@@ -17,6 +17,12 @@ import { getProductEndurance } from '@/services/hardware-endurance';
 import { getProductPhysical } from '@/services/physical-attributes';
 import { getProductRecordedOverrides } from '@/services/recorded-overrides';
 import { getProductGlobalReadiness } from '@/services/global-readiness';
+import {
+  getProductDimensions,
+  getProductModelUrl,
+  getProductAuthenticity,
+  getProductSupplyChain,
+} from '@/services/product-dimensions';
 
 export async function GET(
   request: NextRequest,
@@ -47,8 +53,10 @@ export async function GET(
     // pattern (nulls until migration 021 runs). Option 19: recorded
     // overrides are the same pattern (nulls until migration 022 runs).
     // Option 20: global readiness is the same pattern (nulls until
-    // migration 023 runs).
-    const [images, attributes, repairability, endurance, physical, recorded, globalReadiness] =
+    // migration 023 runs). Section 6: dimensions / model URL /
+    // authenticity / supply chain are the same pattern (nulls until
+    // migration 033 runs).
+    const [images, attributes, repairability, endurance, physical, recorded, globalReadiness, dimensions, modelUrl, authenticity, supplyChain] =
       await Promise.all([
         getProductImages(supabase, product.id),
         getProductAttributes(supabase, product.id),
@@ -57,9 +65,20 @@ export async function GET(
         getProductPhysical(supabase, product.id),
         getProductRecordedOverrides(supabase, product.id),
         getProductGlobalReadiness(supabase, product.id),
+        getProductDimensions(supabase, product.id),
+        getProductModelUrl(supabase, product.id),
+        getProductAuthenticity(supabase, product.id),
+        getProductSupplyChain(supabase, product.id),
       ]);
 
-    return apiSuccess({ ...product, images, attributes, repairability, endurance, physical, recorded, globalReadiness });
+    // Dimensions are null (not an all-null object) when nothing is
+    // recorded, so consumers can treat null as "no size data".
+    const dimensionsOut =
+      dimensions.lengthCm === null && dimensions.widthCm === null && dimensions.heightCm === null
+        ? null
+        : dimensions;
+
+    return apiSuccess({ ...product, images, attributes, repairability, endurance, physical, recorded, globalReadiness, dimensions: dimensionsOut, modelUrl, authenticity, supplyChain });
   } catch {
     return internalError('Failed to fetch product');
   }

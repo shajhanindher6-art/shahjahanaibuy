@@ -22,12 +22,58 @@ import {
   summarizeDealsForMemory,
   type WatchedProductState,
 } from '@/lib/agent-memory';
+import {
+  isMissingTableError as isMissingHuntTable,
+  mapHuntMatchRow,
+  type HuntMatch,
+} from '@/lib/agent-hunt';
+import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { isMissingTableError, mapMemoryRow, mapRuleRow } from '../shared';
 
 export const dynamic = 'force-dynamic';
 
 /** Max watched products priced in one summary (rules first, then seen). */
 const MAX_WATCHED = 20;
+
+/**
+ * Latest hunt matches for the summary (S6#2). Missing migration 033
+ * table → empty array + huntsEnabled: false; any other failure →
+ * empty array (the deal summary must never break over hunts).
+ */
+async function loadHuntMatches(
+  supabase: AnySupabaseClient,
+  userId: string
+): Promise<{ huntMatches: HuntMatch[]; huntsEnabled: boolean }> {
+  try {
+    const { data, error } = await supabase
+      .from('hunt_matches')
+      .select('id, hunt_id, user_id, product_id, matched_price_usd, matched_at')
+      .eq('user_id', userId)
+      .order('matched_at', { ascending: false })
+      .limit(20);
+    if (error) {
+      return { huntMatches: [], huntsEnabled: !isMissingHuntTable(error) };
+    }
+    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    const productIds = [...new Set(rows.map((r) => String(r.product_id)))];
+    const productById = new Map<string, { slug: string; name: string }>();
+    if (productIds.length > 0) {
+      const { data: productsData } = await supabase
+        .from('products')
+        .select('id, slug, name')
+        .in('id', productIds);
+      for (const row of (productsData ?? []) as Array<Record<string, unknown>>) {
+        productById.set(String(row.id), { slug: String(row.slug), name: String(row.name) });
+      }
+    }
+    return {
+      huntMatches: rows.map((row) => mapHuntMatchRow(row, productById)),
+      huntsEnabled: true,
+    };
+  } catch {
+    return { huntMatches: [], huntsEnabled: false };
+  }
+}
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'agent.summary' });
@@ -40,6 +86,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = await createSupabaseServerClient();
+
+    // S6#2: latest hunt matches (fail-safe — never breaks the summary).
+    const { huntMatches, huntsEnabled } = await loadHuntMatches(supabase, auth.userId);
 
     const { data: memoryData, error: memoryError } = await supabase
       .from('agent_memory')
@@ -58,6 +107,8 @@ export async function GET(request: NextRequest) {
             unknownCount: 0,
           },
           setupRequired: true,
+          huntMatches,
+          huntsEnabled,
           generatedAt: new Date().toISOString(),
           priceBasis: 'Lowest recorded in-stock merchant price — not a live retailer price.',
         });
@@ -83,6 +134,8 @@ export async function GET(request: NextRequest) {
             unknownCount: 0,
           },
           setupRequired: true,
+          huntMatches,
+          huntsEnabled,
           generatedAt: new Date().toISOString(),
           priceBasis: 'Lowest recorded in-stock merchant price — not a live retailer price.',
         });
@@ -116,6 +169,8 @@ export async function GET(request: NextRequest) {
       return apiSuccess({
         summary,
         setupRequired: false,
+        huntMatches,
+        huntsEnabled,
         generatedAt: new Date().toISOString(),
         priceBasis: 'Lowest recorded in-stock merchant price — not a live retailer price.',
       });
@@ -166,6 +221,8 @@ export async function GET(request: NextRequest) {
     return apiSuccess({
       summary,
       setupRequired: false,
+      huntMatches,
+      huntsEnabled,
       generatedAt: new Date().toISOString(),
       priceBasis: 'Lowest recorded in-stock merchant price — not a live retailer price.',
     });

@@ -25,13 +25,24 @@ import {
   serviceUnavailable,
 } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { normalizeReorderIntervalDays } from '@/lib/vault-reorder';
 
 function isMissingTable(error: { code?: string } | null | undefined): boolean {
   return error?.code === '42P01';
 }
 
+function isMissingColumn(error: { code?: string } | null | undefined): boolean {
+  return error?.code === '42703';
+}
+
 const SELECT =
   'id, title, store, product_id, purchase_date, amount, currency, warranty_months, receipt_file_name, receipt_file_type, receipt_file_size, receipt_url, extracted_text, created_at';
+
+// Section 6, Item 3: reorder fields (migration 033). Until the owner
+// runs it, GET falls back to the base select and POST retries the
+// insert without them — creating vault items never breaks.
+const SELECT_REORDER =
+  'id, title, store, product_id, purchase_date, amount, currency, warranty_months, receipt_file_name, receipt_file_type, receipt_file_size, receipt_url, extracted_text, is_consumable, reorder_interval_days, reorder_reminder, created_at';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'vault' });
@@ -44,11 +55,16 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase
-      .from('vault_items')
-      .select(SELECT)
-      .eq('user_id', auth.userId)
-      .order('purchase_date', { ascending: false });
+    const runQuery = async (select: string) =>
+      supabase
+        .from('vault_items')
+        .select(select)
+        .eq('user_id', auth.userId)
+        .order('purchase_date', { ascending: false });
+    let { data, error } = await runQuery(SELECT_REORDER);
+    if (error && isMissingColumn(error)) {
+      ({ data, error } = await runQuery(SELECT));
+    }
     if (error) {
       if (isMissingTable(error)) return apiSuccess([], 200, { vaultEnabled: false });
       return internalError('Failed to fetch vault items');
@@ -83,30 +99,51 @@ export async function POST(request: NextRequest) {
         : Number(body.amount);
     if (amount !== null && !Number.isFinite(amount)) return badRequest('amount must be a number');
 
+    // Section 6, Item 3: reorder fields. An interval is only kept
+    // for consumables; anything invalid is dropped, never guessed.
+    const isConsumable = body?.isConsumable === true;
+    const reorderFields = {
+      is_consumable: isConsumable,
+      reorder_interval_days: isConsumable
+        ? normalizeReorderIntervalDays(body?.reorderIntervalDays)
+        : null,
+      reorder_reminder: isConsumable ? body?.reorderReminder === true : false,
+    };
+
     const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase
+    const baseRow = {
+      user_id: auth.userId,
+      title,
+      store: typeof body?.store === 'string' ? body.store.trim() || null : null,
+      product_id: typeof body?.productId === 'string' ? body.productId : null,
+      purchase_date: purchaseDate,
+      amount,
+      currency:
+        typeof body?.currency === 'string' && body.currency.trim()
+          ? body.currency.trim().toUpperCase()
+          : 'USD',
+      warranty_months: warrantyMonths,
+      receipt_file_name: typeof body?.receiptFileName === 'string' ? body.receiptFileName : null,
+      receipt_file_type: typeof body?.receiptFileType === 'string' ? body.receiptFileType : null,
+      receipt_file_size:
+        typeof body?.receiptFileSize === 'number' ? Math.floor(body.receiptFileSize) : null,
+      receipt_url: typeof body?.receiptUrl === 'string' ? body.receiptUrl.trim() || null : null,
+      extracted_text: typeof body?.extractedText === 'string' ? body.extractedText : null,
+    };
+    let { data, error } = await supabase
       .from('vault_items')
-      .insert({
-        user_id: auth.userId,
-        title,
-        store: typeof body?.store === 'string' ? body.store.trim() || null : null,
-        product_id: typeof body?.productId === 'string' ? body.productId : null,
-        purchase_date: purchaseDate,
-        amount,
-        currency:
-          typeof body?.currency === 'string' && body.currency.trim()
-            ? body.currency.trim().toUpperCase()
-            : 'USD',
-        warranty_months: warrantyMonths,
-        receipt_file_name: typeof body?.receiptFileName === 'string' ? body.receiptFileName : null,
-        receipt_file_type: typeof body?.receiptFileType === 'string' ? body.receiptFileType : null,
-        receipt_file_size:
-          typeof body?.receiptFileSize === 'number' ? Math.floor(body.receiptFileSize) : null,
-        receipt_url: typeof body?.receiptUrl === 'string' ? body.receiptUrl.trim() || null : null,
-        extracted_text: typeof body?.extractedText === 'string' ? body.extractedText : null,
-      })
-      .select(SELECT)
+      .insert({ ...baseRow, ...reorderFields })
+      .select(SELECT_REORDER)
       .single();
+    if (error && isMissingColumn(error)) {
+      // Migration 033 not run yet: the item still saves, just
+      // without reorder fields.
+      ({ data, error } = await supabase
+        .from('vault_items')
+        .insert(baseRow)
+        .select(SELECT)
+        .single());
+    }
     if (error || !data) {
       if (isMissingTable(error)) {
         return serviceUnavailable(

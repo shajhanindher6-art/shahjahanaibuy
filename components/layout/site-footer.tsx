@@ -19,6 +19,8 @@ const footerLinks = {
     { href: '/docs', label: 'Documentation' },
     { href: '/support', label: 'Support' },
     { href: '/help', label: 'Help Center' },
+    { href: '/creators', label: 'Creator Storefronts' },
+    { href: '/mobile-app', label: 'Mobile App' },
   ],
   Transparency: [
     { href: '/methodology', label: 'Methodology' },
@@ -27,6 +29,8 @@ const footerLinks = {
     { href: '/sustainability', label: 'Sustainability' },
     { href: '/status', label: 'Status' },
     { href: '/api-docs', label: 'API Docs' },
+    { href: '/live', label: 'Live Shopping' },
+    { href: '/warranty-plans', label: 'Warranty Plans' },
   ],
   Legal: [
     { href: '/terms', label: 'Terms of Service' },

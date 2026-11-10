@@ -14,6 +14,7 @@ import {
   serviceUnavailable,
 } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { normalizeQuantity } from '@/lib/pool-quantities';
 
 export async function POST(
   _request: NextRequest,
@@ -26,6 +27,12 @@ export async function POST(
 
   const auth = await requireAuth(_request);
   if ('error' in auth) return auth.error;
+
+  // Optional committed quantity for this member (default 1 unit).
+  // Invalid values count as 1 — a quantity is never a reason to
+  // reject a join.
+  const body = await _request.json().catch(() => null);
+  const quantity = normalizeQuantity(body?.quantity);
 
   try {
     const supabase = await createSupabaseServerClient();
@@ -49,7 +56,13 @@ export async function POST(
       if (error.code === '23505') return badRequest('You are already a member of this pool');
       return internalError('Failed to join pool');
     }
-    return apiSuccess({ joined: true }, 201);
+    // Record the member's quantity (best effort — a missing 033
+    // table just means the member counts as 1 unit, today's
+    // behaviour; the join itself already succeeded).
+    await supabase
+      .from('pool_member_quantities')
+      .upsert({ pool_id: params.id, user_id: auth.userId, quantity }, { onConflict: 'pool_id,user_id' });
+    return apiSuccess({ joined: true, quantity }, 201);
   } catch {
     return internalError('Failed to join pool');
   }

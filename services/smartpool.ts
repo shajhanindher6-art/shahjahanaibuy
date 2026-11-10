@@ -92,22 +92,63 @@ export interface ShippingSplit {
   totalUsd: number;
   /** Real member count the total is split across. */
   members: number;
-  /** Each member's share, USD, rounded to cents. */
+  /**
+   * Each member's share, USD, rounded to cents.
+   * With no quantities this is the even split (total / members).
+   * With quantities it is the AVERAGE share (total / members) — the
+   * per-member breakdown lives in `sharesUsd`.
+   */
   perMemberUsd: number;
+  /** True when the split was computed by quantity share. */
+  byQuantity: boolean;
+  /** Total units committed across the pool, or null without quantities. */
+  totalQuantity: number | null;
+  /**
+   * Per-member share in the same order as the `quantities` argument,
+   * rounded to cents, adjusted so the shares sum exactly to
+   * `totalUsd`. Null without quantities.
+   */
+  sharesUsd: number[] | null;
 }
 
 export function splitShippingEstimate(
   totalShippingUsd: number | null | undefined,
-  memberCount: number
+  memberCount: number,
+  quantities?: Array<number | null | undefined>
 ): ShippingSplit | null {
   const total = typeof totalShippingUsd === 'number' ? totalShippingUsd : NaN;
   const members = Math.max(0, Math.floor(memberCount) || 0);
   if (!Number.isFinite(total) || total <= 0 || members < 1) return null;
-  return {
-    totalUsd: Math.round(total * 100) / 100,
-    members,
-    perMemberUsd: Math.round((total / members) * 100) / 100,
-  };
+  const totalUsd = Math.round(total * 100) / 100;
+  const perMemberUsd = Math.round((totalUsd / members) * 100) / 100;
+
+  const hasQuantities =
+    Array.isArray(quantities) && quantities.length > 0;
+  if (!hasQuantities) {
+    return { totalUsd, members, perMemberUsd, byQuantity: false, totalQuantity: null, sharesUsd: null };
+  }
+  // Unknown quantity counts as 1 unit (today's behaviour: every
+  // member counts once). Quantities are clamped to >= 1.
+  const qtys = quantities!.map((q) =>
+    Number.isFinite(q) && (q as number) >= 1 ? Math.floor(q as number) : 1
+  );
+  const totalQuantity = qtys.reduce((sum, q) => sum + q, 0);
+  if (totalQuantity < 1) {
+    return { totalUsd, members, perMemberUsd, byQuantity: false, totalQuantity: null, sharesUsd: null };
+  }
+  const rawShares = qtys.map((q) => (totalUsd * q) / totalQuantity);
+  const sharesUsd = rawShares.map((s) => Math.round(s * 100) / 100);
+  // Fix penny drift so the shares sum exactly to the total: put the
+  // residual on the largest-quantity member's share.
+  const drift = Math.round((totalUsd - sharesUsd.reduce((s, v) => s + v, 0)) * 100) / 100;
+  if (drift !== 0) {
+    let largestIdx = 0;
+    for (let i = 1; i < qtys.length; i++) {
+      if (qtys[i] > qtys[largestIdx]) largestIdx = i;
+    }
+    sharesUsd[largestIdx] = Math.round((sharesUsd[largestIdx] + drift) * 100) / 100;
+  }
+  return { totalUsd, members, perMemberUsd, byQuantity: true, totalQuantity, sharesUsd };
 }
 
 /** Shown on every shipping-split render. */

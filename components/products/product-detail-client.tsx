@@ -115,16 +115,38 @@ const EcoFootprint = dynamic(
 import { TrustCheckSection } from '@/components/products/trust-check-section';
 import { FakeNessChecker } from '@/components/products/fake-ness-checker';
 import { SmartPool } from '@/components/pools/smart-pool';
-import { UpcyclingBlueprints } from '@/components/products/upcycling-blueprints';
-import { DropWindowSimulator } from '@/components/products/drop-window-simulator';
-import { FluffDetector } from '@/components/products/fluff-detector';
-import { CompatibilityMatrix } from '@/components/products/compatibility-matrix';
+const UpcyclingBlueprints = dynamic(
+  () =>
+    import('@/components/products/upcycling-blueprints').then(
+      (m) => m.UpcyclingBlueprints
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const DropWindowSimulator = dynamic(
+  () =>
+    import('@/components/products/drop-window-simulator').then(
+      (m) => m.DropWindowSimulator
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const FluffDetector = dynamic(
+  () =>
+    import('@/components/products/fluff-detector').then((m) => m.FluffDetector),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const CompatibilityMatrix = dynamic(
+  () =>
+    import('@/components/products/compatibility-matrix').then(
+      (m) => m.CompatibilityMatrix
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
 const ProductVisualizer = dynamic(
   () =>
     import('@/components/products/product-visualizer').then(
       (m) => m.ProductVisualizer
     ),
-  { loading: () => <LoadingSpinner /> }
+  { ssr: false, loading: () => <LoadingSpinner /> }
 );
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
 import { BestTimeToBuyIndicator } from '@/components/products/best-time-to-buy';
@@ -203,6 +225,13 @@ import type { PhysicalAttributesData } from '@/services/physical-attributes';
 // Option 19: recorded overrides for resale & TCO (fail-safe, all nulls
 // until migration 022 data exists).
 import type { RecordedOverridesData } from '@/services/recorded-overrides';
+// Section 6: dimensions / model URL / authenticity / supply chain
+// (fail-safe, all nulls until migration 033 data exists).
+import type {
+  ProductDimensionsData,
+  ProductAuthenticityData,
+  ProductSupplyChainData,
+} from '@/services/product-dimensions';
 // Option 20: global readiness (fail-safe, all nulls until migration
 // 023 data exists).
 const GlobalReadinessCard = dynamic(
@@ -289,6 +318,31 @@ const CarbonLabelCard = dynamic(
     ),
   { loading: () => <LoadingSpinner /> }
 );
+// Section 6: lazy-loaded Next-Gen blocks — ssr:false so they stay
+// out of the product page's First Load JS (350 kB budget), same
+// pattern as the calculators above. They sit below the hero /
+// Where-to-Buy and render with the LoadingSpinner fallback.
+const BnplLine = dynamic(
+  () => import('@/components/products/bnpl-line').then((m) => m.BnplLine),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const AuthenticityBlock = dynamic(
+  () => import('@/components/products/authenticity-block').then((m) => m.AuthenticityBlock),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const SupplyChainBlock = dynamic(
+  () => import('@/components/products/supply-chain-block').then((m) => m.SupplyChainBlock),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const WarrantyPlansTable = dynamic(
+  () => import('@/components/products/warranty-plans-table').then((m) => m.WarrantyPlansTable),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const BuyListButton = dynamic(
+  () => import('@/components/products/buy-list-button').then((m) => m.BuyListButton),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+import type { WarrantyPlan } from '@/lib/warranty-plans';
 import {
   translationSourceLabel,
   type ProductTranslation,
@@ -363,6 +417,13 @@ interface Product {
   // Option 20: global readiness from the same endpoint (all nulls
   // until migration 023 data exists — honest empty states).
   globalReadiness?: GlobalReadinessData | null;
+  // Section 6: dimensions / model URL / authenticity / supply chain
+  // from the same endpoint (all nulls until migration 033 data
+  // exists — the visualizer shows honest empty states).
+  dimensions?: ProductDimensionsData | null;
+  modelUrl?: string | null;
+  authenticity?: ProductAuthenticityData | null;
+  supplyChain?: ProductSupplyChainData | null;
 }
 
 interface AISummary {
@@ -474,7 +535,21 @@ export default function ProductDetailClient({
   // and null forever when the product has no price history — the
   // line in "Where to Buy" then renders nothing (no invented date).
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
+  // Section 6, Item 12: admin-recorded warranty/insurance plans for
+  // this product's category (GET /api/v1/warranty-plans?category=).
+  // Empty until an admin records a plan — the table renders its
+  // honest empty state, never a guessed plan.
+  const [warrantyPlans, setWarrantyPlans] = useState<WarrantyPlan[]>([]);
   const lastCheckedLabel = useMemo(() => formatLastChecked(lastCheckedAt), [lastCheckedAt]);
+  // Section 6, Item 9: resolve the LocalStore for a merchant name so
+  // the BNPL line can show only VERIFIED instalment options. No
+  // match → null → the line says BNPL is not verified for the store.
+  const findBnplStore = (merchantName: string | null) => {
+    if (!merchantName) return null;
+    const key = merchantName.trim().toLowerCase();
+    const { stores } = getStoresForCountry(detectedCountryCode ?? region.code);
+    return stores.find((s) => s.name.toLowerCase() === key || s.slug.toLowerCase() === key) ?? null;
+  };
   // Best currently-valid coupon per merchant id, so each "Where to
   // Buy" row can show its retailer's code with a copy button. Coupons
   // are merchant-level (not product-level). Selection is deterministic
@@ -963,6 +1038,28 @@ export default function ProductDetailClient({
     fetchAll();
   }, [fetchAll]);
 
+  // Section 6, Item 12: fetch admin-recorded warranty plans for this
+  // product's category. Failure leaves the empty list — the table
+  // shows its honest empty state.
+  useEffect(() => {
+    const category = product?.category;
+    if (!category) return;
+    let cancelled = false;
+    fetch(`/api/v1/warranty-plans?category=${encodeURIComponent(category)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (!cancelled && json?.success && Array.isArray(json.data)) {
+          setWarrantyPlans(json.data as WarrantyPlan[]);
+        }
+      })
+      .catch(() => {
+        // Table shows its honest empty state on failure.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [product?.category]);
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -1354,6 +1451,9 @@ export default function ProductDetailClient({
                         ) : (
                           <Button disabled>{tFor(language, 'buy')}</Button>
                         )}
+                        {product && (
+                          <BuyListButton productId={product.id} merchantProductId={listing.id} />
+                        )}
                       </div>
                       {/* Merchant trust (Section 3 #14, Section 5 #7 &
                           #15): verified badge (renders nothing until a
@@ -1420,6 +1520,17 @@ export default function ProductDetailClient({
                     purchases made through these retailer links, at no extra cost to you.
                   </p>
                 )}
+                {/* Section 6, Item 9: BNPL line for the cheapest
+                    recorded listing — verified instalment options
+                    only, terms never guessed. */}
+                {merchantsLoaded && merchants.length > 0 && (
+                  <div className="mt-3 border-t pt-3">
+                    <BnplLine
+                      store={findBnplStore(merchants[0].merchantName)}
+                      totalUsd={merchants[0].price}
+                    />
+                  </div>
+                )}
               </CardContent>
             )}
           </Card>
@@ -1444,6 +1555,17 @@ export default function ProductDetailClient({
             countryStoreNames={getStoresForCountry(
               detectedCountryCode ?? region.code
             ).stores.map((s) => s.name)}
+          />
+        )}
+
+        {/* Section 6, Item 12: admin-recorded third-party warranty /
+            insurance plans for this category. The manufacturer
+            warranty stays a separate labelled column — never merged
+            into a plan row. */}
+        {product && (
+          <WarrantyPlansTable
+            plans={warrantyPlans}
+            manufacturerWarranty={product?.globalReadiness?.globalWarrantyType ?? null}
           />
         )}
 
@@ -1529,6 +1651,11 @@ export default function ProductDetailClient({
             merchants={merchants}
             reviews={reviews}
           />
+        )}
+        {/* Section 6, Item 10: manufacturer authenticity method —
+            recorded only, never a "genuine" badge. */}
+        {product && (
+          <AuthenticityBlock authenticity={product?.authenticity ?? null} />
         )}
         {/* Option 9: Durability & longevity estimate — category range
             plus a review-gated reliability score. No repair-log data
@@ -1890,6 +2017,7 @@ export default function ProductDetailClient({
                 />
               </div>
               <ModularityMatrix endurance={product?.endurance ?? null} />
+              <SupplyChainBlock supplyChain={product?.supplyChain ?? null} />
             </div>
 
             {/* Option 18: Anti-Trap Checks — derived 90-day lowest +
@@ -2055,8 +2183,18 @@ export default function ProductDetailClient({
               <CardContent className="pt-6">
                 <ProductVisualizer
                   productName={product.name}
-                  dimensions={null}
-                  modelUrl={null}
+                  dimensions={
+                    product?.dimensions?.lengthCm != null &&
+                    product?.dimensions?.widthCm != null &&
+                    product?.dimensions?.heightCm != null
+                      ? {
+                          lengthCm: product.dimensions.lengthCm,
+                          widthCm: product.dimensions.widthCm,
+                          heightCm: product.dimensions.heightCm,
+                        }
+                      : null
+                  }
+                  modelUrl={product?.modelUrl ?? null}
                 />
               </CardContent>
             </Card>

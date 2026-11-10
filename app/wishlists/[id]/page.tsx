@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Check, Gift, Heart, Link2 } from 'lucide-react';
+import { Check, Gift, Heart, Link2, Vote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
@@ -49,6 +49,27 @@ interface SharedWishlist {
   giftFinderUrl: string | null;
 }
 
+// Section 6, Item 13 — polls on a shared wishlist. Options are real
+// catalog products; vote counts are real rows from
+// wishlist_poll_votes. One vote per user per poll.
+interface PollOption {
+  optionId: string;
+  productId: string;
+  productName: string | null;
+  productSlug: string | null;
+  votes: number;
+  share: number;
+}
+
+interface WishlistPollView {
+  id: string;
+  question: string;
+  status: 'open' | 'closed';
+  options: PollOption[];
+  totalVotes: number;
+  userVotedOptionId: string | null;
+}
+
 export default function SharedWishlistPage() {
   const params = useParams();
   const router = useRouter();
@@ -58,6 +79,58 @@ export default function SharedWishlistPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Section 6, Item 13 — polls on this wishlist.
+  const [polls, setPolls] = useState<WishlistPollView[] | null>(null);
+  const [pollsEnabled, setPollsEnabled] = useState(true);
+  const [votingOptionId, setVotingOptionId] = useState<string | null>(null);
+  const [voteError, setVoteError] = useState<string | null>(null);
+
+  const fetchPolls = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/v1/wishlist-polls?wishlistId=${id}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        setPolls(data.data as WishlistPollView[]);
+        setPollsEnabled(data.meta?.pollsEnabled !== false);
+      }
+    } catch {
+      // Polls unavailable — the wishlist itself still renders.
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (!wishlist) return;
+    fetchPolls();
+  }, [wishlist, fetchPolls]);
+
+  const vote = async (pollId: string, optionId: string) => {
+    setVoteError(null);
+    setVotingOptionId(optionId);
+    try {
+      const res = await fetch(`/api/v1/wishlist-polls/${pollId}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ optionId }),
+      });
+      if (res.status === 401) {
+        setVoteError('Sign in to vote on polls.');
+        return;
+      }
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.data) {
+        setVoteError(data?.error?.message ?? 'Could not save your vote.');
+        return;
+      }
+      const updated = data.data as WishlistPollView;
+      setPolls((prev) => (prev ?? []).map((p) => (p.id === pollId ? updated : p)));
+    } catch {
+      setVoteError('Could not save your vote.');
+    } finally {
+      setVotingOptionId(null);
+    }
+  };
 
   // Deal Scores per item (same pattern as /search S2#10): the
   // shared-wishlist API returns no prediction data, so scores are
@@ -222,6 +295,81 @@ export default function SharedWishlistPage() {
                   />
                 </CardContent>
               </Card>
+            )}
+
+            {/* Section 6, Item 13 — polls on this wishlist. */}
+            {pollsEnabled && polls && polls.length > 0 && (
+              <section aria-label="Wishlist polls" className="space-y-4">
+                <h2 className="flex items-center gap-2 text-xl font-bold">
+                  <Vote className="h-5 w-5" /> Polls
+                </h2>
+                {voteError && (
+                  <p role="alert" className="text-sm text-red-600">
+                    {voteError}
+                  </p>
+                )}
+                {polls.map((poll) => (
+                  <Card key={poll.id}>
+                    <CardContent className="space-y-3 pt-6">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <p className="font-semibold">{poll.question}</p>
+                        {poll.status === 'closed' && (
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                            Closed
+                          </span>
+                        )}
+                      </div>
+                      {poll.totalVotes === 0 ? (
+                        <p className="text-sm text-muted-foreground">No votes yet</p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          {poll.totalVotes} vote{poll.totalVotes !== 1 ? 's' : ''}
+                        </p>
+                      )}
+                      <ul className="space-y-2">
+                        {poll.options.map((option) => {
+                          const isMine = poll.userVotedOptionId === option.optionId;
+                          return (
+                            <li key={option.optionId}>
+                              <Button
+                                variant={isMine ? 'default' : 'outline'}
+                                className="flex min-h-[44px] w-full items-center justify-between gap-2"
+                                disabled={poll.status !== 'open' || votingOptionId === option.optionId}
+                                onClick={() => vote(poll.id, option.optionId)}
+                                aria-pressed={isMine}
+                              >
+                                <span className="truncate text-left">
+                                  {option.productSlug ? (
+                                    <a
+                                      href={`/products/${option.productSlug}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="underline-offset-2 hover:underline"
+                                    >
+                                      {option.productName ?? 'Product'}
+                                    </a>
+                                  ) : (
+                                    option.productName ?? 'Product'
+                                  )}
+                                  {isMine && ' — Your vote'}
+                                </span>
+                                <span className="shrink-0 text-sm">
+                                  {option.votes} ·{' '}
+                                  {poll.totalVotes > 0
+                                    ? `${Math.round(option.share * 100)}%`
+                                    : '—'}
+                                </span>
+                              </Button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      <p className="text-xs text-muted-foreground">
+                        One vote per person. Voting again moves your vote.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </section>
             )}
           </div>
         )}
