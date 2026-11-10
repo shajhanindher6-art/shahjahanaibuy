@@ -44,6 +44,7 @@ import { appConfig } from '@/lib/config/app';
 import { createClient } from '@supabase/supabase-js';
 import { env } from '@/lib/config/env';
 import { getAllPosts } from '@/lib/blog/posts';
+import { buildTaxonomySitemapEntries } from '@/lib/brand-category-seo';
 
 type ChangeFrequency = NonNullable<
   MetadataRoute.Sitemap[number]['changeFrequency']
@@ -179,8 +180,41 @@ function blogSitemap(baseUrl: string): MetadataRoute.Sitemap {
   }));
 }
 
+/**
+ * Brand / category listing pages (Section 9, chunk 2). Slugs are
+ * derived from the products table's `brand` / `category` text
+ * columns only (lib/brand-category-seo.ts), so every URL listed
+ * here has at least one product behind it — no invented slugs.
+ * Same style as the product entries: absolute URL, weekly, 0.6,
+ * no lastModified (no per-listing modification date is recorded).
+ */
+async function taxonomySitemap(baseUrl: string): Promise<MetadataRoute.Sitemap> {
+  try {
+    const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey, {
+      auth: { persistSession: false },
+    });
+
+    const { data: products } = await supabase
+      .from('products')
+      .select('brand, category')
+      .is('deleted_at', null)
+      .limit(500);
+
+    if (!products) return [];
+    return buildTaxonomySitemapEntries(
+      baseUrl,
+      products as Array<{ brand: string | null; category: string | null }>
+    );
+  } catch {
+    // If DB is unavailable, return no taxonomy entries rather than
+    // failing the whole sitemap route.
+    return [];
+  }
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = appConfig.url;
   const products = await productSitemap(baseUrl);
-  return [...staticSitemap(baseUrl), ...products, ...blogSitemap(baseUrl)];
+  const taxonomy = await taxonomySitemap(baseUrl);
+  return [...staticSitemap(baseUrl), ...products, ...taxonomy, ...blogSitemap(baseUrl)];
 }

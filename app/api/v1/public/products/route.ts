@@ -10,6 +10,9 @@
  * Data notice: catalog prices in this project are demo/seed data,
  * not live retailer prices. This endpoint returns catalog fields
  * only; see /api/v1/public/prices for recorded price history.
+ * Daily quota (Section 9): anonymous 100/day per IP, Free key
+ * 1,000/day, Premium/Family 10,000/day, Team 100,000/day —
+ * 429 with an upgrade pointer when exceeded (see lib/api-quota.ts).
  */
 
 import type { NextRequest } from 'next/server';
@@ -17,6 +20,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, internalError, unauthorized } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { extractApiKey, validateApiKey } from '@/lib/api-keys';
+import { enforceApiQuota } from '@/lib/api-quota';
 import { getProducts, type ProductListOptions } from '@/services/products';
 
 export const dynamic = 'force-dynamic';
@@ -33,6 +37,11 @@ export async function GET(request: NextRequest) {
     keyInfo ? 120 : 30
   );
   if (limited) return limited;
+
+  // Section 9: daily per-key quota (tier-gated) / anonymous daily
+  // cap. Key-optional access is unchanged for low-volume use.
+  const quotaExceeded = await enforceApiQuota(request, { keyInfo });
+  if (quotaExceeded) return quotaExceeded;
 
   try {
     const { searchParams } = request.nextUrl;

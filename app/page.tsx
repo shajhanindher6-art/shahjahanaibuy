@@ -18,6 +18,7 @@ import { SmartDealWidget } from '@/components/deals/smart-deal-widget';
 import { PersonalizedDeals } from '@/components/home/personalized-deals';
 import { ShareButtons } from '@/components/products/share-buttons';
 import { LocalStoresSection } from '@/components/home/local-stores-section';
+import { BrowseByTaxonomy } from '@/components/home/browse-by-taxonomy';
 import { StatsBar } from '@/components/home/stats-bar';
 import { HeroCopy } from '@/components/home/hero-copy';
 import { TiersSection } from '@/components/pricing/tiers-section';
@@ -171,6 +172,13 @@ export default function HomePage() {
 
         {/* Geo-targeted local stores — directory + links only */}
         <LocalStoresSection />
+
+        {/* Section 9 — browse the catalog by brand / category.
+            Links are derived from the products table at render time
+            (components/home/browse-by-taxonomy.tsx); the section
+            renders nothing when the catalog has no brands or
+            categories. */}
+        <BrowseByTaxonomy />
 
         {/* How It Works */}
         <section id="how-it-works" className="border-y bg-muted/30 py-20 md:py-28">

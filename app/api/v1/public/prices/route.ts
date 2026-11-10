@@ -6,7 +6,9 @@
  * Returns rows from `price_history` (recorded data) only — never a
  * live retailer price. `product_id` or `slug` is required. Same
  * auth/rate-limit tiers as the other public routes: optional
- * `x-api-key` (120/min) or anonymous (30/min).
+ * `x-api-key` (120/min) or anonymous (30/min). Daily quota
+ * (Section 9): anonymous 100/day per IP, Free key 1,000/day,
+ * Premium/Family 10,000/day, Team 100,000/day (see lib/api-quota.ts).
  */
 
 import type { NextRequest } from 'next/server';
@@ -14,6 +16,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError, notFound, unauthorized } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { extractApiKey, validateApiKey } from '@/lib/api-keys';
+import { enforceApiQuota } from '@/lib/api-quota';
 import { getProductBySlug } from '@/services/products';
 
 export const dynamic = 'force-dynamic';
@@ -33,6 +36,11 @@ export async function GET(request: NextRequest) {
     keyInfo ? 120 : 30
   );
   if (limited) return limited;
+
+  // Section 9: daily per-key quota (tier-gated) / anonymous daily
+  // cap. Key-optional access is unchanged for low-volume use.
+  const quotaExceeded = await enforceApiQuota(request, { keyInfo });
+  if (quotaExceeded) return quotaExceeded;
 
   try {
     const { searchParams } = request.nextUrl;

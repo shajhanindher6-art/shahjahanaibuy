@@ -47,35 +47,84 @@ function parseCsvLine(line: string): string[] {
 }
 
 /**
+ * Splits a CSV document into logical lines, honouring quoted fields that
+ * contain embedded newlines (RFC 4180-ish). Each line carries its 1-based
+ * line number in the original document so callers can report per-row
+ * errors against the line the admin actually sees.
+ */
+function splitCsvLines(csv: string): Array<{ text: string; lineNumber: number }> {
+  const normalized = csv.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines: Array<{ text: string; lineNumber: number }> = [];
+  let buffer = '';
+  let inQuotes = false;
+  let lineNumber = 1;
+
+  for (const char of normalized) {
+    if (char === '"') inQuotes = !inQuotes;
+    if (char === '\n' && !inQuotes) {
+      lines.push({ text: buffer, lineNumber });
+      buffer = '';
+      lineNumber++;
+    } else {
+      buffer += char;
+    }
+  }
+  if (buffer.trim()) lines.push({ text: buffer, lineNumber });
+
+  return lines;
+}
+
+export interface CsvDocumentRow {
+  /** 1-based line number of the data row in the original CSV (header is line 1). */
+  rowNumber: number;
+  /** Row values keyed by lower-cased header name. Missing columns are ''. */
+  row: Record<string, string>;
+}
+
+/**
+ * Parses a full CSV document into row objects keyed by the header row,
+ * each tagged with its original line number.
+ *
+ * Unlike {@link parseCsv} (used by CsvProvider), rows with fewer columns
+ * than the header are NOT dropped — their missing fields come back as
+ * empty strings so the caller can report a per-row, per-field error
+ * instead of silently losing the row.
+ */
+export function parseCsvDocument(csv: string): CsvDocumentRow[] {
+  const lines = splitCsvLines(csv);
+  if (lines.length === 0) return [];
+
+  const headers = parseCsvLine(lines[0].text).map((h) => h.toLowerCase());
+
+  const rows: CsvDocumentRow[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].text.trim()) continue;
+    const values = parseCsvLine(lines[i].text);
+    const row: Record<string, string> = {};
+    headers.forEach((header, index) => {
+      row[header] = values[index] ?? '';
+    });
+    rows.push({ rowNumber: lines[i].lineNumber, row });
+  }
+  return rows;
+}
+
+/**
  * Parses a full CSV document into a list of row objects keyed by the header row.
  * Rows that are empty or have fewer columns than the header are skipped.
  */
 function parseCsv(csv: string): Record<string, string>[] {
   const rows: Record<string, string>[] = [];
 
-  const normalized = csv.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines: string[] = [];
-  let buffer = '';
-  let inQuotes = false;
-
-  for (const char of normalized) {
-    if (char === '"') inQuotes = !inQuotes;
-    if (char === '\n' && !inQuotes) {
-      lines.push(buffer);
-      buffer = '';
-    } else {
-      buffer += char;
-    }
-  }
-  if (buffer.trim()) lines.push(buffer);
+  const lines = splitCsvLines(csv);
 
   if (lines.length === 0) return rows;
 
-  const headers = parseCsvLine(lines[0]).map((h) => h.toLowerCase());
+  const headers = parseCsvLine(lines[0].text).map((h) => h.toLowerCase());
 
   for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
-    const values = parseCsvLine(lines[i]);
+    if (!lines[i].text.trim()) continue;
+    const values = parseCsvLine(lines[i].text);
     if (values.length < headers.length) continue;
 
     const row: Record<string, string> = {};

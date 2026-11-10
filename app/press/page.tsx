@@ -1,3 +1,15 @@
+/**
+ * Press fact sheet (Section 9, chunk 4).
+ *
+ * Every number below traces to a repo fact or a real run — see
+ * tests/press-status.test.ts, which locks the derived counts
+ * (stores, regions, languages, currencies, blog articles) to their
+ * source modules so a future change fails loudly instead of leaving
+ * this page stale. The test count is the one figure that cannot be
+ * derived at build time: it is the result of a full `npx vitest run`
+ * (1,180 passing, 111 files, 10 November 2026) and moves whenever
+ * tests are added, so it is dated, not presented as permanent.
+ */
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
@@ -9,17 +21,17 @@ const FACTS: Array<[string, string]> = [
   ['Merchant listings', '20'],
   ['Recorded price-history rows', '40'],
   ['Deals listed', '6'],
-  ['Stores in the directory', '72'],
-  ['Regions covered', '60'],
-  ['Languages', '8 (English, Urdu, German, French, Spanish, Italian, Portuguese, Turkish)'],
-  ['Currencies', '37+ (approximate static rates; live FX in the landed-cost calculator)'],
+  ['Stores in the directory', '80 local stores (plus 4 global fallback stores — Amazon, eBay, AliExpress, Google Shopping — search links only)'],
+  ['Regions covered', '61 (60 with a local store; South Africa uses the global fallback)'],
+  ['Languages', '20 (English, Urdu, German, French, Spanish, Italian, Portuguese, Turkish, Arabic, Chinese, Japanese, Korean, Hindi, Bengali, Dutch, Swedish, Polish, Russian, Indonesian, Vietnamese)'],
+  ['Currencies', '51 (approximate static rates; live FX in the landed-cost calculator)'],
   ['Price refresh schedule', 'Every 6 hours'],
   ['Recorded price history span', 'About 30 days (October 3 – November 2, 2026)'],
   ['Coupons listed', '2 — SAVE10 and BESTBUY15, both valid until January 29, 2027'],
   ['Blog articles', '20 original English guides'],
   ['Database access policies (RLS)', '194 active'],
   ['Security headers', 'Grade A+ (securityheaders.com), nonce-based Content Security Policy'],
-  ['Automated tests passing', '372 (as of November 2026)'],
+  ['Automated tests passing', '1,180 passing (111 test files, full run 10 November 2026)'],
   ['Founder', 'Independent developer, GitHub: shajhanindher6-art'],
   ['Public repository', 'https://github.com/shajhanindher6-art/shahjahanaibuy'],
 ];
@@ -42,7 +54,7 @@ export default function PressPage() {
             SmartBuy AI is an AI-powered shopping and price-tracking site. It tracks prices
             across retailers, alerts shoppers when a price drops, compares products side by
             side, and explains its own reasoning — including a published methodology for its
-            Deal Score. It works across 60 regions and in 8 languages, with local stores
+            Deal Score. It works across 61 regions and in 20 languages, with local stores
             listed by directory and link, never with invented local prices.
           </p>
 

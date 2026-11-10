@@ -1,5 +1,5 @@
 /**
- * Public status page (Section 4, item 11).
+ * Public status page (Section 4, item 11; Section 9, chunk 4).
  *
  * Shows the overall status, uptime % over the last 90 days, and
  * incident history — all computed from recorded rows in
@@ -11,13 +11,25 @@
  *   since monitoring started — not a claim about before then.
  * Fail-safe: if the migration has not been run, the page still
  * renders the "monitoring not started yet" state instead of erroring.
+ *
+ * The "Services & integrations" section is computed at request time
+ * from services/platform-status.ts — real env-derived booleans and
+ * counts (eBay configured or not, Skimlinks, Amazon locales, store
+ * directory size), never a claim about a platform that is not
+ * configured. The page deliberately does NOT claim an uptime %,
+ * a cron-job state, or an external-monitor state it cannot check:
+ * the owner's cron-job.org jobs and UptimeRobot monitor live outside
+ * the app, so their running state is stated as unknown, not as up.
  */
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { buildStatusSummary, type StatusIncident } from '@/lib/status';
 import type { UptimeCheckRow } from '@/lib/uptime';
+import { describePlatformStatus, type PlatformStatus } from '@/services/platform-status';
+import { appConfig } from '@/lib/config/app';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +51,24 @@ const STATUS_LABELS: Record<string, string> = {
   degraded: 'Degraded',
   outage: 'Outage',
   unknown: 'Monitoring starting up',
+};
+
+// Same labels as the /platforms hub (services/platform-status.ts),
+// so the two pages never disagree about a platform's state.
+const PLATFORM_STATUS_LABELS: Record<PlatformStatus, string> = {
+  live: 'Live',
+  configured: 'Configured',
+  'not-configured': 'Not configured',
+  'pending-approval': 'Pending approval',
+  'search-links-only': 'Search links only',
+};
+
+const PLATFORM_STATUS_STYLES: Record<PlatformStatus, string> = {
+  live: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100',
+  configured: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100',
+  'not-configured': 'bg-muted text-muted-foreground',
+  'pending-approval': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100',
+  'search-links-only': 'bg-muted text-muted-foreground',
 };
 
 function formatDate(iso: string): string {
@@ -79,6 +109,10 @@ export default async function StatusPage() {
 
   const summary = buildStatusSummary(checks, incidents, 90);
   const uptime = summary.uptime;
+  // Real, request-time configuration state (env-derived booleans and
+  // counts). A platform with no configured account reports
+  // "Not configured" / "Search links only" here, never "Live".
+  const platforms = describePlatformStatus();
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -102,6 +136,60 @@ export default async function StatusPage() {
               .
             </p>
           </div>
+
+          <h2 className="mt-10 text-xl font-semibold">Services &amp; integrations</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Checked live on every visit — this is what the app itself can verify right now.
+            See the{' '}
+            <Link href="/platforms" className="underline">
+              platforms hub
+            </Link>{' '}
+            for the same statuses with more detail.
+          </p>
+          <ul className="mt-4 space-y-4">
+            {platforms.map((platform) => (
+              <li key={platform.id} className="rounded-lg border p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="font-medium">{platform.name}</p>
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${PLATFORM_STATUS_STYLES[platform.status]}`}
+                  >
+                    {PLATFORM_STATUS_LABELS[platform.status]}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">{platform.coverage}</p>
+                <p className="mt-1 text-sm">{platform.whatYouGet}</p>
+              </li>
+            ))}
+          </ul>
+
+          <h2 className="mt-10 text-xl font-semibold">Last verified</h2>
+          <p className="mt-4 rounded-lg border p-6 text-muted-foreground">
+            Last manual verification: 10 November 2026 — the homepage, the MacBook Air 13
+            product page, the{' '}
+            <Link href="/platforms" className="underline">
+              platforms hub
+            </Link>
+            , and the stores, platforms, and eBay-search APIs all responded. Check the live
+            site yourself:{' '}
+            <a
+              href={appConfig.url}
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
+              {appConfig.url}
+            </a>
+            .
+          </p>
+          <p className="mt-4 text-sm text-muted-foreground">
+            What this page cannot tell you: the app cannot see whether the owner&apos;s
+            scheduled jobs are running — the price refresh (every 6 hours) and the uptime
+            check runner (every 5 minutes) are cron-job.org jobs that live outside the app —
+            or the state of the owner&apos;s external UptimeRobot monitor. Those are stated
+            as unknown here, not as up. No uptime percentage is shown until the in-app
+            check runner has recorded real checks.
+          </p>
 
           <h2 className="mt-10 text-xl font-semibold">Uptime — last 90 days</h2>
           {uptime.hasData && uptime.uptimePercent !== null ? (
@@ -151,8 +239,9 @@ export default async function StatusPage() {
           )}
 
           <p className="mt-10 text-xs text-muted-foreground">
-            Uptime is computed from recorded in-app checks only. External monitoring
-            (UptimeRobot) is configured separately by the site owner; see docs/uptime.md.
+            Uptime is computed from recorded in-app checks only. An external monitor
+            (UptimeRobot) may be configured separately by the site owner; the app cannot
+            see its state, so this page makes no claim about it. See docs/uptime.md.
           </p>
         </div>
       </main>

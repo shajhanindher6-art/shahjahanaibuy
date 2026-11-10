@@ -3,12 +3,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard, Users, Package, Bell, BarChart3,
-  Settings, FileText, Flag, Activity, ChevronRight, MousePointerClick
+  Settings, FileText, Flag, Activity, ChevronRight, MousePointerClick, Upload
 } from 'lucide-react';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from 'recharts';
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -126,6 +127,13 @@ export default function AdminPage() {
           <p className="mt-2 text-muted-foreground">
             Manage users, products, analytics, and system configuration
           </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href="/admin/intake">
+                <Upload className="mr-2 h-4 w-4" /> Catalog intake — CSV upload &amp; review
+              </Link>
+            </Button>
+          </div>
         </div>
 
         {analytics && (
