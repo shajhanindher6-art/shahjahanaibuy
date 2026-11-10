@@ -1,0 +1,73 @@
+# Lighthouse CI + performance budget gate (Section 4, item 12).
+#
+# Free tier only: @lhci/cli via npx (no account), results uploaded to
+# temporary public storage (links expire; nothing stored long-term).
+# No paid service is involved anywhere in this workflow.
+#
+# What it checks on every PR and every push to main:
+#   1. Production build passes.
+#   2. /products/[slug] First Load JS <= 350 kB (hard gate, parsed
+#      from the `next build` output — see docs/performance-budgets.md).
+#   3. Lighthouse (mobile) on / and /products/macbook-air-13 with the
+#      `lighthouse:recommended` preset.
+#
+# The build uses placeholder Supabase env vars: the app renders honest
+# empty states without real data, so Lighthouse measures the shell and
+# bundle — which is what the budget is about. A live-data Lighthouse
+# run is a manual, owner-side step on the deployed site.
+
+name: Lighthouse CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Production build
+        run: npm run build 2>&1 | tee build.log
+
+      - name: Performance budget — product page First Load JS <= 350 kB
+        run: |
+          set -e
+          # `next build` prints one line per route, e.g.:
+          #   /products/[slug]      50.1 kB         340 kB
+          # The last field is First Load JS. Fail the job above budget.
+          line=$(grep -E '/products/\[slug\]' build.log | head -n 1 || true)
+          if [ -z "$line" ]; then
+            echo "Could not find /products/[slug] in build output; failing so the budget is never silently skipped."
+            exit 1
+          fi
+          first_load_kb=$(echo "$line" | awk '{print $(NF-1)}')
+          echo "Product page First Load JS: ${first_load_kb} kB (budget: 350 kB)"
+          awk -v kb="$first_load_kb" 'BEGIN { if (kb + 0 > 350) { print "BUDGET EXCEEDED: product page First Load JS is " kb " kB, budget is 350 kB. Code-split before raising the budget (see docs/performance-budgets.md)."; exit 1 } }'
+
+      - name: Lighthouse CI
+        run: |
+          npx -y @lhci/cli@0.14.x autorun \
+            --collect.url=http://localhost:3000/ \
+            --collect.url=http://localhost:3000/products/macbook-air-13 \
+            --collect.startServerCommand="npm run start" \
+            --collect.startServerReadyPattern="Ready" \
+            --collect.startServerReadyTimeout=60000 \
+            --collect.numberOfRuns=1 \
+            --upload.target=temporary-public-storage \
+            --assert.preset=lighthouse:recommended
