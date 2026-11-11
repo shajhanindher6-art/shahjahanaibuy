@@ -6,6 +6,8 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { useRegion } from '@/components/region/region-provider';
 import type { Language } from '@/lib/region';
 import { getAllPosts } from '@/lib/blog/posts';
+import { appConfig } from '@/lib/config/app';
+import { buildItemListJsonLd, toJsonLd } from '@/lib/json-ld';
 
 /**
  * Blog index — page-level language only (A2 audit, 2026-11-03).
@@ -142,6 +144,21 @@ export default function BlogPage() {
   const copy = BLOG_COPY[language] ?? BLOG_COPY.en;
   const posts = getAllPosts();
 
+  // Section 13, Chunk E: ItemList of the real post URLs on this
+  // page (same pattern as the search page's result ItemList).
+  const itemListJsonLd =
+    posts.length > 0
+      ? toJsonLd(
+          buildItemListJsonLd(
+            appConfig.url,
+            posts.map((post) => ({
+              name: post.title,
+              path: `/blog/${post.slug}`,
+            }))
+          )
+        )
+      : null;
+
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
@@ -156,7 +173,14 @@ export default function BlogPage() {
           {posts.length === 0 ? (
             <p className="mt-8 text-muted-foreground">{copy.empty}</p>
           ) : (
-            <div className="mt-8 space-y-8">
+            <>
+              {itemListJsonLd && (
+                <script
+                  type="application/ld+json"
+                  dangerouslySetInnerHTML={{ __html: itemListJsonLd }}
+                />
+              )}
+              <div className="mt-8 space-y-8">
               {posts.map((post) => (
                 <article key={post.slug} className="border-b pb-8 last:border-b-0">
                   <h2 className="text-2xl font-semibold leading-snug">
@@ -195,7 +219,8 @@ export default function BlogPage() {
                   </Link>
                 </article>
               ))}
-            </div>
+              </div>
+            </>
           )}
         </div>
       </main>

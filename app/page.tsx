@@ -1,8 +1,11 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import { createClient } from '@supabase/supabase-js';
 import { env } from '@/lib/config/env';
 import { getProducts } from '@/services/products';
+import { isSupportedLanguage, type Language } from '@/lib/region';
+import { tFor } from '@/lib/i18n';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Price } from '@/components/region/price';
 import {
@@ -39,6 +42,18 @@ import { TiersSection } from '@/components/pricing/tiers-section';
 import { CurationGuidelines } from '@/components/curators/curation-guidelines';
 import { NewsletterCapture } from '@/components/home/newsletter-capture';
 import { PushOptInPrompt } from '@/components/home/push-opt-in-prompt';
+
+/**
+ * Section 13, chunk H (i18n Phase 1): the homepage section
+ * headings follow the visitor's UI language. The server reads the
+ * same sb-language cookie the root layout uses for dir/lang — a
+ * first-visit language switch via localStorage takes effect on
+ * the next load, exactly like the layout's dir handling.
+ */
+function homepageLanguage(): Language {
+  const saved = cookies().get('sb-language')?.value ?? null;
+  return saved && isSupportedLanguage(saved) ? saved : 'en';
+}
 
 const features = [
   {
@@ -95,7 +110,7 @@ const steps = [
     number: '03',
     title: 'Shop Smarter',
     description:
-      'Make confident decisions with explainable recommendations and real-time price alerts.',
+      'Make confident decisions with explainable recommendations and price-drop alerts.',
   },
 ];
 
@@ -224,13 +239,13 @@ const toolsNeedSignIn: Array<{ name: string; href: string; description: string }
   },
 ];
 
-function ToolsPreviewSection() {
+function ToolsPreviewSection({ language }: { language: Language }) {
   return (
     <section id="tools" className="border-t py-20 md:py-28" aria-label="AI tools">
       <div className="container mx-auto px-4">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="flex items-center justify-center gap-2 text-3xl font-bold tracking-tight md:text-4xl">
-            <Wrench className="h-7 w-7 text-blue-600" /> AI tools — see what they do first
+            <Wrench className="h-7 w-7 text-blue-600" /> {tFor(language, 'homeToolsHeading')}
           </h2>
           <p className="mt-4 text-lg text-muted-foreground">
             Every tool below does exactly what its card says — no sample
@@ -276,7 +291,7 @@ function ToolsPreviewSection() {
             A guest learns what they do here — the tool pages
             themselves show a sign-in screen when logged out. */}
         <div className="mx-auto mt-12 max-w-3xl rounded-lg border p-6">
-          <h3 className="text-lg font-semibold">Ten more tools, after sign-in</h3>
+          <h3 className="text-lg font-semibold">{tFor(language, 'homeToolsMoreHeading')}</h3>
           <p className="mt-1 text-sm text-muted-foreground">
             These work on your own lists, spending, subscriptions and
             savings, so they need an account. Nothing of yours is shown
@@ -325,7 +340,7 @@ function ToolsPreviewSection() {
  * the section shows an honest "nothing to show" line instead of
  * inventing products or breaking the homepage.
  */
-async function FeaturedProductsStrip() {
+async function FeaturedProductsStrip({ language }: { language: Language }) {
   let products: Array<{
     id: string;
     name: string;
@@ -378,7 +393,7 @@ async function FeaturedProductsStrip() {
     <section className="border-t py-12 md:py-16" aria-label="Featured products">
       <div className="container mx-auto px-4">
         <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-2xl font-bold tracking-tight md:text-3xl">Featured products</h2>
+          <h2 className="text-2xl font-bold tracking-tight md:text-3xl">{tFor(language, 'homeFeaturedHeading')}</h2>
           <p className="mt-2 text-muted-foreground">
             Real products from our catalog, with their latest recorded prices.
           </p>
@@ -437,6 +452,8 @@ async function FeaturedProductsStrip() {
 }
 
 export default function HomePage() {
+  const language = homepageLanguage();
+
   return (
     <>
       <SiteHeader />
@@ -462,7 +479,7 @@ export default function HomePage() {
             <section className="border-t py-12 md:py-16" aria-label="Featured products">
               <div className="container mx-auto px-4">
                 <div className="mx-auto max-w-2xl text-center">
-                  <h2 className="text-2xl font-bold tracking-tight md:text-3xl">Featured products</h2>
+                  <h2 className="text-2xl font-bold tracking-tight md:text-3xl">{tFor(language, 'homeFeaturedHeading')}</h2>
                   <p className="mt-2 text-muted-foreground">
                     Real products from our catalog, with their latest recorded prices.
                   </p>
@@ -481,7 +498,7 @@ export default function HomePage() {
             </section>
           }
         >
-          <FeaturedProductsStrip />
+          <FeaturedProductsStrip language={language} />
         </Suspense>
 
         {/* Recently Viewed (Section 11, chunk C) — guest, device-local
@@ -500,7 +517,7 @@ export default function HomePage() {
           <div className="container mx-auto px-4">
             <div className="mx-auto max-w-2xl text-center">
               <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-                Everything you need to shop smarter
+                {tFor(language, 'homeFeaturesHeading')}
               </h2>
               <p className="mt-4 text-lg text-muted-foreground">
                 Powerful AI-driven features that help you make the best purchasing decisions,
@@ -532,7 +549,7 @@ export default function HomePage() {
             tool does, for a logged-out visitor, with no fake sample
             results. Placed right after Features so the tools are
             visible without scrolling past the deals sections. */}
-        <ToolsPreviewSection />
+        <ToolsPreviewSection language={language} />
 
         {/* Smart Deal Recommendations */}
         <section className="border-t py-20 md:py-28">
@@ -585,7 +602,7 @@ export default function HomePage() {
           <div className="container mx-auto px-4">
             <div className="mx-auto max-w-2xl text-center">
               <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-                How SmartBuy AI works
+                {tFor(language, 'homeHowItWorksHeading')}
               </h2>
               <p className="mt-4 text-lg text-muted-foreground">
                 Three simple steps to transform how you shop online.
@@ -617,7 +634,7 @@ export default function HomePage() {
           <div className="container mx-auto px-4">
             <div className="mx-auto max-w-2xl text-center">
               <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-                Illustrative shopper feedback
+                {tFor(language, 'homeTestimonialsHeading')}
               </h2>
               <p className="mt-4 text-lg text-muted-foreground">
                 Shop smarter with AI.
@@ -714,10 +731,10 @@ export default function HomePage() {
               <div className="relative">
                 <Globe className="mx-auto mb-4 h-12 w-12" />
                 <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-                  Ready to shop smarter?
+                  {tFor(language, 'homeCtaHeading')}
                 </h2>
                 <p className="mx-auto mt-4 max-w-xl text-lg text-primary-foreground/90">
-                  Make better purchasing decisions with AI.
+                  {tFor(language, 'homeCtaSubheading')}
                 </p>
                 <Button size="lg" variant="secondary" className="mt-8" asChild>
                   <Link href="/sign-up">

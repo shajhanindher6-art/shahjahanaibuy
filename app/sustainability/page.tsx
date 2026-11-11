@@ -28,9 +28,37 @@ import {
 import { CarbonLabelCard } from '@/components/sustainability/carbon-label';
 import { RepairabilityTable } from '@/components/sustainability/repairability-table';
 import { RefurbishedList } from '@/components/sustainability/refurbished-list';
+import type { Metadata } from 'next';
+import { appConfig } from '@/lib/config/app';
 
 // Live DB data must never be served from a stale edge cache.
 export const dynamic = 'force-dynamic';
+
+// Section 13, Chunk E: self-canonical + Open Graph metadata (the
+// root layout's canonical points at the homepage, so without this
+// the page self-canonicalizes to /).
+export const metadata: Metadata = {
+  title: 'Sustainability — SmartBuy AI',
+  description:
+    'Carbon labels, repairability, and refurbished options — every claim sourced, every estimate labeled. No greenwashing.',
+  alternates: {
+    canonical: `${appConfig.url}/sustainability`,
+  },
+  openGraph: {
+    title: 'Sustainability — SmartBuy AI',
+    description:
+      'Carbon labels, repairability, and refurbished options — every claim sourced, every estimate labeled. No greenwashing.',
+    url: `${appConfig.url}/sustainability`,
+    type: 'website',
+    locale: 'en_US',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Sustainability — SmartBuy AI',
+    description:
+      'Carbon labels, repairability, and refurbished options — every claim sourced, every estimate labeled. No greenwashing.',
+  },
+};
 
 export default async function SustainabilityPage() {
   const supabase = await createSupabaseServerClient();

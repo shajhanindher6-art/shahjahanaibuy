@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'smartbuy-v2';
+const CACHE_VERSION = 'smartbuy-v3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -9,14 +9,47 @@ const STATIC_ASSETS = [
   '/search',
   '/compare',
   '/deals',
+  '/tools',
+  '/pricing',
+  '/faq',
+  '/help',
   '/manifest.json',
   '/robots.txt',
   '/offline',
 ];
 
+// Cache caps (Section 13, chunk H): the image and runtime caches
+// grew without bound — every fetched image / page stayed cached
+// forever. trimCache evicts the oldest entries (insertion order)
+// once a cache passes its cap. Caps are generous on purpose: the
+// catalog is small (10 products) but merchant images are many.
+const MAX_IMAGE_ENTRIES = 100;
+const MAX_RUNTIME_ENTRIES = 50;
+
+async function trimCache(cacheName, maxEntries) {
+  const cache = await caches.open(cacheName);
+  const keys = await cache.keys();
+  if (keys.length <= maxEntries) return;
+  await Promise.all(keys.slice(0, keys.length - maxEntries).map((key) => cache.delete(key)));
+}
+
 self.addEventListener('install', (event) => {
+  // Per-asset precache (Section 13, chunk H): the old precache
+  // call was all-or-nothing — one failed precache (e.g. /offline
+  // 404ing during a deploy) failed the whole install and left the
+  // old worker in place. Each asset is now added on its own and a
+  // failure only logs, so one bad URL can no longer block the
+  // service worker.
   event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => cache.addAll(STATIC_ASSETS))
+    caches.open(STATIC_CACHE).then((cache) =>
+      Promise.all(
+        STATIC_ASSETS.map((url) =>
+          cache.add(url).catch((error) => {
+            console.warn('[sw] precache failed, skipping:', url, error);
+          })
+        )
+      )
+    )
   );
   self.skipWaiting();
 });
@@ -41,6 +74,7 @@ function handleImageRequest(request) {
       const fetchPromise = fetch(request).then((response) => {
         if (response.ok && response.type === 'basic') {
           cache.put(request, response.clone());
+          trimCache(IMAGE_CACHE, MAX_IMAGE_ENTRIES);
         }
         return response;
       }).catch(() => cached);
@@ -55,7 +89,10 @@ function handleNavigationRequest(request) {
     .then((response) => {
       if (response.ok && response.type === 'basic') {
         const responseClone = response.clone();
-        caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, responseClone));
+        caches.open(RUNTIME_CACHE).then((cache) => {
+          cache.put(request, responseClone);
+          trimCache(RUNTIME_CACHE, MAX_RUNTIME_ENTRIES);
+        });
       }
       return response;
     })
@@ -69,7 +106,10 @@ function handleStaticRequest(request) {
     return fetch(request).then((response) => {
       if (response.ok && response.type === 'basic') {
         const responseClone = response.clone();
-        caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, responseClone));
+        caches.open(RUNTIME_CACHE).then((cache) => {
+          cache.put(request, responseClone);
+          trimCache(RUNTIME_CACHE, MAX_RUNTIME_ENTRIES);
+        });
       }
       return response;
     });

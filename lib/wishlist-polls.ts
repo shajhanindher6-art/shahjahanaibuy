@@ -283,6 +283,43 @@ export async function getPollsForWishlist(
 }
 
 /**
+ * Poll counts per wishlist, in ONE query — the batched form the
+ * wishlists list API (GET /api/v1/wishlists) enriches its rows
+ * with, so the list page can show a poll-count badge and an
+ * "Ask friends to vote" link without a fetch per list. Fail-safe:
+ * a missing 033 table (or any query failure) returns an empty map,
+ * so every list simply shows no polls — never a crash, never a
+ * guessed count. The wishlist_polls select policy is public
+ * (migration 033), so this works for any signed-in reader.
+ */
+export async function getPollCountsByWishlist(
+  supabase: AnySupabaseClient,
+  wishlistIds: string[]
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (wishlistIds.length === 0) return counts;
+  try {
+    const { data, error } = await supabase
+      .from('wishlist_polls')
+      .select('wishlist_id')
+      .in('wishlist_id', wishlistIds);
+    if (error) {
+      if (!isMissingTable(error)) {
+        logger.warn('getPollCountsByWishlist: query failed', { error: error.message });
+      }
+      return counts;
+    }
+    for (const row of (data ?? []) as Array<{ wishlist_id: string }>) {
+      counts.set(row.wishlist_id, (counts.get(row.wishlist_id) ?? 0) + 1);
+    }
+    return counts;
+  } catch (err) {
+    logger.error('getPollCountsByWishlist: unexpected error', { error: String(err) });
+    return counts;
+  }
+}
+
+/**
  * One poll with real vote counts, or null when the poll does not
  * exist / the tables are missing. Returns pollsEnabled:false when
  * the 033 tables do not exist yet.

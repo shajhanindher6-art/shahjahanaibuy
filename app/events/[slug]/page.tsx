@@ -1,12 +1,50 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EventCountdown } from '@/components/seasonal/countdown';
 import { SEASONAL_EVENTS, RECORDED_DEALS, getEventBySlug } from '@/components/seasonal/events';
+import { appConfig } from '@/lib/config/app';
+import { buildEventJsonLd, toJsonLd } from '@/lib/json-ld';
 
 export function generateStaticParams() {
   return SEASONAL_EVENTS.map((event) => ({ slug: event.slug }));
+}
+
+// Section 13, Chunk E: per-event metadata — title/description from
+// the recorded SEASONAL_EVENTS entry, self-canonical per event.
+// An unknown slug 404s (see the component); the fallback title
+// covers the metadata call for that slug.
+export async function generateMetadata({
+  params,
+}: {
+  params: { slug: string };
+}): Promise<Metadata> {
+  const event = getEventBySlug(params.slug);
+  if (!event) {
+    return { title: 'Event not found — SmartBuy AI' };
+  }
+  const title = `${event.name} — SmartBuy AI`;
+  return {
+    title,
+    description: event.tagline,
+    alternates: {
+      canonical: `${appConfig.url}/events/${event.slug}`,
+    },
+    openGraph: {
+      title,
+      description: event.tagline,
+      url: `${appConfig.url}/events/${event.slug}`,
+      type: 'website',
+      locale: 'en_US',
+    },
+    twitter: {
+      card: 'summary',
+      title,
+      description: event.tagline,
+    },
+  };
 }
 
 export default function EventPage({ params }: { params: { slug: string } }) {
@@ -16,6 +54,15 @@ export default function EventPage({ params }: { params: { slug: string } }) {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 13, Chunk E: Event schema from the recorded event
+          (startDate only when the date is confirmed — see
+          buildEventJsonLd). */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: toJsonLd(buildEventJsonLd(appConfig.url, event)),
+        }}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <p className="text-sm font-medium text-muted-foreground">

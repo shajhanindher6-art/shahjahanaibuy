@@ -6,11 +6,27 @@ Load, measured on a clean production build). Without a gate, every new
 feature grows it back. These budgets are enforced by CI
 (`.github/workflows/lighthouse.yml`); the numbers below are the contract.
 
+## Current baseline — UNVERIFIED LIVE (Section 13, 11 Nov 2026)
+
+No clean production build since Section 10 has printed a route
+table: the sandbox builds for Sections 10–12 all failed at
+`/sitemap.xml` (environmental — Node fetch to the placeholder
+Supabase host hangs; see the Section 10/11/12 build reports),
+so **no current First Load JS number exists for any route**.
+The last clean-build number was Section 10, 11 Nov 2026
+(product page 281 kB) — that predates Sections 11–13, so it is
+**not** the current baseline and must not be quoted as one.
+The current baseline is "unverified live": the ≤350 kB budget
+below is still the hard gate, and the first clean build (CI or
+Vercel) that prints a route table re-establishes the number —
+update this section with that number and date when it lands.
+Do not copy the 281 kB figure forward as if it were current.
+
 ## Budgets
 
 | Route | First Load JS | Notes |
 |---|---|---|
-| `/products/[slug]` | **≤ 350 kB** | Hard gate — CI fails the build above this. Baseline 340 kB (9 Nov 2026). |
+| `/products/[slug]` | **≤ 350 kB** | Hard gate — CI fails the build above this. Baseline: unverified live since Section 10 (last clean-build number 281 kB, 11 Nov 2026 — stale, do not quote as current). |
 | `/` (homepage) | ≤ 250 kB | Warning — reported in the CI log, not a hard fail yet. |
 | `/compare` | ≤ 400 kB | Warning — matrix + charts are heavy; code-split before raising. |
 

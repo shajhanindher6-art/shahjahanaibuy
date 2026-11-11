@@ -14,7 +14,35 @@ import Link from 'next/link';
 import { CalendarDays } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import type { Metadata } from 'next';
+import { appConfig } from '@/lib/config/app';
 import { SEASONAL_EVENTS } from '@/components/seasonal/events';
+
+// Section 13, Chunk E: self-canonical + Open Graph metadata (the
+// root layout's canonical points at the homepage, so without this
+// the page self-canonicalizes to /).
+export const metadata: Metadata = {
+  title: 'Seasonal events — SmartBuy AI',
+  description:
+    'The year’s big sale events, and how to shop each one without trusting the badge — check the price history, set an alert at the price you would actually pay, and let the alert decide.',
+  alternates: {
+    canonical: `${appConfig.url}/events`,
+  },
+  openGraph: {
+    title: 'Seasonal events — SmartBuy AI',
+    description:
+      'The year’s big sale events, and how to shop each one without trusting the badge — check the price history, set an alert at the price you would actually pay, and let the alert decide.',
+    url: `${appConfig.url}/events`,
+    type: 'website',
+    locale: 'en_US',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Seasonal events — SmartBuy AI',
+    description:
+      'The year’s big sale events, and how to shop each one without trusting the badge — check the price history, set an alert at the price you would actually pay, and let the alert decide.',
+  },
+};
 
 export default function EventsIndexPage() {
   return (

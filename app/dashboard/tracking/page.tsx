@@ -34,6 +34,12 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PriceTrendSparkline } from '@/components/products/price-trend-sparkline';
 import { useToast } from '@/hooks/use-toast';
+// Section 13, Chunk F — alert health + recent activity, from the
+// tracking + alert-history fetches this page already makes
+// (the feed fetches search history itself — this page does not).
+import { AlertHealth } from '@/components/dashboard/alert-health';
+import { RecentActivityFeed } from '@/components/dashboard/recent-activity-feed';
+import { PushOptInPrompt } from '@/components/home/push-opt-in-prompt';
 
 interface TrackedItem {
   itemId: string;
@@ -313,6 +319,10 @@ export default function TrackingPage() {
       {/* Price alerts */}
       <div>
         <h2 className="mb-4 text-lg font-semibold">Price alerts</h2>
+        {/* Section 13, item 52 — push opt-in next to the alerts it
+            would deliver. The prompt gates itself on the VAPID
+            check and stays honest when push is not configured. */}
+        <PushOptInPrompt context="home" className="mb-4" />
         {alerts.length > 0 ? (
           <div className="space-y-3">
             {alerts.map((alert) => (
@@ -384,6 +394,10 @@ export default function TrackingPage() {
         )}
       </div>
 
+      {/* Section 13, Chunk F — alert health: active / paused /
+          never-triggered / triggered N times / last triggered. */}
+      <AlertHealth alerts={alerts} />
+
       {/* Alert trigger history — every time an alert actually fired.
           Product names resolve from the alerts above; an unmatched
           alert id falls back to its id, never to a guessed product. */}
@@ -430,11 +444,33 @@ export default function TrackingPage() {
                 icon={Bell}
                 title="No alerts have triggered yet"
                 description="When one of your price alerts fires, the trigger — price, target, and channel — will be listed here."
+                action={
+                  // Section 13, item 58 — the empty state links
+                  // somewhere real: a tracked product when one
+                  // exists (its page shows the alert that watches
+                  // it), otherwise search to find a product to watch.
+                  items.length > 0 && items[0].product.slug ? (
+                    <Button size="sm" asChild>
+                      <Link href={`/products/${items[0].product.slug}`}>
+                        View a tracked product <ArrowRight className="ml-1 h-4 w-4" />
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button size="sm" asChild>
+                      <Link href="/search">Find a product to watch</Link>
+                    </Button>
+                  )
+                }
               />
             </CardContent>
           </Card>
         )}
       </div>
+
+      {/* Section 13, Chunk F — recent activity: saves, alert
+          triggers, and searches merged newest-first. Search history
+          is fetched by the feed itself. */}
+      <RecentActivityFeed items={items} alerts={alerts} alertHistory={alertHistory} />
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { notFound } from 'next/navigation';
 import { Award, BadgeCheck, Store } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { ShareButtons } from '@/components/products/share-buttons';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getCreatorBySlug } from '@/lib/creator-storefront';
 
@@ -50,6 +51,13 @@ export default async function CreatorStorefrontPage({
             <span>·</span>
             <span>{creator.points} points</span>
           </p>
+
+          {/* Section 13, item 55 — share this storefront. */}
+          <div className="mt-4">
+            <ShareButtons
+              title={`${creator.displayName ?? 'Creator'} — creator storefront on SmartBuy AI`}
+            />
+          </div>
 
           <h2 className="mt-10 text-xl font-bold">Verified deals</h2>
           {creator.deals.length === 0 ? (

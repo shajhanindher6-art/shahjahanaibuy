@@ -32,7 +32,7 @@ export default function MethodologyPage() {
             currently Amazon and Best Buy for the products listed. Prices are refreshed on a
             six-hour schedule, and every price shown carries the time it was last recorded.
             The recorded price history for most products currently spans about thirty days
-            (October 3 to November 2, 2026); a ninety-day history is still accumulating, and
+            (about 30 days ending when the catalog was seeded); a ninety-day history is still accumulating, and
             any feature that needs ninety days says so honestly instead of pretending the
             history exists.
           </p>

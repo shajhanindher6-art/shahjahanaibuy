@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useToast } from '@/hooks/use-toast';
+import { ShareButtons } from '@/components/products/share-buttons';
 // Section 12, Chunk E: polls on this wishlist — the owner creates
 // them here; friends vote from the shared page. The component owns
 // its own fetch/vote/create calls; this page only passes the list
@@ -149,6 +150,20 @@ export default function DashboardWishlistDetailPage() {
         <Badge variant={meta.isPublic ? 'default' : 'secondary'} className="mt-2">
           {meta.isPublic ? 'Public' : 'Private'}
         </Badge>
+        {/* Section 13, item 55 — share buttons on the owner detail
+            page. The shared URL is the PUBLIC page (/wishlists/[id]),
+            not this auth-gated dashboard URL — a dashboard link is
+            useless to anyone the owner sends it to. */}
+        <div className="mt-3">
+          <ShareButtons
+            title={`${meta.name} — shared wishlist on SmartBuy AI`}
+            url={
+              typeof window !== 'undefined'
+                ? `${window.location.origin}/wishlists/${id}`
+                : `/wishlists/${id}`
+            }
+          />
+        </div>
       </div>
 
       {items === null ? (

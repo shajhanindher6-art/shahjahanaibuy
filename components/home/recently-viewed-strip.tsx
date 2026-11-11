@@ -84,6 +84,9 @@ export function RecentlyViewedStrip() {
                 // Lazy + sized raw img: product photos come from
                 // arbitrary merchant hosts outside next.config.js
                 // remotePatterns, so next/image would throw.
+                // alt="" is deliberate, not missing: the product
+                // name is rendered as the adjacent text below, so
+                // a spoken alt would repeat it for screen readers.
                 <img
                   src={item.imageUrl}
                   alt=""

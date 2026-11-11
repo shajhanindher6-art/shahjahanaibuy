@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { buildItemListJsonLd, toJsonLd } from '@/lib/json-ld';
 import { appConfig } from '@/lib/config/app';
 import { WishlistButton } from '@/components/products/wishlist-button';
+import { ShareButtons } from '@/components/products/share-buttons';
 import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
 import { Price } from '@/components/region/price';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
@@ -114,11 +115,16 @@ function SearchPageContent() {
   const [savedSearch, setSavedSearch] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  // Section 13, Chunk A — URL state: every search control is reflected
+  // in the URL (?q=&sort=&store=&category=&brand=&max=&minRating=
+  // &band=&page=), so refresh / share / back keeps the exact search.
+  // State initializes from the URL, so a shared link replays the
+  // same filters, sort and page.
   const [filters, setFilters] = useState({
-    category: '',
-    brand: '',
-    budgetMax: '',
-    minRating: '',
+    category: searchParams.get('category') ?? '',
+    brand: searchParams.get('brand') ?? '',
+    budgetMax: searchParams.get('max') ?? '',
+    minRating: searchParams.get('minRating') ?? '',
   });
   // Client-side sort + store filter (applied to the results already
   // fetched, so they work instantly and identically for catalog and
@@ -126,8 +132,89 @@ function SearchPageContent() {
   // the ai-search API never accepted it, so the old panel control
   // silently did nothing — now it filters by the rating fields the
   // API returns (catalog) or SerpAPI reports (web).
-  const [sort, setSort] = useState<'relevance' | 'price-asc' | 'price-desc' | 'match-desc'>('relevance');
-  const [storeFilter, setStoreFilter] = useState('');
+  // Section 13: sort / store / price-band / page state, initialized
+  // from the URL (see the note on `filters` above).
+  type SearchSortKey = 'relevance' | 'price-asc' | 'price-desc' | 'match-desc' | 'deal-score';
+  type PriceBand = 'all' | 'under-100' | '100-500' | '500-plus';
+  const SORT_KEYS: SearchSortKey[] = ['relevance', 'price-asc', 'price-desc', 'match-desc', 'deal-score'];
+  const PRICE_BANDS: PriceBand[] = ['all', 'under-100', '100-500', '500-plus'];
+  const [sort, setSort] = useState<SearchSortKey>(() => {
+    const v = searchParams.get('sort');
+    return v !== null && (SORT_KEYS as string[]).includes(v) ? (v as SearchSortKey) : 'relevance';
+  });
+  const [storeFilter, setStoreFilter] = useState(() => searchParams.get('store') ?? '');
+  const [priceBand, setPriceBand] = useState<PriceBand>(() => {
+    const v = searchParams.get('band');
+    return v !== null && (PRICE_BANDS as string[]).includes(v) ? (v as PriceBand) : 'all';
+  });
+  const [page, setPage] = useState(() => Math.max(1, Number(searchParams.get('page') ?? 1) || 1));
+
+  // Mirror of the URL-visible state, read by writeSearchUrl so the
+  // performSearch useCallback never writes a stale sort / store /
+  // band when the search was triggered from an older render.
+  const urlStateRef = useRef({
+    query: '',
+    sort: 'relevance' as SearchSortKey,
+    store: '',
+    category: '',
+    brand: '',
+    budgetMax: '',
+    minRating: '',
+    band: 'all' as PriceBand,
+    page: 1,
+  });
+  urlStateRef.current = {
+    query,
+    sort,
+    store: storeFilter,
+    category: filters.category,
+    brand: filters.brand,
+    budgetMax: filters.budgetMax,
+    minRating: filters.minRating,
+    band: priceBand,
+    page,
+  };
+
+  // Write the full search state into the URL (defaults omitted, so a
+  // plain search is still just /search?q=…). router.replace, not
+  // push: filter tweaks must not flood the back-button history.
+  const writeSearchUrl = useCallback(
+    (patch: {
+      q?: string;
+      sort?: SearchSortKey;
+      store?: string;
+      category?: string;
+      brand?: string;
+      max?: string;
+      minRating?: string;
+      band?: PriceBand;
+      page?: number;
+    }) => {
+      const s = urlStateRef.current;
+      const q = patch.q !== undefined ? patch.q : s.query;
+      const sortV = patch.sort ?? s.sort;
+      const storeV = patch.store ?? s.store;
+      const categoryV = patch.category ?? s.category;
+      const brandV = patch.brand ?? s.brand;
+      const maxV = patch.max ?? s.budgetMax;
+      const minRatingV = patch.minRating ?? s.minRating;
+      const bandV = patch.band ?? s.band;
+      const pageV = patch.page ?? s.page;
+      const params = new URLSearchParams();
+      if (q.trim()) params.set('q', q.trim());
+      if (sortV !== 'relevance') params.set('sort', sortV);
+      if (storeV) params.set('store', storeV);
+      if (categoryV) params.set('category', categoryV);
+      if (brandV) params.set('brand', brandV);
+      if (maxV) params.set('max', maxV);
+      if (minRatingV) params.set('minRating', minRatingV);
+      if (bandV !== 'all') params.set('band', bandV);
+      if (pageV > 1) params.set('page', String(pageV));
+      const qs = params.toString();
+      router.replace(qs ? `/search?${qs}` : '/search');
+    },
+    [router]
+  );
   // Opt-in live web prices: when on, the ai-search route also
   // fetches Google Shopping results even when the catalog has
   // matches. Off by default to protect the small SerpAPI free
@@ -192,7 +279,7 @@ function SearchPageContent() {
     }
   }, [results, hasSearched, loading]);
 
-  const performSearch = useCallback(async (searchQuery: string, mode?: 'text' | 'url') => {
+  const performSearch = useCallback(async (searchQuery: string, mode?: 'text' | 'url', filterOverride?: typeof filters) => {
     if (!searchQuery.trim()) return;
     setLoading(true);
     setSearchError(false);
@@ -210,7 +297,11 @@ function SearchPageContent() {
     if (effectiveMode === 'text') {
       const trimmed = searchQuery.trim();
       lastSearchedRef.current = trimmed;
-      router.replace(`/search?q=${encodeURIComponent(trimmed)}`);
+      // Section 13: the URL carries the whole search state now
+      // (sort/store/category/brand/max/minRating/band), not just
+      // ?q= — and a fresh search always restarts at page 1.
+      setPage(1);
+      writeSearchUrl({ q: trimmed, page: 1 });
     }
 
     try {
@@ -222,10 +313,15 @@ function SearchPageContent() {
         body.query = searchQuery;
       }
 
+      // Server-side filters (category / brand / max budget) are
+      // applied by the ai-search API. filterOverride lets a filter
+      // change re-run the search with the NEW values instead of the
+      // stale closure's (see applyServerFilters below).
+      const activeFilters = filterOverride ?? filters;
       const filterObj: Record<string, unknown> = {};
-      if (filters.category) filterObj.category = filters.category;
-      if (filters.brand) filterObj.brand = filters.brand;
-      if (filters.budgetMax) filterObj.budgetMax = parseFloat(filters.budgetMax);
+      if (activeFilters.category) filterObj.category = activeFilters.category;
+      if (activeFilters.brand) filterObj.brand = activeFilters.brand;
+      if (activeFilters.budgetMax) filterObj.budgetMax = parseFloat(activeFilters.budgetMax);
       if (Object.keys(filterObj).length > 0) body.filters = filterObj;
       if (liveWeb) body.includeWeb = true;
 
@@ -299,7 +395,7 @@ function SearchPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [filters, searchMode, liveWeb, router]);
+  }, [filters, searchMode, liveWeb, router, writeSearchUrl]);
 
   // ?q= support (Section 10, chunk 1): /search?q=laptop runs the
   // search on load — deep-linkable, shareable, bookmarkable, and
@@ -315,6 +411,87 @@ function SearchPageContent() {
     setSearchMode('text');
     void performSearch(q, 'text');
   }, [searchParams, performSearch]);
+
+  // Section 13: price-band facet (client-side, from currentPrice).
+  // Unpriced rows pass the band: their price is unknown, not over
+  // budget — the same convention as the budget filter, with the same
+  // honesty note under the result count.
+  const inPriceBand = (price: number, band: PriceBand): boolean => {
+    if (band === 'under-100') return price < 100;
+    if (band === '100-500') return price >= 100 && price <= 500;
+    return price > 500;
+  };
+
+  // Section 13: category / brand dropdown options — exact product
+  // text values from the catalog (the ai-search API matches them
+  // with .eq(), so reference-table names that differ from the
+  // product text would silently match nothing). One cheap
+  // /api/v1/products call; values seen in the current results are
+  // merged in as a fallback if that call fails.
+  const [catalogFacets, setCatalogFacets] = useState<{ categories: string[]; brands: string[] }>({
+    categories: [],
+    brands: [],
+  });
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/v1/products?pageSize=100', {
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = Array.isArray(data.data) ? data.data : (data.data?.products ?? []);
+        const categories = new Set<string>();
+        const brands = new Set<string>();
+        for (const p of list as Array<{ category?: unknown; brand?: unknown }>) {
+          if (typeof p.category === 'string' && p.category.trim()) categories.add(p.category);
+          if (typeof p.brand === 'string' && p.brand.trim()) brands.add(p.brand);
+        }
+        if (!cancelled) {
+          setCatalogFacets({
+            categories: [...categories].sort((a, b) => a.localeCompare(b)),
+            brands: [...brands].sort((a, b) => a.localeCompare(b)),
+          });
+        }
+      } catch {
+        // Dropdowns fall back to values seen in the results.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const categoryOptions = useMemo(() => {
+    const set = new Set(catalogFacets.categories);
+    for (const r of results) if (r.product.category) set.add(r.product.category);
+    if (filters.category) set.add(filters.category);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [catalogFacets, results, filters.category]);
+
+  const brandOptions = useMemo(() => {
+    const set = new Set(catalogFacets.brands);
+    for (const r of results) if (r.product.brand) set.add(r.product.brand);
+    if (filters.brand) set.add(filters.brand);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [catalogFacets, results, filters.brand]);
+
+  // Section 13: changing a server-side filter re-runs the current
+  // search with the new values — the old panel only sent them on
+  // the NEXT search, so a change after searching silently did
+  // nothing until the visitor searched again.
+  const applyServerFilters = (next: typeof filters) => {
+    setFilters(next);
+    setPage(1);
+    writeSearchUrl({ category: next.category, brand: next.brand, max: next.budgetMax, page: 1 });
+    if (hasSearched && query.trim()) void performSearch(query, 'text', next);
+  };
+
+  const goToPage = (nextPage: number) => {
+    setPage(nextPage);
+    writeSearchUrl({ page: nextPage });
+  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -373,7 +550,10 @@ function SearchPageContent() {
   const minRatingValue = filters.minRating ? parseFloat(filters.minRating) : null;
 
   const applySort = useCallback(
-    <T extends { currentPrice?: number | null; price?: number | null; score?: number }>(items: T[]): T[] => {
+    <T extends { currentPrice?: number | null; price?: number | null; score?: number }>(
+      items: T[],
+      dealScoreOf?: (item: T) => number | null
+    ): T[] => {
       const sorted = [...items];
       const priceOf = (item: T): number | null => {
         if (typeof item.currentPrice === 'number') return item.currentPrice;
@@ -402,6 +582,14 @@ function SearchPageContent() {
           });
         case 'match-desc':
           return sorted.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+        case 'deal-score':
+          // Section 13: sort by the Deal Score fetched per card
+          // (dealScores state). Unscored cards sort last — no
+          // prediction means no score, never a synthesized one.
+          // No discount sort: the ai-search response carries no
+          // original / compare-at price, so a discount cannot be
+          // computed honestly from it.
+          return sorted.sort((a, b) => (dealScoreOf?.(b) ?? -1) - (dealScoreOf?.(a) ?? -1));
         default:
           return sorted;
       }
@@ -415,8 +603,13 @@ function SearchPageContent() {
     if (minRatingValue !== null) {
       items = items.filter((r) => r.rating !== null && r.rating !== undefined && r.rating >= minRatingValue);
     }
-    return applySort(items);
-  }, [results, storeFilter, minRatingValue, applySort]);
+    if (priceBand !== 'all') {
+      items = items.filter(
+        (r) => r.currentPrice === null || r.currentPrice === undefined || inPriceBand(r.currentPrice, priceBand)
+      );
+    }
+    return applySort(items, (r) => dealScores[r.product.id] ?? null);
+  }, [results, storeFilter, minRatingValue, priceBand, dealScores, applySort]);
 
   const displayedWebResults = useMemo(() => {
     let items = webResults;
@@ -424,29 +617,49 @@ function SearchPageContent() {
     if (minRatingValue !== null) {
       items = items.filter((w) => w.rating !== null && w.rating >= minRatingValue);
     }
+    if (priceBand !== 'all') {
+      items = items.filter(
+        (w) => w.price === null || w.price === undefined || inPriceBand(w.price, priceBand)
+      );
+    }
     return applySort(items);
-  }, [webResults, storeFilter, minRatingValue, applySort]);
+  }, [webResults, storeFilter, minRatingValue, priceBand, applySort]);
+
+  // Section 13: pagination (?page=, 10 per page). Moot at 10
+  // products today, built for catalog growth — the client slices
+  // the filtered set the same way the products API pages.
+  const SEARCH_PAGE_SIZE = 10;
+  const totalPages = Math.max(1, Math.ceil(displayedResults.length / SEARCH_PAGE_SIZE));
+  const effectivePage = Math.min(page, totalPages);
+  const pagedResults = useMemo(
+    () =>
+      displayedResults.slice(
+        (effectivePage - 1) * SEARCH_PAGE_SIZE,
+        effectivePage * SEARCH_PAGE_SIZE
+      ),
+    [displayedResults, effectivePage]
+  );
 
   const clientFiltersActive =
-    sort !== 'relevance' || storeFilter !== '' || filters.minRating !== '';
+    sort !== 'relevance' || storeFilter !== '' || filters.minRating !== '' || priceBand !== 'all';
 
   // ItemList JSON-LD for the displayed catalog results (S4#15):
   // real result URLs only (/products/<slug>). Web results are not
   // catalog pages, so they are never listed here.
   const itemListJsonLd = useMemo(
     () =>
-      displayedResults.length > 0
+      pagedResults.length > 0
         ? toJsonLd(
             buildItemListJsonLd(
               appConfig.url,
-              displayedResults.map((r) => ({
+              pagedResults.map((r) => ({
                 name: r.product.name,
                 path: `/products/${r.product.slug}`,
               }))
             )
           )
         : null,
-    [displayedResults]
+    [pagedResults]
   );
 
   // S2#10: fetch Deal Scores for whatever is currently displayed
@@ -623,7 +836,10 @@ function SearchPageContent() {
                     setFilters({ category: '', brand: '', budgetMax: '', minRating: '' });
                     setSort('relevance');
                     setStoreFilter('');
+                    setPriceBand('all');
+                    setPage(1);
                     setLiveWeb(false);
+                    writeSearchUrl({ sort: 'relevance', store: '', category: '', brand: '', max: '', minRating: '', band: 'all', page: 1 });
                   }}
                 >
                   <X className="mr-1 h-4 w-4" /> Clear
@@ -636,7 +852,11 @@ function SearchPageContent() {
                   <Label className="mb-1.5 block text-sm">Sort by</Label>
                   <Select
                     value={sort}
-                    onValueChange={(v) => setSort(v as 'relevance' | 'price-asc' | 'price-desc' | 'match-desc')}
+                    onValueChange={(v) => {
+                      const next = v as SearchSortKey;
+                      setSort(next);
+                      writeSearchUrl({ sort: next });
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Relevance" />
@@ -646,6 +866,7 @@ function SearchPageContent() {
                       <SelectItem value="price-asc">Price: Low to High</SelectItem>
                       <SelectItem value="price-desc">Price: High to Low</SelectItem>
                       <SelectItem value="match-desc">Best Match</SelectItem>
+                      <SelectItem value="deal-score">Deal Score: High to Low</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -653,7 +874,12 @@ function SearchPageContent() {
                   <Label className="mb-1.5 block text-sm">Store</Label>
                   <Select
                     value={storeFilter || 'all'}
-                    onValueChange={(v) => setStoreFilter(v === 'all' ? '' : v)}
+                    onValueChange={(v) => {
+                      const next = v === 'all' ? '' : v;
+                      setStoreFilter(next);
+                      setPage(1);
+                      writeSearchUrl({ store: next, page: 1 });
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="All stores" />
@@ -670,34 +896,90 @@ function SearchPageContent() {
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-sm">Category</Label>
-                  <Input
-                    value={filters.category}
-                    onChange={(e) => setFilters({ ...filters, category: e.target.value })}
-                    placeholder="e.g. laptop"
-                  />
+                  <Select
+                    value={filters.category || 'all'}
+                    onValueChange={(v) => applyServerFilters({ ...filters, category: v === 'all' ? '' : v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="All categories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All categories</SelectItem>
+                      {categoryOptions.map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-sm">Brand</Label>
-                  <Input
-                    value={filters.brand}
-                    onChange={(e) => setFilters({ ...filters, brand: e.target.value })}
-                    placeholder="e.g. Apple"
-                  />
+                  <Select
+                    value={filters.brand || 'all'}
+                    onValueChange={(v) => applyServerFilters({ ...filters, brand: v === 'all' ? '' : v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="All brands" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All brands</SelectItem>
+                      {brandOptions.map((brand) => (
+                        <SelectItem key={brand} value={brand}>
+                          {brand}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-sm">Max Budget ($)</Label>
                   <Input
                     type="number"
                     value={filters.budgetMax}
-                    onChange={(e) => setFilters({ ...filters, budgetMax: e.target.value })}
+                    onChange={(e) => {
+                      const next = { ...filters, budgetMax: e.target.value };
+                      setFilters(next);
+                      writeSearchUrl({ max: next.budgetMax });
+                    }}
+                    onBlur={() => {
+                      if (hasSearched && query.trim()) void performSearch(query, 'text', filters);
+                    }}
                     placeholder="e.g. 1000"
                   />
+                </div>
+                <div>
+                  <Label className="mb-1.5 block text-sm">Price band</Label>
+                  <Select
+                    value={priceBand}
+                    onValueChange={(v) => {
+                      const next = v as PriceBand;
+                      setPriceBand(next);
+                      setPage(1);
+                      writeSearchUrl({ band: next, page: 1 });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Any price" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Any price</SelectItem>
+                      <SelectItem value="under-100">Under $100</SelectItem>
+                      <SelectItem value="100-500">$100 – $500</SelectItem>
+                      <SelectItem value="500-plus">Over $500</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-sm">Min Rating</Label>
                   <Select
                     value={filters.minRating || 'any'}
-                    onValueChange={(v) => setFilters({ ...filters, minRating: v === 'any' ? '' : v })}
+                    onValueChange={(v) => {
+                      const next = v === 'any' ? '' : v;
+                      setFilters({ ...filters, minRating: next });
+                      setPage(1);
+                      writeSearchUrl({ minRating: next, page: 1 });
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Any rating" />
@@ -821,7 +1103,10 @@ function SearchPageContent() {
                     setFilters({ category: '', brand: '', budgetMax: '', minRating: '' });
                     setSort('relevance');
                     setStoreFilter('');
+                    setPriceBand('all');
+                    setPage(1);
                     setLiveWeb(false);
+                    writeSearchUrl({ sort: 'relevance', store: '', category: '', brand: '', max: '', minRating: '', band: 'all', page: 1 });
                   }}
                 >
                   Clear all filters
@@ -874,14 +1159,23 @@ function SearchPageContent() {
               />
             )}
             <div className="text-sm text-muted-foreground">
-              {displayedResults.length} result{displayedResults.length !== 1 ? 's' : ''} found
+              {displayedResults.length === 0
+                ? '0 results'
+                : `Showing ${(effectivePage - 1) * SEARCH_PAGE_SIZE + 1}–${(effectivePage - 1) * SEARCH_PAGE_SIZE + pagedResults.length} of ${displayedResults.length} result${displayedResults.length !== 1 ? 's' : ''}`}
               {displayedResults.length !== results.length && ` (of ${results.length} before filters)`}
+              {/* Section 13, item 55 — the search URL is already
+                  shareable (?q=); the button was missing. */}
+              <span className="mt-2 block">
+                <ShareButtons title={`SmartBuy AI search results for "${query}"`} />
+              </span>
               {/* Budget honesty for unpriced rows: the server hard
                   filter keeps products with no recorded price (their
                   price is unknown, not over budget), but they must
                   never read as "in budget" — they carry no "In
-                  budget" badge and show "Price not listed". */}
-              {(parsedIntent?.budget != null || filters.budgetMax !== '') &&
+                  budget" badge and show "Price not listed". The
+                  price-band facet follows the same rule: unpriced
+                  rows pass it because their price is unknown. */}
+              {(parsedIntent?.budget != null || filters.budgetMax !== '' || priceBand !== 'all') &&
                 displayedResults.some((r) => r.currentPrice === null || r.currentPrice === undefined) && (
                   <span className="block mt-1">
                     Products without a recorded price are shown because their price is unknown,
@@ -889,7 +1183,7 @@ function SearchPageContent() {
                   </span>
                 )}
             </div>
-            {displayedResults.map((result) => (
+            {pagedResults.map((result) => (
               <Card
                 key={result.product.id}
                 role="button"
@@ -1040,6 +1334,29 @@ function SearchPageContent() {
                 </CardContent>
               </Card>
             ))}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={effectivePage <= 1}
+                  onClick={() => goToPage(effectivePage - 1)}
+                >
+                  Previous
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Page {effectivePage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={effectivePage >= totalPages}
+                  onClick={() => goToPage(effectivePage + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            )}
           </div>
         )}
 

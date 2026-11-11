@@ -15,12 +15,15 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Mail } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { NewsletterCapture } from '@/components/home/newsletter-capture';
+import { PushOptInPrompt } from '@/components/home/push-opt-in-prompt';
 import type { PriceDropDigest, PriceHistoryPointInput, WatchedProductInput } from '@/lib/price-drop-digest';
 import { buildPriceDropDigest } from '@/lib/price-drop-digest';
 import { loadLocalAlerts } from '@/lib/local-alerts';
@@ -33,6 +36,7 @@ interface DigestResponse {
 }
 
 export default function PriceDropDigestPage() {
+  const router = useRouter();
   const [digest, setDigest] = useState<PriceDropDigest | null>(null);
   const [frequency, setFrequency] = useState<'daily' | 'weekly'>('weekly');
   const [isActive, setIsActive] = useState(true);
@@ -141,6 +145,20 @@ export default function PriceDropDigestPage() {
     }
   }, []);
 
+  // Section 13, item 56 — frequency is shareable via
+  // ?frequency=daily|weekly (same pattern as /search and /deals:
+  // weekly is the default, so it stays off the URL). The API
+  // honors ?frequency= over the saved preference, so a shared link
+  // shows the window the sender saw.
+  const writeDigestUrl = useCallback(
+    (freq: 'daily' | 'weekly') => {
+      router.replace(
+        freq === 'daily' ? '/tools/price-drop-digest?frequency=daily' : '/tools/price-drop-digest'
+      );
+    },
+    [router]
+  );
+
   const load = useCallback(async (freq: 'daily' | 'weekly') => {
     setLoading(true);
     setFailed(false);
@@ -152,6 +170,10 @@ export default function PriceDropDigestPage() {
         setMode('signed-in');
         setDigest(data.digest);
         setFrequency(data.preference.frequency);
+        // The server answers with the effective frequency (?frequency=
+        // wins over the saved preference) — keep the URL on the same
+        // window so a copied link reproduces this view.
+        writeDigestUrl(data.preference.frequency);
         setIsActive(data.preference.isActive);
         setPreferencesEnabled(data.preferencesEnabled !== false);
         setNote(data.note ?? null);
@@ -167,14 +189,26 @@ export default function PriceDropDigestPage() {
     } finally {
       setLoading(false);
     }
-  }, [loadGuestDigest]);
+  }, [loadGuestDigest, writeDigestUrl]);
 
   useEffect(() => {
-    void load('weekly');
-  }, [load]);
+    let initial: 'daily' | 'weekly' = 'weekly';
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('frequency') === 'daily') initial = 'daily';
+    } catch {
+      // Defaults stand.
+    }
+    void load(initial);
+    // Mount-only: load is stable (useCallback with stable deps).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function changeFrequency(freq: 'daily' | 'weekly') {
     setError(null);
+    // The URL is the shareable state — sync it before the fetch so
+    // a copied link always matches the window on screen.
+    writeDigestUrl(freq);
     // Guest mode: no server preference to save — recompute the
     // on-device digest with the new window instead.
     if (mode === 'guest') {
@@ -296,6 +330,12 @@ export default function PriceDropDigestPage() {
           ) : null}
           {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
 
+          {/* Section 13, item 52 — push opt-in on the digest page:
+              a drop in the digest is only useful if the visitor is
+              told about it. The prompt gates itself on the VAPID
+              check and stays honest when push is not configured. */}
+          <PushOptInPrompt context="home" className="mt-6" />
+
           {loading ? (
             <div className="mt-8 flex justify-center">
               <LoadingSpinner />
@@ -378,6 +418,13 @@ export default function PriceDropDigestPage() {
           {note && digest !== null && digest.deals.length > 0 ? (
             <p className="mt-6 text-sm text-muted-foreground">{note}</p>
           ) : null}
+
+          {/* Section 13, item 51 — deal-alert capture on the digest
+              page (capture only; sending starts once email delivery
+              is configured — see lib/newsletter.ts). */}
+          <div className="mt-10">
+            <NewsletterCapture source="digest" />
+          </div>
         </div>
       </main>
       <SiteFooter />

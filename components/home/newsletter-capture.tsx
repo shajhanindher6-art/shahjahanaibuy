@@ -17,7 +17,7 @@
  *   <NewsletterCapture source="homepage" />
  *
  * Props:
- * - source (required): 'footer' | 'homepage' — recorded with the
+ * - source (required): 'footer' | 'homepage' | 'deals' | 'digest' | 'notifications' — recorded with the
  *   signup so the stored row says where it came from.
  * - className (optional): extra classes on the wrapping <section>.
  * - compact (optional, default false): hides the heading/description
@@ -29,6 +29,8 @@ import { Mail, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NEWSLETTER_COPY, type NewsletterSource } from '@/lib/newsletter';
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 
 export interface NewsletterCaptureProps {
   source: NewsletterSource;
@@ -47,6 +49,11 @@ export function NewsletterCapture({
   className,
   compact = false,
 }: NewsletterCaptureProps) {
+  // Section 13, chunk H (i18n Phase 1): the heading follows the
+  // visitor's UI language via the dictionary; the rest of the copy
+  // (description, labels, privacy note) stays in
+  // NEWSLETTER_COPY until a later i18n phase.
+  const { language } = useRegion();
   const [email, setEmail] = useState('');
   const [formState, setFormState] = useState<FormState>({
     status: 'idle',
@@ -99,7 +106,7 @@ export function NewsletterCapture({
         <>
           <h2 className="flex items-center gap-2 text-xl font-bold tracking-tight">
             <Mail className="h-5 w-5 text-blue-600" aria-hidden />
-            {NEWSLETTER_COPY.heading}
+            {tFor(language, 'newsletterHeading')}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {NEWSLETTER_COPY.description}

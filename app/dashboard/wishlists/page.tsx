@@ -20,6 +20,9 @@ interface Wishlist {
   isPublic: boolean;
   itemCount: number;
   createdAt: string;
+  /** Polls on this list (Section 13, item 53) — batched into the
+      GET /api/v1/wishlists response; 0 when there are none. */
+  pollCount?: number;
 }
 
 export default function WishlistsPage() {
@@ -44,6 +47,7 @@ export default function WishlistsPage() {
           description: w.description as string | null,
           isPublic: w.isPublic as boolean,
           itemCount: (w.itemCount as number) ?? 0,
+          pollCount: (w.pollCount as number) ?? 0,
           createdAt: w.createdAt as string,
         })));
       }
@@ -181,9 +185,30 @@ export default function WishlistsPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
-                  <Heart className="h-4 w-4" />
-                  {wl.itemCount} item{wl.itemCount !== 1 ? 's' : ''}
+                <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Heart className="h-4 w-4" />
+                    {wl.itemCount} item{wl.itemCount !== 1 ? 's' : ''}
+                  </span>
+                  {/* Section 13, item 53 — poll count from the
+                      batched API field, and the "Ask friends to
+                      vote" link to the detail page where polls are
+                      created and voted on. */}
+                  {(wl.pollCount ?? 0) > 0 && (
+                    <Badge variant="secondary">
+                      {wl.pollCount} poll{(wl.pollCount ?? 0) !== 1 ? 's' : ''}
+                    </Badge>
+                  )}
+                </div>
+                <div className="mb-3">
+                  <Button
+                    size="sm"
+                    variant="link"
+                    className="h-auto p-0 text-sm"
+                    onClick={() => router.push(`/dashboard/wishlists/${wl.id}`)}
+                  >
+                    Ask friends to vote
+                  </Button>
                 </div>
                 <div className="flex gap-2">
                   <Button

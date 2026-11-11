@@ -84,7 +84,7 @@ export const TIERS: TierDefinition[] = [
       'Price-lock guarantee on eligible deals',
       'Family deal digest',
     ],
-    cta: 'Join the waitlist',
+    cta: 'Email us about Family',
     href: '/contact',
     highlighted: false,
   },

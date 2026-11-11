@@ -45,6 +45,8 @@ import { createClient } from '@supabase/supabase-js';
 import { env } from '@/lib/config/env';
 import { getAllPosts } from '@/lib/blog/posts';
 import { buildTaxonomySitemapEntries } from '@/lib/brand-category-seo';
+import { getLiveSessions } from '@/lib/live-sessions';
+import { getTopCreators } from '@/lib/creator-storefront';
 
 type ChangeFrequency = NonNullable<
   MetadataRoute.Sitemap[number]['changeFrequency']
@@ -75,6 +77,12 @@ const STATIC_PAGES: Array<{
   { path: '/tools/help-me-choose', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools/budget-finder', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools/store-finder', priority: 0.6, changeFrequency: 'weekly' },
+  // Section 13: the 4 new tools — nothing else in this file changes
+  // in this chunk (another chunk adds more pages later).
+  { path: '/tools/price-history', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/gift-splitter', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/forecast-explainer', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/currency-converter', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/coming-soon', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools/list-optimizer', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools/expense-tracker', priority: 0.6, changeFrequency: 'weekly' },
@@ -89,6 +97,18 @@ const STATIC_PAGES: Array<{
   { path: '/tools/eco-coach', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools/smart-home-agent', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools/future-you-planner', priority: 0.6, changeFrequency: 'weekly' },
+  // Section 13, Chunk E: pages that existed but were missing from
+  // the sitemap. Priorities follow the existing scale (hubs 0.7,
+  // indexes 0.6–0.7, utility pages 0.5).
+  { path: '/pricing', priority: 0.7, changeFrequency: 'weekly' },
+  { path: '/faq', priority: 0.6, changeFrequency: 'monthly' },
+  { path: '/live', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/mobile-app', priority: 0.5, changeFrequency: 'monthly' },
+  { path: '/brands', priority: 0.7, changeFrequency: 'weekly' },
+  { path: '/categories', priority: 0.7, changeFrequency: 'weekly' },
+  { path: '/bookmarklet', priority: 0.5, changeFrequency: 'monthly' },
+  { path: '/creators', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/warranty-plans', priority: 0.5, changeFrequency: 'monthly' },
   { path: '/extension', priority: 0.6, changeFrequency: 'monthly' },
   { path: '/sign-up', priority: 0.6, changeFrequency: 'monthly' },
   { path: '/sign-in', priority: 0.5, changeFrequency: 'monthly' },
@@ -218,9 +238,65 @@ async function taxonomySitemap(baseUrl: string): Promise<MetadataRoute.Sitemap> 
   }
 }
 
+/**
+ * Live shopping session pages (Section 13, Chunk E). Same shape
+ * as productSitemap: real slugs from the live_shopping_sessions
+ * table via lib/live-sessions (missing table → no entries, never a
+ * throw). No lastModified — the table records no modification date
+ * (created_at is not one).
+ */
+async function liveSitemap(baseUrl: string): Promise<MetadataRoute.Sitemap> {
+  try {
+    const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey, {
+      auth: { persistSession: false },
+    });
+    const { sessions } = await getLiveSessions(supabase);
+    return sessions.map((session) => ({
+      url: `${baseUrl}/live/${session.slug}`,
+      changeFrequency: 'weekly',
+      priority: 0.6,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Creator storefront pages (Section 13, Chunk E). getTopCreators
+ * lists creators with a public slug and at least one verified deal
+ * — exactly the creators with a /creators/[slug] page worth
+ * indexing. No creators yet → no entries, which is honest.
+ */
+async function creatorSitemap(
+  baseUrl: string
+): Promise<MetadataRoute.Sitemap> {
+  try {
+    const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey, {
+      auth: { persistSession: false },
+    });
+    const creators = await getTopCreators(supabase, 50);
+    return creators.map((creator) => ({
+      url: `${baseUrl}/creators/${creator.slug}`,
+      changeFrequency: 'weekly',
+      priority: 0.5,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = appConfig.url;
   const products = await productSitemap(baseUrl);
   const taxonomy = await taxonomySitemap(baseUrl);
-  return [...staticSitemap(baseUrl), ...products, ...taxonomy, ...blogSitemap(baseUrl)];
+  const live = await liveSitemap(baseUrl);
+  const creators = await creatorSitemap(baseUrl);
+  return [
+    ...staticSitemap(baseUrl),
+    ...products,
+    ...taxonomy,
+    ...live,
+    ...creators,
+    ...blogSitemap(baseUrl),
+  ];
 }

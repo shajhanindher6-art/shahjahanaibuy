@@ -15,9 +15,37 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EventCountdown } from '@/components/seasonal/countdown';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import type { Metadata } from 'next';
+import { appConfig } from '@/lib/config/app';
 import { getLiveSessions, liveSessionStatusLabel } from '@/lib/live-sessions';
 
 export const dynamic = 'force-dynamic';
+
+// Section 13, Chunk E: self-canonical + Open Graph metadata (the
+// root layout's canonical points at the homepage, so without this
+// the page self-canonicalizes to /).
+export const metadata: Metadata = {
+  title: 'Live shopping — SmartBuy AI',
+  description:
+    'Scheduled live shopping sessions — a host walks through real products, and every product shown links to its product page with its real current price.',
+  alternates: {
+    canonical: `${appConfig.url}/live`,
+  },
+  openGraph: {
+    title: 'Live shopping — SmartBuy AI',
+    description:
+      'Scheduled live shopping sessions — a host walks through real products, and every product shown links to its product page with its real current price.',
+    url: `${appConfig.url}/live`,
+    type: 'website',
+    locale: 'en_US',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Live shopping — SmartBuy AI',
+    description:
+      'Scheduled live shopping sessions — a host walks through real products, and every product shown links to its product page with its real current price.',
+  },
+};
 
 export default async function LiveSessionsPage() {
   const supabase = await createSupabaseServerClient();

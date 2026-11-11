@@ -18,9 +18,37 @@ import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import type { Metadata } from 'next';
+import { appConfig } from '@/lib/config/app';
 import { buildWidgetEmbedCode } from '@/lib/widgets';
 
 const EXAMPLE_SLUG = 'macbook-air-13';
+
+// Section 13, Chunk E: self-canonical + Open Graph metadata (the
+// root layout's canonical points at the homepage, so without this
+// the page self-canonicalizes to /).
+export const metadata: Metadata = {
+  title: 'Embeddable Price Widgets — SmartBuy AI',
+  description:
+    'Put a live SmartBuy price — or price history — on your own blog or site with one copy-paste snippet. Widgets show recorded merchant prices for a real catalog product.',
+  alternates: {
+    canonical: `${appConfig.url}/widgets`,
+  },
+  openGraph: {
+    title: 'Embeddable Price Widgets — SmartBuy AI',
+    description:
+      'Put a live SmartBuy price — or price history — on your own blog or site with one copy-paste snippet. Widgets show recorded merchant prices for a real catalog product.',
+    url: `${appConfig.url}/widgets`,
+    type: 'website',
+    locale: 'en_US',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Embeddable Price Widgets — SmartBuy AI',
+    description:
+      'Put a live SmartBuy price — or price history — on your own blog or site with one copy-paste snippet. Widgets show recorded merchant prices for a real catalog product.',
+  },
+};
 
 export default function WidgetsDocsPage() {
   const priceCode = buildWidgetEmbedCode({ slug: EXAMPLE_SLUG, type: 'price', theme: 'light' });

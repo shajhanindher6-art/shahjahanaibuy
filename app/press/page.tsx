@@ -7,7 +7,7 @@
  * source modules so a future change fails loudly instead of leaving
  * this page stale. The test count is the one figure that cannot be
  * derived at build time: it is the result of a full `npx vitest run`
- * (1,370 passing, 122 test files, 11 November 2026) and moves whenever
+ * (1,490 passing, 132 test files, 11 November 2026) and moves whenever
  * tests are added, so it is dated, not presented as permanent. The
  * product count is 10: the catalog holds 11 rows, but the
  * `sample-laptop` row is a database health-check row excluded from
@@ -47,11 +47,11 @@ const FACTS: Array<[string, string]> = [
   ['Recorded price history span', 'About 30 days (the 30 days before the catalog was seeded)'],
   ['Coupons listed', '2 — SAVE10 and BESTBUY15, both valid until January 29, 2027'],
   ['Blog articles', '20 original English guides'],
-  ['Database access policies (RLS)', '194 active'],
-  ['Security headers', 'Grade A+ (securityheaders.com), nonce-based Content Security Policy'],
-  // Section 12 final full-run totals (122 files / 1,370 tests,
+  ['Database access policies (RLS)', 'RLS enabled on all tables'],
+  ['Security headers', 'Nonce-based Content Security Policy'],
+  // Section 13 final full-run totals (132 files / 1,490 tests,
   // 11 November 2026) — updated by the coordinator after vitest.
-  ['Automated tests passing', '1,370 passing (122 test files, full run 11 November 2026)'],
+  ['Automated tests passing', '1,490 passing (132 test files, full run 11 November 2026)'],
   ['Founder', 'Independent developer, GitHub: shajhanindher6-art'],
   ['Public repository', 'https://github.com/shajhanindher6-art/shahjahanaibuy'],
 ];

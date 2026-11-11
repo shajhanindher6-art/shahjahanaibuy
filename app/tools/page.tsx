@@ -3,9 +3,11 @@
  *
  * Links only: this page lists the 13 buildable Section 7 AI tools
  * plus the 3 Section 11 tools (help-me-choose, budget-finder,
- * store-finder) and links out to each tool's own /tools/* page. No
- * tool logic lives here — every tool is built (or honestly marked
- * not ready) on its own page.
+ * store-finder) and the 4 Section 13 tools (price-history,
+ * gift-splitter, forecast-explainer, currency-converter) and links
+ * out to each tool's own /tools/* page. No tool logic lives here
+ * — every tool is built (or honestly marked not ready) on its own
+ * page.
  * The 7 blocked Section 7 items (recall, review summarizer, size &
  * fit, photo authenticity, voice shopping, video summaries, family
  * shopper) are NOT listed: each is blocked on missing data or a
@@ -47,10 +49,38 @@ const TOOL_GROUPS: Array<{
         isNew: true,
       },
       {
+        name: 'Price History Explorer',
+        href: '/tools/price-history',
+        description:
+          'Every product’s recorded 30-day price history side by side: biggest drop, now vs low, high and average. Recorded points only — never smoothed.',
+        isNew: true,
+      },
+      {
+        name: 'Gift Budget Splitter',
+        href: '/tools/gift-splitter',
+        description:
+          'Split one gift budget across several people, with one real priced gift pick per person. Equal shares unless you set your own weights.',
+        isNew: true,
+      },
+      {
+        name: 'Forecast Explainer',
+        href: '/tools/forecast-explainer',
+        description:
+          'What a price forecast range really means, in plain language — and how often past forecasts were right, with the trial count shown honestly.',
+        isNew: true,
+      },
+      {
+        name: 'Currency Converter',
+        href: '/tools/currency-converter',
+        description:
+          'Convert any amount between 51 currencies — for example $999 to PKR. Approximate static rates, reviewed 2026-11-01/02, never a live rate.',
+        isNew: true,
+      },
+      {
         name: 'AI Shopping List Optimizer',
         href: '/tools/list-optimizer',
         description:
-          'Your whole list, cheapest way: which item to buy from which store, with the total and the saving — real merchant prices only.',
+          'Your whole list, cheapest way: which item to buy from which store, with the total and the saving — recorded prices only.',
       },
       {
         name: 'AI Receipt & Expense Tracker',

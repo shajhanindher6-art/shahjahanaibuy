@@ -18,6 +18,7 @@ import {
   Shield,
   CreditCard,
   KeyRound,
+  Mail,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -39,6 +40,14 @@ const mainNavItems: NavItem[] = [
   { href: '/dashboard/recommendations', label: 'Recommendations', icon: Brain },
   { href: '/dashboard/wishlists', label: 'Wishlists', icon: Heart },
   { href: '/dashboard/tracking', label: 'My Tracking', icon: TrendingDown },
+  // Section 13, Chunk F, item 49 — the digest had no sidebar link;
+  // it was reachable only by direct URL.
+  { href: '/tools/price-drop-digest', label: 'Digest', icon: Mail },
+  // Section 13, Chunk G, item 61 — agent hunts lived only as a
+  // card on the dashboard, with no sidebar link and no standalone
+  // page. The card is on /dashboard; the link lands there (anchor
+  // #agent-hunts for the card section).
+  { href: '/dashboard#agent-hunts', label: 'Agent Hunts', icon: Sparkles },
 ];
 
 const accountNavItems: NavItem[] = [

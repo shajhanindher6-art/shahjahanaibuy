@@ -20,7 +20,12 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ProductCard } from '@/components/products/product-card';
+import { ShareButtons } from '@/components/products/share-buttons';
 import type { Product } from '@/types';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { getLatestPrices } from '@/services/price-history';
+import { predictPriceDrop } from '@/services/ai-predictions';
+import { computeDealScoreFromPrediction } from '@/lib/deal-score';
 import {
   buildTaxonomyJsonLd,
   buildTaxonomyMetadata,
@@ -41,13 +46,62 @@ export async function generateMetadata({
 
 export default async function BrandPage({
   params,
+  searchParams,
 }: {
   params: { slug: string };
+  searchParams?: { [key: string]: string | string[] | undefined };
 }) {
   const page = await getBrandPageData(params.slug);
   if (!page) {
     notFound();
   }
+
+  // Section 13, Chunk A — real prices + Deal Scores on the cards
+  // (ProductCard already accepts both props): the latest recorded
+  // price per product from price_history (one query) and the cached
+  // price-drop prediction per product (same source the product page
+  // scores from). Products with no price history show no price;
+  // products with no usable prediction show no badge — never a
+  // guessed price or score. ?sort=price-asc|price-desc|deal-score
+  // reorders the grid; unpriced / unscored products sort last.
+  const sortRaw = searchParams?.sort;
+  const sortParam = Array.isArray(sortRaw) ? sortRaw[0] : sortRaw;
+  const productIds = page.products
+    .map((product) => (product as unknown as Product).id ?? product.slug)
+    .filter(Boolean);
+  let latestPrices = new Map<string, number>();
+  let dealScores = new Map<string, number>();
+  if (productIds.length > 0) {
+    try {
+      const supabase = await createSupabaseServerClient();
+      latestPrices = await getLatestPrices(supabase, productIds);
+      const predictions = await Promise.all(
+        productIds.map((id) => predictPriceDrop(supabase, id))
+      );
+      predictions.forEach((prediction, i) => {
+        const score = computeDealScoreFromPrediction(prediction);
+        if (score !== null) dealScores.set(productIds[i], score);
+      });
+    } catch {
+      // Prices / scores stay empty — cards render without them.
+    }
+  }
+  const sortedProducts = [...page.products].sort((a, b) => {
+    const aId = (a as unknown as Product).id ?? a.slug;
+    const bId = (b as unknown as Product).id ?? b.slug;
+    if (sortParam === 'price-asc' || sortParam === 'price-desc') {
+      const pa = latestPrices.get(aId) ?? null;
+      const pb = latestPrices.get(bId) ?? null;
+      if (pa === null && pb === null) return 0;
+      if (pa === null) return 1;
+      if (pb === null) return -1;
+      return sortParam === 'price-asc' ? pa - pb : pb - pa;
+    }
+    if (sortParam === 'deal-score') {
+      return (dealScores.get(bId) ?? -1) - (dealScores.get(aId) ?? -1);
+    }
+    return 0;
+  });
 
   // CSP Phase 2 nonce (set per request by middleware.ts), same source
   // the product page uses — the JSON-LD script tag needs it or the
@@ -83,6 +137,11 @@ export default async function BrandPage({
             </p>
           )}
 
+          {/* Section 13, item 55 — share this brand page. */}
+          <div className="mt-4">
+            <ShareButtons title={`${page.name} products on SmartBuy AI`} />
+          </div>
+
           {page.products.length === 0 ? (
             <div className="mt-8">
               <EmptyState
@@ -106,8 +165,38 @@ export default async function BrandPage({
                 {page.products.length === 1 ? 'product' : 'products'} in the
                 catalog
               </p>
+              {/* Section 13: sort the grid by price or Deal Score.
+                  Links, not client state — the page is a server
+                  component and the sort is shareable via ?sort=. */}
+              <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Sort:</span>
+                <Link
+                  href={`/brands/${page.slug}`}
+                  className={sortParam === undefined ? 'font-semibold text-primary' : 'underline'}
+                >
+                  Default
+                </Link>
+                <Link
+                  href={`/brands/${page.slug}?sort=price-asc`}
+                  className={sortParam === 'price-asc' ? 'font-semibold text-primary' : 'underline'}
+                >
+                  Price: low to high
+                </Link>
+                <Link
+                  href={`/brands/${page.slug}?sort=price-desc`}
+                  className={sortParam === 'price-desc' ? 'font-semibold text-primary' : 'underline'}
+                >
+                  Price: high to low
+                </Link>
+                <Link
+                  href={`/brands/${page.slug}?sort=deal-score`}
+                  className={sortParam === 'deal-score' ? 'font-semibold text-primary' : 'underline'}
+                >
+                  Deal Score
+                </Link>
+              </div>
               <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {page.products.map((product) => {
+                {sortedProducts.map((product) => {
                   // Section 10 (2026-11-11): the same product used to
                   // render three different ways (ProductCard on
                   // search/wishlist pages, a bespoke imageless card
@@ -117,20 +206,25 @@ export default async function BrandPage({
                   // the full Product rows through untouched, so id /
                   // imageUrl are present at runtime; the fallbacks
                   // (slug / null) only cover a future shape change.
-                  // No price or Deal Score is shown: these pages
-                  // never had that data, and none is invented.
+                  // Section 13: price + Deal Score come from real
+                  // data (see above) — a product with no recorded
+                  // price or no usable prediction simply shows
+                  // neither, never a guessed value.
                   const full = product as unknown as Product;
+                  const productId = full.id ?? product.slug;
                   return (
                     <ProductCard
                       key={product.slug}
                       product={{
-                        id: full.id ?? product.slug,
+                        id: productId,
                         name: product.name,
                         slug: product.slug,
                         brand: product.brand,
                         category: product.category,
                         imageUrl: full.imageUrl ?? null,
                         description: product.description,
+                        price: latestPrices.get(productId) ?? null,
+                        dealScore: dealScores.get(productId) ?? null,
                       }}
                     />
                   );

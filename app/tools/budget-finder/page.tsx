@@ -44,14 +44,14 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   title: 'Budget Finder — SmartBuy AI',
   description:
-    'Best priced products under your budget, ranked by biggest saving first. Real merchant prices only.',
+    'Best priced products under your budget, ranked by biggest saving first. Recorded prices only.',
   alternates: {
     canonical: `${appConfig.url}/tools/budget-finder`,
   },
   openGraph: {
     title: 'Budget Finder — SmartBuy AI',
     description:
-      'Best priced products under your budget, ranked by biggest saving first. Real merchant prices only.',
+      'Best priced products under your budget, ranked by biggest saving first. Recorded prices only.',
     url: `${appConfig.url}/tools/budget-finder`,
     type: 'website',
   },
@@ -59,7 +59,7 @@ export const metadata: Metadata = {
     card: 'summary',
     title: 'Budget Finder — SmartBuy AI',
     description:
-      'Best priced products under your budget, ranked by biggest saving first. Real merchant prices only.',
+      'Best priced products under your budget, ranked by biggest saving first. Recorded prices only.',
   },
 };
 

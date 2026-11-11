@@ -15,12 +15,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Check, Gift, Heart, Link2, Vote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ProductCard } from '@/components/products/product-card';
+import { ShareButtons } from '@/components/products/share-buttons';
 import { computeDealScoreFromPrediction } from '@/lib/deal-score';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
@@ -79,6 +81,29 @@ export default function SharedWishlistPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Section 13, item 53 — is the visitor the owner of this list?
+  // GET /api/v1/wishlists/[id] is owner-only (404 for everyone
+  // else), so a 200 here proves ownership without leaking anything
+  // about other users' lists. The owner sees a manage CTA and an
+  // "add products" action on the empty state; everyone else sees
+  // the plain shared view.
+  const [isOwner, setIsOwner] = useState(false);
+
+  useEffect(() => {
+    if (!wishlist) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/v1/wishlists/${id}`);
+        if (!cancelled) setIsOwner(res.ok);
+      } catch {
+        if (!cancelled) setIsOwner(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [wishlist, id]);
 
   // Section 6, Item 13 — polls on this wishlist.
   const [polls, setPolls] = useState<WishlistPollView[] | null>(null);
@@ -248,6 +273,13 @@ export default function SharedWishlistPage() {
                     </a>
                   </Button>
                 )}
+                {/* Section 13, item 53 — the owner viewing their own
+                    shared link gets a manage CTA (polls, items). */}
+                {isOwner && (
+                  <Button variant="outline" asChild className="min-h-[44px]">
+                    <Link href={`/dashboard/wishlists/${id}`}>Manage this list</Link>
+                  </Button>
+                )}
                 <Button variant="outline" onClick={copyLink} className="min-h-[44px]">
                   {copied ? (
                     <>
@@ -259,6 +291,9 @@ export default function SharedWishlistPage() {
                     </>
                   )}
                 </Button>
+                {/* Section 13, item 55 — share buttons on the public
+                    shared-wishlist page. */}
+                <ShareButtons title={`${wishlist.name} — shared wishlist on SmartBuy AI`} />
               </div>
             </div>
 
@@ -292,6 +327,16 @@ export default function SharedWishlistPage() {
                     icon={Heart}
                     title="This wishlist is empty"
                     description="The owner has not added any products to it yet."
+                    action={
+                      // Section 13, item 58 — the owner sees an
+                      // "add products" action; visitors see none
+                      // (the list is not theirs to fill).
+                      isOwner ? (
+                        <Button asChild>
+                          <Link href="/search">Add products</Link>
+                        </Button>
+                      ) : undefined
+                    }
                   />
                 </CardContent>
               </Card>

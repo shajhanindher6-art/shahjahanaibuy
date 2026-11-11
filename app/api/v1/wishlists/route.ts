@@ -17,6 +17,7 @@ import {
   createWishlist,
   type CreateWishlistInput,
 } from '@/services/wishlists';
+import { getPollCountsByWishlist } from '@/lib/wishlist-polls';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'wishlists' });
@@ -31,7 +32,19 @@ export async function GET(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     const wishlists = await getWishlists(supabase, auth.userId);
 
-    return apiSuccess(wishlists);
+    // Section 13, item 53 — poll counts batched into the list
+    // response (one query, no new table): the list page shows a
+    // poll-count badge and an "Ask friends to vote" link per list.
+    // A missing 033 table yields an empty map — every list simply
+    // reports 0 polls, never a failed list fetch.
+    const pollCounts = await getPollCountsByWishlist(
+      supabase,
+      wishlists.map((w) => w.id)
+    );
+
+    return apiSuccess(
+      wishlists.map((w) => ({ ...w, pollCount: pollCounts.get(w.id) ?? 0 }))
+    );
   } catch {
     return internalError('Failed to fetch wishlists');
   }

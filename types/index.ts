@@ -15,6 +15,10 @@ export interface Profile {
   role: UserRole;
   createdAt: string;
   updatedAt: string;
+  /** Creator storefront (Section 13, item 59): the public slug and
+      bio from migration 033. Null = no storefront. */
+  creatorSlug?: string | null;
+  creatorBio?: string | null;
 }
 
 export interface Role {

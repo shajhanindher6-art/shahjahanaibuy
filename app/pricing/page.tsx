@@ -45,7 +45,7 @@ export const metadata: Metadata = {
 const HONEST_CTA: Record<TierId, { label: string; href: string }> = {
   free: { label: 'Get Started', href: '/sign-up' },
   premium: { label: 'Create a free account', href: '/sign-up' },
-  family: { label: 'Join the waitlist', href: '/contact' },
+  family: { label: 'Email us about Family', href: '/contact' },
   team: { label: 'Contact Sales', href: '/contact' },
 };
 

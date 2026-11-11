@@ -18,7 +18,35 @@ import Link from 'next/link';
 import { Smartphone } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import type { Metadata } from 'next';
+import { appConfig } from '@/lib/config/app';
 import { WaitlistForm } from '@/components/mobile-app/waitlist-form';
+
+// Section 13, Chunk E: self-canonical + Open Graph metadata (the
+// root layout's canonical points at the homepage, so without this
+// the page self-canonicalizes to /).
+export const metadata: Metadata = {
+  title: 'Mobile app — SmartBuy AI',
+  description:
+    'There is no native SmartBuy AI app in the App Store or Google Play yet, and no launch date is promised. Until there is, the website itself installs as an app on your phone.',
+  alternates: {
+    canonical: `${appConfig.url}/mobile-app`,
+  },
+  openGraph: {
+    title: 'Mobile app — SmartBuy AI',
+    description:
+      'There is no native SmartBuy AI app in the App Store or Google Play yet, and no launch date is promised. Until there is, the website itself installs as an app on your phone.',
+    url: `${appConfig.url}/mobile-app`,
+    type: 'website',
+    locale: 'en_US',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Mobile app — SmartBuy AI',
+    description:
+      'There is no native SmartBuy AI app in the App Store or Google Play yet, and no launch date is promised. Until there is, the website itself installs as an app on your phone.',
+  },
+};
 
 export default function MobileAppPage() {
   return (

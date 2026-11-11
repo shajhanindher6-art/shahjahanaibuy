@@ -11,11 +11,13 @@
  * side.
  *
  * The test count is NOT asserted here: it is the result of a full
- * `npx vitest run` (1,223 passing, 113 files, 11 November 2026) and
+ * `npx vitest run` (1,490 passing, 132 test files, 11 November 2026) and
  * any new test file — including this one — moves that total. The
  * press page dates it instead of presenting it as permanent.
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { LOCAL_STORES, GLOBAL_STORES } from '@/lib/stores';
 import { REGIONS, SUPPORTED_LANGUAGES } from '@/lib/region';
 import { USD_PER_UNIT } from '@/services/currency';
@@ -37,7 +39,19 @@ const PUBLISHED = {
   languages: 20,
   currencies: 51,
   blogArticles: 20,
+  merchantListings: 20,
+  priceHistoryRows: 40,
+  dealsListed: 6,
 } as const;
+
+// Section 13, chunk D — the seed-derived press numbers. The seed
+// files are the source of truth for these three: they drift silently
+// (a re-seed or a slug change) unless a test counts them here.
+// merchant_products: 2 INSERTs (Amazon, Best Buy) x 10 products.
+// price_history: 10 products x 4 recorded points each.
+// deals: 6 VALUES rows, all Amazon.
+const SEED_MAIN = readFileSync(join(process.cwd(), 'supabase/seed-demo-data.sql'), 'utf8');
+const SEED_PART2 = readFileSync(join(process.cwd(), 'supabase/seed-part2-merchants-deals.sql'), 'utf8');
 
 describe('press fact sheet — numbers trace to repo sources', () => {
   it('stores: 80 local stores + 4 global fallback stores', () => {
@@ -67,6 +81,32 @@ describe('press fact sheet — numbers trace to repo sources', () => {
 
   it('blog: 20 original English guides', () => {
     expect(POSTS).toHaveLength(PUBLISHED.blogArticles);
+  });
+
+  it('merchant listings: 20 (2 merchant INSERTs x 10 products in the seed)', () => {
+    const inserts = SEED_PART2.split('INSERT INTO merchant_products').slice(1);
+    expect(inserts).toHaveLength(2);
+    for (const chunk of inserts) {
+      const inList = chunk.match(/p\.slug IN \(([^)]+)\)/);
+      expect(inList).not.toBeNull();
+      expect(inList![1].match(/'[^']+'/g)).toHaveLength(10);
+    }
+    expect(inserts.length * 10).toBe(PUBLISHED.merchantListings);
+  });
+
+  it('price-history rows: 40 (10 products x 4 recorded points in the seed)', () => {
+    const block = SEED_MAIN.slice(SEED_MAIN.indexOf('INSERT INTO price_history'));
+    const slugPrices = block.match(/\('[a-z0-9-]+', \d+\)/g);
+    expect(slugPrices).toHaveLength(10);
+    const factors = block.match(/\(interval '\d+ days', 1\.\d+\)/g);
+    expect(factors).toHaveLength(4);
+    expect(slugPrices!.length * factors!.length).toBe(PUBLISHED.priceHistoryRows);
+  });
+
+  it('deals listed: 6 (VALUES rows in the seed deals INSERT)', () => {
+    const block = SEED_PART2.slice(SEED_PART2.indexOf('INSERT INTO deals'));
+    const rows = block.match(/\('[a-z0-9-]+', '[^']+ — \d+% off'/g);
+    expect(rows).toHaveLength(PUBLISHED.dealsListed);
   });
 
   it('platform status directory entry agrees with the press numbers', () => {

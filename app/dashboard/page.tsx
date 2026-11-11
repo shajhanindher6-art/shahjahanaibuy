@@ -16,6 +16,7 @@ import {
   Clock,
   Archive,
   X,
+  Mail,
   type LucideIcon,
 } from 'lucide-react';
 import { CardContent } from '@/components/ui/card';
@@ -49,6 +50,27 @@ import {
 import { DigestGrid } from '@/components/dashboard/digest-grid';
 import { AccuracyDashboard } from '@/components/accuracy/accuracy-dashboard';
 import { DashboardCardsSkeleton } from '@/components/ui/skeleton';
+// Section 13, Chunk F — dashboard depth cards. The watched-price
+// summary, lists glance, alert health, activity feed and checklist
+// all read the tracking / search-history / savings fetches this
+// page already makes (passed down as props, no extra fetches);
+// the referral and digest-snapshot cards fetch their own
+// endpoints, and the savings history lists the events the
+// savings fetch already returns.
+import { WatchedPriceSummary, type WatchedPriceItem } from '@/components/dashboard/watched-price-summary';
+import { ListsAtAGlance } from '@/components/dashboard/lists-at-a-glance';
+import { AlertHealth, type AlertHealthAlert } from '@/components/dashboard/alert-health';
+import {
+  RecentActivityFeed,
+  type ActivityAlertHistoryEntry,
+  type ActivitySearchEntry,
+} from '@/components/dashboard/recent-activity-feed';
+import { SavingsHistory } from '@/components/dashboard/savings-history';
+import { ReferralCard } from '@/components/dashboard/referral-card';
+import { GettingStartedChecklist } from '@/components/dashboard/getting-started-checklist';
+import { DigestSnapshotCard } from '@/components/dashboard/digest-snapshot-card';
+import { PushOptInPrompt } from '@/components/home/push-opt-in-prompt';
+import type { SavingsEvent } from '@/lib/savings';
 import type { AccuracySummary } from '@/lib/prediction-accuracy';
 
 interface QuickAction {
@@ -90,6 +112,12 @@ const quickActions: QuickAction[] = [
     description: 'Save purchases and track warranty expiry',
     href: '/dashboard/vault',
   },
+  {
+    icon: Mail,
+    title: 'Price-Drop Digest',
+    description: 'Your weekly digest of drops on watched products',
+    href: '/tools/price-drop-digest',
+  },
 ];
 
 interface Recommendation {
@@ -120,11 +148,38 @@ interface TrackingSummary {
   belowTarget: number;
 }
 
+// Section 13, Chunk F — the dashboard discards everything the
+// tracking endpoint returns except the summary; keep the items
+// and alerts too, so the depth cards below can use them without
+// a second fetch.
+interface TrackingItem extends WatchedPriceItem {
+  itemId: string;
+  wishlistId: string;
+  wishlistName: string;
+  addedAt: string;
+}
+
+interface TrackingAlert extends AlertHealthAlert {
+  productId: string;
+  productName: string;
+  productSlug: string | null;
+  alertType: string;
+  conditionValue: number | null;
+  channel: string;
+  createdAt: string;
+}
+
 export default function DashboardPage() {
   const { profile, role } = useAuth();
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [searchHistory, setSearchHistory] = useState<SearchHistoryEntry[]>([]);
   const [trackingSummary, setTrackingSummary] = useState<TrackingSummary | null>(null);
+  // Section 13, Chunk F — full tracking payload + alert history +
+  // savings events, kept for the depth cards (no extra fetches).
+  const [trackingItems, setTrackingItems] = useState<TrackingItem[]>([]);
+  const [trackingAlerts, setTrackingAlerts] = useState<TrackingAlert[]>([]);
+  const [alertHistory, setAlertHistory] = useState<ActivityAlertHistoryEntry[]>([]);
+  const [savingsEvents, setSavingsEvents] = useState<SavingsEvent[]>([]);
   const [drops, setDrops] = useState<DropToWatch[]>([]);
   const [loadingRecs, setLoadingRecs] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(true);
@@ -164,7 +219,7 @@ export default function DashboardPage() {
   }, []);
 
   const fetchDashboardData = useCallback(async () => {
-    const [recsRes, historyRes, trackingRes, dropsRes, accuracyRes, buyListRes, protectionRes, savingsRes] = await Promise.all([
+    const [recsRes, historyRes, trackingRes, dropsRes, accuracyRes, buyListRes, protectionRes, savingsRes, alertHistoryRes] = await Promise.all([
       fetch('/api/v1/recommendations?limit=4').catch(() => null),
       fetch('/api/v1/search-history?limit=5').catch(() => null),
       // Real counts for the overview cards, from the user's own data.
@@ -178,6 +233,9 @@ export default function DashboardPage() {
       fetch('/api/v1/buy-list').catch(() => null),
       fetch('/api/v1/price-protection').catch(() => null),
       fetch('/api/v1/savings').catch(() => null),
+      // Section 13, Chunk F: alert trigger history for the
+      // recent-activity feed.
+      fetch('/api/v1/alerts/history?limit=20').catch(() => null),
     ]);
 
     try {
@@ -208,11 +266,31 @@ export default function DashboardPage() {
         if (trackingData.success && trackingData.data?.summary) {
           setTrackingSummary(trackingData.data.summary as TrackingSummary);
         }
+        // Section 13, Chunk F — keep the items and alerts for the
+        // watched-price summary, lists glance, alert health, and
+        // activity feed.
+        if (trackingData.success && Array.isArray(trackingData.data?.items)) {
+          setTrackingItems(trackingData.data.items as TrackingItem[]);
+        }
+        if (trackingData.success && Array.isArray(trackingData.data?.alerts)) {
+          setTrackingAlerts(trackingData.data.alerts as TrackingAlert[]);
+        }
       }
     } catch {
       // Overview cards stay hidden; other sections still render.
     } finally {
       setLoadingTracking(false);
+    }
+
+    try {
+      if (alertHistoryRes && alertHistoryRes.ok) {
+        const alertHistoryData = await alertHistoryRes.json();
+        if (alertHistoryData.success && Array.isArray(alertHistoryData.data)) {
+          setAlertHistory(alertHistoryData.data as ActivityAlertHistoryEntry[]);
+        }
+      }
+    } catch {
+      // Activity feed renders without alert rows on failure.
     }
 
     try {
@@ -273,6 +351,11 @@ export default function DashboardPage() {
             streakWeeks: savingsData.data.streakWeeks ?? 0,
             badge: (savingsData.data.badge ?? 'none') as SaverBadge,
           });
+          // Section 13, Chunk F — keep the event list for the
+          // savings history card (the endpoint already returns it).
+          if (Array.isArray(savingsData.data.events)) {
+            setSavingsEvents(savingsData.data.events as SavingsEvent[]);
+          }
         }
       }
     } catch {
@@ -426,6 +509,13 @@ export default function DashboardPage() {
             </Button>
           </div>
 
+          {/* Section 13, item 52 — push opt-in on the main
+              dashboard. The prompt gates itself on the VAPID check
+              and stays honest when push is not configured; a
+              dismiss on any page hides it everywhere (shared
+              localStorage flag). */}
+          <PushOptInPrompt context="home" />
+
           {/* Activity at a glance — real counts from the user's own data
               (tracking endpoint). Rendered only when the fetch succeeds;
               a failed fetch hides the section instead of showing demo
@@ -457,6 +547,35 @@ export default function DashboardPage() {
               never a percentage. Hidden entirely when the fetch
               fails. */}
           {accuracy && <AccuracyDashboard summary={accuracy} />}
+
+          {/* Section 13, Chunk F — dashboard depth: watched-price
+              summary + per-list glance (from the tracking fetch
+              above), alert health + recent activity (tracking +
+              alert history + search history, newest first). */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            <WatchedPriceSummary items={trackingItems} loading={loadingTracking} />
+            <ListsAtAGlance items={trackingItems} loading={loadingTracking} />
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <AlertHealth alerts={trackingAlerts} loading={loadingTracking} />
+            <RecentActivityFeed
+              items={trackingItems}
+              alerts={trackingAlerts}
+              alertHistory={alertHistory}
+              searchHistory={searchHistory as ActivitySearchEntry[]}
+            />
+          </div>
+
+          {/* Section 13, Chunk F — first-visit checklist (done-states
+              from the tracking fetch) + referral / creator credit. */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            <GettingStartedChecklist
+              hasSavedProduct={trackingItems.length > 0}
+              hasAlert={trackingAlerts.length > 0}
+            />
+            <ReferralCard />
+          </div>
 
           <ActiveDealsSection />
 
@@ -501,6 +620,13 @@ export default function DashboardPage() {
             />
           )}
 
+          {/* Section 13, Chunk F — savings ledger detail: which
+              purchase saved how much, when (events already returned
+              by GET /api/v1/savings). */}
+          {!loadingSavings && savings && (
+            <SavingsHistory events={savingsEvents} />
+          )}
+
           {/* Section 6, Item 2: autonomous deal hunts — self-fetching
               card, hides itself when the fetch fails. */}
           <AgentHuntsCard />
@@ -509,6 +635,11 @@ export default function DashboardPage() {
               alerts, and vector-matched recommendations in one grid.
               Fetches its own data; hides itself on failure. */}
           <DigestGrid />
+
+          {/* Section 13, Chunk F — this week's price-drop digest
+              deals (buildPriceDropDigest output), which DigestGrid
+              does not show. */}
+          <DigestSnapshotCard />
 
           <div className="animate-fade-in motion-reduce:animate-none" style={{ animationDelay: '340ms' }}>
             <h2 className="mb-4 text-lg font-semibold">Quick Actions</h2>
@@ -586,7 +717,13 @@ export default function DashboardPage() {
             ) : searchHistory.length > 0 ? (
               <div className="space-y-2">
                 {searchHistory.map((entry) => (
-                  <div key={entry.id} className="glass-card flex items-center justify-between p-3">
+                  // Section 13, item 57 — recent searches are links
+                  // back to the shareable search URL, not plain text.
+                  <Link
+                    key={entry.id}
+                    href={`/search?q=${encodeURIComponent(entry.query)}`}
+                    className="glass-card flex items-center justify-between p-3 transition-shadow hover:shadow-md"
+                  >
                     <div className="flex items-center gap-3">
                       <Search className="h-4 w-4 text-muted-foreground" />
                       <span className="text-sm font-medium">{entry.query}</span>
@@ -597,7 +734,7 @@ export default function DashboardPage() {
                         {new Date(entry.createdAt).toLocaleDateString()}
                       </span>
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             ) : (
@@ -607,6 +744,13 @@ export default function DashboardPage() {
                     icon={Clock}
                     title="No recent searches"
                     description="Your search history will appear here."
+                    action={
+                      <Button asChild size="sm">
+                        <Link href="/search">
+                          Search products <ArrowRight className="ml-2 h-4 w-4" />
+                        </Link>
+                      </Button>
+                    }
                   />
                 </CardContent>
               </div>

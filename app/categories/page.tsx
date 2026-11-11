@@ -24,7 +24,8 @@ import { appConfig } from '@/lib/config/app';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
-import { deriveTaxonomySlugs } from '@/lib/brand-category-seo';
+import { deriveTaxonomySlugs, slugify } from '@/lib/brand-category-seo';
+import { buildItemListJsonLd, toJsonLd } from '@/lib/json-ld';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +38,7 @@ export const metadata: Metadata = {
   },
 };
 
-async function getCategories(): Promise<Array<{ name: string; slug: string }>> {
+async function getCategories(): Promise<Array<{ name: string; slug: string; count: number }>> {
   try {
     const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey, {
       auth: { persistSession: false },
@@ -48,9 +49,21 @@ async function getCategories(): Promise<Array<{ name: string; slug: string }>> {
       .is('deleted_at', null)
       .limit(500);
     if (!data) return [];
-    return deriveTaxonomySlugs(
-      (data as Array<{ category: string | null }>).map((row) => row.category)
-    );
+    // Section 13, Chunk A — product counts from the same query:
+    // one row per product, tallied by slug (names that slugify
+    // identically collapse to one entry, same as the list itself).
+    const rows = data as Array<{ category: string | null }>;
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      if (!row.category) continue;
+      const slug = slugify(row.category);
+      if (!slug) continue;
+      counts.set(slug, (counts.get(slug) ?? 0) + 1);
+    }
+    return deriveTaxonomySlugs(rows.map((row) => row.category)).map((category) => ({
+      ...category,
+      count: counts.get(category.slug) ?? 0,
+    }));
   } catch {
     return [];
   }
@@ -100,6 +113,22 @@ export default async function CategoriesIndexPage() {
                 {categories.length === 1 ? 'category' : 'categories'} in the
                 catalog
               </p>
+              {/* Section 13, Chunk E: ItemList of the real category
+                  listing URLs on this page. */}
+              <script
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{
+                  __html: toJsonLd(
+                    buildItemListJsonLd(
+                      appConfig.url,
+                      categories.map((category) => ({
+                        name: category.name,
+                        path: `/categories/${category.slug}`,
+                      }))
+                    )
+                  ),
+                }}
+              />
               <ul className="mt-6 space-y-2">
                 {categories.map((category) => (
                   <li key={category.slug}>
@@ -108,7 +137,12 @@ export default async function CategoriesIndexPage() {
                       className="flex min-h-[44px] items-center justify-between rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:border-blue-300 hover:text-primary"
                     >
                       {category.name}
-                      <span aria-hidden="true">→</span>
+                      <span className="flex items-center gap-2">
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {category.count} product{category.count !== 1 ? 's' : ''}
+                        </span>
+                        <span aria-hidden="true">→</span>
+                      </span>
                     </Link>
                   </li>
                 ))}

@@ -178,6 +178,10 @@ const ProductVisualizer = dynamic(
   { ssr: false, loading: () => <LoadingSpinner /> }
 );
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
+// Section 13, Chunk C: hero 30-day trend chip — the wrapper is
+// small (recharts loads lazily inside it), so a static import is
+// fine; it renders nothing with <2 recorded points.
+import { PriceTrendSparkline } from '@/components/products/price-trend-sparkline';
 import { BestTimeToBuyIndicator } from '@/components/products/best-time-to-buy';
 import { PricePredictionBadge } from '@/components/products/price-prediction-badge';
 // Option 16: Next-Gen Decision Suite — deterministic analytics only.
@@ -277,6 +281,26 @@ const SimilarProducts = dynamic(
       (m) => m.SimilarProducts
     ),
   { loading: () => <LoadingSpinner /> }
+);
+// Section 13, Chunk C: recently-viewed strip (the same component
+// the homepage mounts — no props, reads the device-local history
+// this page records) and the budget-alternative card (existed
+// unwired). Both sit below the fold, so dynamic + ssr:false keeps
+// them out of the First Load bundle, same pattern as the
+// calculators above.
+const RecentlyViewedStrip = dynamic(
+  () =>
+    import('@/components/home/recently-viewed-strip').then(
+      (m) => m.RecentlyViewedStrip
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const BudgetAlternative = dynamic(
+  () =>
+    import('@/components/products/budget-alternative').then(
+      (m) => m.BudgetAlternative
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
 );
 const CashbackCouponsSection = dynamic(
   () =>
@@ -559,6 +583,11 @@ interface MerchantListing {
   shippingDays: number | null;
   inStock: boolean;
   stockQuantity: number | null;
+  // Section 13, Chunk C: per-merchant last sync, from the
+  // merchants API (merchant_products.last_synced_at) — drives
+  // the "Last checked" column of the comparison table. Null
+  // when never synced; the table then shows "—".
+  lastSyncedAt: string | null;
 }
 
 export default function ProductDetailClient({
@@ -619,6 +648,13 @@ export default function ProductDetailClient({
   // and null forever when the product has no price history — the
   // line in "Where to Buy" then renders nothing (no invented date).
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
+  // Section 13, Chunk C: the visitor's own stated max budget
+  // (agent memory preferences — opt-in, never inferred). Null
+  // when no budget was ever stated; the BudgetAlternative slot
+  // below then stays empty. Populated by the agent-memory effect
+  // further down (guest device-local memory, or the signed-in
+  // memory row).
+  const [budgetUsd, setBudgetUsd] = useState<number | null>(null);
   // Section 6, Item 12: admin-recorded warranty/insurance plans for
   // this product's category (GET /api/v1/warranty-plans?category=).
   // Empty until an admin records a plan — the table renders its
@@ -766,6 +802,13 @@ export default function ProductDetailClient({
           const res = await fetch('/api/v1/agent/memory');
           const json = await res.json().catch(() => null);
           const memory = json?.data?.memory ?? json?.memory ?? null;
+          // Section 13, Chunk C: capture the stated max budget
+          // for the BudgetAlternative slot (opt-in preference,
+          // never inferred; ignored unless a positive number).
+          const statedBudget = memory?.preferences?.maxBudgetUsd;
+          if (typeof statedBudget === 'number' && Number.isFinite(statedBudget) && statedBudget > 0) {
+            setBudgetUsd(statedBudget);
+          }
           if (res.ok && memory?.consentGrantedAt) {
             await fetch('/api/v1/agent/memory', {
               method: 'PUT',
@@ -780,6 +823,12 @@ export default function ProductDetailClient({
     } else {
       try {
         const guest = loadGuestMemory();
+        // Section 13, Chunk C: same stated-budget capture as the
+        // signed-in branch above, from device-local memory.
+        const guestBudget = guest?.preferences?.maxBudgetUsd;
+        if (typeof guestBudget === 'number' && Number.isFinite(guestBudget) && guestBudget > 0) {
+          setBudgetUsd(guestBudget);
+        }
         if (guest?.consentGrantedAt) {
           saveGuestMemory({
             ...guest,
@@ -1343,6 +1392,19 @@ export default function ProductDetailClient({
               </div>
             )}
 
+            {/* Section 13, Chunk C: hero 30-day trend chip — reuses
+                the existing PriceTrendSparkline (showChange), which
+                reads the same recorded price history the Price
+                History tab graphs (change across the last 30
+                recorded points; history spans at most 30 days). It
+                renders nothing with fewer than 2 recorded points or
+                on fetch failure, so no chip ever shows a guessed
+                move. The wrapper div is empty in that case (the
+                title is only a tooltip), so no orphan label shows. */}
+            <div title="Price change across the recorded price history (last 30 days)">
+              <PriceTrendSparkline slug={slug} showChange />
+            </div>
+
             {prediction && dealScore !== null && (
               <div className="flex items-center gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
                 {/* Canonical Deal Score (lib/deal-score.ts
@@ -1408,7 +1470,7 @@ export default function ProductDetailClient({
               />
               {/* P0 fix (2026-11-09 audit): public UI had no share
                   mechanism anywhere — a good deal was a dead end. */}
-              <ShareButtons title={product.name} />
+              <ShareButtons title={product.name} enableReferral />
             </div>
 
             {/* Section 12, Chunk E: push opt-in prompt, below the
@@ -1462,6 +1524,65 @@ export default function ProductDetailClient({
             </CardHeader>
             {merchants.length > 0 && (
               <CardContent className="space-y-3">
+                {/* Section 13, Chunk C: side-by-side merchant
+                    comparison — the same recorded rows as the cards
+                    below, in one table so prices, discounts, stock
+                    and last sync are comparable at a glance. "—"
+                    where a row has no value (no compare-at price,
+                    no sync timestamp) — never a guessed number. */}
+                <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                  <table className="w-full min-w-[560px] text-sm">
+                    <caption className="sr-only">Merchant price comparison</caption>
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-muted-foreground dark:border-slate-700 dark:bg-slate-800/50">
+                        <th scope="col" className="px-3 py-2 font-medium">Merchant</th>
+                        <th scope="col" className="px-3 py-2 font-medium">Price</th>
+                        <th scope="col" className="px-3 py-2 font-medium">Compare at</th>
+                        <th scope="col" className="px-3 py-2 font-medium">Discount</th>
+                        <th scope="col" className="px-3 py-2 font-medium">Stock</th>
+                        <th scope="col" className="px-3 py-2 font-medium">Last checked</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {merchants.map((listing) => {
+                        const tableInStock = listing.inStock || listing.availability === 'in_stock';
+                        const tableSaving = discountPercent(listing.price, listing.compareAtPrice);
+                        return (
+                          <tr key={listing.id} className="border-b border-slate-100 last:border-0 dark:border-slate-800">
+                            <td className="px-3 py-2 font-medium">{listing.merchantName ?? 'Retailer'}</td>
+                            <td className="px-3 py-2 font-bold">
+                              <Price usd={listing.price} />
+                            </td>
+                            <td className="px-3 py-2">
+                              {listing.compareAtPrice !== null && listing.compareAtPrice > listing.price ? (
+                                <span className="text-muted-foreground line-through">
+                                  <Price usd={listing.compareAtPrice} showOriginal={false} />
+                                </span>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              {tableSaving !== null ? (
+                                <span className="font-semibold text-green-600">{tableSaving}% off</span>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              {tableInStock
+                                ? `In stock${listing.stockQuantity !== null ? ` (${listing.stockQuantity})` : ''}`
+                                : 'Out of stock'}
+                            </td>
+                            <td className="px-3 py-2 text-muted-foreground">
+                              {formatMerchantSyncedAt(listing.lastSyncedAt)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
                 {merchants.map((listing) => {
                   const inStock = listing.inStock || listing.availability === 'in_stock';
                   const coupon = couponsByMerchant[listing.merchantId];
@@ -1663,6 +1784,23 @@ export default function ProductDetailClient({
               </CardContent>
             )}
           </Card>
+        )}
+
+        {/* Section 13, Chunk C: budget alternative — the component
+            and its API existed but were never wired into the product
+            page (no import here until now). Shows only when the
+            visitor stated a max budget in their agent preferences
+            AND this product's cheapest recorded price is over it
+            AND a real vector-matched alternative within budget
+            exists; otherwise it renders nothing. */}
+        {product && budgetUsd !== null && (
+          <div className="mt-6">
+            <BudgetAlternative
+              productSlug={slug}
+              budgetUsd={budgetUsd}
+              sourcePriceUsd={heroPrice ?? null}
+            />
+          </div>
         )}
 
         {/* Option 9: Price negotiator (gap math + message draft only —
@@ -2242,6 +2380,14 @@ export default function ProductDetailClient({
             question arrives. */}
         <QaSection slug={slug} />
 
+        {/* Section 13, Chunk C: recently-viewed strip on the
+            product page — the same component the homepage mounts;
+            it reads the device-local history this page records on
+            mount and renders nothing when there is no history. */}
+        <div className="mt-8">
+          <RecentlyViewedStrip />
+        </div>
+
         <div className="mt-8">
           <SimilarProducts
             productId={product.id}
@@ -2270,6 +2416,15 @@ function normalizeReviewPhotos(value: unknown): Record<string, string[]> {
     if (clean.length > 0) out[key] = clean;
   }
   return out;
+}
+
+/** Section 13, Chunk C: a merchant row's last sync as a short
+    date for the comparison table. "—" when never synced or
+    unparseable — never a guessed date. */
+function formatMerchantSyncedAt(value: string | null | undefined): string {
+  if (!value) return '—';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
 }
 
 function SpecRow({ label, value }: { label: string; value: string | null }) {

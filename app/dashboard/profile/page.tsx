@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/features/auth';
 import { updateProfile } from '@/services/profiles';
+import { isValidCreatorSlug } from '@/lib/creator-storefront';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,28 +22,64 @@ export default function ProfilePage() {
   const [fullName, setFullName] = useState('');
   const [bio, setBio] = useState('');
   const [saving, setSaving] = useState(false);
+  // Section 13, item 59 — creator storefront editor. The slug +
+  // bio columns exist only in migration 033; until this editor no
+  // UI anywhere set them, so a storefront could never be created
+  // through the UI.
+  const [creatorSlug, setCreatorSlug] = useState('');
+  const [creatorBio, setCreatorBio] = useState('');
+  const [slugError, setSlugError] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile) {
       setFullName(profile.fullName ?? '');
       setBio(profile.bio ?? '');
+      setCreatorSlug(profile.creatorSlug ?? '');
+      setCreatorBio(profile.creatorBio ?? '');
     }
   }, [profile]);
 
   const handleSave = useCallback(async () => {
     if (!user) return;
+    // A slug is optional — but when typed it must be valid
+    // (2–64 lowercase letters/digits/hyphens); an empty slug
+    // clears the storefront.
+    const slug = creatorSlug.trim().toLowerCase();
+    if (slug !== '' && !isValidCreatorSlug(slug)) {
+      setSlugError(
+        'Storefront slug must be 2–64 characters of lowercase letters, digits, and hyphens.'
+      );
+      return;
+    }
+    setSlugError(null);
     setSaving(true);
     const { getSupabaseBrowserClient } = await import('@/lib/supabase/client');
     try {
-      await updateProfile(getSupabaseBrowserClient(), user.id, { fullName, bio });
+      await updateProfile(getSupabaseBrowserClient(), user.id, {
+        fullName,
+        bio,
+        creatorSlug: slug === '' ? null : slug,
+        creatorBio: creatorBio.trim() === '' ? null : creatorBio.trim(),
+      });
       await refreshProfile();
       toast({ title: 'Profile updated', description: 'Your profile has been saved.' });
-    } catch {
-      toast({ title: 'Error', description: 'Failed to update profile.', variant: 'destructive' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '';
+      // A duplicate slug hits the migration-033 unique index; a
+      // missing column means 033 has not been run yet. Both get a
+      // plain explanation instead of a generic failure.
+      if (/duplicate|unique/i.test(message)) {
+        setSlugError('That storefront slug is already taken — try another one.');
+        toast({ title: 'Slug already taken', description: 'Choose a different storefront slug.', variant: 'destructive' });
+      } else if (/column .* does not exist|42703/i.test(message)) {
+        toast({ title: 'Error', description: 'Creator storefronts are not set up yet — the owner still needs to run migration 033 once.', variant: 'destructive' });
+      } else {
+        toast({ title: 'Error', description: 'Failed to update profile.', variant: 'destructive' });
+      }
     } finally {
       setSaving(false);
     }
-  }, [user, fullName, bio, refreshProfile, toast]);
+  }, [user, fullName, bio, creatorSlug, creatorBio, refreshProfile, toast]);
 
   if (!profile) {
     return (
@@ -101,6 +139,48 @@ export default function ProfilePage() {
               rows={4}
             />
           </div>
+
+          {/* Section 13, item 59 — creator storefront. A public
+              slug + bio publishes a storefront at /creators/[slug];
+              the storefront appears in /creators once the creator
+              has at least one verified deal. Clearing the slug
+              removes the storefront. */}
+          <div className="space-y-2 border-t pt-4">
+            <Label htmlFor="creatorSlug">Creator storefront slug (optional)</Label>
+            <Input
+              id="creatorSlug"
+              value={creatorSlug}
+              onChange={(e) => {
+                setCreatorSlug(e.target.value.toLowerCase());
+                setSlugError(null);
+              }}
+              placeholder="e.g. gadget-guru"
+              maxLength={64}
+            />
+            {slugError && <p className="text-sm text-red-600">{slugError}</p>}
+            <p className="text-xs text-muted-foreground">
+              Your public storefront will live at /creators/{creatorSlug.trim().toLowerCase() || 'your-slug'}.
+              Leave it empty to remove your storefront.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="creatorBio">Storefront bio (optional)</Label>
+            <Textarea
+              id="creatorBio"
+              value={creatorBio}
+              onChange={(e) => setCreatorBio(e.target.value)}
+              placeholder="What deals do you share?"
+              rows={3}
+            />
+          </div>
+          {profile.creatorSlug && (
+            <p className="text-sm text-muted-foreground">
+              Your storefront is live at{' '}
+              <Link href={`/creators/${profile.creatorSlug}`} className="font-medium text-blue-600 underline">
+                View your storefront
+              </Link>
+            </p>
+          )}
           <Button onClick={handleSave} disabled={saving}>
             {saving ? <LoadingSpinner size="sm" /> : <Save className="mr-2 h-4 w-4" />}
             Save Changes

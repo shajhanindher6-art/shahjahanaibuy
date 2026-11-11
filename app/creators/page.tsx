@@ -14,13 +14,56 @@ import { Store, Award } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import type { Metadata } from 'next';
+import { appConfig } from '@/lib/config/app';
 import { getTopCreators } from '@/lib/creator-storefront';
 
 export const dynamic = 'force-dynamic';
 
+// Section 13, Chunk E: self-canonical + Open Graph metadata (the
+// root layout's canonical points at the homepage, so without this
+// the page self-canonicalizes to /).
+export const metadata: Metadata = {
+  title: 'Creators — SmartBuy AI',
+  description:
+    'Community members who share verified deals. A creator appears here once they have a public storefront and at least one verified deal.',
+  alternates: {
+    canonical: `${appConfig.url}/creators`,
+  },
+  openGraph: {
+    title: 'Creators — SmartBuy AI',
+    description:
+      'Community members who share verified deals. A creator appears here once they have a public storefront and at least one verified deal.',
+    url: `${appConfig.url}/creators`,
+    type: 'website',
+    locale: 'en_US',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Creators — SmartBuy AI',
+    description:
+      'Community members who share verified deals. A creator appears here once they have a public storefront and at least one verified deal.',
+  },
+};
+
 export default async function CreatorsPage() {
   const supabase = await createSupabaseServerClient();
   const creators = await getTopCreators(supabase);
+
+  // Section 13, item 60 — the signed-in visitor's own rank in
+  // this same ranked list (index + 1, so it always matches the
+  // #N shown next to each creator). Null when signed out or not
+  // listed — no rank is ever shown for someone who has none.
+  let myRank: number | null = null;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const idx = creators.findIndex((c) => c.userId === user.id);
+      if (idx >= 0) myRank = idx + 1;
+    }
+  } catch {
+    // Signed-out or auth unavailable — no "your rank" line.
+  }
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -49,9 +92,16 @@ export default async function CreatorsPage() {
             </div>
           ) : (
             <div className="mt-8 space-y-4">
-              {creators.map((creator) => (
+              {/* Section 13, item 60 — your rank in this list. */}
+              {myRank !== null && (
+                <p className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-100">
+                  Your rank: <strong>#{myRank}</strong> of {creators.length} creators.
+                </p>
+              )}
+              {creators.map((creator, index) => (
                 <article key={creator.userId} className="rounded-lg border p-6">
                   <h2 className="text-xl font-semibold">
+                    <span className="mr-2 text-muted-foreground">#{index + 1}</span>
                     <Link href={`/creators/${creator.slug}`} className="hover:underline">
                       {creator.displayName ?? 'Creator'}
                     </Link>

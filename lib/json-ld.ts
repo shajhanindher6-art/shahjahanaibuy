@@ -196,3 +196,72 @@ export function toJsonLdGraph(
   const graph = schemas.map(({ '@context': _ignored, ...rest }) => rest);
   return toJsonLd({ '@context': 'https://schema.org', '@graph': graph });
 }
+
+export interface EventJsonLdInput {
+  slug: string;
+  name: string;
+  description: string;
+  /** ISO start, from the event's recorded startsAt. */
+  startsAt: string;
+  /** True when the date is an expectation, not a confirmed date. */
+  dateExpected?: boolean;
+}
+
+/**
+ * Event schema for a seasonal event landing page (Section 13).
+ * Only recorded facts: name, description, page URL, and the start
+ * date — and the start date ONLY when it is confirmed. An expected
+ * date (Eid, confirmed by moon sighting) is not a scheduled start,
+ * so startDate is omitted there rather than asserting a day that
+ * may move. No location is recorded for a sale event spread across
+ * retailers, so none is claimed.
+ */
+export function buildEventJsonLd(
+  siteUrl: string,
+  event: EventJsonLdInput
+): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Event',
+    name: event.name,
+    description: event.description,
+    url: `${siteUrl}/events/${event.slug}`,
+    ...(event.startsAt && !event.dateExpected
+      ? { startDate: event.startsAt }
+      : {}),
+  };
+}
+
+export interface SoftwareApplicationJsonLdInput {
+  /** Display name, from the extension manifest. */
+  name: string;
+  /** Short description, from the extension manifest. */
+  description: string;
+  /** Semantic version, from the extension manifest (e.g. '2.0.0'). */
+  version: string;
+  /** Path of the guide page (e.g. '/extension'). */
+  pagePath: string;
+}
+
+/**
+ * SoftwareApplication schema for the browser extension guide page
+ * (Section 13). Only manifest facts: name, description, version,
+ * and the guide-page URL. No operatingSystem (the manifest records
+ * none), no offers (no price is recorded anywhere), and no install
+ * URL — the extension is not on any store yet (unpacked
+ * developer-mode install only, per the guide page).
+ */
+export function buildSoftwareApplicationJsonLd(
+  siteUrl: string,
+  app: SoftwareApplicationJsonLdInput
+): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: app.name,
+    description: app.description,
+    url: `${siteUrl}${app.pagePath}`,
+    softwareVersion: app.version,
+    applicationCategory: 'BrowserApplication',
+  };
+}

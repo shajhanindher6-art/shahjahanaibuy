@@ -21,7 +21,7 @@
  * Next.js imports.
  */
 
-export const NEWSLETTER_SOURCES = ['footer', 'homepage'] as const;
+export const NEWSLETTER_SOURCES = ['footer', 'homepage', 'deals', 'digest', 'notifications'] as const;
 export type NewsletterSource = (typeof NEWSLETTER_SOURCES)[number];
 
 /** Maximum email length (RFC 5321 path limit). */
@@ -83,10 +83,10 @@ export function isValidEmailAddress(email: unknown): boolean {
 }
 
 /**
- * Parse the `source` field sent with a signup. Only 'footer' and
- * 'homepage' are valid (those are the two places the capture form
- * is mounted); anything else — including a missing value — is
- * rejected so the stored rows always say where the signup came from.
+ * Parse the `source` field sent with a signup. Only the sources in
+ * NEWSLETTER_SOURCES are valid (the places the capture form is
+ * mounted); anything else — including a missing value — is rejected
+ * so the stored rows always say where the signup came from.
  */
 export function parseNewsletterSource(
   value: unknown

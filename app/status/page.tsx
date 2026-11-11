@@ -165,12 +165,9 @@ export default async function StatusPage() {
 
           <h2 className="mt-10 text-xl font-semibold">Last verified</h2>
           <p className="mt-4 rounded-lg border p-6 text-muted-foreground">
-            Last manual verification: 10 November 2026 — the homepage, the MacBook Air 13
-            product page, the{' '}
-            <Link href="/platforms" className="underline">
-              platforms hub
-            </Link>
-            , and the stores, platforms, and eBay-search APIs all responded. Check the live
+            Last manual verification: 11 November 2026 — the homepage, the tools
+            pages, /pricing, /coming-soon, the MacBook Air 13 product page, and the
+            stores, platforms, and eBay-search APIs all responded. Check the live
             site yourself:{' '}
             <a
               href={appConfig.url}

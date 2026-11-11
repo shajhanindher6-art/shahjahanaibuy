@@ -24,7 +24,8 @@ import { appConfig } from '@/lib/config/app';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
-import { deriveTaxonomySlugs } from '@/lib/brand-category-seo';
+import { deriveTaxonomySlugs, slugify } from '@/lib/brand-category-seo';
+import { buildItemListJsonLd, toJsonLd } from '@/lib/json-ld';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +38,7 @@ export const metadata: Metadata = {
   },
 };
 
-async function getBrands(): Promise<Array<{ name: string; slug: string }>> {
+async function getBrands(): Promise<Array<{ name: string; slug: string; count: number }>> {
   try {
     const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey, {
       auth: { persistSession: false },
@@ -48,9 +49,21 @@ async function getBrands(): Promise<Array<{ name: string; slug: string }>> {
       .is('deleted_at', null)
       .limit(500);
     if (!data) return [];
-    return deriveTaxonomySlugs(
-      (data as Array<{ brand: string | null }>).map((row) => row.brand)
-    );
+    // Section 13, Chunk A — product counts from the same query:
+    // one row per product, tallied by slug (names that slugify
+    // identically collapse to one entry, same as the list itself).
+    const rows = data as Array<{ brand: string | null }>;
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      if (!row.brand) continue;
+      const slug = slugify(row.brand);
+      if (!slug) continue;
+      counts.set(slug, (counts.get(slug) ?? 0) + 1);
+    }
+    return deriveTaxonomySlugs(rows.map((row) => row.brand)).map((brand) => ({
+      ...brand,
+      count: counts.get(brand.slug) ?? 0,
+    }));
   } catch {
     return [];
   }
@@ -99,6 +112,22 @@ export default async function BrandsIndexPage() {
                 {brands.length} {brands.length === 1 ? 'brand' : 'brands'} in
                 the catalog
               </p>
+              {/* Section 13, Chunk E: ItemList of the real brand
+                  listing URLs on this page. */}
+              <script
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{
+                  __html: toJsonLd(
+                    buildItemListJsonLd(
+                      appConfig.url,
+                      brands.map((brand) => ({
+                        name: brand.name,
+                        path: `/brands/${brand.slug}`,
+                      }))
+                    )
+                  ),
+                }}
+              />
               <ul className="mt-6 space-y-2">
                 {brands.map((brand) => (
                   <li key={brand.slug}>
@@ -107,7 +136,12 @@ export default async function BrandsIndexPage() {
                       className="flex min-h-[44px] items-center justify-between rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:border-blue-300 hover:text-primary"
                     >
                       {brand.name}
-                      <span aria-hidden="true">→</span>
+                      <span className="flex items-center gap-2">
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {brand.count} product{brand.count !== 1 ? 's' : ''}
+                        </span>
+                        <span aria-hidden="true">→</span>
+                      </span>
                     </Link>
                   </li>
                 ))}

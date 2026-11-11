@@ -6,7 +6,6 @@
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#1e40af",
-  "orientation": "portrait-primary",
   "icons": [
     {
       "src": "/icon-192.png",
@@ -22,6 +21,29 @@
     }
   ],
   "categories": ["shopping", "productivity", "lifestyle"],
+  "shortcuts": [
+    {
+      "name": "Search",
+      "short_name": "Search",
+      "description": "Search the catalog with AI",
+      "url": "/search",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Deals",
+      "short_name": "Deals",
+      "description": "Today's best deals",
+      "url": "/deals",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Tools",
+      "short_name": "Tools",
+      "description": "AI shopping tools",
+      "url": "/tools",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
   "screenshots": [],
   "prefer_related_applications": false
 }

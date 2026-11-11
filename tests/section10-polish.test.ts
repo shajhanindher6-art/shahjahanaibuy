@@ -65,7 +65,7 @@ describe('Section 10 — homepage deal strip', () => {
     const home = read('app/page.tsx');
     expect(home).toContain('<Suspense');
     expect(home).toContain('</Suspense>');
-    expect(home).toContain('<FeaturedProductsStrip />');
+    expect(home).toContain('<FeaturedProductsStrip');
     // Fallback mirrors the section (heading + skeleton cards).
     expect(home).toContain('Loading featured products');
   });

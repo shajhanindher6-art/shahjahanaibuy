@@ -114,7 +114,7 @@ export function AgentHuntsCard() {
   if (hunts === null) return null;
 
   return (
-    <Card>
+    <Card id="agent-hunts">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Bot className="h-5 w-5 text-muted-foreground" /> Autonomous deal hunting

@@ -3,7 +3,13 @@ import { Puzzle, Tag, Search, ShieldCheck, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SiteHeader } from '@/components/layout/site-header';
+import type { Metadata } from 'next';
+import { appConfig } from '@/lib/config/app';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { buildSoftwareApplicationJsonLd, toJsonLd } from '@/lib/json-ld';
+// Manifest facts (name / description / version) read directly from
+// extension/manifest.json so the schema can never drift from it.
+import extensionManifest from '@/extension/manifest.json';
 
 /**
  * Browser extension guide page: /extension
@@ -20,10 +26,53 @@ import { SiteFooter } from '@/components/layout/site-footer';
  * data is collected — the extension only sends a product title to
  * SmartBuy's public API and reads public coupon codes.
  */
+// Section 13, Chunk E: self-canonical + Open Graph metadata (the
+// root layout's canonical points at the homepage, so without this
+// the page self-canonicalizes to /).
+export const metadata: Metadata = {
+  title: 'SmartBuy Browser Extension — SmartBuy AI',
+  description:
+    'Shop on Amazon, Walmart, Best Buy, eBay or AliExpress and let SmartBuy watch prices and coupons for you — right on the retailer’s own pages.',
+  alternates: {
+    canonical: `${appConfig.url}/extension`,
+  },
+  openGraph: {
+    title: 'SmartBuy Browser Extension — SmartBuy AI',
+    description:
+      'Shop on Amazon, Walmart, Best Buy, eBay or AliExpress and let SmartBuy watch prices and coupons for you — right on the retailer’s own pages.',
+    url: `${appConfig.url}/extension`,
+    type: 'website',
+    locale: 'en_US',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'SmartBuy Browser Extension — SmartBuy AI',
+    description:
+      'Shop on Amazon, Walmart, Best Buy, eBay or AliExpress and let SmartBuy watch prices and coupons for you — right on the retailer’s own pages.',
+  },
+};
+
 export default function ExtensionPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 13, Chunk E: SoftwareApplication schema from the
+          extension manifest (v2.0.0) — name, description and version
+          only; no store listing or price is claimed (see
+          buildSoftwareApplicationJsonLd). */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: toJsonLd(
+            buildSoftwareApplicationJsonLd(appConfig.url, {
+              name: extensionManifest.name,
+              description: extensionManifest.description,
+              version: extensionManifest.version,
+              pagePath: '/extension',
+            })
+          ),
+        }}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl space-y-6">
           <div>

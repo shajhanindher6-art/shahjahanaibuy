@@ -277,6 +277,10 @@ export default function ScanPage() {
                 )}
                 {result.visual.map((m, i) => (
                   <div key={i} className="flex items-center gap-3 rounded-lg border p-3">
+                    {/* alt="" is deliberate, not missing: the match
+                        title is rendered as the adjacent text, so a
+                        spoken alt would repeat it for screen
+                        readers. The thumbnail is decorative here. */}
                     {m.thumbnail && <Image src={m.thumbnail} alt="" width={48} height={48} unoptimized className="h-12 w-12 rounded object-cover" />}
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{m.title}</p>

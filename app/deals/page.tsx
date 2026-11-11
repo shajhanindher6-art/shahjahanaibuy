@@ -3,19 +3,23 @@ import Image from 'next/image';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Tag, Zap, Clock, TrendingDown, Sparkles, ChevronRight, Copy, Check, CalendarDays, Bell } from 'lucide-react';
+import { Tag, Zap, Clock, TrendingDown, Sparkles, ChevronRight, Copy, Check, CalendarDays, Bell, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { cn } from '@/lib/utils';
+import { appConfig } from '@/lib/config/app';
+import { buildItemListJsonLd, toJsonLd } from '@/lib/json-ld';
 import { Price } from '@/components/region/price';
 import { useRegion } from '@/components/region/region-provider';
 import { CommunityDeals } from '@/components/deals/community-deals';
+import { NewsletterCapture } from '@/components/home/newsletter-capture';
 import { AutoCouponHub } from '@/components/deals/auto-coupon-hub';
 import { ShareButtons } from '@/components/products/share-buttons';
 import { CuratedDealOfTheDay } from '@/components/curators/curated-deal-of-the-day';
@@ -65,6 +69,44 @@ const DEAL_CATEGORIES = [
   { key: 'holiday', label: 'Holiday Sales', icon: Clock },
 ];
 
+// Section 13, Chunk A — deals sort / filter / pagination helpers
+// (pure, local to this page).
+const DEALS_PAGE_SIZE = 12;
+
+type DealSortKey = 'ai' | 'discount' | 'savings' | 'ending';
+type DealPriceBand = 'all' | 'under-100' | '100-500' | '500-plus';
+
+function inDealPriceBand(price: number, band: DealPriceBand): boolean {
+  if (band === 'under-100') return price < 100;
+  if (band === '100-500') return price >= 100 && price <= 500;
+  return price > 500;
+}
+
+/**
+ * Merchant for a ranked deal, from the deal's own outbound URL
+ * hostname — the ranked-deals response carries no merchant field.
+ * Null when the deal has no URL: no merchant is ever guessed.
+ */
+function dealMerchantHost(deal: RankedDeal): string | null {
+  const url = deal.deal?.url;
+  if (!url) return null;
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    return host || null;
+  } catch {
+    return null;
+  }
+}
+
+const KNOWN_DEAL_MERCHANTS: Record<string, string> = {
+  'amazon.com': 'Amazon',
+  'bestbuy.com': 'Best Buy',
+};
+
+function dealMerchantLabel(host: string): string {
+  return KNOWN_DEAL_MERCHANTS[host] ?? host;
+}
+
 interface Coupon {
   id: string;
   code: string;
@@ -86,6 +128,59 @@ export default function DealsPage() {
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState('');
   const [featuredOnly, setFeaturedOnly] = useState(false);
+  // Section 13: sort / filters / pagination, all reflected in the
+  // URL (?type=&featured=&sort=&merchant=&brand=&band=&page=) so a
+  // filtered deals view is shareable. Initial values come from the
+  // URL on mount (window.location — this page has no Suspense
+  // boundary, same pattern as /compare's deep link).
+  const [dealSort, setDealSort] = useState<DealSortKey>('ai');
+  const [merchantFilter, setMerchantFilter] = useState('');
+  const [brandFilter, setBrandFilter] = useState('');
+  const [dealPriceBand, setDealPriceBand] = useState<DealPriceBand>('all');
+  const [dealsPage, setDealsPage] = useState(1);
+  const dealsUrlRef = useRef({
+    type: '',
+    featured: false,
+    sort: 'ai' as DealSortKey,
+    merchant: '',
+    brand: '',
+    band: 'all' as DealPriceBand,
+    page: 1,
+  });
+  dealsUrlRef.current = {
+    type: activeCategory,
+    featured: featuredOnly,
+    sort: dealSort,
+    merchant: merchantFilter,
+    brand: brandFilter,
+    band: dealPriceBand,
+    page: dealsPage,
+  };
+
+  const writeDealsUrl = useCallback(
+    (patch: Partial<{
+      type: string;
+      featured: boolean;
+      sort: DealSortKey;
+      merchant: string;
+      brand: string;
+      band: DealPriceBand;
+      page: number;
+    }>) => {
+      const s = { ...dealsUrlRef.current, ...patch };
+      const params = new URLSearchParams();
+      if (s.type) params.set('type', s.type);
+      if (s.featured) params.set('featured', 'true');
+      if (s.sort !== 'ai') params.set('sort', s.sort);
+      if (s.merchant) params.set('merchant', s.merchant);
+      if (s.brand) params.set('brand', s.brand);
+      if (s.band !== 'all') params.set('band', s.band);
+      if (s.page > 1) params.set('page', String(s.page));
+      const qs = params.toString();
+      router.replace(qs ? `/deals?${qs}` : '/deals');
+    },
+    [router]
+  );
 
   const fetchDeals = useCallback(async () => {
     setLoading(true);
@@ -131,9 +226,153 @@ export default function DealsPage() {
     }
   }, [activeCategory, featuredOnly]);
 
+  // Read the URL state once on mount (see the state above).
+  const dealsUrlInitRef = useRef(false);
+  useEffect(() => {
+    if (dealsUrlInitRef.current) return;
+    dealsUrlInitRef.current = true;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const type = params.get('type') ?? '';
+      if (type) setActiveCategory(type);
+      if (params.get('featured') === 'true') setFeaturedOnly(true);
+      const s = params.get('sort');
+      if (s === 'discount' || s === 'savings' || s === 'ending') setDealSort(s);
+      const m = params.get('merchant');
+      if (m) setMerchantFilter(m);
+      const b = params.get('brand');
+      if (b) setBrandFilter(b);
+      const band = params.get('band');
+      if (band === 'under-100' || band === '100-500' || band === '500-plus') setDealPriceBand(band);
+      const p = Math.max(1, Number(params.get('page') ?? 1) || 1);
+      if (p > 1) setDealsPage(p);
+    } catch {
+      // Defaults stand.
+    }
+  }, []);
+
   useEffect(() => {
     fetchDeals();
   }, [fetchDeals]);
+
+  // Section 13: filter options derived from the fetched rows only
+  // (merchant from the deal URL hostname, brand from the product;
+  // coupons resolve their merchant through the merchant names).
+  const merchantOptions = useMemo(() => {
+    const set = new Set<string>();
+    if (activeCategory === 'coupon') {
+      for (const name of Object.values(merchantNames)) if (name) set.add(name);
+    } else {
+      for (const d of deals) {
+        const host = dealMerchantHost(d);
+        if (host) set.add(dealMerchantLabel(host));
+      }
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [deals, merchantNames, activeCategory]);
+
+  const brandOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const d of deals) if (d.product?.brand) set.add(d.product.brand);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [deals]);
+
+  // Section 13: sort + filters, applied client-side to the fetched
+  // rows (the ranked endpoint returns AI order; the sort keys below
+  // reorder the same rows — biggest % off, biggest $ saving, ending
+  // soonest — from fields already on the cards).
+  const displayedDeals = useMemo(() => {
+    let items = deals;
+    if (merchantFilter) {
+      items = items.filter((d) => {
+        const host = dealMerchantHost(d);
+        return host !== null && dealMerchantLabel(host) === merchantFilter;
+      });
+    }
+    if (brandFilter) items = items.filter((d) => d.product?.brand === brandFilter);
+    if (dealPriceBand !== 'all') {
+      items = items.filter(
+        (d) => d.currentPrice === null || d.currentPrice === undefined || inDealPriceBand(d.currentPrice, dealPriceBand)
+      );
+    }
+    const sorted = [...items];
+    switch (dealSort) {
+      case 'discount':
+        sorted.sort((a, b) => b.discountPercentage - a.discountPercentage);
+        break;
+      case 'savings':
+        sorted.sort((a, b) => b.savingsAmount - a.savingsAmount);
+        break;
+      case 'ending':
+        sorted.sort((a, b) => {
+          const ea = a.deal ? new Date(a.deal.endAt).getTime() : Number.POSITIVE_INFINITY;
+          const eb = b.deal ? new Date(b.deal.endAt).getTime() : Number.POSITIVE_INFINITY;
+          return ea - eb;
+        });
+        break;
+      default:
+        break; // 'ai': the API's ranked order.
+    }
+    return sorted;
+  }, [deals, merchantFilter, brandFilter, dealPriceBand, dealSort]);
+
+  const displayedCoupons = useMemo(() => {
+    if (!merchantFilter) return coupons;
+    return coupons.filter(
+      (c) => c.merchantId !== null && merchantNames[c.merchantId] === merchantFilter
+    );
+  }, [coupons, merchantFilter, merchantNames]);
+
+  const dealFiltersActive =
+    dealSort !== 'ai' || merchantFilter !== '' || brandFilter !== '' || dealPriceBand !== 'all';
+  const dealsTotalPages = Math.max(1, Math.ceil(displayedDeals.length / DEALS_PAGE_SIZE));
+  const dealsEffectivePage = Math.min(dealsPage, dealsTotalPages);
+  const pagedDeals = displayedDeals.slice(
+    (dealsEffectivePage - 1) * DEALS_PAGE_SIZE,
+    dealsEffectivePage * DEALS_PAGE_SIZE
+  );
+
+  // Section 13, Chunk E: ItemList of the product-linked deals on
+  // the current page only (same pattern as the search page's result
+  // ItemList). Deals without a product are excluded — they have no
+  // product URL to list — and a product appearing in several deals
+  // is listed once.
+  const dealsItemListJsonLd = useMemo(() => {
+    const seen = new Set<string>();
+    const items: Array<{ name: string; path: string }> = [];
+    for (const deal of pagedDeals) {
+      if (!deal.product) continue;
+      if (seen.has(deal.product.slug)) continue;
+      seen.add(deal.product.slug);
+      items.push({
+        name: deal.product.name,
+        path: `/products/${deal.product.slug}`,
+      });
+    }
+    return items.length > 0
+      ? toJsonLd(buildItemListJsonLd(appConfig.url, items))
+      : null;
+  }, [pagedDeals]);
+  const couponsTotalPages = Math.max(1, Math.ceil(displayedCoupons.length / DEALS_PAGE_SIZE));
+  const couponsEffectivePage = Math.min(dealsPage, couponsTotalPages);
+  const pagedCoupons = displayedCoupons.slice(
+    (couponsEffectivePage - 1) * DEALS_PAGE_SIZE,
+    couponsEffectivePage * DEALS_PAGE_SIZE
+  );
+
+  const clearDealFilters = () => {
+    setDealSort('ai');
+    setMerchantFilter('');
+    setBrandFilter('');
+    setDealPriceBand('all');
+    setDealsPage(1);
+    writeDealsUrl({ sort: 'ai', merchant: '', brand: '', band: 'all', page: 1 });
+  };
+
+  const goToDealsPage = (nextPage: number) => {
+    setDealsPage(nextPage);
+    writeDealsUrl({ page: nextPage });
+  };
 
   const featuredDeals = deals.filter((d) => d.isFeatured);
   const regularDeals = deals.filter((d) => !d.isFeatured);
@@ -141,6 +380,12 @@ export default function DealsPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
       <SiteHeader />
+      {dealsItemListJsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: dealsItemListJsonLd }}
+        />
+      )}
       <div className="container mx-auto max-w-6xl px-4 py-8">
         <div className="mb-8 text-center">
           <h1 className="flex items-center justify-center gap-2 text-3xl font-bold sm:text-4xl">
@@ -174,7 +419,11 @@ export default function DealsPage() {
                 key={cat.key}
                 type="button"
                 variant="outline"
-                onClick={() => setActiveCategory(cat.key)}
+                onClick={() => {
+                  setActiveCategory(cat.key);
+                  setDealsPage(1);
+                  writeDealsUrl({ type: cat.key, page: 1 });
+                }}
                 className={cn(
                   // Touch target ≥44px (S3#22): min-h keeps the pill
                   // look while the hit area meets the minimum.
@@ -192,7 +441,12 @@ export default function DealsPage() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => setFeaturedOnly(!featuredOnly)}
+            onClick={() => {
+              const next = !featuredOnly;
+              setFeaturedOnly(next);
+              setDealsPage(1);
+              writeDealsUrl({ featured: next, page: 1 });
+            }}
             className={cn(
               'flex h-auto min-h-[44px] items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all',
               featuredOnly
@@ -203,6 +457,98 @@ export default function DealsPage() {
             <Sparkles className="h-4 w-4" />
             Featured Only
           </Button>
+        </div>
+
+        {/* Section 13: sort + filters + shareable URL state. The
+            brand / price-band / sort controls apply to ranked deals;
+            the merchant filter applies to coupons too (via the
+            merchant names resolved for the Coupons tab). */}
+        <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
+          <Select
+            value={dealSort}
+            onValueChange={(v) => {
+              const next = v as DealSortKey;
+              setDealSort(next);
+              setDealsPage(1);
+              writeDealsUrl({ sort: next, page: 1 });
+            }}
+          >
+            <SelectTrigger aria-label="Sort deals" className="w-[200px]">
+              <SelectValue placeholder="Sort: AI ranked" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ai">Sort: AI ranked</SelectItem>
+              <SelectItem value="discount">Biggest % off</SelectItem>
+              <SelectItem value="savings">Biggest $ saving</SelectItem>
+              <SelectItem value="ending">Ending soonest</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={merchantFilter || 'all'}
+            onValueChange={(v) => {
+              const next = v === 'all' ? '' : v;
+              setMerchantFilter(next);
+              setDealsPage(1);
+              writeDealsUrl({ merchant: next, page: 1 });
+            }}
+          >
+            <SelectTrigger aria-label="Filter by merchant" className="w-[180px]">
+              <SelectValue placeholder="All merchants" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All merchants</SelectItem>
+              {merchantOptions.map((m) => (
+                <SelectItem key={m} value={m}>{m}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {activeCategory !== 'coupon' && (
+            <>
+              <Select
+                value={brandFilter || 'all'}
+                onValueChange={(v) => {
+                  const next = v === 'all' ? '' : v;
+                  setBrandFilter(next);
+                  setDealsPage(1);
+                  writeDealsUrl({ brand: next, page: 1 });
+                }}
+              >
+                <SelectTrigger aria-label="Filter by brand" className="w-[160px]">
+                  <SelectValue placeholder="All brands" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All brands</SelectItem>
+                  {brandOptions.map((b) => (
+                    <SelectItem key={b} value={b}>{b}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={dealPriceBand}
+                onValueChange={(v) => {
+                  const next = v as DealPriceBand;
+                  setDealPriceBand(next);
+                  setDealsPage(1);
+                  writeDealsUrl({ band: next, page: 1 });
+                }}
+              >
+                <SelectTrigger aria-label="Filter by price band" className="w-[160px]">
+                  <SelectValue placeholder="Any price" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Any price</SelectItem>
+                  <SelectItem value="under-100">Under $100</SelectItem>
+                  <SelectItem value="100-500">$100 – $500</SelectItem>
+                  <SelectItem value="500-plus">Over $500</SelectItem>
+                </SelectContent>
+              </Select>
+            </>
+          )}
+          {dealFiltersActive && (
+            <Button type="button" variant="ghost" size="sm" onClick={clearDealFilters}>
+              <X className="mr-1 h-4 w-4" /> Clear filters
+            </Button>
+          )}
         </div>
 
         {/* S5#13 — curated deal of the day for the visitor's
@@ -241,16 +587,33 @@ export default function DealsPage() {
           </div>
         )}
 
-        {!loading && deals.length === 0 && coupons.length === 0 && (
+        {!loading &&
+          (activeCategory === 'coupon' ? displayedCoupons.length === 0 : displayedDeals.length === 0) && (
           <EmptyState
-            title={activeCategory === 'coupon' ? 'No coupons available' : 'No deals found'}
+            title={
+              activeCategory === 'coupon'
+                ? 'No coupons available'
+                : dealFiltersActive
+                  ? 'No deals match your filters'
+                  : 'No deals found'
+            }
             description={
               activeCategory === 'coupon'
                 ? 'No active coupon codes right now — check back later, or browse the deals above.'
-                : 'Check back later for new deals and discounts'
+                : dealFiltersActive
+                  ? 'Nothing matches the sort or filters you selected. Clear them to see all deals again.'
+                  : 'Check back later for new deals and discounts'
             }
             icon={Tag}
             action={
+              // Section 13: a filter-caused empty state offers to
+              // clear the filters; the original "find a product"
+              // action stays for a genuinely empty catalog.
+              dealFiltersActive ? (
+                <Button variant="outline" onClick={clearDealFilters}>
+                  Clear filters
+                </Button>
+              ) : (
               // Section 11, Chunk C: there is no product here to
               // attach a guest price alert to (alerts are per
               // product, via PriceAlertDialog), so the empty state
@@ -270,23 +633,27 @@ export default function DealsPage() {
                   background.
                 </p>
               </div>
+              )
             }
           />
         )}
 
-        {!loading && activeCategory === 'coupon' && coupons.length > 0 && (
+        {!loading && activeCategory === 'coupon' && displayedCoupons.length > 0 && (
           <div>
             {/* Option 9: Auto-Coupon Hub — aggregated view of the SAME
                 validity-filtered coupon source as the product rows, so
-                the hub and the rows can never disagree. */}
-            <AutoCouponHub coupons={coupons} merchantNames={merchantNames} />
+                the hub and the rows can never disagree. It receives
+                the filtered list here, so hub and rows stay in sync
+                when a merchant filter is on. */}
+            <AutoCouponHub coupons={displayedCoupons} merchantNames={merchantNames} />
             <h2 className="mb-4 text-xl font-bold">Coupons</h2>
             <p className="mb-4 text-sm text-muted-foreground">
               Copy a code and paste it at the retailer&apos;s checkout — SmartBuy cannot apply codes inside a
               retailer&apos;s own checkout, so this one tap copies the code for you.
+              {merchantFilter && ` Showing ${displayedCoupons.length} coupon${displayedCoupons.length !== 1 ? 's' : ''} for ${merchantFilter}.`}
             </p>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {coupons.map((coupon) => (
+              {pagedCoupons.map((coupon) => (
                 <CouponCard
                   key={coupon.id}
                   coupon={coupon}
@@ -294,12 +661,25 @@ export default function DealsPage() {
                 />
               ))}
             </div>
+            {couponsTotalPages > 1 && (
+              <div className="mt-6 flex items-center justify-center gap-2">
+                <Button variant="outline" size="sm" disabled={couponsEffectivePage <= 1} onClick={() => goToDealsPage(couponsEffectivePage - 1)}>
+                  Previous
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Page {couponsEffectivePage} of {couponsTotalPages}
+                </span>
+                <Button variant="outline" size="sm" disabled={couponsEffectivePage >= couponsTotalPages} onClick={() => goToDealsPage(couponsEffectivePage + 1)}>
+                  Next
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
-        {!loading && deals.length > 0 && (
+        {!loading && displayedDeals.length > 0 && (
           <div className="space-y-8">
-            {featuredDeals.length > 0 && !activeCategory && !featuredOnly && (
+            {featuredDeals.length > 0 && !activeCategory && !featuredOnly && !dealFiltersActive && (
               <div>
                 <h2 className="mb-4 flex items-center gap-2 text-xl font-bold">
                   <Sparkles className="h-5 w-5 text-amber-500" />
@@ -317,16 +697,45 @@ export default function DealsPage() {
               <h2 className="mb-4 text-xl font-bold">
                 {activeCategory ? DEAL_CATEGORIES.find((c) => c.key === activeCategory)?.label : 'All Deals'}
               </h2>
+              {dealFiltersActive && (
+                <p className="mb-4 text-sm text-muted-foreground">
+                  Showing {(dealsEffectivePage - 1) * DEALS_PAGE_SIZE + 1}–{(dealsEffectivePage - 1) * DEALS_PAGE_SIZE + pagedDeals.length} of {displayedDeals.length} deal{displayedDeals.length !== 1 ? 's' : ''}
+                  {displayedDeals.length !== deals.length && ` (of ${deals.length} before filters)`}
+                </p>
+              )}
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {(featuredOnly ? deals : regularDeals.length > 0 ? regularDeals : deals).map((deal) => (
+                {(dealFiltersActive
+                  ? pagedDeals
+                  : featuredOnly ? deals : regularDeals.length > 0 ? regularDeals : deals
+                ).map((deal) => (
                   <DealCard key={deal.id} deal={deal} onClick={() => deal.product && router.push(`/products/${deal.product.slug}`)} />
                 ))}
               </div>
+              {dealFiltersActive && dealsTotalPages > 1 && (
+                <div className="mt-6 flex items-center justify-center gap-2">
+                  <Button variant="outline" size="sm" disabled={dealsEffectivePage <= 1} onClick={() => goToDealsPage(dealsEffectivePage - 1)}>
+                    Previous
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    Page {dealsEffectivePage} of {dealsTotalPages}
+                  </span>
+                  <Button variant="outline" size="sm" disabled={dealsEffectivePage >= dealsTotalPages} onClick={() => goToDealsPage(dealsEffectivePage + 1)}>
+                    Next
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         )}
 
         <CommunityDeals />
+
+        {/* Section 13, item 51 — deal-alert capture on the deals
+            page (capture only; sending starts once email delivery
+            is configured — see lib/newsletter.ts). */}
+        <div className="mt-8">
+          <NewsletterCapture source="deals" />
+        </div>
       </div>
       <SiteFooter />
     </div>

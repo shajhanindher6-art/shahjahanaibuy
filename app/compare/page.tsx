@@ -2,8 +2,9 @@
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { GitCompare, Search, Trophy, Check, X, Plus, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +17,8 @@ import { ShareButtons } from '@/components/products/share-buttons';
 import { EmptyState } from '@/components/ui/empty-state';
 import { cn } from '@/lib/utils';
 import { fetchTimed } from '@/lib/fetch-timed';
+import { computeTrendStats, filterPointsByRange, type TrendPoint } from '@/lib/price-trend';
+import { slugify } from '@/lib/brand-category-seo';
 import { Price } from '@/components/region/price';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
 import { PriceTrendSparkline } from '@/components/products/price-trend-sparkline';
@@ -43,6 +46,56 @@ import type { RecordedOverridesData } from '@/services/recorded-overrides';
 // Option 20: global readiness per compared product.
 import { GlobalReadinessCard } from '@/components/products/global-readiness-card';
 import type { GlobalReadinessData } from '@/services/global-readiness';
+
+/**
+ * Section 13, Chunk A — 30-day change cell for the comparison
+ * matrix. Same /prices data as the sparkline (GET
+ * /api/v1/products/[slug]/prices, backed by `price_history`), but a
+ * 30-DAY window (filterPointsByRange) instead of the sparkline's
+ * last-30-points. Renders "No price history" with fewer than 2
+ * recorded points in the window — never a fabricated trend.
+ */
+function TrendChangeCell({ slug }: { slug: string }) {
+  const [change, setChange] = useState<number | null | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/v1/products/${slug}/prices?limit=60`, {
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!res.ok) throw new Error('prices request failed');
+        const data = await res.json();
+        const history = (data?.data?.history ?? []) as Array<{ price: number; recordedAt: string }>;
+        const points: TrendPoint[] = history
+          .map((h) => ({ price: Number(h.price), recordedAt: h.recordedAt }))
+          .filter((p) => Number.isFinite(p.price) && p.recordedAt);
+        const stats = computeTrendStats(filterPointsByRange(points, 30));
+        // computeTrendStats returns stats for a single point too
+        // (change 0) — but one point measures no change, so fewer
+        // than 2 points in the window is "No price history", never
+        // a "0.0%" that would read as a flat price.
+        if (!cancelled) setChange(stats && stats.pointCount >= 2 ? stats.changePercent : null);
+      } catch {
+        if (!cancelled) setChange(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  if (change === undefined) return <span className="text-xs text-muted-foreground">…</span>;
+  if (change === null) return <span className="text-sm text-muted-foreground">No price history</span>;
+  const fell = change < 0;
+  return (
+    <span className={cn('text-sm font-medium', fell ? 'text-green-600' : change > 0 ? 'text-red-600' : 'text-muted-foreground')}>
+      {change > 0 ? '+' : ''}
+      {change.toFixed(1)}% in 30 days
+    </span>
+  );
+}
 
 interface ComparisonRetailer {
   retailerName: string;
@@ -138,17 +191,32 @@ export default function ComparePage() {
     }
   }, []);
 
+  // Section 13: keep ?products= in sync with the selection, so a
+  // shared link always re-opens the same comparison. ShareButtons
+  // reads window.location.href live, so the shared link was already
+  // correct at share time — but a stale ?products= after removing
+  // a product still re-opened the removed product on refresh, and
+  // a fresh selection never got a deep link at all. router.replace
+  // (not push): add/remove must not flood back-button history.
+  const syncCompareUrl = useCallback((ids: string[]) => {
+    router.replace(ids.length > 0 ? `/compare?products=${ids.join(',')}` : '/compare');
+  }, [router]);
+
   const addProduct = (product: { id: string; name: string; slug: string }) => {
     if (selectedProducts.length >= 5) return;
     if (selectedProducts.find((p) => p.id === product.id)) return;
-    setSelectedProducts([...selectedProducts, product]);
+    const next = [...selectedProducts, product];
+    setSelectedProducts(next);
+    syncCompareUrl(next.map((p) => p.id));
     setShowSearch(false);
     setSearchTerm('');
     setSearchResults([]);
   };
 
   const removeProduct = (id: string) => {
-    setSelectedProducts(selectedProducts.filter((p) => p.id !== id));
+    const next = selectedProducts.filter((p) => p.id !== id);
+    setSelectedProducts(next);
+    syncCompareUrl(next.map((p) => p.id));
     setComparison(null);
     setCompareError(null);
   };
@@ -259,6 +327,64 @@ export default function ComparePage() {
     // one-shot pre-select (it only reads its argument + setters).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Section 13: empty-state suggestions when exactly one product is
+  // selected — same-category products from the existing
+  // /api/v1/products/[slug]/similar endpoint, plus a "Compare all
+  // <category>" link. Nothing is shown when the endpoint returns
+  // nothing: no invented suggestions.
+  interface SimilarSuggestion {
+    id: string;
+    name: string;
+    slug: string;
+    brand: string | null;
+    category: string | null;
+  }
+  const [similarSuggestions, setSimilarSuggestions] = useState<SimilarSuggestion[]>([]);
+  useEffect(() => {
+    if (selectedProducts.length !== 1) {
+      setSimilarSuggestions([]);
+      return;
+    }
+    const slug = selectedProducts[0].slug;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetchTimed(`/api/v1/products/${slug}/similar?limit=4`, 15000);
+        const data = await res.json();
+        if (!cancelled && data.success && Array.isArray(data.data)) {
+          setSimilarSuggestions(
+            (data.data as Array<Record<string, unknown>>)
+              .filter((p) => typeof p.slug === 'string' && p.slug !== slug)
+              .slice(0, 3)
+              .map((p) => ({
+                id: p.id as string,
+                name: p.name as string,
+                slug: p.slug as string,
+                brand: (p.brand as string | null) ?? null,
+                category: (p.category as string | null) ?? null,
+              }))
+          );
+        }
+      } catch {
+        if (!cancelled) setSimilarSuggestions([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProducts]);
+
+  // Section 13: distinct retailer names across the compared
+  // products, for the merchant × product price grid below.
+  const retailerNames = useMemo(
+    () => [
+      ...new Set(
+        (comparison?.products ?? []).flatMap((p) => p.retailers.map((r) => r.retailerName))
+      ),
+    ],
+    [comparison]
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
@@ -386,6 +512,40 @@ export default function ComparePage() {
           </p>
         )}
 
+        {!comparing && !comparison && selectedProducts.length === 1 && similarSuggestions.length > 0 && (
+          <Card className="mb-6">
+            <CardHeader>
+              <h2 className="text-base font-semibold leading-none tracking-tight">Compare with similar products</h2>
+              <CardDescription>
+                Same-category products from the catalog — add one to compare it against {selectedProducts[0].name}.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {similarSuggestions[0].category && (
+                <Button asChild variant="outline" className="mb-3 min-h-[44px]">
+                  <Link href={`/categories/${slugify(similarSuggestions[0].category)}`}>
+                    Compare all {similarSuggestions[0].category}
+                  </Link>
+                </Button>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {similarSuggestions.map((s) => (
+                  <Button
+                    key={s.id}
+                    type="button"
+                    variant="outline"
+                    onClick={() => addProduct({ id: s.id, name: s.name, slug: s.slug })}
+                    aria-label={`Add ${s.name} to comparison`}
+                    className="h-auto min-h-[44px] whitespace-normal"
+                  >
+                    <Plus className="mr-1 h-4 w-4 shrink-0" /> {s.name}
+                  </Button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {!comparing && !comparison && selectedProducts.length < 2 && (
           <EmptyState
             title="Select products to compare"
@@ -498,6 +658,23 @@ export default function ComparePage() {
                       <p className="text-sm text-muted-foreground">
                         {p.retailers.length} retailer{p.retailers.length !== 1 ? 's' : ''}
                       </p>
+                      {/* Section 13: merchant × product prices + the
+                          30-day change on mobile cards too — the
+                          matrix below is desktop-only. */}
+                      {p.retailers.length > 0 && (
+                        <div className="space-y-0.5 text-sm">
+                          {p.retailers.map((r) => (
+                            <p key={r.retailerName}>
+                              <span className="font-medium">{r.retailerName}: </span>
+                              <Price usd={r.price} showFxNote />
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                      <p className="flex items-center gap-2 text-sm">
+                        <span className="font-medium">30-day change: </span>
+                        <TrendChangeCell slug={p.slug} />
+                      </p>
                       <Button
                         size="sm"
                         variant="outline"
@@ -551,6 +728,28 @@ export default function ComparePage() {
                       );
                     })}
                   </tr>
+                  {/* Section 13: merchant × product price grid — one
+                      row per retailer across all compared products,
+                      from the retailers[] already in the response.
+                      A product with no listing at that retailer
+                      says "Not listed", never a guessed price. */}
+                  {retailerNames.map((name) => (
+                    <tr key={name} className="border-b border-slate-100 dark:border-slate-800">
+                      <td scope="row" className="p-3 text-sm font-medium">{name}</td>
+                      {comparison.products.map((p) => {
+                        const row = p.retailers.find((r) => r.retailerName === name);
+                        return (
+                          <td key={p.productId} className="p-3">
+                            {row ? (
+                              <Price usd={row.price} showFxNote />
+                            ) : (
+                              <span className="text-sm text-muted-foreground">Not listed</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
                   <tr className="border-b border-slate-100 dark:border-slate-800">
                     <td scope="row" className="p-3 text-sm font-medium">Deal Score</td>
                     {comparison.products.map((p) => (
@@ -573,6 +772,17 @@ export default function ComparePage() {
                             stays empty rather than showing a fake
                             trend. */}
                         <PriceTrendSparkline slug={p.slug} showChange />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <td scope="row" className="p-3 text-sm font-medium">30-day change</td>
+                    {comparison.products.map((p) => (
+                      <td key={p.productId} className="p-3">
+                        {/* Section 13: "−X% in 30 days" from the same
+                            /prices data as the sparkline above, over
+                            a 30-day window (see TrendChangeCell). */}
+                        <TrendChangeCell slug={p.slug} />
                       </td>
                     ))}
                   </tr>

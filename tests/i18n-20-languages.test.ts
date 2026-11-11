@@ -2,7 +2,7 @@
  * Tests for the 20-language i18n expansion (S5#12, lib/i18n.ts +
  * lib/region.ts).
  *
- * Key parity (33 DictKeys × 20 languages), detection (country →
+ * Key parity (48 DictKeys × 20 languages), detection (country →
  * language, browser tag → language), the auto-translated label set,
  * and the RTL flag. Translations themselves are machine
  * translations — these tests check coverage and plumbing, not
@@ -59,6 +59,21 @@ const EXPECTED_KEYS: DictKey[] = [
   'bannerOfferUrdu',
   'languageEnglish',
   'languageRomanUrdu',
+  'footerProduct',
+  'footerCompany',
+  'footerResources',
+  'footerTransparency',
+  'footerLegal',
+  'footerTagline',
+  'newsletterHeading',
+  'homeFeaturedHeading',
+  'homeFeaturesHeading',
+  'homeToolsHeading',
+  'homeToolsMoreHeading',
+  'homeHowItWorksHeading',
+  'homeTestimonialsHeading',
+  'homeCtaHeading',
+  'homeCtaSubheading',
 ];
 
 const NEW_12 = ['ar', 'zh', 'ja', 'ko', 'hi', 'bn', 'nl', 'sv', 'pl', 'ru', 'id', 'vi'] as const;
@@ -70,7 +85,7 @@ describe('20-language registry', () => {
     expect(new Set(SUPPORTED_LANGUAGES).size).toBe(20);
   });
 
-  it('has one dictionary per language with all 33 keys, no more and no fewer', () => {
+  it('has one dictionary per language with all 48 keys, no more and no fewer', () => {
     expect(Object.keys(DICTIONARIES).sort()).toEqual([...SUPPORTED_LANGUAGES].sort());
     for (const lang of SUPPORTED_LANGUAGES) {
       const keys = Object.keys(DICTIONARIES[lang]).sort();

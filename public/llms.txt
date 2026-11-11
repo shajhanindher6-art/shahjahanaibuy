@@ -1,10 +1,15 @@
 # SmartBuy AI
 
-> SmartBuy AI is an AI-powered shopping intelligence site: price comparison across retailers, price-drop alerts and price history, deal finding, and an AI shopping assistant. Content is in English, with site chrome in 20 languages (English, Urdu, German, French, Spanish, Italian, Portuguese, Turkish, Arabic, Chinese, Japanese, Korean, Hindi, Bengali, Dutch, Swedish, Polish, Russian, Indonesian, Vietnamese) across 61 regions.
+> SmartBuy AI is an AI-powered shopping intelligence site: price comparison across retailers, price-drop alerts and price history, deal finding, and an AI shopping assistant. Content is in English, with site chrome in 20 languages (English, Urdu, German, French, Spanish, Italian, Portuguese, Turkish, Arabic, Chinese, Japanese, Korean, Hindi, Bengali, Dutch, Swedish, Polish, Russian, Indonesian, Vietnamese) across 61 regions. Language scope, stated honestly: only 28 chrome strings are translated, 12 of the 20 languages are machine-translated, and all other content (product copy, guides, tool pages) is English only.
 
 ## Key pages
 
 - [Home](https://shahjahanaibuy-b1zp.vercel.app/): product search, deals, local stores by country
+- [Tools](https://shahjahanaibuy-b1zp.vercel.app/tools): AI shopping tools — guided quiz, budget finder, store finder, price history explorer, gift budget splitter, forecast explainer, currency converter, and more
+- [Pricing](https://shahjahanaibuy-b1zp.vercel.app/pricing): Free and Premium plans, quotas, and limits
+- [Brands](https://shahjahanaibuy-b1zp.vercel.app/brands) and [Categories](https://shahjahanaibuy-b1zp.vercel.app/categories): browse the catalog by brand or category
+- [Compare](https://shahjahanaibuy-b1zp.vercel.app/compare): product comparison across retailers
+- [Coming soon](https://shahjahanaibuy-b1zp.vercel.app/coming-soon): honest roadmap — what is planned, what is blocked, no launch dates promised
 - [Blog](https://shahjahanaibuy-b1zp.vercel.app/blog): how-to guides on reading price history, spotting fake sales, coupons, and buying timing
 - [Blog RSS feed](https://shahjahanaibuy-b1zp.vercel.app/rss.xml)
 - [Search](https://shahjahanaibuy-b1zp.vercel.app/search): local-first retailer search with a global import tab

@@ -4,8 +4,10 @@
  *
  * LIMIT (deliberate, stated to the user): only the strings listed
  * here are translated — header nav, hero, search placeholder, Buy /
- * Where to Buy / stock labels, and the region banner. ALL other page
- * content stays English. This is not full-page translation; product
+ * Where to Buy / stock labels, the region banner, and (Section 13
+ * Phase 1) the footer group titles/tagline, the newsletter heading
+ * and the homepage section headings. ALL other page content stays
+ * English. This is not full-page translation; product
  * descriptions, reviews, deal copy and dashboard text are English
  * until a full i18n pass is done.
  *
@@ -31,11 +33,14 @@
  * strings written for this feature, not professionally reviewed
  * copy. Short labels may read slightly formally in some languages.
  *
- * KEY PARITY: every language must define all 33 DictKeys, no more
+ * KEY PARITY: every language must define all 48 DictKeys, no more
  * and no fewer (scripted check). Section 12 added navTools,
  * navSearch, navDeals, navCompare, navBrands for the header nav;
  * the 12 machine-translated languages carry machine translations
- * of those five keys too, under the same auto-translated label. `bannerOfferUrdu` is retained for
+ * of those five keys too, under the same auto-translated label.
+ * Section 13 added 15 Phase 1 keys (footer group titles/tagline,
+ * newsletter heading, homepage section headings) the same way.
+ * `bannerOfferUrdu` is retained for
  * key parity but is no longer rendered by the banner: the banner
  * now offers the detected language by its native name instead of
  * a Roman-Urdu-specific button (see region-banner.tsx).
@@ -86,7 +91,22 @@ export type DictKey =
   | 'bannerDismiss'
   | 'bannerOfferUrdu'
   | 'languageEnglish'
-  | 'languageRomanUrdu';
+  | 'languageRomanUrdu'
+  | 'footerProduct'
+  | 'footerCompany'
+  | 'footerResources'
+  | 'footerTransparency'
+  | 'footerLegal'
+  | 'footerTagline'
+  | 'newsletterHeading'
+  | 'homeFeaturedHeading'
+  | 'homeFeaturesHeading'
+  | 'homeToolsHeading'
+  | 'homeToolsMoreHeading'
+  | 'homeHowItWorksHeading'
+  | 'homeTestimonialsHeading'
+  | 'homeCtaHeading'
+  | 'homeCtaSubheading';
 
 export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
   en: {
@@ -107,7 +127,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'shopping decisions',
     heroTitleC: 'with AI',
     heroSubtitle:
-      'SmartBuy AI analyzes products, reviews, and prices in real-time to help you find the best deals, avoid bad purchases, and shop with confidence.',
+      'SmartBuy AI analyzes products, reviews, and prices to help you find the best deals, avoid bad purchases, and shop with confidence — with price-drop alerts on the products you watch.',
     heroCtaStart: 'Get Started Free',
     heroCtaSearch: 'Try AI Search',
     heroNoCard: 'No credit card required',
@@ -124,6 +144,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'Roman Urdu mein dekhein',
     languageEnglish: 'English',
     languageRomanUrdu: 'Roman Urdu',
+    footerProduct: 'Product',
+    footerCompany: 'Company',
+    footerResources: 'Resources',
+    footerTransparency: 'Transparency',
+    footerLegal: 'Legal',
+    footerTagline: 'AI-powered shopping intelligence for smarter decisions.',
+    newsletterHeading: 'Get deal alerts by email',
+    homeFeaturedHeading: 'Featured products',
+    homeFeaturesHeading: 'Everything you need to shop smarter',
+    homeToolsHeading: 'AI tools — see what they do first',
+    homeToolsMoreHeading: 'Ten more tools, after sign-in',
+    homeHowItWorksHeading: 'How SmartBuy AI works',
+    homeTestimonialsHeading: 'Illustrative shopper feedback',
+    homeCtaHeading: 'Ready to shop smarter?',
+    homeCtaSubheading: 'Make better purchasing decisions with AI.',
   },
   ur: {
     navHome: 'Home',
@@ -143,7 +178,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'behtareen shopping faisle',
     heroTitleC: 'karein',
     heroSubtitle:
-      'SmartBuy AI products, reviews aur prices ko real-time mein analyze kar ke aap ko behtareen deals dhoondne, ghalat khareedari se bachne aur itminan se shopping karne mein madad karta hai.',
+      'SmartBuy AI products, reviews aur prices ko analyze kar ke aap ko behtareen deals dhoondne, ghalat khareedari se bachne aur itminan se shopping karne mein madad karta hai — aur jin products ko aap watch karte hain un par price-drop alerts deta hai.',
     heroCtaStart: 'Muft Shuru Karein',
     heroCtaSearch: 'AI Search Try Karein',
     heroNoCard: 'Credit card ki zaroorat nahi',
@@ -160,6 +195,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'Roman Urdu mein dekhein',
     languageEnglish: 'English',
     languageRomanUrdu: 'Roman Urdu',
+    footerProduct: 'Product',
+    footerCompany: 'Company',
+    footerResources: 'Resources',
+    footerTransparency: 'Transparency',
+    footerLegal: 'Legal',
+    footerTagline: 'Behtar faislon ke liye AI-powered shopping intelligence.',
+    newsletterHeading: 'Email par deal alerts hasil karein',
+    homeFeaturedHeading: 'Numayan products',
+    homeFeaturesHeading: 'Hoshyari se shopping ke liye jo kuch chahiye',
+    homeToolsHeading: 'AI tools — pehle dekhein ye kya karte hain',
+    homeToolsMoreHeading: 'Sign-in ke baad, mazeed das tools',
+    homeHowItWorksHeading: 'SmartBuy AI kaise kaam karta hai',
+    homeTestimonialsHeading: 'Misaali shopper feedback',
+    homeCtaHeading: 'Hoshyari se shopping ke liye tayyar?',
+    homeCtaSubheading: 'AI ke saath behtar khareedari ke faisle karein.',
   },
   de: {
     navHome: 'Start',
@@ -179,7 +229,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'Kaufentscheidungen',
     heroTitleC: 'mit KI',
     heroSubtitle:
-      'SmartBuy AI analysiert Produkte, Bewertungen und Preise in Echtzeit, damit du die besten Angebote findest, Fehlkäufe vermeidest und mit gutem Gefühl einkaufst.',
+      'SmartBuy AI analysiert Produkte, Bewertungen und Preise, damit du die besten Angebote findest, Fehlkäufe vermeidest und mit gutem Gefühl einkaufst — mit Preisalarm, wenn ein Preis fällt.',
     heroCtaStart: 'Kostenlos starten',
     heroCtaSearch: 'KI-Suche ausprobieren',
     heroNoCard: 'Keine Kreditkarte erforderlich',
@@ -196,6 +246,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'Auf Roman-Urdu ansehen',
     languageEnglish: 'Englisch',
     languageRomanUrdu: 'Roman-Urdu',
+    footerProduct: 'Produkt',
+    footerCompany: 'Unternehmen',
+    footerResources: 'Ressourcen',
+    footerTransparency: 'Transparenz',
+    footerLegal: 'Rechtliches',
+    footerTagline: 'KI-gestützte Shopping-Intelligenz für klügere Entscheidungen.',
+    newsletterHeading: 'Deal-Benachrichtigungen per E-Mail erhalten',
+    homeFeaturedHeading: 'Empfohlene Produkte',
+    homeFeaturesHeading: 'Alles, was du brauchst, um klüger einzukaufen',
+    homeToolsHeading: 'KI-Tools — sieh zuerst, was sie können',
+    homeToolsMoreHeading: 'Zehn weitere Tools, nach der Anmeldung',
+    homeHowItWorksHeading: 'So funktioniert SmartBuy AI',
+    homeTestimonialsHeading: 'Anschauliches Käufer-Feedback',
+    homeCtaHeading: 'Bereit, klüger einzukaufen?',
+    homeCtaSubheading: 'Triff bessere Kaufentscheidungen mit KI.',
   },
   fr: {
     navHome: 'Accueil',
@@ -215,7 +280,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'décisions d’achat',
     heroTitleC: 'avec l’IA',
     heroSubtitle:
-      'SmartBuy AI analyse des produits, des avis et des prix en temps réel pour vous aider à trouver les meilleures offres, éviter les mauvais achats et acheter en toute confiance.',
+      'SmartBuy AI analyse des produits, des avis et des prix pour vous aider à trouver les meilleures offres, éviter les mauvais achats et acheter en toute confiance — avec des alertes de baisse de prix sur les produits que vous suivez.',
     heroCtaStart: 'Commencer gratuitement',
     heroCtaSearch: 'Essayer la recherche IA',
     heroNoCard: 'Aucune carte bancaire requise',
@@ -232,6 +297,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'Voir en ourdou roman',
     languageEnglish: 'Anglais',
     languageRomanUrdu: 'Ourdou roman',
+    footerProduct: 'Produit',
+    footerCompany: 'Entreprise',
+    footerResources: 'Ressources',
+    footerTransparency: 'Transparence',
+    footerLegal: 'Légal',
+    footerTagline: 'Intelligence d’achat propulsée par l’IA pour des décisions plus avisées.',
+    newsletterHeading: 'Recevez des alertes offres par e-mail',
+    homeFeaturedHeading: 'Produits à la une',
+    homeFeaturesHeading: 'Tout ce qu’il vous faut pour acheter plus intelligemment',
+    homeToolsHeading: 'Outils IA — voyez d’abord ce qu’ils font',
+    homeToolsMoreHeading: 'Dix outils de plus, après connexion',
+    homeHowItWorksHeading: 'Comment fonctionne SmartBuy AI',
+    homeTestimonialsHeading: 'Retours d’acheteurs à titre d’illustration',
+    homeCtaHeading: 'Prêt·e à acheter plus intelligemment ?',
+    homeCtaSubheading: 'Prenez de meilleures décisions d’achat avec l’IA.',
   },
   es: {
     navHome: 'Inicio',
@@ -251,7 +331,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'de compra más inteligentes',
     heroTitleC: 'con IA',
     heroSubtitle:
-      'SmartBuy AI analiza productos, reseñas y precios en tiempo real para ayudarte a encontrar las mejores ofertas, evitar malas compras y comprar con confianza.',
+      'SmartBuy AI analiza productos, reseñas y precios para ayudarte a encontrar las mejores ofertas, evitar malas compras y comprar con confianza — con alertas de bajada de precio en los productos que sigues.',
     heroCtaStart: 'Empezar gratis',
     heroCtaSearch: 'Probar la búsqueda con IA',
     heroNoCard: 'No se requiere tarjeta de crédito',
@@ -268,6 +348,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'Ver en urdu romano',
     languageEnglish: 'Inglés',
     languageRomanUrdu: 'Urdú romano',
+    footerProduct: 'Producto',
+    footerCompany: 'Empresa',
+    footerResources: 'Recursos',
+    footerTransparency: 'Transparencia',
+    footerLegal: 'Legal',
+    footerTagline: 'Inteligencia de compras con IA para decisiones más inteligentes.',
+    newsletterHeading: 'Recibe alertas de ofertas por correo',
+    homeFeaturedHeading: 'Productos destacados',
+    homeFeaturesHeading: 'Todo lo que necesitas para comprar mejor',
+    homeToolsHeading: 'Herramientas de IA — mira primero lo que hacen',
+    homeToolsMoreHeading: 'Diez herramientas más, tras iniciar sesión',
+    homeHowItWorksHeading: 'Cómo funciona SmartBuy AI',
+    homeTestimonialsHeading: 'Opiniones ilustrativas de compradores',
+    homeCtaHeading: '¿Listo para comprar mejor?',
+    homeCtaSubheading: 'Toma mejores decisiones de compra con IA.',
   },
   it: {
     navHome: 'Home',
@@ -287,7 +382,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'di acquisto più intelligenti',
     heroTitleC: 'con l’IA',
     heroSubtitle:
-      'SmartBuy AI analizza prodotti, recensioni e prezzi in tempo reale per aiutarti a trovare le migliori offerte, evitare acquisti sbagliati e fare shopping in tutta sicurezza.',
+      'SmartBuy AI analizza prodotti, recensioni e prezzi per aiutarti a trovare le migliori offerte, evitare acquisti sbagliati e fare shopping in tutta sicurezza — con avvisi di calo di prezzo sui prodotti che segui.',
     heroCtaStart: 'Inizia gratis',
     heroCtaSearch: 'Prova la ricerca IA',
     heroNoCard: 'Nessuna carta di credito richiesta',
@@ -304,6 +399,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'Visualizza in urdu romano',
     languageEnglish: 'Inglese',
     languageRomanUrdu: 'Urdu romano',
+    footerProduct: 'Prodotto',
+    footerCompany: 'Azienda',
+    footerResources: 'Risorse',
+    footerTransparency: 'Trasparenza',
+    footerLegal: 'Legale',
+    footerTagline: 'Intelligenza per lo shopping basata sull’IA, per decisioni più intelligenti.',
+    newsletterHeading: 'Ricevi avvisi sulle offerte via e-mail',
+    homeFeaturedHeading: 'Prodotti in evidenza',
+    homeFeaturesHeading: 'Tutto ciò che ti serve per acquistare in modo più intelligente',
+    homeToolsHeading: 'Strumenti IA — scopri prima cosa fanno',
+    homeToolsMoreHeading: 'Altri dieci strumenti, dopo l’accesso',
+    homeHowItWorksHeading: 'Come funziona SmartBuy AI',
+    homeTestimonialsHeading: 'Feedback illustrativo degli acquirenti',
+    homeCtaHeading: 'Pronto ad acquistare in modo più intelligente?',
+    homeCtaSubheading: 'Prendi decisioni di acquisto migliori con l’IA.',
   },
   pt: {
     navHome: 'Início',
@@ -323,7 +433,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'de compra mais inteligentes',
     heroTitleC: 'com IA',
     heroSubtitle:
-      'O SmartBuy AI analisa produtos, avaliações e preços em tempo real para ajudar você a encontrar as melhores ofertas, evitar compras ruins e comprar com confiança.',
+      'O SmartBuy AI analisa produtos, avaliações e preços para ajudar você a encontrar as melhores ofertas, evitar compras ruins e comprar com confiança — com alertas de queda de preço nos produtos que você acompanha.',
     heroCtaStart: 'Começar grátis',
     heroCtaSearch: 'Experimentar a busca com IA',
     heroNoCard: 'Não é necessário cartão de crédito',
@@ -340,6 +450,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'Ver em urdu romano',
     languageEnglish: 'Inglês',
     languageRomanUrdu: 'Urdu romano',
+    footerProduct: 'Produto',
+    footerCompany: 'Empresa',
+    footerResources: 'Recursos',
+    footerTransparency: 'Transparência',
+    footerLegal: 'Legal',
+    footerTagline: 'Inteligência de compras com IA para decisões mais inteligentes.',
+    newsletterHeading: 'Receba alertas de ofertas por e-mail',
+    homeFeaturedHeading: 'Produtos em destaque',
+    homeFeaturesHeading: 'Tudo o que você precisa para comprar melhor',
+    homeToolsHeading: 'Ferramentas de IA — veja primeiro o que elas fazem',
+    homeToolsMoreHeading: 'Mais dez ferramentas, após entrar',
+    homeHowItWorksHeading: 'Como o SmartBuy AI funciona',
+    homeTestimonialsHeading: 'Feedback ilustrativo de compradores',
+    homeCtaHeading: 'Pronto para comprar melhor?',
+    homeCtaSubheading: 'Tome melhores decisões de compra com IA.',
   },
   tr: {
     navHome: 'Ana Sayfa',
@@ -359,7 +484,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'daha akıllı alışveriş',
     heroTitleC: 'kararları verin',
     heroSubtitle:
-      'SmartBuy AI, ürünleri, yorumları ve fiyatları gerçek zamanlı olarak analiz ederek en iyi fırsatları bulmanıza, yanlış alışverişlerden kaçınmanıza ve güvenle alışveriş yapmanıza yardımcı olur.',
+      'SmartBuy AI, ürünleri, yorumları ve fiyatları analiz ederek en iyi fırsatları bulmanıza, yanlış alışverişlerden kaçınmanıza ve güvenle alışveriş yapmanıza yardımcı olur — izlediğiniz ürünlerde fiyat düşüşü uyarılarıyla.',
     heroCtaStart: 'Ücretsiz Başla',
     heroCtaSearch: 'YZ Aramasını Dene',
     heroNoCard: 'Kredi kartı gerekmez',
@@ -376,6 +501,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'Roma Urduca görüntüle',
     languageEnglish: 'İngilizce',
     languageRomanUrdu: 'Roma Urduca',
+    footerProduct: 'Ürün',
+    footerCompany: 'Şirket',
+    footerResources: 'Kaynaklar',
+    footerTransparency: 'Şeffaflık',
+    footerLegal: 'Yasal',
+    footerTagline: 'Daha akıllı kararlar için YZ destekli alışveriş zekâsı.',
+    newsletterHeading: 'Fırsat uyarılarını e-postayla alın',
+    homeFeaturedHeading: 'Öne çıkan ürünler',
+    homeFeaturesHeading: 'Daha akıllıca alışveriş için ihtiyacınız olan her şey',
+    homeToolsHeading: 'YZ araçları — önce ne yaptıklarına bakın',
+    homeToolsMoreHeading: 'Giriş yaptıktan sonra on araç daha',
+    homeHowItWorksHeading: 'SmartBuy AI nasıl çalışır',
+    homeTestimonialsHeading: 'Örnek alışverişçi geri bildirimi',
+    homeCtaHeading: 'Daha akıllıca alışverişe hazır mısınız?',
+    homeCtaSubheading: 'YZ ile daha iyi satın alma kararları verin.',
   },
   // --- S5#12 (2026-11-10): 12 more languages. These dictionaries
   // are MACHINE TRANSLATIONS — functional chrome strings, not
@@ -400,7 +540,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'تسوق أذكى',
     heroTitleC: 'مع الذكاء الاصطناعي',
     heroSubtitle:
-      'يحلل SmartBuy AI المنتجات والمراجعات والأسعار في الوقت الفعلي لمساعدتك في العثور على أفضل العروض وتجنب عمليات الشراء السيئة والتسوق بثقة.',
+      'يحلل SmartBuy AI المنتجات والمراجعات والأسعار لمساعدتك في العثور على أفضل العروض وتجنب عمليات الشراء السيئة والتسوق بثقة — مع تنبيهات انخفاض الأسعار للمنتجات التي تتابعها.',
     heroCtaStart: 'ابدأ مجانًا',
     heroCtaSearch: 'جرّب بحث الذكاء الاصطناعي',
     heroNoCard: 'لا حاجة لبطاقة ائتمانية',
@@ -417,6 +557,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'عرض باللغة الأردية الرومانية',
     languageEnglish: 'الإنجليزية',
     languageRomanUrdu: 'الأردية الرومانية',
+    footerProduct: 'المنتج',
+    footerCompany: 'الشركة',
+    footerResources: 'الموارد',
+    footerTransparency: 'الشفافية',
+    footerLegal: 'قانوني',
+    footerTagline: 'ذكاء تسوق مدعوم بالذكاء الاصطناعي لقرارات أذكى.',
+    newsletterHeading: 'احصل على تنبيهات العروض عبر البريد الإلكتروني',
+    homeFeaturedHeading: 'منتجات مميزة',
+    homeFeaturesHeading: 'كل ما تحتاجه للتسوق بذكاء أكبر',
+    homeToolsHeading: 'أدوات الذكاء الاصطناعي — شاهد أولًا ما تفعله',
+    homeToolsMoreHeading: 'عشر أدوات أخرى بعد تسجيل الدخول',
+    homeHowItWorksHeading: 'كيف يعمل SmartBuy AI',
+    homeTestimonialsHeading: 'ملاحظات متسوقين توضيحية',
+    homeCtaHeading: 'مستعد للتسوق بذكاء أكبر؟',
+    homeCtaSubheading: 'اتخذ قرارات شراء أفضل مع الذكاء الاصطناعي.',
   },
   zh: {
     navHome: '首页',
@@ -436,7 +591,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: '做出更明智的',
     heroTitleC: '购物决策',
     heroSubtitle:
-      'SmartBuy AI 实时分析产品、评价和价格，帮您找到最优惠的价格，避免买错，放心购物。',
+      'SmartBuy AI 分析产品、评价和价格，帮您找到最优惠的价格，避免买错，放心购物——并为您关注的产品提供降价提醒。',
     heroCtaStart: '免费开始',
     heroCtaSearch: '试试 AI 搜索',
     heroNoCard: '无需信用卡',
@@ -453,6 +608,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: '以罗马乌尔都语查看',
     languageEnglish: '英语',
     languageRomanUrdu: '罗马乌尔都语',
+    footerProduct: '产品',
+    footerCompany: '公司',
+    footerResources: '资源',
+    footerTransparency: '透明度',
+    footerLegal: '法律',
+    footerTagline: 'AI 驱动的购物智能，助您做出更明智的决策。',
+    newsletterHeading: '通过电子邮件获取优惠提醒',
+    homeFeaturedHeading: '精选产品',
+    homeFeaturesHeading: '聪明购物所需的一切',
+    homeToolsHeading: 'AI 工具——先看看它们能做什么',
+    homeToolsMoreHeading: '登录后还有十个工具',
+    homeHowItWorksHeading: 'SmartBuy AI 的工作原理',
+    homeTestimonialsHeading: '购物者反馈示例',
+    homeCtaHeading: '准备好更聪明地购物了吗？',
+    homeCtaSubheading: '借助 AI 做出更好的购买决策。',
   },
   ja: {
     navHome: 'ホーム',
@@ -472,7 +642,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'より賢い買い物の',
     heroTitleC: '決断を',
     heroSubtitle:
-      'SmartBuy AIは製品、レビュー、価格をリアルタイムで分析し、最適なセールを見つけ、失敗した買い物を避け、自信を持って買い物できるようお手伝いします。',
+      'SmartBuy AIは製品、レビュー、価格を分析し、最適なセールを見つけ、失敗した買い物を避け、自信を持って買い物できるようお手伝いします。ウォッチ中の製品の値下がりアラートもお届けします。',
     heroCtaStart: '無料で始める',
     heroCtaSearch: 'AI検索を試す',
     heroNoCard: 'クレジットカード不要',
@@ -489,6 +659,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'ローマ字ウルドゥー語で見る',
     languageEnglish: '英語',
     languageRomanUrdu: 'ローマ字ウルドゥー語',
+    footerProduct: '製品',
+    footerCompany: '会社',
+    footerResources: 'リソース',
+    footerTransparency: '透明性',
+    footerLegal: '法務',
+    footerTagline: 'より賢い決断のためのAIショッピングインテリジェンス。',
+    newsletterHeading: 'セールアラートをメールで受け取る',
+    homeFeaturedHeading: '注目商品',
+    homeFeaturesHeading: '賢く買い物するために必要なすべて',
+    homeToolsHeading: 'AIツール——まず何ができるかを見てみましょう',
+    homeToolsMoreHeading: 'ログイン後に使えるツールがさらに10個',
+    homeHowItWorksHeading: 'SmartBuy AIの仕組み',
+    homeTestimonialsHeading: '買い手の声（例示）',
+    homeCtaHeading: '賢く買い物する準備はできましたか？',
+    homeCtaSubheading: 'AIでより良い購買判断を。',
   },
   ko: {
     navHome: '홈',
@@ -508,7 +693,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: '더 스마트한 쇼핑',
     heroTitleC: '결정을 내리세요',
     heroSubtitle:
-      'SmartBuy AI는 제품, 리뷰, 가격을 실시간으로 분석하여 최고의 특가를 찾고, 잘못된 구매를 피하며, 자신 있게 쇼핑할 수 있도록 도와줍니다.',
+      'SmartBuy AI는 제품, 리뷰, 가격을 분석하여 최고의 특가를 찾고, 잘못된 구매를 피하며, 자신 있게 쇼핑할 수 있도록 도와줍니다. 관심 제품의 가격 하락 알림도 제공합니다.',
     heroCtaStart: '무료로 시작',
     heroCtaSearch: 'AI 검색 체험',
     heroNoCard: '신용카드가 필요하지 않습니다',
@@ -525,6 +710,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: '로마 우르두어로 보기',
     languageEnglish: '영어',
     languageRomanUrdu: '로마 우르두어',
+    footerProduct: '제품',
+    footerCompany: '회사',
+    footerResources: '리소스',
+    footerTransparency: '투명성',
+    footerLegal: '법률',
+    footerTagline: '더 스마트한 결정을 위한 AI 기반 쇼핑 인텔리전스.',
+    newsletterHeading: '이메일로 특가 알림 받기',
+    homeFeaturedHeading: '추천 제품',
+    homeFeaturesHeading: '더 스마트하게 쇼핑하는 데 필요한 모든 것',
+    homeToolsHeading: 'AI 도구 — 먼저 무엇을 하는지 살펴보세요',
+    homeToolsMoreHeading: '로그인 후 사용할 수 있는 도구 10개 더',
+    homeHowItWorksHeading: 'SmartBuy AI 작동 방식',
+    homeTestimonialsHeading: '쇼핑객 피드백 예시',
+    homeCtaHeading: '더 스마트하게 쇼핑할 준비가 되셨나요?',
+    homeCtaSubheading: 'AI와 함께 더 나은 구매 결정을 내리세요.',
   },
   hi: {
     navHome: 'होम',
@@ -544,7 +744,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'बेहतर खरीदारी के',
     heroTitleC: 'फैसले लें',
     heroSubtitle:
-      'SmartBuy AI उत्पादों, समीक्षाओं और कीमतों का रीयल-टाइम विश्लेषण करके आपको सबसे अच्छे सौदे खोजने, गलत खरीदारी से बचने और भरोसे से खरीदारी करने में मदद करता है।',
+      'SmartBuy AI उत्पादों, समीक्षाओं और कीमतों का विश्लेषण करके आपको सबसे अच्छे सौदे खोजने, गलत खरीदारी से बचने और भरोसे से खरीदारी करने में मदद करता है — और आपके द्वारा देखे जा रहे उत्पादों पर मूल्य-गिरावट अलर्ट देता है।',
     heroCtaStart: 'मुफ़्त में शुरू करें',
     heroCtaSearch: 'AI खोज़ आज़माएँ',
     heroNoCard: 'क्रेडिट कार्ड की आवश्यकता नहीं',
@@ -561,6 +761,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'रोमन उर्दू में देखें',
     languageEnglish: 'अंग्रेज़ी',
     languageRomanUrdu: 'रोमन उर्दू',
+    footerProduct: 'उत्पाद',
+    footerCompany: 'कंपनी',
+    footerResources: 'संसाधन',
+    footerTransparency: 'पारदर्शिता',
+    footerLegal: 'कानूनी',
+    footerTagline: 'बेहतर फैसलों के लिए AI-संचालित शॉपिंग इंटेलिजेंस।',
+    newsletterHeading: 'ईमेल से डील अलर्ट पाएं',
+    homeFeaturedHeading: 'चुनिंदा उत्पाद',
+    homeFeaturesHeading: 'बेहतर खरीदारी के लिए आपको जो कुछ चाहिए',
+    homeToolsHeading: 'AI टूल्स — पहले देखें ये क्या करते हैं',
+    homeToolsMoreHeading: 'साइन-इन के बाद दस और टूल्स',
+    homeHowItWorksHeading: 'SmartBuy AI कैसे काम करता है',
+    homeTestimonialsHeading: 'उदाहरणात्मक खरीदार प्रतिक्रिया',
+    homeCtaHeading: 'बेहतर खरीदारी के लिए तैयार हैं?',
+    homeCtaSubheading: 'AI के साथ बेहतर खरीदारी के फैसले लें।',
   },
   bn: {
     navHome: 'হোম',
@@ -580,7 +795,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'আরও ভালো কেনাকাটার',
     heroTitleC: 'সিদ্ধান্ত নিন',
     heroSubtitle:
-      'SmartBuy AI পণ্য, রিভিউ এবং দাম রিয়েল-টাইমে বিশ্লেষণ করে আপনাকে সেরা ডিল খুঁজতে, ভুল কেনাকাটা এড়াতে এবং আত্মবিশ্বাসের সাথে কেনাকাটা করতে সাহায্য করে।',
+      'SmartBuy AI পণ্য, রিভিউ এবং দাম বিশ্লেষণ করে আপনাকে সেরা ডিল খুঁজতে, ভুল কেনাকাটা এড়াতে এবং আত্মবিশ্বাসের সাথে কেনাকাটা করতে সাহায্য করে — আর আপনি যে পণ্যগুলো দেখছেন সেগুলোর দাম কমার অ্যালার্ট দেয়।',
     heroCtaStart: 'বিনামূল্যে শুরু করুন',
     heroCtaSearch: 'AI অনুসন্ধান চেষ্টা করুন',
     heroNoCard: 'ক্রেডিট কার্ডের প্রয়োজন নেই',
@@ -597,6 +812,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'রোমান উর্দুতে দেখুন',
     languageEnglish: 'ইংরেজি',
     languageRomanUrdu: 'রোমান উর্দু',
+    footerProduct: 'পণ্য',
+    footerCompany: 'কোম্পানি',
+    footerResources: 'রিসোর্স',
+    footerTransparency: 'স্বচ্ছতা',
+    footerLegal: 'আইনি',
+    footerTagline: 'আরও ভালো সিদ্ধান্তের জন্য AI-চালিত শপিং ইন্টেলিজেন্স।',
+    newsletterHeading: 'ইমেইলে ডিল অ্যালার্ট পান',
+    homeFeaturedHeading: 'বৈশিষ্ট্যযুক্ত পণ্য',
+    homeFeaturesHeading: 'আরও ভালোভাবে কেনাকাটার জন্য যা যা দরকার',
+    homeToolsHeading: 'AI টুলস — প্রথমে দেখুন এগুলো কী করে',
+    homeToolsMoreHeading: 'সাইন-ইন করার পর আরও দশটি টুল',
+    homeHowItWorksHeading: 'SmartBuy AI কীভাবে কাজ করে',
+    homeTestimonialsHeading: 'উদাহরণমূলক ক্রেতা মতামত',
+    homeCtaHeading: 'আরও ভালোভাবে কেনাকাটার জন্য প্রস্তুত?',
+    homeCtaSubheading: 'AI-এর সাথে আরও ভালো কেনাকাটার সিদ্ধান্ত নিন।',
   },
   nl: {
     navHome: 'Home',
@@ -616,7 +846,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'aankoopbeslissingen',
     heroTitleC: 'met AI',
     heroSubtitle:
-      'SmartBuy AI analyseert producten, reviews en prijzen in realtime om je te helpen de beste deals te vinden, miskopen te vermijden en met vertrouwen te winkelen.',
+      'SmartBuy AI analyseert producten, reviews en prijzen om je te helpen de beste deals te vinden, miskopen te vermijden en met vertrouwen te winkelen — met prijsdalingmeldingen voor de producten die je volgt.',
     heroCtaStart: 'Gratis starten',
     heroCtaSearch: 'Probeer AI-zoeken',
     heroNoCard: 'Geen creditcard nodig',
@@ -633,6 +863,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'Bekijk in Romeins Urdu',
     languageEnglish: 'Engels',
     languageRomanUrdu: 'Romeins Urdu',
+    footerProduct: 'Product',
+    footerCompany: 'Bedrijf',
+    footerResources: 'Bronnen',
+    footerTransparency: 'Transparantie',
+    footerLegal: 'Juridisch',
+    footerTagline: 'AI-gestuurde winkelintelligentie voor slimmere beslissingen.',
+    newsletterHeading: 'Ontvang dealmeldingen per e-mail',
+    homeFeaturedHeading: 'Uitgelichte producten',
+    homeFeaturesHeading: 'Alles wat je nodig hebt om slimmer te winkelen',
+    homeToolsHeading: 'AI-tools — bekijk eerst wat ze doen',
+    homeToolsMoreHeading: 'Tien tools meer, na aanmelden',
+    homeHowItWorksHeading: 'Hoe SmartBuy AI werkt',
+    homeTestimonialsHeading: 'Illustratieve feedback van shoppers',
+    homeCtaHeading: 'Klaar om slimmer te winkelen?',
+    homeCtaSubheading: 'Neem betere aankoopbeslissingen met AI.',
   },
   sv: {
     navHome: 'Hem',
@@ -652,7 +897,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'köpbeslut',
     heroTitleC: 'med AI',
     heroSubtitle:
-      'SmartBuy AI analyserar produkter, recensioner och priser i realtid för att hjälpa dig hitta de bästa erbjudandena, undvika dåliga köp och handla med tillförsikt.',
+      'SmartBuy AI analyserar produkter, recensioner och priser för att hjälpa dig hitta de bästa erbjudandena, undvika dåliga köp och handla med tillförsikt — med prisfallsaviseringar för produkterna du bevakar.',
     heroCtaStart: 'Börja gratis',
     heroCtaSearch: 'Prova AI-sökning',
     heroNoCard: 'Inget kreditkort krävs',
@@ -669,6 +914,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'Visa på romersk urdu',
     languageEnglish: 'Engelska',
     languageRomanUrdu: 'Romersk urdu',
+    footerProduct: 'Produkt',
+    footerCompany: 'Företag',
+    footerResources: 'Resurser',
+    footerTransparency: 'Transparens',
+    footerLegal: 'Juridik',
+    footerTagline: 'AI-driven shoppingintelligens för smartare beslut.',
+    newsletterHeading: 'Få erbjudandeaviseringar via e-post',
+    homeFeaturedHeading: 'Utvalda produkter',
+    homeFeaturesHeading: 'Allt du behöver för att handla smartare',
+    homeToolsHeading: 'AI-verktyg — se först vad de gör',
+    homeToolsMoreHeading: 'Tio verktyg till, efter inloggning',
+    homeHowItWorksHeading: 'Så fungerar SmartBuy AI',
+    homeTestimonialsHeading: 'Illustrativ köparfeedback',
+    homeCtaHeading: 'Redo att handla smartare?',
+    homeCtaSubheading: 'Fatta bättre köpbeslut med AI.',
   },
   pl: {
     navHome: 'Strona główna',
@@ -688,7 +948,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'decyzje zakupowe',
     heroTitleC: 'z AI',
     heroSubtitle:
-      'SmartBuy AI analizuje produkty, recenzje i ceny w czasie rzeczywistym, pomagając Ci znajdować najlepsze oferty, unikać nietrafionych zakupów i robić zakupy z pewnością.',
+      'SmartBuy AI analizuje produkty, recenzje i ceny, pomagając Ci znajdować najlepsze oferty, unikać nietrafionych zakupów i robić zakupy z pewnością — z powiadomieniami o spadku cen obserwowanych produktów.',
     heroCtaStart: 'Zacznij za darmo',
     heroCtaSearch: 'Wypróbuj wyszukiwanie AI',
     heroNoCard: 'Karta kredytowa nie jest wymagana',
@@ -705,6 +965,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'Zobacz w urdu zapisanym alfabetem łacińskim',
     languageEnglish: 'Angielski',
     languageRomanUrdu: 'Urdu zapisane alfabetem łacińskim',
+    footerProduct: 'Produkt',
+    footerCompany: 'Firma',
+    footerResources: 'Zasoby',
+    footerTransparency: 'Przejrzystość',
+    footerLegal: 'Prawne',
+    footerTagline: 'Inteligencja zakupowa oparta na AI dla mądrzejszych decyzji.',
+    newsletterHeading: 'Otrzymuj powiadomienia o ofertach e-mailem',
+    homeFeaturedHeading: 'Polecane produkty',
+    homeFeaturesHeading: 'Wszystko, czego potrzebujesz, by kupować mądrzej',
+    homeToolsHeading: 'Narzędzia AI — najpierw zobacz, co robią',
+    homeToolsMoreHeading: 'Dziesięć kolejnych narzędzi po zalogowaniu',
+    homeHowItWorksHeading: 'Jak działa SmartBuy AI',
+    homeTestimonialsHeading: 'Przykładowe opinie kupujących',
+    homeCtaHeading: 'Gotowy, by kupować mądrzej?',
+    homeCtaSubheading: 'Podejmuj lepsze decyzje zakupowe z AI.',
   },
   ru: {
     navHome: 'Главная',
@@ -724,7 +999,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'умные решения о покупках',
     heroTitleC: 'с ИИ',
     heroSubtitle:
-      'SmartBuy AI анализирует товары, отзывы и цены в реальном времени, помогая находить лучшие предложения, избегать неудачных покупок и покупать с уверенностью.',
+      'SmartBuy AI анализирует товары, отзывы и цены, помогая находить лучшие предложения, избегать неудачных покупок и покупать с уверенностью — с уведомлениями о снижении цен на товары, за которыми вы следите.',
     heroCtaStart: 'Начать бесплатно',
     heroCtaSearch: 'Попробовать поиск с ИИ',
     heroNoCard: 'Кредитная карта не требуется',
@@ -741,6 +1016,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'Смотреть на урду латиницей',
     languageEnglish: 'Английский',
     languageRomanUrdu: 'Урду латиницей',
+    footerProduct: 'Продукт',
+    footerCompany: 'Компания',
+    footerResources: 'Ресурсы',
+    footerTransparency: 'Прозрачность',
+    footerLegal: 'Правовая информация',
+    footerTagline: 'ИИ-аналитика покупок для более умных решений.',
+    newsletterHeading: 'Получайте уведомления о скидках по почте',
+    homeFeaturedHeading: 'Рекомендуемые товары',
+    homeFeaturesHeading: 'Всё, что нужно для более умных покупок',
+    homeToolsHeading: 'ИИ-инструменты — сначала посмотрите, что они делают',
+    homeToolsMoreHeading: 'Ещё десять инструментов — после входа',
+    homeHowItWorksHeading: 'Как работает SmartBuy AI',
+    homeTestimonialsHeading: 'Иллюстративные отзывы покупателей',
+    homeCtaHeading: 'Готовы покупать умнее?',
+    homeCtaSubheading: 'Принимайте лучшие решения о покупках с ИИ.',
   },
   id: {
     navHome: 'Beranda',
@@ -760,7 +1050,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'belanja yang lebih cerdas',
     heroTitleC: 'dengan AI',
     heroSubtitle:
-      'SmartBuy AI menganalisis produk, ulasan, dan harga secara real-time untuk membantu Anda menemukan penawaran terbaik, menghindari pembelian yang buruk, dan berbelanja dengan percaya diri.',
+      'SmartBuy AI menganalisis produk, ulasan, dan harga untuk membantu Anda menemukan penawaran terbaik, menghindari pembelian yang buruk, dan berbelanja dengan percaya diri — dengan peringatan penurunan harga untuk produk yang Anda pantau.',
     heroCtaStart: 'Mulai Gratis',
     heroCtaSearch: 'Coba Pencarian AI',
     heroNoCard: 'Tidak perlu kartu kredit',
@@ -777,6 +1067,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'Lihat dalam bahasa Urdu Romawi',
     languageEnglish: 'Inggris',
     languageRomanUrdu: 'Urdu Romawi',
+    footerProduct: 'Produk',
+    footerCompany: 'Perusahaan',
+    footerResources: 'Sumber Daya',
+    footerTransparency: 'Transparansi',
+    footerLegal: 'Legal',
+    footerTagline: 'Kecerdasan belanja bertenaga AI untuk keputusan yang lebih cerdas.',
+    newsletterHeading: 'Dapatkan peringatan penawaran lewat email',
+    homeFeaturedHeading: 'Produk unggulan',
+    homeFeaturesHeading: 'Semua yang Anda butuhkan untuk berbelanja lebih cerdas',
+    homeToolsHeading: 'Alat AI — lihat dulu apa yang mereka lakukan',
+    homeToolsMoreHeading: 'Sepuluh alat lagi, setelah masuk',
+    homeHowItWorksHeading: 'Cara kerja SmartBuy AI',
+    homeTestimonialsHeading: 'Umpan balik pembeli ilustratif',
+    homeCtaHeading: 'Siap berbelanja lebih cerdas?',
+    homeCtaSubheading: 'Buat keputusan pembelian yang lebih baik dengan AI.',
   },
   vi: {
     navHome: 'Trang chủ',
@@ -796,7 +1101,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     heroTitleB: 'mua sắm thông minh hơn',
     heroTitleC: 'với AI',
     heroSubtitle:
-      'SmartBuy AI phân tích sản phẩm, đánh giá và giá theo thời gian thực để giúp bạn tìm ưu đãi tốt nhất, tránh mua phải hàng không tốt và mua sắm tự tin.',
+      'SmartBuy AI phân tích sản phẩm, đánh giá và giá để giúp bạn tìm ưu đãi tốt nhất, tránh mua phải hàng không tốt và mua sắm tự tin — kèm cảnh báo giảm giá cho các sản phẩm bạn theo dõi.',
     heroCtaStart: 'Bắt đầu miễn phí',
     heroCtaSearch: 'Thử tìm kiếm AI',
     heroNoCard: 'Không cần thẻ tín dụng',
@@ -813,6 +1118,21 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     bannerOfferUrdu: 'Xem bằng tiếng Urdu Latinh',
     languageEnglish: 'Tiếng Anh',
     languageRomanUrdu: 'Tiếng Urdu Latinh',
+    footerProduct: 'Sản phẩm',
+    footerCompany: 'Công ty',
+    footerResources: 'Tài nguyên',
+    footerTransparency: 'Minh bạch',
+    footerLegal: 'Pháp lý',
+    footerTagline: 'Trí tuệ mua sắm bằng AI cho quyết định thông minh hơn.',
+    newsletterHeading: 'Nhận cảnh báo ưu đãi qua email',
+    homeFeaturedHeading: 'Sản phẩm nổi bật',
+    homeFeaturesHeading: 'Mọi thứ bạn cần để mua sắm thông minh hơn',
+    homeToolsHeading: 'Công cụ AI — xem trước chúng làm được gì',
+    homeToolsMoreHeading: 'Thêm mười công cụ nữa, sau khi đăng nhập',
+    homeHowItWorksHeading: 'Cách SmartBuy AI hoạt động',
+    homeTestimonialsHeading: 'Phản hồi minh họa của người mua sắm',
+    homeCtaHeading: 'Sẵn sàng mua sắm thông minh hơn?',
+    homeCtaSubheading: 'Đưa ra quyết định mua hàng tốt hơn với AI.',
   },
 };
 

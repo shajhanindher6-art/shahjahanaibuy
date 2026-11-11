@@ -249,6 +249,10 @@ export interface Wishlist {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  /** Polls on this list (Section 13, item 53) — set by the
+      wishlists list API from wishlist_polls; absent when the
+      caller did not enrich it. */
+  pollCount?: number;
 }
 
 export interface WishlistItem {

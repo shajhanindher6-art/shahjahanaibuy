@@ -67,7 +67,10 @@ export default function AboutPage() {
             .
           </p>
           <p className="mt-4 text-muted-foreground">
-            The site works in 20 languages and across 61 regions, with local stores
+            The site works in 20 languages — only 28 interface strings are
+            translated, and 12 of the 20 languages are machine-translated, so all
+            other content, including product pages and guides, stays English —
+            and across 61 regions, with local stores
             listed by directory and link — never with invented local prices. What is
             recorded is shown; what is not recorded is shown as missing, not filled in.
           </p>
