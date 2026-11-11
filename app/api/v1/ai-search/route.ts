@@ -10,7 +10,9 @@ import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/li
 import {
   getCachedAISearch,
   recordSearch,
+  AI_SEARCH_SORT_KEYS,
   type AISearchOptions,
+  type AISearchSortKey,
 } from '@/services/ai-search';
 import { searchWebProducts, type WebSearchResult } from '@/services/external-search';
 import type { SearchFilters } from '@/types/ai';
@@ -23,7 +25,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { query, url, filters, page, pageSize, includeWeb } = body ?? {};
+    const { query, url, filters, page, pageSize, includeWeb, sort } = body ?? {};
 
     const hasQuery = typeof query === 'string' && query.trim() !== '';
     const hasUrl = typeof url === 'string' && url.trim() !== '';
@@ -39,8 +41,16 @@ export async function POST(request: NextRequest) {
     const options: AISearchOptions = {
       query: searchQuery,
       filters: filters as SearchFilters | undefined,
+      // Section 14, Chunk 4 — B1: the page used to send pageSize
+      // only, so the service always ran page 1 and the page sliced
+      // in memory. Page, size and sort are passed through now, and
+      // meta reports the effective page + totalPages, so the page
+      // and the API agree on page / pageSize / total.
       page: typeof page === 'number' ? page : undefined,
       pageSize: typeof pageSize === 'number' ? pageSize : undefined,
+      sort: (AI_SEARCH_SORT_KEYS as string[]).includes(sort)
+        ? (sort as AISearchSortKey)
+        : undefined,
     };
 
     const supabase = await createSupabaseServerClient();
@@ -92,9 +102,16 @@ export async function POST(request: NextRequest) {
 
     return apiSuccess(result.results, 200, {
       total: result.total,
+      page: result.page,
+      pageSize: result.pageSize,
+      totalPages: Math.max(1, Math.ceil(result.total / result.pageSize)),
       parsedIntent: result.parsedIntent,
       source: webSource,
       webResults,
+      // B10: the resolved "X vs Y" pair for the search page's
+      // "Compare these two" CTA — [] when the query had no `vs`
+      // or a side could not be resolved.
+      compareProducts: result.compareProducts ?? [],
     });
   } catch {
     return internalError('Failed to perform AI search');

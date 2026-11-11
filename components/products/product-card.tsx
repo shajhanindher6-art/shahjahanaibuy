@@ -18,6 +18,8 @@ export interface ProductCardData {
   imageUrl: string | null;
   description?: string | null;
   price?: number | null;
+  /** Merchants with this product in stock (0 = unknown / none recorded). */
+  merchantCount?: number | null;
   dealScore?: number | null;
   matchScore?: number | null;
   reason?: string | null;
@@ -97,6 +99,15 @@ export function ProductCard({ product, href, className, showReason }: ProductCar
           {product.price != null && (
             <p className="mt-2 text-lg font-bold text-blue-600">
               <Price usd={product.price} />
+              {/* Section 14, chunk 5: how many merchants have it in
+                  stock, from real merchant_products rows. Shown only
+                  when the count is recorded (> 0); a card without a
+                  recorded count shows no claim. */}
+              {product.merchantCount != null && product.merchantCount > 0 && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  at {product.merchantCount} {product.merchantCount === 1 ? 'store' : 'stores'}
+                </span>
+              )}
             </p>
           )}
           {showReason && product.reason && (

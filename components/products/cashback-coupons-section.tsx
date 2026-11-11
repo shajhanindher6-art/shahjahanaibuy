@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Tag, DollarSign, Copy, Check, ExternalLink, Percent } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +9,8 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { effectivePrice } from '@/lib/effective-price';
+import { bestCoupon, type DealCoupon } from '@/lib/deal-math';
 
 interface Coupon {
   id: string;
@@ -34,14 +36,57 @@ interface CashbackOffer {
 
 interface CashbackCouponsSectionProps {
   productId?: string;
+  /**
+   * Current selling price (cheapest merchant listing) and its
+   * compare-at price, from the product page. Both are needed for
+   * the stacked "you pay" line (B6); when they are absent the
+   * coupon/cashback lists below still render, just without it.
+   */
+  price?: number | null;
+  compareAtPrice?: number | null;
 }
 
-export function CashbackCouponsSection({ productId }: CashbackCouponsSectionProps) {
+export function CashbackCouponsSection({ productId, price, compareAtPrice }: CashbackCouponsSectionProps) {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [cashback, setCashback] = useState<CashbackOffer[]>([]);
   const [loading, setLoading] = useState(true);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const { toast } = useToast();
+
+  // B6: stacked effective price — deal + best currently-valid
+  // coupon + percentage cashback, each labelled. Shown only when
+  // a coupon or cashback actually applies: a deal alone adds
+  // nothing new (the selling price already IS the deal price).
+  // The coupon is the same bestCoupon the Where-to-Buy rows use
+  // (expired / inactive / usage-exhausted codes never apply).
+  const stacked = useMemo(() => {
+    if (price === null || price === undefined || !Number.isFinite(price) || price <= 0) {
+      return null;
+    }
+    const coupon = bestCoupon(
+      coupons.map(
+        (c): DealCoupon => ({
+          code: c.code,
+          discountType: c.discountType,
+          discountValue: c.discountValue,
+          validUntil: c.validUntil,
+          active: true,
+        })
+      )
+    );
+    const cashbackPct =
+      cashback.find((o) => o.cashbackType === 'percentage')?.cashbackValue ?? null;
+    return effectivePrice({
+      price,
+      listPrice: compareAtPrice ?? null,
+      coupon: coupon
+        ? { code: coupon.code, discountType: coupon.discountType, discountValue: coupon.discountValue }
+        : null,
+      cashbackPct,
+    });
+  }, [price, compareAtPrice, coupons, cashback]);
+  const showStacked =
+    stacked !== null && (stacked.couponApplied !== null || stacked.cashbackAmount > 0);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -111,6 +156,71 @@ export function CashbackCouponsSection({ productId }: CashbackCouponsSectionProp
 
   return (
     <div className="space-y-6">
+      {/* B6: stacked "you pay" line — deal + coupon + cashback in
+          one place, each component labelled. An ESTIMATE: the coupon
+          applies at the retailer's checkout, not inside SmartBuy,
+          and cashback depends on the offer's terms. */}
+      {showStacked && stacked && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Percent className="h-5 w-5 text-green-600" />
+              You pay ${stacked.youPay.toFixed(2)} after deal + coupon + cashback
+            </CardTitle>
+            <CardDescription>
+              Estimate — the coupon applies at the retailer&apos;s
+              checkout, not inside SmartBuy, and cashback depends on
+              the offer&apos;s terms.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">List price</span>
+                <span>${stacked.listPrice.toFixed(2)}</span>
+              </div>
+              {stacked.dealSaving > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Deal saving{stacked.dealPct !== null ? ` (${stacked.dealPct}%)` : ''}
+                  </span>
+                  <span className="text-green-700">−${stacked.dealSaving.toFixed(2)}</span>
+                </div>
+              )}
+              {stacked.couponApplied && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Coupon {stacked.couponApplied.code}
+                  </span>
+                  <span className="text-green-700">−${stacked.couponSaving.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">You pay at checkout</span>
+                <span>${stacked.afterCoupon.toFixed(2)}</span>
+              </div>
+              {stacked.cashbackAmount > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Cashback{stacked.cashbackPct !== null ? ` (${stacked.cashbackPct}%)` : ''}
+                  </span>
+                  <span className="text-green-700">−${stacked.cashbackAmount.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t pt-2 font-semibold">
+                <span>You pay (after cashback)</span>
+                <span>${stacked.youPay.toFixed(2)}</span>
+              </div>
+              {stacked.totalSaving > 0 && (
+                <p className="pt-1 text-xs text-muted-foreground">
+                  Total saving vs list price: ${stacked.totalSaving.toFixed(2)}.
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {coupons.length > 0 && (
         <Card>
           <CardHeader>

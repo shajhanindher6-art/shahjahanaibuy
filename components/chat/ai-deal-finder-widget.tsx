@@ -42,7 +42,7 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useChat } from 'ai/react';
 import type { JSONValue } from 'ai';
-import { MessageCircle, Mic, Send, Sparkles, Volume2, VolumeX, X } from 'lucide-react';
+import { MessageCircle, Mic, Send, Sparkles, Trash2, Volume2, VolumeX, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
@@ -99,6 +99,84 @@ const WELCOME_TEXT =
   'Hi! I can help you shop smarter — tell me what you need, e.g. "best laptop under $1000", and I will find the best deals. Ask me to compare products, or open any product page to set a price alert or save it to your wishlist.';
 
 const ERROR_LINE = 'Sorry, I could not find deals right now. Please try again.';
+
+// ---------------------------------------------------------------------------
+// Guest chat persistence (Section 14, Chunk 2, B11)
+// ---------------------------------------------------------------------------
+// Guest-only, device-local: the widget is stateless server-side, so a
+// reload used to lose the conversation. Turns (and their product
+// cards, via the hook's `data` entries) are now kept in localStorage
+// — the same pattern as recently-viewed / guest wishlist. Nothing is
+// sent anywhere; signed-in dashboard chat is separate (server-side)
+// and untouched. A corrupt or oversized entry is dropped, never
+// allowed to break the widget.
+const CHAT_STORAGE_KEY = 'smartbuy-deal-finder-chat-v1';
+const CHAT_STORAGE_MAX_MESSAGES = 30;
+
+interface StoredChatTurn {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+interface StoredChat {
+  messages: StoredChatTurn[];
+  data: JSONValue[];
+}
+
+function loadStoredChat(): StoredChat | null {
+  try {
+    const raw = window.localStorage.getItem(CHAT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const { messages, data } = parsed as { messages?: unknown; data?: unknown };
+    if (!Array.isArray(messages) || messages.length === 0) return null;
+    const turns: StoredChatTurn[] = [];
+    for (const m of messages) {
+      if (!m || typeof m !== 'object') continue;
+      const turn = m as Record<string, unknown>;
+      if (
+        typeof turn.id !== 'string' ||
+        (turn.role !== 'user' && turn.role !== 'assistant') ||
+        typeof turn.content !== 'string'
+      ) {
+        continue;
+      }
+      turns.push({ id: turn.id, role: turn.role, content: turn.content });
+    }
+    if (turns.length === 0) return null;
+    return {
+      messages: turns.slice(-CHAT_STORAGE_MAX_MESSAGES),
+      data: Array.isArray(data) ? (data as JSONValue[]) : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredChat(messages: StoredChatTurn[], data: JSONValue[] | undefined): void {
+  try {
+    window.localStorage.setItem(
+      CHAT_STORAGE_KEY,
+      JSON.stringify({
+        messages: messages.slice(-CHAT_STORAGE_MAX_MESSAGES),
+        data: data ?? [],
+        savedAt: Date.now(),
+      })
+    );
+  } catch {
+    // Storage full/blocked: the in-memory conversation still works.
+  }
+}
+
+function clearStoredChat(): void {
+  try {
+    window.localStorage.removeItem(CHAT_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors.
+  }
+}
 
 function isWidgetProduct(value: unknown): value is WidgetProduct {
   if (!value || typeof value !== 'object') return false;
@@ -198,6 +276,39 @@ export function AIDealFinderWidget() {
   });
 
   const sending = status === 'submitted' || status === 'streaming';
+
+  // B11: restore the guest conversation on mount, and persist every
+  // turn afterwards. `hydrated` gates the save effect: it flips only
+  // after the restore ran, so the mount-time save can never
+  // overwrite stored history with the bare welcome message.
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    const stored = loadStoredChat();
+    if (stored) {
+      setMessages(stored.messages);
+      if (stored.data.length > 0) setData(stored.data);
+    }
+    setHydrated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    saveStoredChat(
+      messages.map((m) => ({
+        id: m.id,
+        role: m.role === 'user' ? 'user' : ('assistant' as const),
+        content: m.content,
+      })),
+      data
+    );
+  }, [messages, data, hydrated]);
+
+  function clearHistory() {
+    clearStoredChat();
+    setMessages([{ id: 'welcome', role: 'assistant', content: WELCOME_TEXT }]);
+    setData([]);
+  }
 
   // Attach product cards to each assistant message from the `data`
   // entries (same mapping as the dashboard AIChatPanel: the welcome
@@ -459,6 +570,20 @@ export function AIDealFinderWidget() {
               >
                 {speakRepliesOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
               </Button>
+              {/* B11: clear the device-local guest history (the
+                  conversation is stored on this device only — see
+                  the persistence note above). */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={clearHistory}
+                aria-label="Clear chat history"
+                title="Clear chat history (stored on this device only)"
+                className="text-white hover:bg-blue-700 hover:text-white"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
               <Button
                 type="button"
                 variant="ghost"
@@ -586,6 +711,7 @@ export function AIDealFinderWidget() {
               onChange={(e) => setInput(e.target.value)}
               placeholder={listening ? 'Listening…' : 'e.g. best laptop under $1000'}
               maxLength={500}
+              aria-label="Ask the AI Deal Finder"
               className="flex-1"
             />
             <Button

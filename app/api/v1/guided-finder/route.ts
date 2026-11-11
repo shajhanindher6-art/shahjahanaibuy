@@ -24,6 +24,7 @@ import {
   decodeQuizAnswers,
   loadGuidedCandidates,
   rankGuidedPicks,
+  rankRelaxedGuidedPicks,
   GUIDED_BRANDS,
   GUIDED_MUST_HAVES,
   GUIDED_USE_CASES,
@@ -91,6 +92,14 @@ export async function GET(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     const candidates = await loadGuidedCandidates(supabase);
     const picks = rankGuidedPicks(candidates, { ...input, limit: 5 });
+    // B1: nearest-miss fallback — only when the exact pass found
+    // nothing. Relaxed picks are never mixed into `data`; the quiz
+    // page renders them under the empty state, each labelled with
+    // the must-haves it misses.
+    const relaxed =
+      picks.length === 0
+        ? rankRelaxedGuidedPicks(candidates, { ...input, limit: 3 }, 3)
+        : [];
 
     return apiSuccess(picks, 200, {
       answers,
@@ -98,6 +107,7 @@ export async function GET(request: NextRequest) {
       budgetUsd: input.budgetUsd,
       total: picks.length,
       catalogSize: candidates.length,
+      relaxed,
       // Honest scope note: picks are priced products only; an empty
       // list means no priced product matched these answers, not a
       // missing catalog.

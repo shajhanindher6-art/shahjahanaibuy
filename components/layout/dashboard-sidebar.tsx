@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -24,6 +25,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/features/auth';
+import { NOTIFICATIONS_CHANGED_EVENT } from '@/lib/notifications';
 
 interface NavItem {
   href: string;
@@ -64,6 +66,35 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { signOut, profile, role } = useAuth();
 
   const isAdmin = role === 'admin';
+
+  // Section 14, Chunk 1 — unread notifications badge on the
+  // Notifications nav item. One cheap read (limit=1; the count
+  // rides in meta.unreadCount) on mount and whenever the
+  // notifications page reports a read-state change. A failed or
+  // unauthenticated fetch simply hides the badge — never an error
+  // state in the nav.
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadUnread() {
+      try {
+        const res = await fetch('/api/v1/notifications?limit=1');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && typeof data?.meta?.unreadCount === 'number') {
+          setUnreadNotifications(data.meta.unreadCount);
+        }
+      } catch {
+        // Badge stays hidden; the notifications page still works.
+      }
+    }
+    loadUnread();
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, loadUnread);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, loadUnread);
+    };
+  }, []);
 
   async function handleSignOut() {
     await signOut();
@@ -125,6 +156,14 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void }) {
               >
                 <item.icon className="h-4 w-4" />
                 {item.label}
+                {item.href === '/dashboard/notifications' && unreadNotifications > 0 && (
+                  <span
+                    aria-label={`${unreadNotifications} unread notifications`}
+                    className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground"
+                  >
+                    {unreadNotifications > 99 ? '99+' : unreadNotifications}
+                  </span>
+                )}
               </Link>
             );
           })}

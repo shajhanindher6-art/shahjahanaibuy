@@ -9,74 +9,90 @@ import { tFor, type DictKey } from '@/lib/i18n';
 // Section 13, chunk H (i18n Phase 1): the group keys are DictKeys
 // (footerProduct, footerCompany, …) and render through tFor, so
 // the footer groups and tagline follow the visitor's UI language
-// like the header nav does. The link labels themselves stay
-// English — Phase 2/3 covers deeper chrome.
-const footerLinks = {
+// like the header nav does. Section 14, I-2: the link labels are
+// DictKeys too (footerLink* — 35 new keys, all 20 languages —
+// plus 6 reused nav keys: Features, Pricing, How It Works, Deals,
+// Compare, Brands), so the whole footer follows the UI language.
+// The brand name "SmartBuy AI" and the copyright line stay
+// English in every language, as a proper name / legal line.
+type FooterGroupKey =
+  | 'footerProduct'
+  | 'footerCompany'
+  | 'footerResources'
+  | 'footerTransparency'
+  | 'footerLegal';
+const footerLinks: Record<FooterGroupKey, Array<{ href: string; labelKey: DictKey }>> = {
   footerProduct: [
-    { href: '/#features', label: 'Features' },
+    { href: '/#features', labelKey: 'navFeatures' },
     // Section 12, chunk C: pricing is a real page now
     // (app/pricing/page.tsx), so this links there instead of the
     // homepage anchor.
-    { href: '/pricing', label: 'Pricing' },
-    { href: '/#how-it-works', label: 'How It Works' },
+    { href: '/pricing', labelKey: 'navPricing' },
+    { href: '/#how-it-works', labelKey: 'navHowItWorks' },
     // Section 12, chunk C: /brands and /categories index pages
     // exist now (Chunk A) — the old /#browse anchor is retired
     // for these two links.
-    { href: '/tools', label: 'AI Tools' },
-    { href: '/deals', label: 'Deals' },
-    { href: '/compare', label: 'Compare' },
-    { href: '/platforms', label: 'Platforms' },
-    { href: '/brands', label: 'Brands' },
-    { href: '/categories', label: 'Categories' },
+    { href: '/tools', labelKey: 'footerLinkAiTools' },
+    { href: '/deals', labelKey: 'navDeals' },
+    { href: '/compare', labelKey: 'navCompare' },
+    { href: '/platforms', labelKey: 'footerLinkPlatforms' },
+    { href: '/brands', labelKey: 'navBrands' },
+    { href: '/categories', labelKey: 'footerLinkCategories' },
     // Section 13, item 62 — these pages existed but were reachable
     // only via the sitemap or a direct URL; they now have footer
     // links like everything else.
-    { href: '/scan', label: 'Scan a Product' },
-    { href: '/events', label: 'Events' },
-    { href: '/bundles', label: 'Bundles' },
-    { href: '/gifts', label: 'Gift Finder' },
-    { href: '/track', label: 'Track a Price' },
+    { href: '/scan', labelKey: 'footerLinkScanProduct' },
+    { href: '/events', labelKey: 'footerLinkEvents' },
+    { href: '/bundles', labelKey: 'footerLinkBundles' },
+    { href: '/gifts', labelKey: 'footerLinkGiftFinder' },
+    { href: '/track', labelKey: 'footerLinkTrackPrice' },
   ],
   footerCompany: [
-    { href: '/about', label: 'About' },
-    { href: '/contact', label: 'Contact' },
-    { href: '/press', label: 'Press' },
-    { href: '/changelog', label: 'Changelog' },
-    { href: '/privacy', label: 'Privacy Policy' },
+    { href: '/about', labelKey: 'footerLinkAbout' },
+    { href: '/contact', labelKey: 'footerLinkContact' },
+    { href: '/press', labelKey: 'footerLinkPress' },
+    { href: '/changelog', labelKey: 'footerLinkChangelog' },
+    { href: '/privacy', labelKey: 'footerLinkPrivacyPolicy' },
+    // Section 14: /partners page (no partnership program yet —
+    // the page says so honestly).
+    { href: '/partners', labelKey: 'footerLinkPartners' },
   ],
   footerResources: [
-    { href: '/blog', label: 'Blog' },
-    { href: '/docs', label: 'Documentation' },
-    { href: '/support', label: 'Support' },
-    { href: '/help', label: 'Help Center' },
-    { href: '/creators', label: 'Creator Storefronts' },
-    { href: '/mobile-app', label: 'Mobile App' },
+    { href: '/blog', labelKey: 'footerLinkBlog' },
+    { href: '/docs', labelKey: 'footerLinkDocumentation' },
+    { href: '/support', labelKey: 'footerLinkSupport' },
+    { href: '/help', labelKey: 'footerLinkHelpCenter' },
+    { href: '/creators', labelKey: 'footerLinkCreatorStorefronts' },
+    { href: '/mobile-app', labelKey: 'footerLinkMobileApp' },
+    // Section 14: /referrals explainer (points/badge only,
+    // non-monetary — the page states the honest rules).
+    { href: '/referrals', labelKey: 'footerLinkReferrals' },
     // Section 13, item 62 — same as the Product group: reachable
     // before only via sitemap / direct URL.
-    { href: '/p2p-match', label: 'P2P Match' },
-    { href: '/widgets', label: 'Widgets' },
-    { href: '/extension', label: 'Browser Extension' },
-    { href: '/bookmarklet', label: 'Bookmarklet' },
-    { href: '/coming-soon', label: 'Coming Soon' },
+    { href: '/p2p-match', labelKey: 'footerLinkP2pMatch' },
+    { href: '/widgets', labelKey: 'footerLinkWidgets' },
+    { href: '/extension', labelKey: 'footerLinkBrowserExtension' },
+    { href: '/bookmarklet', labelKey: 'footerLinkBookmarklet' },
+    { href: '/coming-soon', labelKey: 'footerLinkComingSoon' },
   ],
   footerTransparency: [
-    { href: '/methodology', label: 'Methodology' },
+    { href: '/methodology', labelKey: 'footerLinkMethodology' },
     // Section 12, chunk C: affiliate disclosure. The disclosure
     // itself lives in the Methodology page ("Affiliate disclosure"
     // section, id="affiliate-disclosure").
-    { href: '/methodology#affiliate-disclosure', label: 'Affiliate Disclosure' },
-    { href: '/price-index', label: 'Price Index' },
-    { href: '/market-reports', label: 'Market Reports' },
-    { href: '/sustainability', label: 'Sustainability' },
-    { href: '/status', label: 'Status' },
-    { href: '/api-docs', label: 'API Docs' },
-    { href: '/live', label: 'Live Shopping' },
-    { href: '/warranty-plans', label: 'Warranty Plans' },
+    { href: '/methodology#affiliate-disclosure', labelKey: 'footerLinkAffiliateDisclosure' },
+    { href: '/price-index', labelKey: 'footerLinkPriceIndex' },
+    { href: '/market-reports', labelKey: 'footerLinkMarketReports' },
+    { href: '/sustainability', labelKey: 'footerLinkSustainability' },
+    { href: '/status', labelKey: 'footerLinkStatus' },
+    { href: '/api-docs', labelKey: 'footerLinkApiDocs' },
+    { href: '/live', labelKey: 'footerLinkLiveShopping' },
+    { href: '/warranty-plans', labelKey: 'footerLinkWarrantyPlans' },
   ],
   footerLegal: [
-    { href: '/terms', label: 'Terms of Service' },
-    { href: '/privacy', label: 'Privacy Policy' },
-    { href: '/cookies', label: 'Cookie Policy' },
+    { href: '/terms', labelKey: 'footerLinkTermsOfService' },
+    { href: '/privacy', labelKey: 'footerLinkPrivacyPolicy' },
+    { href: '/cookies', labelKey: 'footerLinkCookiePolicy' },
   ],
 };
 
@@ -108,12 +124,12 @@ export function SiteFooter() {
               <h4 className="mb-3 text-sm font-semibold">{tFor(language, title as DictKey)}</h4>
               <ul className="space-y-2">
                 {links.map((link) => (
-                  <li key={`${link.href}-${link.label}`}>
+                  <li key={`${link.href}-${link.labelKey}`}>
                     <Link
                       href={link.href}
                       className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                     >
-                      {link.label}
+                      {tFor(language, link.labelKey)}
                     </Link>
                   </li>
                 ))}

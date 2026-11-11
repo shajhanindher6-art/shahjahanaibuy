@@ -166,6 +166,7 @@ export function ExternalItemsManager() {
               <select
                 className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                 value={selectedId}
+                aria-label="Wishlist"
                 onChange={(e) => setSelectedId(e.target.value)}
               >
                 {wishlists.map((w) => (
@@ -225,7 +226,12 @@ export function ExternalItemsManager() {
                     <div className="flex shrink-0 gap-1">
                       {item.external_url && (
                         <Button size="sm" variant="ghost" asChild>
-                          <a href={item.external_url} target="_blank" rel="noreferrer">
+                          <a
+                            href={item.external_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label={`Open ${item.external_title} at ${item.external_store ?? 'external store'}`}
+                          >
                             <ExternalLink className="h-4 w-4" />
                           </a>
                         </Button>

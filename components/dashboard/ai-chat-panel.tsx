@@ -228,6 +228,7 @@ export function AIChatPanel() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask for a deal…"
+          aria-label="Ask the AI assistant for a deal"
           maxLength={500}
           className="min-w-0 flex-1 rounded-full border border-slate-200 bg-card/80 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-700"
         />

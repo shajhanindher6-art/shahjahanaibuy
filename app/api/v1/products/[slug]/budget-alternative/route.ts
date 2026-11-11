@@ -47,6 +47,7 @@ export async function GET(
     .from('products')
     .select('id')
     .eq('slug', params.slug)
+    .neq('slug', 'sample-laptop')
     .is('deleted_at', null)
     .maybeSingle();
   if (error) {

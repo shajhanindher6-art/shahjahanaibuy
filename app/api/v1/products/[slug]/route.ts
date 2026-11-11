@@ -24,6 +24,9 @@ import {
   getProductSupplyChain,
 } from '@/services/product-dimensions';
 
+// Section 14, Chunk 1 — live per-request data: never statically prerendered.
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { slug: string } }

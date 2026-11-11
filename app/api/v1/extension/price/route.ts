@@ -49,6 +49,7 @@ export async function GET(request: NextRequest) {
         .from('products')
         .select('id, name, slug')
         .eq('slug', slug)
+        .neq('slug', 'sample-laptop')
         .limit(1)
         .maybeSingle();
       if (data) {
@@ -61,6 +62,7 @@ export async function GET(request: NextRequest) {
         .from('products')
         .select('id, name, slug')
         .ilike('name', `%${q}%`)
+        .neq('slug', 'sample-laptop')
         .limit(1)
         .maybeSingle();
       if (data) {

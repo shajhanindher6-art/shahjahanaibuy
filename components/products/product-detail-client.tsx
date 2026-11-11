@@ -184,6 +184,10 @@ import { DealScoreBadge } from '@/components/products/deal-score-badge';
 import { PriceTrendSparkline } from '@/components/products/price-trend-sparkline';
 import { BestTimeToBuyIndicator } from '@/components/products/best-time-to-buy';
 import { PricePredictionBadge } from '@/components/products/price-prediction-badge';
+// Section 14, chunk 5: product gallery — static import, small
+// (no chart library); renders the single product image when no
+// product_images rows are recorded.
+import { ProductGallery, type GalleryImage } from '@/components/products/product-gallery';
 // Option 16: Next-Gen Decision Suite — deterministic analytics only.
 const RegretRiskBadge = dynamic(
   () =>
@@ -308,6 +312,17 @@ const CashbackCouponsSection = dynamic(
       (m) => m.CashbackCouponsSection
     ),
   { loading: () => <LoadingSpinner /> }
+);
+// Section 14, Chunk 2 (B12): "Complete your setup" affinity picks —
+// below-fold, dynamic with ssr:false so it stays out of the First
+// Load bundle, same pattern as the calculators above. Client
+// component, so .then() on the dynamic import is fine here.
+const SetupAffinitySection = dynamic(
+  () =>
+    import('@/components/products/setup-affinity-section').then(
+      (m) => m.SetupAffinitySection
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
 );
 // Section 10 Chunk 3: hero action buttons — dynamic (SSR kept, no
 // ssr:false: they are first-paint content) so their chunks split out
@@ -510,6 +525,10 @@ interface Product {
   // Absent or empty when the product has no seeded specs — the Specs
   // tab then renders exactly the base rows below, nothing invented.
   attributes?: ProductAttribute[];
+  // Section 14, chunk 5: recorded product_images rows from the same
+  // endpoint. Absent or empty when none are recorded — the gallery
+  // then renders exactly the single product image, nothing invented.
+  images?: GalleryImage[];
   // Option 16: repairability from the same endpoint (all nulls until
   // migration 019 data exists — the matrix shows an honest empty state).
   repairability?: RepairabilityData | null;
@@ -709,11 +728,6 @@ export default function ProductDetailClient({
   const [merchantTrustLoaded, setMerchantTrustLoaded] = useState(false);
   const [loading, setLoading] = useState(!initialProduct);
   const [activeTab, setActiveTab] = useState('overview');
-  // (c) A non-null but dead image URL must fall back to the same
-  // Package placeholder as a null URL — the old code only handled
-  // null and rendered a broken-image icon for a dead URL (the same
-  // failure ProductCard already guards with onError).
-  const [imageFailed, setImageFailed] = useState(false);
 
   // Fetch with a timeout so one slow/hanging API can never keep the whole
   // page on a spinner forever (observed live: 95+ seconds of spinner).
@@ -1028,7 +1042,6 @@ export default function ProductDetailClient({
     // screen — do not flash the full-page spinner while the refresh
     // runs, and never wipe the seed on a transient refresh failure.
     if (!initialProduct) setLoading(true);
-    setImageFailed(false);
     setLastCheckedAt(null);
     try {
       // 1. Product first, on its own: as soon as it is known, render the
@@ -1317,29 +1330,18 @@ export default function ProductDetailClient({
 
         <div className="grid gap-6 lg:grid-cols-2">
           <Card className="overflow-hidden">
-            <div className="flex h-80 items-center justify-center bg-slate-100 dark:bg-slate-800">
-              {product.imageUrl && !imageFailed ? (
-                // Section 10 Chunk 3: next/image does NOT fit here —
-                // product images come from arbitrary merchant hosts
-                // (seed: i.ebayimg.com, example.com) while
-                // next.config.js remotePatterns allows only
-                // unsplash/pexels, and next.config.js is outside this
-                // chunk's file list — next/image would throw
-                // "Invalid src prop" and break the hero image. So
-                // the sanctioned fallback: lazy + sized raw img (the
-                // h-80 container already sizes it, so no CLS).
-                <img
-                  src={product.imageUrl}
-                  alt={product.name}
-                  loading="lazy"
-                  decoding="async"
-                  onError={() => setImageFailed(true)}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <Package className="h-24 w-24 text-muted-foreground" />
-              )}
-            </div>
+            {/* Section 14, chunk 5: gallery replaces the single hero
+                image. With no recorded product_images rows it renders
+                exactly what was here before — the single product
+                image (or the Package placeholder) — and with rows it
+                adds thumbnail switching. Raw <img> (not next/image):
+                product images come from arbitrary merchant hosts
+                outside next.config.js remotePatterns. */}
+            <ProductGallery
+              images={product.images ?? []}
+              fallbackImageUrl={product.imageUrl}
+              productName={product.name}
+            />
           </Card>
 
           <div className="space-y-4">
@@ -1702,7 +1704,7 @@ export default function ProductDetailClient({
                           <Button disabled>{tFor(language, 'buy')}</Button>
                         )}
                         {product && (
-                          <BuyListButton productId={product.id} merchantProductId={listing.id} />
+                          <BuyListButton productId={product.id} merchantProductId={listing.id} productName={product.name} productSlug={slug} />
                         )}
                       </div>
                       {/* Merchant trust (Section 3 #14, Section 5 #7 &
@@ -2300,7 +2302,15 @@ export default function ProductDetailClient({
           </TabsContent>
 
           <TabsContent value="savings" className="mt-4">
-            <CashbackCouponsSection productId={product.id} />
+            <CashbackCouponsSection
+              productId={product.id}
+              // B6: the cheapest listing's own price + compare-at
+              // pair, so the stacked "you pay" line stacks the
+              // deal that produced this price — never a price from
+              // one merchant with a compare-at from another.
+              price={merchants.length > 0 ? merchants[0].price : null}
+              compareAtPrice={merchants.length > 0 ? merchants[0].compareAtPrice : null}
+            />
           </TabsContent>
 
           <TabsContent value="specs" className="mt-4">
@@ -2394,6 +2404,16 @@ export default function ProductDetailClient({
             productSlug={product.slug}
             category={product.category}
             brand={product.brand}
+          />
+        </div>
+
+        {/* Section 14, Chunk 2 (B12): "Complete your setup" affinity
+            picks — a labelled suggestion row, not purchase data. */}
+        <div className="mt-8">
+          <SetupAffinitySection
+            productId={product.id}
+            productSlug={product.slug}
+            category={product.category}
           />
         </div>
       </div>

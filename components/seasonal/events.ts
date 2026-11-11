@@ -49,13 +49,42 @@ export const SEASONAL_EVENTS: SeasonalEvent[] = [
     ],
   },
   {
+    slug: 'cyber-monday',
+    name: 'Cyber Monday 2026',
+    startsAt: '2026-11-30T00:00:00Z',
+    tagline: 'The online-only follow-up to Black Friday — the biggest online shopping day of the year.',
+    description:
+      'Cyber Monday falls on Monday, November 30, 2026 — the Monday after Black Friday (Friday, November 27) and the last day of the five-day Cyber Week that starts with US Thanksgiving on Thursday, November 26. It is the online-first day: the deepest cuts are on laptops, software, and gaming downloads rather than in-store stock. The same rules apply as Black Friday — check the price history before you trust a badge, and set a price-drop alert at the price you would actually pay.',
+    tips: [
+      'Cyber Monday is online-only by tradition: compare the same product at a second retailer on SmartBuy before you buy.',
+      'Set a price-drop alert at your real target price before the day — a one-day event rewards preparation, not speed.',
+      'Check the coupon on the product page: SAVE10 and BESTBUY15 are valid until January 29, 2027.',
+      'Open the price history first — a "discount" measured against a price that was quietly raised the week before is not a discount.',
+    ],
+  },
+  {
     slug: 'eid',
     name: 'Eid Sale',
-    startsAt: '2027-03-20T00:00:00Z',
+    startsAt: '2027-03-09T00:00:00Z',
     dateExpected: true,
     tagline: 'Eid shopping, planned early — gifts and home essentials without the last-minute rush.',
     description:
-      'Eid al-Fitr is expected around Saturday, March 20, 2027 — the exact day is confirmed by moon sighting, so treat this date as expected, not fixed. Eid is the season for gifts, new clothes, and home essentials, and the same rules apply as any sale: decide the budget first, check the price history, and set an alert at the price you would actually pay.',
+      'Eid al-Fitr is expected around Tuesday, March 9, 2027 — the exact day is confirmed by moon sighting, so treat this date as expected, not fixed (where Ramadan runs a full 30 days, Eid moves to Wednesday, March 10). Eid is the season for gifts, new clothes, and home essentials, and the same rules apply as any sale: decide the budget first, check the price history, and set an alert at the price you would actually pay.',
+    tips: [
+      'Set your gift budget as a hard filter: SmartBuy\'s gift finder never recommends above the budget you set.',
+      'Buy the essentials early — the last week before Eid is when prices and delivery times both rise.',
+      'Keep receipts for gifts: SmartBuy\'s receipt vault records purchase plus warranty months.',
+      'Check the return window before buying a gift — an unreturnable gift is a risk, not a bargain.',
+    ],
+  },
+  {
+    slug: 'eid-al-adha',
+    name: 'Eid al-Adha Sale',
+    startsAt: '2027-05-16T00:00:00Z',
+    dateExpected: true,
+    tagline: 'Eid al-Adha shopping, planned early — gifts, home essentials, and travel needs without the last-minute rush.',
+    description:
+      'Eid al-Adha is expected around Sunday, May 16, 2027 (10 Dhu al-Hijjah 1448, the day after the Day of Arafah on May 15) — the exact day is confirmed by moon sighting, so treat this date as expected, not fixed. In Pakistan and some other countries that follow a local sighting, Eid may fall on Monday, May 17 instead. The shopping rules are the same as any sale: decide the budget first, check the price history, and set an alert at the price you would actually pay.',
     tips: [
       'Set your gift budget as a hard filter: SmartBuy\'s gift finder never recommends above the budget you set.',
       'Buy the essentials early — the last week before Eid is when prices and delivery times both rise.',

@@ -10,6 +10,9 @@ import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middlew
 import { predictPriceDrop } from '@/services/ai-predictions';
 import { getProductById, getProductBySlug } from '@/services/products';
 
+// Section 14, Chunk 1 — live per-request data: never statically prerendered.
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { productId: string } }

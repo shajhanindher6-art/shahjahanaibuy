@@ -201,6 +201,7 @@ export function AgentHuntsCard() {
                   <Label className="mb-1.5 block">Category</Label>
                   <select
                     value={category}
+                    aria-label="Category"
                     onChange={(e) => setCategory(e.target.value)}
                     className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                   >

@@ -8,6 +8,11 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getCachedComparison } from '@/services/ai-comparison';
+import {
+  buildGeoAffiliateUrl,
+  isGeoAffiliateEnabled,
+  resolveGeoCountry,
+} from '@/services/affiliate-geo';
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'comparison' });
@@ -37,7 +42,35 @@ export async function POST(request: NextRequest) {
       return badRequest('Unable to compare the provided products');
     }
 
-    return apiSuccess(comparison, 200);
+    // Section 14, Chunk 1 — merchant outbound links: transform each
+    // retailer's URL through the geo affiliate engine AFTER the
+    // cache lookup, so no country's tag is ever baked into the
+    // cached comparison. Same pattern as the product merchants
+    // route: country from the Vercel geo header, then the saved
+    // region cookie, then the US fallback. ENV-GATED: with no tag /
+    // publisher id configured, buildGeoAffiliateUrl returns every
+    // URL unchanged, so today's plain retailer links are untouched
+    // and no tag is ever hardcoded here.
+    const country = resolveGeoCountry(
+      request.headers.get('x-vercel-ip-country'),
+      request.cookies.get('sb-country')?.value ?? null
+    );
+    const withAffiliateLinks = {
+      ...comparison,
+      products: comparison.products.map((product) => ({
+        ...product,
+        retailers: product.retailers.map((retailer) => ({
+          ...retailer,
+          url: buildGeoAffiliateUrl(retailer.url, country),
+        })),
+      })),
+    };
+
+    // affiliateEnabled drives the on-page disclosure note only; tag
+    // values themselves are never exposed through this endpoint.
+    return apiSuccess(withAffiliateLinks, 200, {
+      affiliateEnabled: isGeoAffiliateEnabled(),
+    });
   } catch {
     return internalError('Failed to generate product comparison');
   }

@@ -3,7 +3,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { fallbackAutocompleteToken } from '@/lib/search-suggestions';
 import type { Product } from '@/types';
+
+/** One products-API suggestion fetch (whole-phrase match). */
+async function fetchProductSuggestions(
+  term: string,
+  signal: AbortSignal
+): Promise<Product[]> {
+  const res = await fetch(`/api/v1/products?search=${encodeURIComponent(term)}&pageSize=6`, {
+    signal,
+  });
+  const data: unknown = await res.json();
+  const items = (data as { success?: boolean; data?: unknown })?.data;
+  return Array.isArray(items) ? (items as Product[]) : [];
+}
 
 export interface SearchSuggestion {
   id: string;
@@ -77,14 +91,23 @@ export function SearchAutocomplete({
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
-      void fetch(`/api/v1/products?search=${encodeURIComponent(term)}&pageSize=6`, {
-        signal: controller.signal,
-      })
-        .then((res) => res.json())
-        .then((data: unknown) => {
+      void (async () => {
+        try {
+          let products = await fetchProductSuggestions(term, controller.signal);
+          // Section 14, Chunk 4 — B13: token-aware fallback. The
+          // products API matches the whole typed phrase, so
+          // "macbook 13" suggests nothing (the name is "MacBook
+          // Air 13"). Retry once with the longest token ("macbook")
+          // so a multi-word entry still suggests the product it
+          // names. A failed retry leaves the dropdown closed —
+          // never a guessed suggestion.
+          if (products.length === 0) {
+            const fallback = fallbackAutocompleteToken(term);
+            if (fallback) {
+              products = await fetchProductSuggestions(fallback, controller.signal);
+            }
+          }
           if (controller.signal.aborted) return;
-          const items = (data as { success?: boolean; data?: unknown })?.data;
-          const products = Array.isArray(items) ? (items as Product[]) : [];
           setSuggestions(
             products.map((p) => ({
               id: p.id,
@@ -96,18 +119,17 @@ export function SearchAutocomplete({
           );
           setActiveIndex(-1);
           setOpen(true);
-        })
-        .catch(() => {
+        } catch {
           // Autocomplete is a convenience: a failed fetch must
           // never disturb typing or submitting.
           if (!controller.signal.aborted) {
             setSuggestions([]);
             setOpen(false);
           }
-        })
-        .finally(() => {
+        } finally {
           if (!controller.signal.aborted) setLoading(false);
-        });
+        }
+      })();
     }, 250);
     return () => {
       window.clearTimeout(timer);

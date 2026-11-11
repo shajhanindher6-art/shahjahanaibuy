@@ -88,6 +88,7 @@ async function enrichMatches(
     .from('products')
     .select('id, slug, name, brand')
     .in('id', ids)
+    .neq('slug', 'sample-laptop')
     .is('deleted_at', null);
   if (productsError) {
     logger.error('visual-search: product lookup failed', { error: productsError.message });
