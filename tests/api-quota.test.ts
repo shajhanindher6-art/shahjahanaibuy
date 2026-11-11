@@ -150,7 +150,7 @@ describe('quotaExceededResponse', () => {
     expect(body.error.message).toContain('Premium');
     expect(body.error.message).toContain('1,000');
     expect(body.error.details.billingUrl).toBe(BILLING_URL);
-    expect(body.error.details.billingUrl).toBe('/#pricing');
+    expect(body.error.details.billingUrl).toBe('/pricing');
     expect(body.error.details.upgradeTier).toBe('premium');
     expect(body.error.details.limit).toBe(1_000);
   });
@@ -246,7 +246,7 @@ describe('enforceApiQuota', () => {
       error: { message: string; details: Record<string, unknown> };
     };
     expect(body.error.message).toContain('Anonymous');
-    expect(body.error.details.billingUrl).toBe('/#pricing');
+    expect(body.error.details.billingUrl).toBe('/pricing');
   });
 
   it('different IPs get separate anonymous buckets', async () => {

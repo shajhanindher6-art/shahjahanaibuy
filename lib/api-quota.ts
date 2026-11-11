@@ -20,8 +20,8 @@
  * active paid subscription stays on the free quota. No key is ever
  * blocked outright for being free — it is only capped.
  *
- * Billing link: the 429 body points at `/#pricing` — the pricing
- * section already on the homepage. No new billing URL is invented;
+ * Billing link: the 429 body points at `/pricing` — the canonical
+ * pricing page (Section 12). No new billing URL is invented;
  * Stripe stays in TEST mode and no checkout flow is touched here.
  *
  * Storage: quota state is checked AND incremented per request in
@@ -43,8 +43,8 @@ import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import type { ValidatedApiKey } from '@/lib/api-keys';
 import { getTier, type TierId } from '@/lib/tiers';
 
-/** Existing homepage pricing section — the only billing link used. */
-export const BILLING_URL = '/#pricing';
+/** Canonical pricing page — the billing link used in 429 bodies. */
+export const BILLING_URL = '/pricing';
 
 /** Daily cap for anonymous (key-less) callers, per IP. */
 export const ANONYMOUS_DAILY_QUOTA = 100;

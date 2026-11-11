@@ -38,7 +38,10 @@ const PLANS = [
     icon: Sparkles,
     features: [
       'AI product search',
-      'Basic price alerts (3 max)',
+      // Section 12: lib/tiers.ts is canonical — Free allows 5 alerts,
+      // not the smaller cap this page used to show. The old value
+      // here was the outlier.
+      'Up to 5 price alerts',
       'Single wishlist',
       'Product details with AI summary',
       '30-day price history',
@@ -47,8 +50,13 @@ const PLANS = [
     color: 'border-slate-300',
   },
   {
+    // Section 12: display name is "Premium" (matches lib/tiers.ts
+    // everywhere else). The internal key stays 'pro' — the checkout
+    // API (app/api/v1/subscriptions/checkout/route.ts) only accepts
+    // plan 'pro', so renaming the key is an API change, not a copy
+    // fix; the key is never shown to the user.
     key: 'pro',
-    name: 'Pro',
+    name: 'Premium',
     price: 9.99,
     icon: Crown,
     features: [
@@ -57,11 +65,13 @@ const PLANS = [
       'Multiple wishlists with sharing',
       'AI chat assistant',
       'Price drop predictions',
-      '1-year price history',
+      // Section 12: recorded history maxes at 30 days — the old
+      // one-year claim was never true.
+      'Full recorded price history (currently up to 30 days)',
       'Weekly deal digest',
       'Priority support',
     ],
-    cta: 'Upgrade to Pro',
+    cta: 'Upgrade to Premium',
     color: 'border-blue-500 ring-2 ring-blue-500/20',
     popular: true,
   },
@@ -193,6 +203,10 @@ export default function BillingPage() {
           Billing & Subscription
         </h1>
         <p className="mt-1 text-muted-foreground">Manage your subscription and billing preferences</p>
+        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          Payments are in test mode: Stripe is not live yet, so upgrading does not take
+          a real payment. No card is charged while this note is shown.
+        </p>
       </div>
 
       {subscription && subscription.plan !== 'free' && (
@@ -205,10 +219,12 @@ export default function BillingPage() {
                   Current Subscription
                 </CardTitle>
                 <CardDescription className="mt-1">
-                  {subscription.plan === 'pro' ? 'Pro Plan' : subscription.plan} — {subscription.status}
+                  {subscription.plan === 'pro' ? 'Premium Plan' : subscription.plan} — {subscription.status}
                 </CardDescription>
               </div>
-              <Badge className="bg-blue-600 capitalize">{subscription.plan}</Badge>
+              {/* Display name mapping: the stored plan key is 'pro'
+                  (checkout API), the tier name shown is 'Premium'. */}
+              <Badge className="bg-blue-600 capitalize">{subscription.plan === 'pro' ? 'Premium' : subscription.plan}</Badge>
             </div>
           </CardHeader>
           <CardContent>

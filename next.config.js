@@ -53,22 +53,9 @@ const nextConfig = {
     optimizePackageImports: ['lucide-react'],
     serverComponentsExternalPackages: ['resend', 'web-push', 'stripe'],
   },
-  async redirects() {
-    return [
-      {
-        // The pricing section lives on the homepage (app/page.tsx
-        // section id="pricing"); there is no standalone /pricing
-        // route, so a direct visit used to 404. Redirect to the
-        // homepage anchor instead. Temporary (not permanent) so a
-        // real /pricing page can replace it later without fighting
-        // a cached permanent redirect. No in-site link points at
-        // /pricing — header and footer already use /#pricing.
-        source: '/pricing',
-        destination: '/#pricing',
-        permanent: false,
-      },
-    ];
-  },
+  // Section 12: the old /pricing -> /#pricing temporary redirect was
+  // removed here — a real /pricing page now exists, and the redirect
+  // would shadow it.
   async headers() {
     return [
       {

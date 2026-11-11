@@ -309,6 +309,18 @@ const ShareButtons = dynamic(
     ),
   { loading: () => <LoadingSpinner /> }
 );
+// Section 12, Chunk E: push opt-in prompt — dynamic with ssr:false
+// (it sits below the hero actions and only renders after hydration,
+// so it stays out of the First Load bundle). Dismissible and
+// honest: when VAPID keys are not configured it says so instead of
+// pretending push works.
+const PushOptInPrompt = dynamic(
+  () =>
+    import('@/components/home/push-opt-in-prompt').then(
+      (m) => m.PushOptInPrompt
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
 const AIReviewSummarizer = dynamic(
   () =>
     import('@/components/products/ai-review-summarizer').then(
@@ -1398,6 +1410,12 @@ export default function ProductDetailClient({
                   mechanism anywhere — a good deal was a dead end. */}
               <ShareButtons title={product.name} />
             </div>
+
+            {/* Section 12, Chunk E: push opt-in prompt, below the
+                hero actions so it never blocks the price or the
+                Where-to-Buy section. Dismissible; hidden entirely
+                on browsers without push support. */}
+            <PushOptInPrompt context="product" className="mt-4" />
 
             {summary && (
               <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 dark:border-blue-800 dark:from-blue-950 dark:to-cyan-950">

@@ -15,6 +15,7 @@ import {
   Heart,
   Clock,
   Archive,
+  X,
   type LucideIcon,
 } from 'lucide-react';
 import { CardContent } from '@/components/ui/card';
@@ -40,6 +41,11 @@ import { AgentHuntsCard } from '@/components/dashboard/agent-hunts-card';
 import type { BuyListItemView } from '@/lib/buy-list';
 import type { ProtectionWatchView } from '@/lib/price-protection';
 import type { SaverBadge } from '@/lib/savings';
+import {
+  readGuestMergeResult,
+  clearGuestMergeResult,
+  formatGuestMergeSummary,
+} from '@/lib/guest-merge';
 import { DigestGrid } from '@/components/dashboard/digest-grid';
 import { AccuracyDashboard } from '@/components/accuracy/accuracy-dashboard';
 import { DashboardCardsSkeleton } from '@/components/ui/skeleton';
@@ -142,6 +148,20 @@ export default function DashboardPage() {
     badge: SaverBadge;
   } | null>(null);
   const [loadingSavings, setLoadingSavings] = useState(true);
+
+  // Section 12, Chunk B — guest → signed-in merge note: the merge
+  // runner (AuthProvider → lib/guest-merge.ts) stores its confirmed
+  // result in sessionStorage; this reads it once, shows exactly what
+  // was carried over (never a claim about a category that did not
+  // merge), and clears it so the note does not repeat. Nothing
+  // renders when there was no merge.
+  const [mergeNote, setMergeNote] = useState<string | null>(null);
+  useEffect(() => {
+    const result = readGuestMergeResult();
+    if (!result) return;
+    clearGuestMergeResult();
+    setMergeNote(formatGuestMergeSummary(result));
+  }, []);
 
   const fetchDashboardData = useCallback(async () => {
     const [recsRes, historyRes, trackingRes, dropsRes, accuracyRes, buyListRes, protectionRes, savingsRes] = await Promise.all([
@@ -338,6 +358,29 @@ export default function DashboardPage() {
         </div>
 
         <div className="order-1 space-y-6 lg:order-2">
+          {/* Section 12, Chunk B — what the sign-in merge carried over
+              from this device. Dismissible; shows once per merge. */}
+          {mergeNote && (
+            <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">
+              <Heart className="mt-0.5 h-4 w-4 shrink-0 fill-emerald-500 text-emerald-500" />
+              <p className="flex-1">
+                {mergeNote}{' '}
+                <Link href="/dashboard/wishlists" className="font-medium underline">
+                  View your wishlist
+                </Link>
+              </p>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 shrink-0"
+                onClick={() => setMergeNote(null)}
+                aria-label="Dismiss"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
           {/* Glass hero */}
           <div className="glass-card overflow-hidden animate-fade-in motion-reduce:animate-none">
             <div className="relative bg-gradient-to-br from-blue-600 via-violet-600 to-fuchsia-500 p-6 text-white">
@@ -356,6 +399,31 @@ export default function DashboardPage() {
                 </Badge>
               </div>
             </div>
+          </div>
+
+          {/* Section 12, chunk C — upgrade CTA, honest: payments
+              are not live yet (Stripe is in test mode), so this is
+              NOT a purchase button. It links to /pricing, which
+              states plainly that no paid plan can be bought today
+              and no free trial is offered. */}
+          <div className="glass-card flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="flex items-center gap-2 text-lg font-semibold">
+                <Sparkles className="h-5 w-5 text-blue-600" />
+                Premium is coming
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Premium ($9.99/month, planned price) adds unlimited price alerts, AI
+                recommendations, review analysis, price prediction and priority support.
+                Payments aren&apos;t live yet — no paid plan can be bought today and no free
+                trial is offered.
+              </p>
+            </div>
+            <Button asChild className="shrink-0">
+              <Link href="/pricing">
+                See Premium plans <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
           </div>
 
           {/* Activity at a glance — real counts from the user's own data

@@ -23,7 +23,7 @@ describe('Section 10 — header search + mobile nav', () => {
 
   it('mobile nav lists Search, Deals, Compare and Brands', () => {
     const header = read('components/layout/site-header.tsx');
-    for (const href of ["href: '/search'", "href: '/deals'", "href: '/compare'", "href: '/#browse'"]) {
+    for (const href of ["href: '/search'", "href: '/deals'", "href: '/compare'", "href: '/brands'"]) {
       expect(header).toContain(href);
     }
   });

@@ -25,6 +25,11 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useToast } from '@/hooks/use-toast';
+// Section 12, Chunk E: polls on this wishlist — the owner creates
+// them here; friends vote from the shared page. The component owns
+// its own fetch/vote/create calls; this page only passes the list
+// items as poll options.
+import { WishlistPolls } from '@/components/wishlist/wishlist-polls';
 
 interface WishlistMeta {
   id: string;
@@ -217,6 +222,22 @@ export default function DashboardWishlistDetailPage() {
             </Card>
           ))}
         </div>
+      )}
+
+      {/* Section 12, Chunk E: polls on this wishlist. The owner
+          creates a poll from the items above; friends vote on the
+          shared page. Shown once the items load (even when empty —
+          existing polls can outlive their items). */}
+      {items !== null && (
+        <WishlistPolls
+          wishlistId={id}
+          items={items.map((item) => ({
+            productId: item.product.id,
+            productName: item.product.name,
+            productSlug: item.product.slug,
+          }))}
+          canCreate
+        />
       )}
     </div>
   );

@@ -12,7 +12,11 @@
  * Honest limit, surfaced in the dialog on every guest render: these
  * alerts live on this device only. Nothing checks them in the
  * background and no email/push is ever sent for them — the user must
- * sign in for notifications and cross-device sync.
+ * sign in for notifications and cross-device sync. Signing in DOES
+ * merge them into the account (lib/guest-merge.ts, run from the
+ * AuthProvider after sign-in): only alerts the account does not
+ * already have are created, and this key is cleared only after the
+ * server confirms the merge.
  */
 
 export interface LocalPriceAlert {
@@ -175,6 +179,25 @@ export function removeLocalAlert(id: string): LocalPriceAlert[] {
   const alerts = loadLocalAlerts().filter((a) => a.id !== id);
   persist(alerts);
   return alerts;
+}
+
+/**
+ * Merge hook (Section 12, Chunk B): clear all guest alerts on this
+ * device. Called ONLY by lib/guest-merge.ts after the server has
+ * confirmed every new alert was created on the account — never
+ * before. If the merge fails part-way the key is left untouched so
+ * the next sign-in can retry; already-created alerts are deduped
+ * out on that retry.
+ */
+export function clearLocalAlerts(): void {
+  const store = storage();
+  if (!store) return;
+  try {
+    store.removeItem(LOCAL_ALERTS_STORAGE_KEY);
+  } catch {
+    // Storage blocked — the key simply stays; the next merge run
+    // dedupes the already-created alerts out before posting.
+  }
 }
 
 /** Guest alerts saved for one product, in stored order. Never throws. */

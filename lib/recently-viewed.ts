@@ -11,9 +11,12 @@
  * whatever was known when the view was recorded (null when unknown
  * — the strip then shows no price, never a guessed one).
  *
- * Signing in later does NOT merge this list into product_views
- * (no merge endpoint exists) — the strip says so honestly: views
- * are saved on this device only.
+ * Signing in later DOES merge this list into product_views
+ * (lib/guest-merge.ts, run from the AuthProvider after sign-in):
+ * each distinct viewed product is recorded on the account, and the
+ * device key is cleared only after the server confirms the merge.
+ * Until sign-in, the strip says so honestly: views are saved on
+ * this device only.
  */
 
 export interface RecentlyViewedItem {

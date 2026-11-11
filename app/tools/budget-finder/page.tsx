@@ -16,12 +16,15 @@
  *   — never padded with an over-budget or irrelevant product.
  */
 
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Wallet } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { ShareButtons } from '@/components/products/share-buttons';
+import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
   GUIDED_CATEGORIES,
@@ -32,10 +35,32 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-export const metadata = {
-  title: 'Budget Finder — SmartBuy',
+// Section 12, Chunk E: canonical + Open Graph metadata, and the
+// brand suffix fixed to "SmartBuy AI" (it was "SmartBuy"). The
+// canonical URL is the bare tool URL — the ?category=&budget=
+// variants are the same page with different inputs, not separate
+// pages. No OG image: none exists for this tool, so Next falls back
+// to the site-wide app/opengraph-image.tsx — never invent one.
+export const metadata: Metadata = {
+  title: 'Budget Finder — SmartBuy AI',
   description:
     'Best priced products under your budget, ranked by biggest saving first. Real merchant prices only.',
+  alternates: {
+    canonical: `${appConfig.url}/tools/budget-finder`,
+  },
+  openGraph: {
+    title: 'Budget Finder — SmartBuy AI',
+    description:
+      'Best priced products under your budget, ranked by biggest saving first. Real merchant prices only.',
+    url: `${appConfig.url}/tools/budget-finder`,
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Budget Finder — SmartBuy AI',
+    description:
+      'Best priced products under your budget, ranked by biggest saving first. Real merchant prices only.',
+  },
 };
 
 interface BudgetFinderProps {
@@ -134,6 +159,21 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
           {hasQuery && !budgetError && (
             <section className="mt-10" aria-live="polite">
               <h2 className="text-xl font-semibold">{heading}</h2>
+
+              {/* Section 12, Chunk E: copy/share for these results.
+                  The URL is already shareable (?category=&budget=,
+                  same as the Quiz's ?answers= pattern) — ShareButtons
+                  copies the current page URL, so a shared link
+                  restores exactly these results. */}
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  Share these results:
+                </span>
+                <ShareButtons
+                  title={heading}
+                  text={`${heading} — SmartBuy AI`}
+                />
+              </div>
 
               {picks !== null && picks.length === 0 && (
                 <div className="mt-6">

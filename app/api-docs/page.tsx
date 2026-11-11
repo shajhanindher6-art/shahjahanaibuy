@@ -7,8 +7,10 @@
  * a dedicated key-management UI in the dashboard is wave 2.
  */
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { ANONYMOUS_DAILY_QUOTA, API_QUOTAS } from '@/lib/api-quota';
 
 export const metadata: Metadata = {
   title: 'API Docs — SmartBuy AI',
@@ -89,6 +91,59 @@ export default function ApiDocsPage() {
             <li>Over the limit: HTTP 429 with a reset time. Do not retry in a tight loop.</li>
           </ul>
 
+          {/* Section 12, chunk C — daily quotas. These numbers are
+              the live enforcement in lib/api-quota.ts (imported
+              above, not copied), so this table cannot drift from
+              what the API actually enforces. The per-minute limits
+              above still apply on top of the daily cap. A key's tier
+              comes from its owner's subscription (active paid
+              subscription required for a paid quota; anything else
+              stays on the free quota). */}
+          <h2 className="mt-8 text-xl font-semibold">Daily quotas</h2>
+          <p className="mt-3 text-muted-foreground">
+            On top of the per-minute limits, every caller has a daily quota (requests per UTC
+            day). Over the daily quota the API answers HTTP 429 naming your tier, the limit, the
+            reset time (UTC midnight) and the next tier up.
+          </p>
+          <table className="mt-4 w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b text-left">
+                <th className="py-2 pr-4 font-semibold">Caller</th>
+                <th className="py-2 font-semibold">Requests / day</th>
+              </tr>
+            </thead>
+            <tbody className="text-muted-foreground">
+              <tr className="border-b">
+                <td className="py-2 pr-4">Anonymous (no key, per IP)</td>
+                <td className="py-2">{ANONYMOUS_DAILY_QUOTA.toLocaleString('en-US')}</td>
+              </tr>
+              <tr className="border-b">
+                <td className="py-2 pr-4">Free tier key</td>
+                <td className="py-2">{API_QUOTAS.free.toLocaleString('en-US')}</td>
+              </tr>
+              <tr className="border-b">
+                <td className="py-2 pr-4">Premium tier key</td>
+                <td className="py-2">{API_QUOTAS.premium.toLocaleString('en-US')}</td>
+              </tr>
+              <tr className="border-b">
+                <td className="py-2 pr-4">Family tier key</td>
+                <td className="py-2">{API_QUOTAS.family.toLocaleString('en-US')}</td>
+              </tr>
+              <tr>
+                <td className="py-2 pr-4">Team tier key</td>
+                <td className="py-2">{API_QUOTAS.team.toLocaleString('en-US')}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Paid tiers exist, but payments aren&apos;t live yet (Stripe is in test mode), so a
+            paid tier can&apos;t be purchased today — see{' '}
+            <Link href="/pricing" className="font-medium underline underline-offset-4">
+              Pricing
+            </Link>
+            .
+          </p>
+
           <h2 className="mt-8 text-xl font-semibold">Endpoints</h2>
           <p className="mt-3 text-sm text-muted-foreground">Base URL: {BASE_URL}</p>
           <ul className="mt-4 space-y-4">
@@ -117,8 +172,10 @@ export default function ApiDocsPage() {
             computed from recorded checks only and is absent until checks accrue.
           </p>
           <p className="mt-3 text-muted-foreground">
-            Paid tiers and write access are not offered. If you build something with this API,
-            please respect the rate limits and link back to SmartBuy AI.
+            Paid tiers exist — Premium, Family and Team keys get the higher daily quotas in the
+            table above — but payments aren&apos;t live yet, so a paid tier can&apos;t be
+            purchased today. The API is read-only: write access is not offered. If you build
+            something with this API, please respect the rate limits and link back to SmartBuy AI.
           </p>
         </div>
       </main>

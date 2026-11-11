@@ -9,6 +9,7 @@ import { createContext, useContext, useEffect, useState, useCallback, type React
 import type { Session, User } from '@supabase/supabase-js';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { getProfile } from '@/services/profiles';
+import { runGuestMerge } from '@/lib/guest-merge';
 import type { AuthContextValue, AuthResult } from '@/types/auth';
 import type { Profile, UserRole } from '@/types';
 
@@ -41,6 +42,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       initialSessionChecked = true;
       setUser(session?.user ?? null);
       if (session?.user) {
+        // Section 12, Chunk B — guest → signed-in merge: a returning
+        // session (or an OAuth callback that already exchanged the
+        // code) still carries any guest saves left on this device.
+        // runGuestMerge is a no-op when the guest stores are empty
+        // and re-reads server state first, so a retry after a
+        // failed merge is safe.
+        void runGuestMerge();
         fetchProfile(session.user.id).finally(() => mounted && setIsLoading(false));
       } else {
         setIsLoading(false);
@@ -64,6 +72,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         (async () => {
           setUser(session?.user ?? null);
           if (session?.user) {
+            // Section 12, Chunk B — guest → signed-in merge: SIGNED_IN
+            // is the single funnel for a fresh password sign-in and
+            // for the Google OAuth code exchange landing on
+            // /auth/callback, so the merge runs once here for both.
+            // Fire-and-forget on purpose: the merge must never block
+            // sign-in, and it never throws. TOKEN_REFRESHED is
+            // deliberately excluded — a refresh is not a sign-in.
+            if (event === 'SIGNED_IN') void runGuestMerge();
             await fetchProfile(session.user.id);
           } else {
             setProfile(null);

@@ -8,9 +8,12 @@
  * alerts (lib/local-alerts.ts). Nothing is sent to the server; a
  * guest item is just { id, slug, name, addedAt }.
  *
- * Signing in later does NOT auto-merge the guest list yet (no merge
- * endpoint exists) — the toast says so honestly: "saved on this
- * device — sign in to keep it across devices".
+ * Signing in later DOES merge the guest list into the account
+ * (lib/guest-merge.ts, run from the AuthProvider after sign-in):
+ * only items the account does not already have are added, and the
+ * device key is cleared only after the server confirms the merge —
+ * until then the toast still says honestly "saved on this device —
+ * sign in to keep it across devices".
  */
 
 export interface GuestWishlistItem {
@@ -55,6 +58,23 @@ function writeRaw(items: GuestWishlistItem[]): void {
 
 export function getGuestWishlist(): GuestWishlistItem[] {
   return readRaw();
+}
+
+/**
+ * Merge hook (Section 12, Chunk B): clear the guest wishlist key.
+ * Called ONLY by lib/guest-merge.ts after the server has confirmed
+ * every new item was added to the account — never before. Clearing
+ * also fires the change event so guest UI updates immediately.
+ */
+export function clearGuestWishlist(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(GUEST_WISHLIST_KEY);
+    window.dispatchEvent(new Event(GUEST_WISHLIST_EVENT));
+  } catch {
+    // Storage blocked — the key simply stays; the next merge run
+    // dedupes the already-added items out before posting anything.
+  }
 }
 
 export function isGuestWishlisted(productId: string): boolean {

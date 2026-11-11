@@ -38,11 +38,84 @@ interface ShareButtonsProps {
   enableReferral?: boolean;
 }
 
+// Section 12, Chunk E — referral credit display (NON-monetary
+// only). The creator-rewards ladder (lib/creator-rewards.ts) is
+// points + badges for VERIFIED deals — 10 points per verified deal,
+// Bronze at 1, Silver at 5, Gold at 15, Platinum at 30. GET
+// /api/v1/creator-rewards/me returns the signed-in visitor's own
+// points, verified-deal count, badge and next badge. The line below
+// shows ONLY when that fetch succeeds and the visitor actually has
+// points or verified deals — guests (401) and zero-state accounts
+// see nothing, never a guessed count. No money anywhere: revenue
+// share is unconfigured (Stripe is in test mode, revenue $0), so no
+// payout or dollar amount is ever shown. "Friends joined" is NOT
+// shown either — no data source counts signups from a referral
+// link (the referrals API records clicks only), so inventing a
+// joined count would be fake.
+interface CreatorRewardsSummary {
+  points: number;
+  verifiedDeals: number;
+  badgeLabel: string;
+  nextBadge: { label: string; verifiedDeals: number } | null;
+}
+
 export function ShareButtons({ title, text, url, enableReferral }: ShareButtonsProps) {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
   const [referralBusy, setReferralBusy] = useState(false);
   const [referralCopied, setReferralCopied] = useState(false);
+  // Section 12, Chunk E: the visitor's own creator-rewards
+  // summary (points + badge, non-monetary). Null until a successful
+  // fetch proves the data exists — never a placeholder.
+  const [rewards, setRewards] = useState<CreatorRewardsSummary | null>(null);
+
+  // Load the rewards summary only where the referral button is
+  // shown. Signed-out visitors get a 401 and see nothing; a failed
+  // fetch also shows nothing — the share buttons never depend on it.
+  useEffect(() => {
+    if (!enableReferral) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/v1/creator-rewards/me');
+        if (!res.ok) return;
+        const json = await res.json().catch(() => null);
+        const data = json?.data as
+          | {
+              points?: unknown;
+              verifiedDeals?: unknown;
+              badgeLabel?: unknown;
+              nextBadge?: unknown;
+            }
+          | undefined;
+        if (!data || cancelled) return;
+        const points = typeof data.points === 'number' ? data.points : 0;
+        const verifiedDeals =
+          typeof data.verifiedDeals === 'number' ? data.verifiedDeals : 0;
+        if (points <= 0 && verifiedDeals <= 0) return;
+        const nextBadge =
+          data.nextBadge &&
+          typeof data.nextBadge === 'object' &&
+          typeof (data.nextBadge as { label?: unknown }).label === 'string' &&
+          typeof (data.nextBadge as { verifiedDeals?: unknown }).verifiedDeals ===
+            'number'
+            ? (data.nextBadge as { label: string; verifiedDeals: number })
+            : null;
+        setRewards({
+          points,
+          verifiedDeals,
+          badgeLabel:
+            typeof data.badgeLabel === 'string' ? data.badgeLabel : 'No badge yet',
+          nextBadge,
+        });
+      } catch {
+        // No rewards line — sharing still works.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [enableReferral]);
 
   // S3#10: record one referral click when the page was opened via a
   // referral link (?ref=sb-…). Once per code per browser session,
@@ -141,7 +214,8 @@ export function ShareButtons({ title, text, url, enableReferral }: ShareButtonsP
   };
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div>
+      <div className="flex flex-wrap gap-2">
       <Button variant="outline" size="sm" onClick={handleShare}>
         <Share2 className="mr-2 h-4 w-4" /> Share
       </Button>
@@ -192,6 +266,22 @@ export function ShareButtons({ title, text, url, enableReferral }: ShareButtonsP
           )}
           {referralBusy ? 'Creating…' : referralCopied ? 'Referral copied' : 'Referral link'}
         </Button>
+      )}
+      </div>
+      {/* Section 12, Chunk E: referral credit — points + badge from
+          the creator-rewards ladder, shown only when the data
+          exists. Non-monetary by design: no payouts, no dollar
+          amounts, no "friends joined" (no data source counts it). */}
+      {enableReferral && rewards && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          <Gift className="mr-1 inline h-3 w-3" />
+          {rewards.badgeLabel} · {rewards.points} point
+          {rewards.points !== 1 ? 's' : ''} · {rewards.verifiedDeals}{' '}
+          verified deal{rewards.verifiedDeals !== 1 ? 's' : ''}
+          {rewards.nextBadge
+            ? ` · Next: ${rewards.nextBadge.label} at ${rewards.nextBadge.verifiedDeals} verified deals`
+            : ' · Top badge earned'}
+        </p>
       )}
     </div>
   );

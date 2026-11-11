@@ -21,7 +21,9 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
-import type { PriceDropDigest } from '@/lib/price-drop-digest';
+import type { PriceDropDigest, PriceHistoryPointInput, WatchedProductInput } from '@/lib/price-drop-digest';
+import { buildPriceDropDigest } from '@/lib/price-drop-digest';
+import { loadLocalAlerts } from '@/lib/local-alerts';
 
 interface DigestResponse {
   digest: PriceDropDigest | null;
@@ -40,6 +42,104 @@ export default function PriceDropDigestPage() {
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Section 12, Chunk E — guest mode: the signed-in digest above
+  // needs an account, but guests already watch products on this
+  // device (local price-drop alerts, lib/local-alerts.ts). When the
+  // API answers 401 we build the same digest locally from those
+  // alerts + the public per-product price history — no login, no
+  // email, no push. Frequency is recomputed locally; pause/save
+  // need an account and stay signed-in-only.
+  const [mode, setMode] = useState<'signed-in' | 'guest'>('signed-in');
+
+  // Build the digest for a guest from on-device watched products.
+  // Price history comes from the public prices endpoint per
+  // product; a product whose history cannot be fetched is simply
+  // absent from the deals — never invented. Returns null only when
+  // the guest watches nothing on this device.
+  const loadGuestDigest = useCallback(async (freq: 'daily' | 'weekly') => {
+    setLoading(true);
+    setFailed(false);
+    try {
+      const alerts = loadLocalAlerts();
+      const seen = new Set<string>();
+      const watched: WatchedProductInput[] = [];
+      for (const alert of alerts) {
+        if (seen.has(alert.productId)) continue;
+        seen.add(alert.productId);
+        watched.push({ productId: alert.productId, productName: alert.productName });
+      }
+      if (watched.length === 0) {
+        setMode('guest');
+        setDigest({
+          frequency: freq,
+          windowDays: freq === 'daily' ? 1 : 7,
+          generatedAt: new Date().toISOString(),
+          watchedCount: 0,
+          deals: [],
+        });
+        setFrequency(freq);
+        setIsActive(true);
+        setPreferencesEnabled(false);
+        setNote(
+          'Guest mode — this digest is built on this device from the price-drop alerts you saved here. Sign in to get email digests and sync across devices.'
+        );
+        return;
+      }
+
+      // Resolve product ids to slugs via the public products list
+      // (catalog is small; pageSize 100 covers it). A watched
+      // product that no longer resolves keeps its name but gets no
+      // history — and therefore no deal.
+      const slugById = new Map<string, string>();
+      try {
+        const listRes = await fetch('/api/v1/products?pageSize=100');
+        const listJson = await listRes.json().catch(() => null);
+        if (listRes.ok && Array.isArray(listJson?.data)) {
+          for (const p of listJson.data as Array<{ id?: unknown; slug?: unknown }>) {
+            if (typeof p?.id === 'string' && typeof p?.slug === 'string') {
+              slugById.set(p.id, p.slug);
+            }
+          }
+        }
+      } catch {
+        // No slug map — history fetches below simply cannot run.
+      }
+
+      const history: PriceHistoryPointInput[] = [];
+      await Promise.all(
+        watched.map(async (product) => {
+          const slug = slugById.get(product.productId);
+          if (!slug) return;
+          try {
+            const res = await fetch(`/api/v1/products/${encodeURIComponent(slug)}/prices?limit=100`);
+            const json = await res.json().catch(() => null);
+            if (!res.ok || !Array.isArray(json?.data?.history)) return;
+            for (const point of json.data.history as Array<Record<string, unknown>>) {
+              const price = typeof point.price === 'number' ? point.price : parseFloat(String(point.price));
+              if (Number.isFinite(price) && typeof point.recordedAt === 'string') {
+                history.push({ productId: product.productId, price, recordedAt: point.recordedAt });
+              }
+            }
+          } catch {
+            // One product's history failing never blocks the rest.
+          }
+        })
+      );
+
+      setMode('guest');
+      setDigest(buildPriceDropDigest(watched, history, freq));
+      setFrequency(freq);
+      setIsActive(true);
+      setPreferencesEnabled(false);
+      setNote(
+        'Guest mode — this digest is built on this device from the price-drop alerts you saved here. Sign in to get email digests and sync across devices.'
+      );
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const load = useCallback(async (freq: 'daily' | 'weekly') => {
     setLoading(true);
@@ -49,14 +149,16 @@ export default function PriceDropDigestPage() {
       const json = await res.json().catch(() => null);
       if (res.ok && json?.success && json.data) {
         const data = json.data as DigestResponse;
+        setMode('signed-in');
         setDigest(data.digest);
         setFrequency(data.preference.frequency);
         setIsActive(data.preference.isActive);
         setPreferencesEnabled(data.preferencesEnabled !== false);
         setNote(data.note ?? null);
       } else if (res.status === 401) {
-        setFailed(true);
-        setNote('Sign in to see your price-drop digest.');
+        // Not signed in — fall back to the on-device guest digest
+        // instead of the old "Sign in to see your digest" wall.
+        await loadGuestDigest(freq);
       } else {
         setFailed(true);
       }
@@ -65,7 +167,7 @@ export default function PriceDropDigestPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadGuestDigest]);
 
   useEffect(() => {
     void load('weekly');
@@ -73,6 +175,12 @@ export default function PriceDropDigestPage() {
 
   async function changeFrequency(freq: 'daily' | 'weekly') {
     setError(null);
+    // Guest mode: no server preference to save — recompute the
+    // on-device digest with the new window instead.
+    if (mode === 'guest') {
+      await loadGuestDigest(freq);
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch('/api/v1/tools/digest', {
@@ -140,6 +248,14 @@ export default function PriceDropDigestPage() {
             is assembled with deterministic rules from recorded price
             drops on products you watch — no LLM, nothing guessed.
           </p>
+          {mode === 'guest' ? (
+            <p className="mt-3 rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground">
+              Guest mode — this digest is built on this device from the
+              price-drop alerts you saved here. No login, no email, no
+              push. Sign in to save digest preferences and sync across
+              devices.
+            </p>
+          ) : null}
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <span className="text-sm font-medium">Frequency:</span>
@@ -157,11 +273,21 @@ export default function PriceDropDigestPage() {
             >
               Weekly
             </Button>
-            <Button variant="outline" onClick={() => void toggleActive()} disabled={saving || loading}>
-              {isActive ? 'Pause digest' : 'Resume digest'}
-            </Button>
+            {/* Pause/resume is a saved server preference — guests
+                have none, so the guest digest is always on. */}
+            {mode === 'signed-in' ? (
+              <Button variant="outline" onClick={() => void toggleActive()} disabled={saving || loading}>
+                {isActive ? 'Pause digest' : 'Resume digest'}
+              </Button>
+            ) : null}
           </div>
-          {!preferencesEnabled ? (
+          {mode === 'guest' ? (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Digest preferences (pause, email delivery) need an
+              account — <Link href="/sign-in" className="underline underline-offset-4">sign in</Link> to
+              set them.
+            </p>
+          ) : !preferencesEnabled ? (
             <p className="mt-3 text-sm text-muted-foreground">
               Digest preferences are not set up yet — the owner still needs
               to run migration 033 once. The digest below still uses the

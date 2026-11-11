@@ -70,6 +70,12 @@ const STATIC_PAGES: Array<{
   { path: '/p2p-match', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/scan', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools', priority: 0.7, changeFrequency: 'weekly' },
+  // Section 12: the 4 Section 11 pages were missing from the
+  // sitemap — nothing else in this file changes in this batch.
+  { path: '/tools/help-me-choose', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/budget-finder', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/store-finder', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/coming-soon', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools/list-optimizer', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools/expense-tracker', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools/subscription-manager', priority: 0.6, changeFrequency: 'weekly' },

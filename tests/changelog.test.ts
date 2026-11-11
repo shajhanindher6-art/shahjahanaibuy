@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { RELEASES, PENDING_SYNC_RELEASES } from '../app/changelog/releases';
 
 describe('changelog releases', () => {
-  it('lists all 55 releases from the sync record', () => {
-    expect(RELEASES.length).toBe(55);
+  it('lists all 59 releases from the sync record', () => {
+    expect(RELEASES.length).toBe(59);
   });
 
   it('has unique full commit SHAs', () => {

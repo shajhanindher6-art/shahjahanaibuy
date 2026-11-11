@@ -63,8 +63,11 @@ export const TIERS: TierDefinition[] = [
       'Price-lock guarantee on eligible deals',
       'Priority support',
     ],
-    cta: 'Start Free Trial',
-    href: '/sign-up',
+    // Section 12: no trial exists (no trial terms defined anywhere),
+    // so the Premium CTA must not promise one. It points at the
+    // canonical /pricing page, which states payments aren't live yet.
+    cta: 'See Premium plans',
+    href: '/pricing',
     highlighted: true,
   },
   {

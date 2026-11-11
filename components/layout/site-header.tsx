@@ -23,21 +23,22 @@ const navLinks: { href: string; key: DictKey }[] = [
 
 // Mobile-only links (Section 10, chunk 1): the mobile menu used to
 // list only the 4 homepage anchors, so a phone visitor could not
-// reach Search, Deals, Compare or Brands without scrolling. These
-// are plain-English labels — lib/i18n.ts is owned by another chunk,
-// so no new DictKeys were added here (i18n follow-up for the
-// coordinator). Brands points at the homepage browse section
-// (app/page.tsx wraps <BrowseByTaxonomy /> in id="browse").
+// reach Search, Deals, Compare or Brands without scrolling. Section
+// 12: Search / Deals / Compare / Brands / Tools now use DictKeys
+// (lib/i18n.ts navSearch, navDeals, navCompare, navBrands, navTools)
+// instead of plain-English labels. Brands points at the /brands
+// index page (Section 12) instead of the homepage browse section.
 // Section 11, chunk B: the AI tools hub and its three new tools
 // (help-me-choose, budget-finder, store-finder) are listed here too
 // — the 13 Section 7 tools were live but invisible, with zero
-// href="/tools" links anywhere on the site.
-const mobileExtraLinks: { href: string; label: string }[] = [
-  { href: '/search', label: 'Search' },
-  { href: '/deals', label: 'Deals' },
-  { href: '/compare', label: 'Compare' },
-  { href: '/#browse', label: 'Brands' },
-  { href: '/tools', label: 'AI Tools' },
+// href="/tools" links anywhere on the site. Those three tool names
+// stay plain English: no DictKeys exist for them.
+const mobileExtraLinks: { href: string; key?: DictKey; label?: string }[] = [
+  { href: '/search', key: 'navSearch' },
+  { href: '/deals', key: 'navDeals' },
+  { href: '/compare', key: 'navCompare' },
+  { href: '/brands', key: 'navBrands' },
+  { href: '/tools', key: 'navTools' },
   { href: '/tools/help-me-choose', label: 'Help Me Choose' },
   { href: '/tools/budget-finder', label: 'Budget Finder' },
   { href: '/tools/store-finder', label: 'Store Finder' },
@@ -94,11 +95,9 @@ export function SiteHeader() {
                 {tFor(language, link.key)}
               </Link>
             ))}
-            {/* Section 11, chunk B: desktop Tools link. Plain
-                English, like the mobile-only links below —
-                lib/i18n.ts is owned by another chunk, so no new
-                DictKey was added here (i18n follow-up for the
-                coordinator). Active on every /tools/* page. */}
+            {/* Section 11, chunk B: desktop Tools link. Section 12:
+                now translated via the navTools DictKey. Active on
+                every /tools/* page. */}
             <Link
               href="/tools"
               className={cn(
@@ -106,7 +105,7 @@ export function SiteHeader() {
                 pathname?.startsWith('/tools') && 'text-foreground'
               )}
             >
-              Tools
+              {tFor(language, 'navTools')}
             </Link>
           </nav>
         </div>
@@ -222,7 +221,7 @@ export function SiteHeader() {
                 className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
                 onClick={() => setMobileOpen(false)}
               >
-                {link.label}
+                {link.key ? tFor(language, link.key) : link.label}
               </Link>
             ))}
             {!isAuthenticated && (

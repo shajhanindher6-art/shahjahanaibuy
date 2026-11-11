@@ -104,13 +104,14 @@ export default function MethodologyPage() {
             honest empty state, never an invented value.
           </p>
 
-          <h2 className="mt-8 text-xl font-semibold">Affiliate disclosure</h2>
+          <h2 id="affiliate-disclosure" className="mt-8 text-xl font-semibold">Affiliate disclosure</h2>
           <p className="mt-3 text-muted-foreground">
             SmartBuy earns a commission when you buy through some of the retailer links on
             the site, at no extra cost to you. Affiliate tags are only ever real tags set
             in the site&apos;s own configuration — no dummy or placeholder tags are used.
-            Today, the live affiliate tag is for Amazon in the United States
-            (smartbuy-20). Clicks are counted for reporting, but SmartBuy does not track
+            No affiliate tag is currently configured, so the site earns no affiliate
+            commission today and the retailer links are plain links until a tag is set
+            in configuration. Clicks are counted for reporting, but SmartBuy does not track
             your browsing, and it never sells or shares personal data with retailers.
             Affiliate links never change which products are recommended or how a Deal Score
             is calculated.

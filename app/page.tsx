@@ -37,6 +37,8 @@ import { RecentlyViewedStrip } from '@/components/home/recently-viewed-strip';
 import { HeroCopy } from '@/components/home/hero-copy';
 import { TiersSection } from '@/components/pricing/tiers-section';
 import { CurationGuidelines } from '@/components/curators/curation-guidelines';
+import { NewsletterCapture } from '@/components/home/newsletter-capture';
+import { PushOptInPrompt } from '@/components/home/push-opt-in-prompt';
 
 const features = [
   {
@@ -677,7 +679,32 @@ export default function HomePage() {
             still lands here; the section itself is id="pricing-tiers". */}
         <div id="pricing">
           <TiersSection />
+          {/* Section 12, chunk C — honesty note under the pricing
+              cards. The TiersSection itself already states the
+              price-lock dormancy, but its Premium card still shows
+              the stored trial CTA from lib/tiers.ts and lists the
+              price-lock as a feature — and no trial terms exist
+              anywhere in the code. This note, directly under the
+              cards, says plainly that payments aren't live yet,
+              no trial starts, and no lock is in force. The CTA text
+              itself lives in lib/tiers.ts + the TiersSection
+              component, which this chunk does not own — see the
+              build report. */}
+          <p className="mx-auto max-w-2xl px-4 pb-16 text-center text-sm text-muted-foreground">
+            Payments aren&apos;t live yet — Stripe is in test mode, so no paid plan can be bought
+            today and no free trial starts. The $9.99/month Premium price is the planned price,
+            not a live charge. Price-lock is dormant until Stripe is configured — no lock is in
+            force today.{' '}
+            <Link href="/pricing" className="font-medium text-blue-600 underline underline-offset-4">
+              See the full pricing page
+            </Link>
+            .
+          </p>
         </div>
+
+        {/* Section 12, chunk D — email capture for deal alerts /
+            the newsletter, mounted on the homepage. */}
+        <NewsletterCapture source="homepage" />
 
         {/* CTA */}
         <section className="py-20 md:py-28">
@@ -702,6 +729,11 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        {/* Section 12, chunk E — push opt-in prompt, mounted on the
+            homepage. The component renders its own prompt UI (and
+            nothing when push is unavailable or already decided). */}
+        <PushOptInPrompt />
       </main>
       <SiteFooter />
     </>

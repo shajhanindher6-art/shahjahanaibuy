@@ -1,22 +1,24 @@
 import Link from 'next/link';
 import { Sparkles } from 'lucide-react';
+import { NewsletterCapture } from '@/components/home/newsletter-capture';
 
 const footerLinks = {
   Product: [
     { href: '/#features', label: 'Features' },
-    { href: '/#pricing', label: 'Pricing' },
+    // Section 12, chunk C: pricing is a real page now
+    // (app/pricing/page.tsx), so this links there instead of the
+    // homepage anchor.
+    { href: '/pricing', label: 'Pricing' },
     { href: '/#how-it-works', label: 'How It Works' },
-    // Section 11, chunk B: the AI tools hub and the main
-    // browse surfaces. Brands and Categories have no index
-    // pages (only /brands/[slug] and /categories/[slug]), so
-    // both point at the homepage browse section (id="browse"),
-    // the same destination the mobile nav "Brands" link uses.
+    // Section 12, chunk C: /brands and /categories index pages
+    // exist now (Chunk A) — the old /#browse anchor is retired
+    // for these two links.
     { href: '/tools', label: 'AI Tools' },
     { href: '/deals', label: 'Deals' },
     { href: '/compare', label: 'Compare' },
     { href: '/platforms', label: 'Platforms' },
-    { href: '/#browse', label: 'Brands' },
-    { href: '/#browse', label: 'Categories' },
+    { href: '/brands', label: 'Brands' },
+    { href: '/categories', label: 'Categories' },
   ],
   Company: [
     { href: '/about', label: 'About' },
@@ -35,6 +37,12 @@ const footerLinks = {
   ],
   Transparency: [
     { href: '/methodology', label: 'Methodology' },
+    // Section 12, chunk C: affiliate disclosure. The disclosure
+    // itself lives in the Methodology page ("Affiliate disclosure"
+    // section) — there is no standalone disclosure page, and the
+    // heading there carries no anchor id, so this links to the
+    // page rather than a fragment.
+    { href: '/methodology#affiliate-disclosure', label: 'Affiliate Disclosure' },
     { href: '/price-index', label: 'Price Index' },
     { href: '/market-reports', label: 'Market Reports' },
     { href: '/sustainability', label: 'Sustainability' },
@@ -54,6 +62,13 @@ export function SiteFooter() {
   return (
     <footer className="border-t bg-background">
       <div className="container mx-auto px-4 py-12">
+        {/* Section 12, chunk D: email capture for deal alerts /
+            the newsletter. The component (built by Chunk D) renders
+            its own complete UI and honest empty states; the footer
+            only mounts it. */}
+        <div className="mb-10">
+          <NewsletterCapture source="footer" />
+        </div>
         <div className="grid grid-cols-2 gap-8 md:grid-cols-6">
           <div className="col-span-2 md:col-span-1">
             <Link href="/" className="flex items-center gap-2 font-bold text-lg">

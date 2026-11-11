@@ -7,7 +7,7 @@
  * source modules so a future change fails loudly instead of leaving
  * this page stale. The test count is the one figure that cannot be
  * derived at build time: it is the result of a full `npx vitest run`
- * (1,223 passing, 113 test files, 11 November 2026) and moves whenever
+ * (1,370 passing, 122 test files, 11 November 2026) and moves whenever
  * tests are added, so it is dated, not presented as permanent. The
  * product count is 10: the catalog holds 11 rows, but the
  * `sample-laptop` row is a database health-check row excluded from
@@ -37,15 +37,21 @@ const FACTS: Array<[string, string]> = [
   ['Deals listed', '6'],
   ['Stores in the directory', '80 local stores (plus 4 global fallback stores — Amazon, eBay, AliExpress, Google Shopping — search links only)'],
   ['Regions covered', '61 (60 with a local store; South Africa uses the global fallback)'],
-  ['Languages', '20 (English, Urdu, German, French, Spanish, Italian, Portuguese, Turkish, Arabic, Chinese, Japanese, Korean, Hindi, Bengali, Dutch, Swedish, Polish, Russian, Indonesian, Vietnamese)'],
+  ['Languages', '20 UI languages (only 28 interface strings translated; 12 of the 20 are machine-translated — all other content, including product pages and guides, stays English)'],
   ['Currencies', '51 (approximate static rates; live FX in the landed-cost calculator)'],
   ['Price refresh schedule', 'Every 6 hours'],
-  ['Recorded price history span', 'About 30 days (October 3 – November 2, 2026)'],
+  // Section 12: the seed writes price history relative to the seed
+  // run (now() - 30 days to now()), so no fixed calendar range is
+  // published — a hardcoded date range goes stale the moment the
+  // catalog is re-seeded.
+  ['Recorded price history span', 'About 30 days (the 30 days before the catalog was seeded)'],
   ['Coupons listed', '2 — SAVE10 and BESTBUY15, both valid until January 29, 2027'],
   ['Blog articles', '20 original English guides'],
   ['Database access policies (RLS)', '194 active'],
   ['Security headers', 'Grade A+ (securityheaders.com), nonce-based Content Security Policy'],
-  ['Automated tests passing', '1,223 passing (113 test files, full run 11 November 2026)'],
+  // Section 12 final full-run totals (122 files / 1,370 tests,
+  // 11 November 2026) — updated by the coordinator after vitest.
+  ['Automated tests passing', '1,370 passing (122 test files, full run 11 November 2026)'],
   ['Founder', 'Independent developer, GitHub: shajhanindher6-art'],
   ['Public repository', 'https://github.com/shajhanindher6-art/shahjahanaibuy'],
 ];
@@ -68,8 +74,9 @@ export default function PressPage() {
             SmartBuy AI is an AI-powered shopping and price-tracking site. It tracks prices
             across retailers, alerts shoppers when a price drops, compares products side by
             side, and explains its own reasoning — including a published methodology for its
-            Deal Score. It works across 61 regions and in 20 languages, with local stores
-            listed by directory and link, never with invented local prices.
+            Deal Score. It works across 61 regions, with its interface in
+            20 languages, with local stores listed by directory and link, never with
+            invented local prices.
           </p>
 
           <h2 className="mt-8 text-xl font-semibold">Fact sheet</h2>
