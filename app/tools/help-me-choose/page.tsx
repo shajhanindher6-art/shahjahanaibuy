@@ -38,6 +38,7 @@ import {
   encodeQuizAnswers,
   type GuidedAnswers,
   type GuidedPick,
+  type GuidedRelaxedPick,
 } from '@/services/guided-finder';
 
 const STEPS = ['What do you need?', 'Your budget', 'Preferred brand', 'Must-haves'] as const;
@@ -45,8 +46,78 @@ const STEPS = ['What do you need?', 'Your budget', 'Preferred brand', 'Must-have
 interface GuidedFinderResponse {
   success: boolean;
   data: GuidedPick[];
-  meta?: { total?: number; catalogSize?: number };
+  meta?: { total?: number; catalogSize?: number; relaxed?: GuidedRelaxedPick[] };
   error?: { message?: string };
+}
+
+/** One ranked pick card, shared by the exact picks and the
+ *  nearest-miss ("closest match") list below the empty state.
+ *  `missesNote` is set only for relaxed picks, naming the
+ *  must-haves the product failed. */
+function PickArticle({
+  pick,
+  indexLabel,
+  missesNote,
+}: {
+  pick: GuidedPick;
+  indexLabel: string;
+  missesNote?: string;
+}) {
+  return (
+    <article className="rounded-lg border p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {indexLabel}
+          </p>
+          <h3 className="mt-1 text-lg font-semibold">
+            <Link
+              href={`/products/${pick.slug}`}
+              className="underline-offset-4 hover:underline"
+            >
+              {pick.name}
+            </Link>
+          </h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {pick.brand ?? 'Unknown brand'}
+            {pick.category ? ` · ${pick.category}` : ''}
+            {pick.merchantName ? ` · at ${pick.merchantName}` : ''}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-xl font-bold">
+            ${(pick.bestPriceUsd as number).toFixed(2)}
+          </p>
+          {pick.savingPct !== null && (
+            <p className="text-sm font-medium text-green-700">
+              Save {pick.savingPct}%
+            </p>
+          )}
+          {pick.dealScore !== null && (
+            <p className="text-xs text-muted-foreground">
+              Deal Score {pick.dealScore}/100
+            </p>
+          )}
+        </div>
+      </div>
+      <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+        {pick.why.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+      {missesNote && (
+        <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          {missesNote}
+        </p>
+      )}
+      <Link
+        href={`/products/${pick.slug}`}
+        className="mt-4 inline-flex min-h-[44px] items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+      >
+        View product →
+      </Link>
+    </article>
+  );
 }
 
 function emptyAnswers(): GuidedAnswers {
@@ -59,6 +130,9 @@ function QuizInner() {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<GuidedAnswers>(emptyAnswers());
   const [picks, setPicks] = useState<GuidedPick[] | null>(null);
+  // B1: nearest-miss picks, shown only under the empty state (never
+  // mixed into `picks`).
+  const [relaxedPicks, setRelaxedPicks] = useState<GuidedRelaxedPick[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
@@ -74,12 +148,15 @@ function QuizInner() {
       if (!res.ok || !body.success) {
         setError(body.error?.message ?? 'Could not load picks — please try again.');
         setPicks(null);
+        setRelaxedPicks([]);
         return;
       }
       setPicks(body.data ?? []);
+      setRelaxedPicks(body.meta?.relaxed ?? []);
     } catch {
       setError('Could not load picks — please check your connection and try again.');
       setPicks(null);
+      setRelaxedPicks([]);
     } finally {
       setLoading(false);
     }
@@ -356,60 +433,41 @@ function QuizInner() {
                     description="No product with a verified price fits this combination right now — the catalog is small. Try raising the budget, picking any brand, or clearing a must-have."
                     action={<Button onClick={() => setStep(0)}>Adjust my answers</Button>}
                   />
+                  {/* B1: nearest-miss fallback — closest picks that
+                      miss a must-have, labelled with exactly what
+                      they miss. Shown only here, never mixed into
+                      exact picks. */}
+                  {relaxedPicks.length > 0 && (
+                    <div className="mt-8">
+                      <h3 className="text-lg font-semibold">Closest matches</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        No exact match, but these come closest — each
+                        misses at least one must-have, as labelled.
+                        Loosen a must-have to see exact matches.
+                      </p>
+                      <div className="mt-4 space-y-4">
+                        {relaxedPicks.map((pick, i) => (
+                          <PickArticle
+                            key={pick.slug}
+                            pick={pick}
+                            indexLabel={`Closest match ${i + 1} · ${pick.verdict}`}
+                            missesNote={`Matches ${pick.matchedMustHaveCount} of ${pick.totalMustHaves} must-haves — misses: ${pick.missedMustHaves.join(', ')}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {!loading && !error && picks !== null && picks.length > 0 && (
                 <div className="mt-6 space-y-4">
                   {picks.map((pick, i) => (
-                    <article key={pick.slug} className="rounded-lg border p-6">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                            Pick {i + 1} · {pick.verdict}
-                          </p>
-                          <h3 className="mt-1 text-lg font-semibold">
-                            <Link
-                              href={`/products/${pick.slug}`}
-                              className="underline-offset-4 hover:underline"
-                            >
-                              {pick.name}
-                            </Link>
-                          </h3>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {pick.brand ?? 'Unknown brand'}
-                            {pick.category ? ` · ${pick.category}` : ''}
-                            {pick.merchantName ? ` · at ${pick.merchantName}` : ''}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xl font-bold">
-                            ${(pick.bestPriceUsd as number).toFixed(2)}
-                          </p>
-                          {pick.savingPct !== null && (
-                            <p className="text-sm font-medium text-green-700">
-                              Save {pick.savingPct}%
-                            </p>
-                          )}
-                          {pick.dealScore !== null && (
-                            <p className="text-xs text-muted-foreground">
-                              Deal Score {pick.dealScore}/100
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                        {pick.why.map((line) => (
-                          <li key={line}>{line}</li>
-                        ))}
-                      </ul>
-                      <Link
-                        href={`/products/${pick.slug}`}
-                        className="mt-4 inline-flex min-h-[44px] items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-                      >
-                        View product →
-                      </Link>
-                    </article>
+                    <PickArticle
+                      key={pick.slug}
+                      pick={pick}
+                      indexLabel={`Pick ${i + 1} · ${pick.verdict}`}
+                    />
                   ))}
                   <p className="text-xs text-muted-foreground">
                     Prices are verified merchant prices. Products

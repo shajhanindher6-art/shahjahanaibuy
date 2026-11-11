@@ -29,6 +29,10 @@ import {
 } from '@/components/search/voice-search-button';
 import { SearchAutocomplete } from '@/components/search/search-autocomplete';
 import { ProductSearchResults } from '@/components/search/product-search-results';
+import {
+  suggestSearchCorrection,
+  type SearchCatalogTokens,
+} from '@/lib/search-suggestions';
 import type { LocalFirstSearchData } from '@/services/local-first-search';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
@@ -47,6 +51,9 @@ interface SearchResult {
   };
   score: number;
   matchedAttributes: string[];
+  /** Query tokens this product's text carries (B1) — shown as
+      "Matched: …" on the card. Absent on older cached responses. */
+  matchedTerms?: string[];
   aiExplanation: string;
   currentPrice: number | null;
   stores: string[];
@@ -57,11 +64,34 @@ interface SearchResult {
 interface ParsedIntent {
   category: string | null;
   budget: number | null;
+  budgetMin?: number | null;
   budgetCurrency?: string | null;
   budgetOriginal?: number | null;
   brands: string[];
+  excludedBrands?: string[];
+  excludedTerms?: string[];
+  attributes?: Record<string, string>;
   intent: string;
 }
+
+// Human labels for the description-keyword attribute keys the AI
+// search API returns (services/ai-search.ts ATTRIBUTE_LABELS —
+// duplicated here instead of importing that server module into
+// this client component).
+const ATTRIBUTE_BADGE_LABELS: Record<string, string> = {
+  battery: 'Long battery',
+  weight: 'Lightweight',
+  resolution: '4K',
+  display: 'OLED',
+  waterproof: 'Waterproof',
+  ram: 'RAM',
+  storage: 'Storage',
+  'screen-size': 'Screen size',
+  'noise-cancelling': 'Noise cancelling',
+  touchscreen: 'Touchscreen',
+  '5g': '5G',
+  'refresh-rate': 'Refresh rate',
+};
 
 const SUGGESTED_QUERIES = [
   'Best gaming laptop under $1000',
@@ -91,6 +121,23 @@ function SearchPageContent() {
   const [webResults, setWebResults] = useState<WebSearchResult[]>([]);
   const [webSource, setWebSource] = useState<'catalog' | 'web' | 'web-disabled' | null>(null);
   const [parsedIntent, setParsedIntent] = useState<ParsedIntent | null>(null);
+  // B10: the resolved "X vs Y" pair from the ai-search API, for
+  // the "Compare these two" CTA above the results. Empty when the
+  // query had no `vs`, or a side could not be resolved.
+  const [compareProducts, setCompareProducts] = useState<Array<{ id: string; name: string; slug: string }>>([]);
+  // Section 14, Chunk 4 — B1: the server's page / total, from
+  // meta (the API slices the page now). The page no longer slices
+  // in memory, so these are the numbers the count line and the
+  // pager render — page and API agree on page / pageSize / total.
+  const [serverTotal, setServerTotal] = useState(0);
+  const [serverPage, setServerPage] = useState(1);
+  // B4: active deals per product id (from /api/v1/deals/ranked,
+  // fetched once per search) — the "On deal" badge on a card.
+  // Empty when the fetch fails or nothing is on deal: no badge,
+  // never a guessed discount.
+  const [dealByProduct, setDealByProduct] = useState<
+    Record<string, { discountPercentage: number; savingsAmount: number }>
+  >({});
   // Local-first retailer tabs (additive): /api/search splits the
   // same query into local vs global stores for the visitor's
   // country. Kept in its own state so a failure here never
@@ -134,10 +181,17 @@ function SearchPageContent() {
   // API returns (catalog) or SerpAPI reports (web).
   // Section 13: sort / store / price-band / page state, initialized
   // from the URL (see the note on `filters` above).
-  type SearchSortKey = 'relevance' | 'price-asc' | 'price-desc' | 'match-desc' | 'deal-score';
+  // Section 14, Chunk 4 — B1/B6: sort, store, rating and band are
+  // SERVER filters/sort now (the ai-search API applies them before
+  // slicing the page). The state below still drives the panel and
+  // the URL; changing one re-runs the search (see the handlers).
+  // 'rating-desc' (B6) sorts by the average rating the API returns.
+  type SearchSortKey = 'relevance' | 'price-asc' | 'price-desc' | 'match-desc' | 'deal-score' | 'rating-desc';
   type PriceBand = 'all' | 'under-100' | '100-500' | '500-plus';
-  const SORT_KEYS: SearchSortKey[] = ['relevance', 'price-asc', 'price-desc', 'match-desc', 'deal-score'];
+  const SORT_KEYS: SearchSortKey[] = ['relevance', 'price-asc', 'price-desc', 'match-desc', 'deal-score', 'rating-desc'];
   const PRICE_BANDS: PriceBand[] = ['all', 'under-100', '100-500', '500-plus'];
+  /** Server page size (10) — the request and the pager share it. */
+  const SEARCH_PAGE_SIZE = 10;
   const [sort, setSort] = useState<SearchSortKey>(() => {
     const v = searchParams.get('sort');
     return v !== null && (SORT_KEYS as string[]).includes(v) ? (v as SearchSortKey) : 'relevance';
@@ -279,33 +333,68 @@ function SearchPageContent() {
     }
   }, [results, hasSearched, loading]);
 
-  const performSearch = useCallback(async (searchQuery: string, mode?: 'text' | 'url', filterOverride?: typeof filters) => {
+  /**
+   * Run a search against POST /api/v1/ai-search (Section 14, Chunk 4
+   * — B1: the request carries page / pageSize / sort and the
+   * server-side filters, and the response's meta carries the
+   * effective page + filtered total — the page no longer slices or
+   * sorts in memory). `req` overrides the current state: callers
+   * that change a control in the same click (filter/sort/page)
+   * pass the NEW value, because reading the state here would still
+   * see the pre-click value. A fresh search always starts at page
+   * 1 unless the caller passes an explicit page (?q= deep links
+   * with ?page=, and the pager passes its target page).
+   */
+  const performSearch = useCallback(async (searchQuery: string, req: {
+    mode?: 'text' | 'url';
+    filters?: typeof filters;
+    sort?: SearchSortKey;
+    store?: string;
+    band?: PriceBand;
+    page?: number;
+  } = {}) => {
     if (!searchQuery.trim()) return;
     setLoading(true);
     setSearchError(false);
     setHasSearched(true);
-    // Callers that switch mode in the same click (recent-search
-    // chips) pass the mode explicitly: reading searchMode state
-    // here would still see the pre-click value.
-    const effectiveMode = mode ?? searchMode;
+    const effectiveMode = req.mode ?? searchMode;
+    const activeFilters = req.filters ?? filters;
+    const activeSort = req.sort ?? sort;
+    const activeStore = req.store ?? storeFilter;
+    const activeBand = req.band ?? priceBand;
+    const activePage = req.page ?? 1;
 
     // Deep-linkable search (Section 10, chunk 1): a text search
     // writes ?q=… into the URL, so the search is shareable and
     // bookmarkable, and the ?q= effect below re-runs it on load.
     // lastSearchedRef stops that effect re-running the search we
-    // just did when the URL update re-renders the page.
+    // just did when the URL update re-renders the page. The URL
+    // carries the whole search state now (sort/store/category/
+    // brand/max/minRating/band/page) — every active value is passed
+    // explicitly, because urlStateRef may still hold the pre-click
+    // value when a control changed in this same click.
     if (effectiveMode === 'text') {
       const trimmed = searchQuery.trim();
       lastSearchedRef.current = trimmed;
-      // Section 13: the URL carries the whole search state now
-      // (sort/store/category/brand/max/minRating/band), not just
-      // ?q= — and a fresh search always restarts at page 1.
-      setPage(1);
-      writeSearchUrl({ q: trimmed, page: 1 });
+      setPage(activePage);
+      writeSearchUrl({
+        q: trimmed,
+        sort: activeSort,
+        store: activeStore,
+        category: activeFilters.category,
+        brand: activeFilters.brand,
+        max: activeFilters.budgetMax,
+        minRating: activeFilters.minRating,
+        band: activeBand,
+        page: activePage,
+      });
     }
 
     try {
-      const body: Record<string, unknown> = { pageSize: 20 };
+      // SEARCH_PAGE_SIZE is the server page size too (10): the API
+      // slices the requested page, and meta.total is the filtered
+      // count — the page renders meta, never a client slice.
+      const body: Record<string, unknown> = { pageSize: SEARCH_PAGE_SIZE, page: activePage, sort: activeSort };
 
       if (effectiveMode === 'url') {
         body.url = searchQuery;
@@ -313,15 +402,18 @@ function SearchPageContent() {
         body.query = searchQuery;
       }
 
-      // Server-side filters (category / brand / max budget) are
-      // applied by the ai-search API. filterOverride lets a filter
-      // change re-run the search with the NEW values instead of the
-      // stale closure's (see applyServerFilters below).
-      const activeFilters = filterOverride ?? filters;
+      // Server-side filters (category / brand / max budget / store /
+      // min rating / price band) are applied by the ai-search API.
+      // req.filters lets a filter change re-run the search with the
+      // NEW values instead of the stale closure's (see
+      // applyServerFilters below).
       const filterObj: Record<string, unknown> = {};
       if (activeFilters.category) filterObj.category = activeFilters.category;
       if (activeFilters.brand) filterObj.brand = activeFilters.brand;
       if (activeFilters.budgetMax) filterObj.budgetMax = parseFloat(activeFilters.budgetMax);
+      if (activeFilters.minRating) filterObj.minRating = parseFloat(activeFilters.minRating);
+      if (activeStore) filterObj.store = activeStore;
+      if (activeBand !== 'all') filterObj.priceBand = activeBand;
       if (Object.keys(filterObj).length > 0) body.filters = filterObj;
       if (liveWeb) body.includeWeb = true;
 
@@ -337,7 +429,16 @@ function SearchPageContent() {
         // (meta holds total/parsedIntent). Accept the object shape too so
         // a future API change cannot silently empty the results again.
         if (effectiveMode === 'text') saveRecentSearch(searchQuery);
-        setResults(Array.isArray(data.data) ? data.data : (data.data?.results ?? []));
+        const nextResults = Array.isArray(data.data) ? data.data : (data.data?.results ?? []);
+        setResults(nextResults);
+        // B1: the server's effective page + filtered total — the
+        // count line and the pager render these, never a client
+        // slice. Fall back to the returned rows when meta is
+        // missing (older cached response), never to a guessed total.
+        setServerTotal(typeof data.meta?.total === 'number' ? data.meta.total : nextResults.length);
+        const nextPage = typeof data.meta?.page === 'number' ? data.meta.page : activePage;
+        setServerPage(nextPage);
+        setPage(nextPage);
         // Web fallback results arrive separately in meta.webResults,
         // only when the catalog returned nothing. They are NOT catalog
         // products, so they are kept in their own state and rendered
@@ -345,6 +446,48 @@ function SearchPageContent() {
         setWebResults(Array.isArray(data.meta?.webResults) ? data.meta.webResults : []);
         setWebSource(data.meta?.source ?? null);
         setParsedIntent(data.meta?.parsedIntent ?? null);
+        setCompareProducts(
+          Array.isArray(data.meta?.compareProducts) ? data.meta.compareProducts : []
+        );
+        // B4: "On deal" badges for the returned products, from the
+        // ranked-deals endpoint (one call per search, same rows the
+        // deals page renders). Best-effort and non-blocking: a
+        // failure leaves the badges off, never the results.
+        if (nextResults.length > 0) {
+          void (async () => {
+            try {
+              const dealsRes = await fetch('/api/v1/deals/ranked?limit=30', {
+                signal: AbortSignal.timeout(15000),
+              });
+              if (!dealsRes.ok) return;
+              const dealsData = await dealsRes.json();
+              const list = Array.isArray(dealsData?.data?.deals) ? dealsData.data.deals : [];
+              const byProduct: Record<string, { discountPercentage: number; savingsAmount: number }> = {};
+              for (const d of list as Array<{ productId?: unknown; discountPercentage?: unknown; savingsAmount?: unknown }>) {
+                if (typeof d.productId !== 'string') continue;
+                byProduct[d.productId] = {
+                  discountPercentage: typeof d.discountPercentage === 'number' ? d.discountPercentage : 0,
+                  savingsAmount: typeof d.savingsAmount === 'number' ? d.savingsAmount : 0,
+                };
+              }
+              setDealByProduct(byProduct);
+            } catch {
+              // No deal badges this search — cards render without them.
+            }
+          })();
+        } else {
+          setDealByProduct({});
+        }
+        // Web fallback results arrive separately in meta.webResults,
+        // only when the catalog returned nothing. They are NOT catalog
+        // products, so they are kept in their own state and rendered
+        // as "Web result" cards with a retailer link below.
+        setWebResults(Array.isArray(data.meta?.webResults) ? data.meta.webResults : []);
+        setWebSource(data.meta?.source ?? null);
+        setParsedIntent(data.meta?.parsedIntent ?? null);
+        setCompareProducts(
+          Array.isArray(data.meta?.compareProducts) ? data.meta.compareProducts : []
+        );
         // Local-first retailer tabs: same query, split by the
         // visitor's country server-side. Text mode only — a URL
         // search has no product name to look up at local stores.
@@ -376,9 +519,13 @@ function SearchPageContent() {
       } else {
         setSearchError(true);
         setResults([]);
+        setServerTotal(0);
+        setServerPage(1);
+        setDealByProduct({});
         setWebResults([]);
         setWebSource(null);
         setParsedIntent(null);
+        setCompareProducts([]);
         setLocalFirst(null);
         setLocalFirstError(false);
         setLocalFirstLoading(false);
@@ -386,16 +533,20 @@ function SearchPageContent() {
     } catch {
       setSearchError(true);
       setResults([]);
+      setServerTotal(0);
+      setServerPage(1);
+      setDealByProduct({});
       setWebResults([]);
       setWebSource(null);
       setParsedIntent(null);
+      setCompareProducts([]);
       setLocalFirst(null);
       setLocalFirstError(false);
       setLocalFirstLoading(false);
     } finally {
       setLoading(false);
     }
-  }, [filters, searchMode, liveWeb, router, writeSearchUrl]);
+  }, [filters, searchMode, liveWeb, router, writeSearchUrl, sort, storeFilter, priceBand]);
 
   // ?q= support (Section 10, chunk 1): /search?q=laptop runs the
   // search on load — deep-linkable, shareable, bookmarkable, and
@@ -409,13 +560,17 @@ function SearchPageContent() {
     lastSearchedRef.current = q;
     setQuery(q);
     setSearchMode('text');
-    void performSearch(q, 'text');
-  }, [searchParams, performSearch]);
+    // B1: a deep link replays its ?page= too (page state
+    // initializes from the URL); a plain ?q= link runs page 1.
+    void performSearch(q, { mode: 'text', page });
+  }, [searchParams, performSearch, page]);
 
-  // Section 13: price-band facet (client-side, from currentPrice).
-  // Unpriced rows pass the band: their price is unknown, not over
-  // budget — the same convention as the budget filter, with the same
-  // honesty note under the result count.
+  // Section 14, Chunk 4 — B1: catalog sort / store / rating /
+  // price-band are SERVER-side now (the ai-search API applies them
+  // before slicing the page). The only client-side filtering left
+  // is the WEB results list below — it is fetched alongside the
+  // catalog (not server-paginated), so its store / rating / band
+  // filters and its sort still run here, on the small list.
   const inPriceBand = (price: number, band: PriceBand): boolean => {
     if (band === 'under-100') return price < 100;
     if (band === '100-500') return price >= 100 && price <= 500;
@@ -428,9 +583,10 @@ function SearchPageContent() {
   // product text would silently match nothing). One cheap
   // /api/v1/products call; values seen in the current results are
   // merged in as a fallback if that call fails.
-  const [catalogFacets, setCatalogFacets] = useState<{ categories: string[]; brands: string[] }>({
+  const [catalogFacets, setCatalogFacets] = useState<{ categories: string[]; brands: string[]; names: string[] }>({
     categories: [],
     brands: [],
+    names: [],
   });
   useEffect(() => {
     let cancelled = false;
@@ -444,14 +600,20 @@ function SearchPageContent() {
         const list = Array.isArray(data.data) ? data.data : (data.data?.products ?? []);
         const categories = new Set<string>();
         const brands = new Set<string>();
-        for (const p of list as Array<{ category?: unknown; brand?: unknown }>) {
+        // B5: product names too — the did-you-mean token set is
+        // built from this same catalog fetch (names + brands +
+        // categories), so no extra request is needed for it.
+        const names = new Set<string>();
+        for (const p of list as Array<{ category?: unknown; brand?: unknown; name?: unknown }>) {
           if (typeof p.category === 'string' && p.category.trim()) categories.add(p.category);
           if (typeof p.brand === 'string' && p.brand.trim()) brands.add(p.brand);
+          if (typeof p.name === 'string' && p.name.trim()) names.add(p.name);
         }
         if (!cancelled) {
           setCatalogFacets({
             categories: [...categories].sort((a, b) => a.localeCompare(b)),
             brands: [...brands].sort((a, b) => a.localeCompare(b)),
+            names: [...names].sort((a, b) => a.localeCompare(b)),
           });
         }
       } catch {
@@ -484,13 +646,43 @@ function SearchPageContent() {
   const applyServerFilters = (next: typeof filters) => {
     setFilters(next);
     setPage(1);
-    writeSearchUrl({ category: next.category, brand: next.brand, max: next.budgetMax, page: 1 });
-    if (hasSearched && query.trim()) void performSearch(query, 'text', next);
+    writeSearchUrl({ category: next.category, brand: next.brand, max: next.budgetMax, minRating: next.minRating, page: 1 });
+    if (hasSearched && query.trim()) void performSearch(query, { mode: 'text', filters: next, page: 1 });
+  };
+
+  // Section 14, Chunk 4 — B1: changing a server-side sort / store /
+  // band re-runs the search from page 1 with the new value (the
+  // old panel only re-sorted the fetched page in memory).
+  const applyServerSort = (next: SearchSortKey) => {
+    setSort(next);
+    setPage(1);
+    writeSearchUrl({ sort: next, page: 1 });
+    if (hasSearched && query.trim()) void performSearch(query, { mode: 'text', sort: next, page: 1 });
+  };
+  const applyServerStore = (next: string) => {
+    setStoreFilter(next);
+    setPage(1);
+    writeSearchUrl({ store: next, page: 1 });
+    if (hasSearched && query.trim()) void performSearch(query, { mode: 'text', store: next, page: 1 });
+  };
+  const applyServerBand = (next: PriceBand) => {
+    setPriceBand(next);
+    setPage(1);
+    writeSearchUrl({ band: next, page: 1 });
+    if (hasSearched && query.trim()) void performSearch(query, { mode: 'text', band: next, page: 1 });
+  };
+  const applyServerMinRating = (next: string) => {
+    const nextFilters = { ...filters, minRating: next };
+    setFilters(nextFilters);
+    setPage(1);
+    writeSearchUrl({ minRating: next, page: 1 });
+    if (hasSearched && query.trim()) void performSearch(query, { mode: 'text', filters: nextFilters, page: 1 });
   };
 
   const goToPage = (nextPage: number) => {
     setPage(nextPage);
     writeSearchUrl({ page: nextPage });
+    if (hasSearched && query.trim()) void performSearch(query, { page: nextPage });
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -515,11 +707,12 @@ function SearchPageContent() {
     const badges: string[] = [];
     if (parsedIntent.category) badges.push(`Category: ${parsedIntent.category}`);
     if (parsedIntent.budget) {
-      // Show what the user actually wrote, with the USD conversion
-      // marked approximate (rates are static approximations): e.g.
-      // "Budget: 20,000 PKR (≈ $71)" — never a bare "$20000" for a
-      // PKR query, which was the reported bug.
-      if (
+      // B3: a band reads as a range ("Budget: $500–$1,000"). When
+      // the visitor wrote a non-USD currency, the max end shows
+      // what they wrote with the USD conversion marked approximate.
+      if (parsedIntent.budgetMin !== null && parsedIntent.budgetMin !== undefined) {
+        badges.push(`Budget: $${parsedIntent.budgetMin}–$${parsedIntent.budget}`);
+      } else if (
         parsedIntent.budgetCurrency &&
         parsedIntent.budgetCurrency !== 'USD' &&
         parsedIntent.budgetOriginal !== null &&
@@ -534,6 +727,23 @@ function SearchPageContent() {
       }
     }
     if (parsedIntent.brands.length > 0) badges.push(`Brands: ${parsedIntent.brands.join(', ')}`);
+    // B2: exclusions, shown as their own badges so a filtered
+    // result set never looks like the catalog lacks the brand/term.
+    if (parsedIntent.excludedBrands && parsedIntent.excludedBrands.length > 0) {
+      badges.push(`Not: ${parsedIntent.excludedBrands.join(', ')}`);
+    }
+    if (parsedIntent.excludedTerms && parsedIntent.excludedTerms.length > 0) {
+      badges.push(`Without: ${parsedIntent.excludedTerms.join(', ')}`);
+    }
+    // B7: attribute keywords matched in the query (per-product
+    // matches are description-keyword matches — see the result
+    // explanations).
+    if (parsedIntent.attributes && Object.keys(parsedIntent.attributes).length > 0) {
+      const labels = Object.keys(parsedIntent.attributes).map(
+        (k) => ATTRIBUTE_BADGE_LABELS[k] ?? k
+      );
+      badges.push(`Attributes: ${labels.join(', ')}`);
+    }
     if (parsedIntent.intent && parsedIntent.intent !== 'general') badges.push(`Intent: ${parsedIntent.intent}`);
     return badges.length > 0 ? badges : null;
   }, [parsedIntent]);
@@ -549,10 +759,17 @@ function SearchPageContent() {
 
   const minRatingValue = filters.minRating ? parseFloat(filters.minRating) : null;
 
+  // Web-only sort (Section 14, Chunk 4 — B1: the catalog sort is
+  // server-side now, so this sorts only the web list, which is
+  // small and fetched alongside the catalog, not server-paginated).
+  // 'deal-score' cannot apply to web results (they have no
+  // prediction), so they keep their fetched order for that key;
+  // 'rating-desc' (B6) sorts by the rating SerpAPI reports, unrated
+  // last. No discount sort: neither list carries an original /
+  // compare-at price, so a discount cannot be computed honestly.
   const applySort = useCallback(
-    <T extends { currentPrice?: number | null; price?: number | null; score?: number }>(
-      items: T[],
-      dealScoreOf?: (item: T) => number | null
+    <T extends { currentPrice?: number | null; price?: number | null; score?: number; rating?: number | null }>(
+      items: T[]
     ): T[] => {
       const sorted = [...items];
       const priceOf = (item: T): number | null => {
@@ -582,14 +799,8 @@ function SearchPageContent() {
           });
         case 'match-desc':
           return sorted.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-        case 'deal-score':
-          // Section 13: sort by the Deal Score fetched per card
-          // (dealScores state). Unscored cards sort last — no
-          // prediction means no score, never a synthesized one.
-          // No discount sort: the ai-search response carries no
-          // original / compare-at price, so a discount cannot be
-          // computed honestly from it.
-          return sorted.sort((a, b) => (dealScoreOf?.(b) ?? -1) - (dealScoreOf?.(a) ?? -1));
+        case 'rating-desc':
+          return sorted.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1));
         default:
           return sorted;
       }
@@ -597,19 +808,15 @@ function SearchPageContent() {
     [sort]
   );
 
-  const displayedResults = useMemo(() => {
-    let items = results;
-    if (storeFilter) items = items.filter((r) => (r.stores ?? []).includes(storeFilter));
-    if (minRatingValue !== null) {
-      items = items.filter((r) => r.rating !== null && r.rating !== undefined && r.rating >= minRatingValue);
-    }
-    if (priceBand !== 'all') {
-      items = items.filter(
-        (r) => r.currentPrice === null || r.currentPrice === undefined || inPriceBand(r.currentPrice, priceBand)
-      );
-    }
-    return applySort(items, (r) => dealScores[r.product.id] ?? null);
-  }, [results, storeFilter, minRatingValue, priceBand, dealScores, applySort]);
+  // B1: the catalog results ARE the server page — no client slice,
+  // no client sort, no client filter. totalPages comes from the
+  // server total (meta), and the effective page is the server's
+  // (meta.page), so the pager can never point at a page the API
+  // did not return.
+  const displayedResults = results;
+  const totalPages = Math.max(1, Math.ceil(serverTotal / SEARCH_PAGE_SIZE));
+  const effectivePage = Math.min(serverPage, totalPages);
+  const pagedResults = displayedResults;
 
   const displayedWebResults = useMemo(() => {
     let items = webResults;
@@ -625,23 +832,27 @@ function SearchPageContent() {
     return applySort(items);
   }, [webResults, storeFilter, minRatingValue, priceBand, applySort]);
 
-  // Section 13: pagination (?page=, 10 per page). Moot at 10
-  // products today, built for catalog growth — the client slices
-  // the filtered set the same way the products API pages.
-  const SEARCH_PAGE_SIZE = 10;
-  const totalPages = Math.max(1, Math.ceil(displayedResults.length / SEARCH_PAGE_SIZE));
-  const effectivePage = Math.min(page, totalPages);
-  const pagedResults = useMemo(
-    () =>
-      displayedResults.slice(
-        (effectivePage - 1) * SEARCH_PAGE_SIZE,
-        effectivePage * SEARCH_PAGE_SIZE
-      ),
-    [displayedResults, effectivePage]
-  );
-
   const clientFiltersActive =
     sort !== 'relevance' || storeFilter !== '' || filters.minRating !== '' || priceBand !== 'all';
+
+  // B5: did-you-mean, computed only for a true zero-result search
+  // (nothing in the catalog AND nothing from the web). Tokens come
+  // from the catalog fetch above (names + brands + categories) —
+  // never from a guessed list. The empty state below offers the
+  // suggestion as a link; it never auto-redirects.
+  const catalogTokens: SearchCatalogTokens = useMemo(
+    () => ({
+      names: catalogFacets.names,
+      brands: catalogFacets.brands,
+      categories: catalogFacets.categories,
+    }),
+    [catalogFacets]
+  );
+  const didYouMean = useMemo(() => {
+    if (!hasSearched || loading || searchError) return null;
+    if (results.length > 0 || webResults.length > 0) return null;
+    return suggestSearchCorrection(query, catalogTokens);
+  }, [hasSearched, loading, searchError, results, webResults, query, catalogTokens]);
 
   // ItemList JSON-LD for the displayed catalog results (S4#15):
   // real result URLs only (/products/<slug>). Web results are not
@@ -696,7 +907,7 @@ function SearchPageContent() {
       <div className="container mx-auto max-w-6xl px-4 py-8">
         <div className="mb-8 text-center">
           <h1 className="bg-gradient-to-r from-blue-600 to-cyan-600 dark:from-blue-400 dark:to-cyan-400 bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
-            AI Product Search
+            {tFor(language, 'pageHeadingSearch')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             Search in natural language — our AI understands what you need
@@ -740,7 +951,7 @@ function SearchPageContent() {
                 <SearchAutocomplete
                   value={query}
                   onChange={setQuery}
-                  onSubmit={(q) => performSearch(q, 'text')}
+                  onSubmit={(q) => performSearch(q, { mode: 'text' })}
                   onSelectSuggestion={(suggestion) =>
                     router.push(`/products/${suggestion.slug}`)
                   }
@@ -790,7 +1001,7 @@ function SearchPageContent() {
               setSearchMode('text');
               voiceLangRef.current = langCode;
               voiceSearchRef.current = true;
-              performSearch(text, 'text');
+              performSearch(text, { mode: 'text' });
             }}
           />
         </div>
@@ -807,7 +1018,7 @@ function SearchPageContent() {
                 onClick={() => {
                   setQuery(recent);
                   setSearchMode('text');
-                  performSearch(recent, 'text');
+                  performSearch(recent, { mode: 'text' });
                 }}
                 className="flex min-h-[44px] items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-sm transition-all hover:border-blue-300 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-blue-700 dark:hover:bg-slate-700"
               >
@@ -840,6 +1051,19 @@ function SearchPageContent() {
                     setPage(1);
                     setLiveWeb(false);
                     writeSearchUrl({ sort: 'relevance', store: '', category: '', brand: '', max: '', minRating: '', band: 'all', page: 1 });
+                    // B1: clearing re-runs the search with cleared
+                    // filters (server-side now), so the results
+                    // actually un-filter instead of staying stale.
+                    if (hasSearched && query.trim()) {
+                      void performSearch(query, {
+                        mode: 'text',
+                        filters: { category: '', brand: '', budgetMax: '', minRating: '' },
+                        sort: 'relevance',
+                        store: '',
+                        band: 'all',
+                        page: 1,
+                      });
+                    }
                   }}
                 >
                   <X className="mr-1 h-4 w-4" /> Clear
@@ -852,11 +1076,7 @@ function SearchPageContent() {
                   <Label className="mb-1.5 block text-sm">Sort by</Label>
                   <Select
                     value={sort}
-                    onValueChange={(v) => {
-                      const next = v as SearchSortKey;
-                      setSort(next);
-                      writeSearchUrl({ sort: next });
-                    }}
+                    onValueChange={(v) => applyServerSort(v as SearchSortKey)}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Relevance" />
@@ -867,6 +1087,7 @@ function SearchPageContent() {
                       <SelectItem value="price-desc">Price: High to Low</SelectItem>
                       <SelectItem value="match-desc">Best Match</SelectItem>
                       <SelectItem value="deal-score">Deal Score: High to Low</SelectItem>
+                      <SelectItem value="rating-desc">Top Rated</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -874,12 +1095,7 @@ function SearchPageContent() {
                   <Label className="mb-1.5 block text-sm">Store</Label>
                   <Select
                     value={storeFilter || 'all'}
-                    onValueChange={(v) => {
-                      const next = v === 'all' ? '' : v;
-                      setStoreFilter(next);
-                      setPage(1);
-                      writeSearchUrl({ store: next, page: 1 });
-                    }}
+                    onValueChange={(v) => applyServerStore(v === 'all' ? '' : v)}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="All stores" />
@@ -943,7 +1159,7 @@ function SearchPageContent() {
                       writeSearchUrl({ max: next.budgetMax });
                     }}
                     onBlur={() => {
-                      if (hasSearched && query.trim()) void performSearch(query, 'text', filters);
+                      if (hasSearched && query.trim()) void performSearch(query, { mode: 'text', filters, page: 1 });
                     }}
                     placeholder="e.g. 1000"
                   />
@@ -952,12 +1168,7 @@ function SearchPageContent() {
                   <Label className="mb-1.5 block text-sm">Price band</Label>
                   <Select
                     value={priceBand}
-                    onValueChange={(v) => {
-                      const next = v as PriceBand;
-                      setPriceBand(next);
-                      setPage(1);
-                      writeSearchUrl({ band: next, page: 1 });
-                    }}
+                    onValueChange={(v) => applyServerBand(v as PriceBand)}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Any price" />
@@ -974,12 +1185,7 @@ function SearchPageContent() {
                   <Label className="mb-1.5 block text-sm">Min Rating</Label>
                   <Select
                     value={filters.minRating || 'any'}
-                    onValueChange={(v) => {
-                      const next = v === 'any' ? '' : v;
-                      setFilters({ ...filters, minRating: next });
-                      setPage(1);
-                      writeSearchUrl({ minRating: next, page: 1 });
-                    }}
+                    onValueChange={(v) => applyServerMinRating(v === 'any' ? '' : v)}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Any rating" />
@@ -1041,6 +1247,27 @@ function SearchPageContent() {
           </div>
         )}
 
+        {/* B10: "X vs Y" compare routing — the two resolved products
+            with a CTA to the compare page. Rendered only when both
+            sides resolved; a failed resolution shows no CTA and the
+            normal first-side results below. */}
+        {compareProducts.length === 2 && (
+          <div className="mb-6 flex flex-wrap items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950">
+            <span className="text-sm font-medium">Compare these two:</span>
+            <span className="text-sm">
+              {compareProducts[0].name} vs {compareProducts[1].name}
+            </span>
+            <Button
+              size="sm"
+              onClick={() =>
+                router.push(`/compare?products=${compareProducts[0].id},${compareProducts[1].id}`)
+              }
+            >
+              Compare these two →
+            </Button>
+          </div>
+        )}
+
         {loading && (
           <div className="grid gap-4" aria-label="Loading search results">
             <p className="text-sm text-muted-foreground">
@@ -1095,6 +1322,25 @@ function SearchPageContent() {
                 icon={Search}
               />
             )}
+            {/* B5: did-you-mean — one suggested correction, offered
+                as a link the visitor taps to run it. Never an
+                auto-redirect, and only when the catalog + web both
+                returned nothing (a filtered-out result set is a
+                filter problem, not a typo). */}
+            {didYouMean && results.length === 0 && webResults.length === 0 && (
+              <div className="mt-4 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuery(didYouMean);
+                    void performSearch(didYouMean, { mode: 'text', page: 1 });
+                  }}
+                  className="flex min-h-[44px] items-center rounded-full border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition-all hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                >
+                  Did you mean: {didYouMean}?
+                </button>
+              </div>
+            )}
             {(clientFiltersActive || filters.category || filters.brand || filters.budgetMax) && (
               <div className="mt-4 flex justify-center">
                 <Button
@@ -1107,6 +1353,19 @@ function SearchPageContent() {
                     setPage(1);
                     setLiveWeb(false);
                     writeSearchUrl({ sort: 'relevance', store: '', category: '', brand: '', max: '', minRating: '', band: 'all', page: 1 });
+                    // B1: clearing re-runs the search with cleared
+                    // filters (server-side now), so the results
+                    // actually un-filter instead of staying stale.
+                    if (hasSearched && query.trim()) {
+                      void performSearch(query, {
+                        mode: 'text',
+                        filters: { category: '', brand: '', budgetMax: '', minRating: '' },
+                        sort: 'relevance',
+                        store: '',
+                        band: 'all',
+                        page: 1,
+                      });
+                    }
                   }}
                 >
                   Clear all filters
@@ -1159,10 +1418,12 @@ function SearchPageContent() {
               />
             )}
             <div className="text-sm text-muted-foreground">
-              {displayedResults.length === 0
+              {/* B1: the count is the server total (meta) — the
+                  filtered count the pager pages through, never a
+                  client-slice length. */}
+              {serverTotal === 0
                 ? '0 results'
-                : `Showing ${(effectivePage - 1) * SEARCH_PAGE_SIZE + 1}–${(effectivePage - 1) * SEARCH_PAGE_SIZE + pagedResults.length} of ${displayedResults.length} result${displayedResults.length !== 1 ? 's' : ''}`}
-              {displayedResults.length !== results.length && ` (of ${results.length} before filters)`}
+                : `Showing ${(effectivePage - 1) * SEARCH_PAGE_SIZE + 1}–${(effectivePage - 1) * SEARCH_PAGE_SIZE + pagedResults.length} of ${serverTotal} result${serverTotal !== 1 ? 's' : ''}`}
               {/* Section 13, item 55 — the search URL is already
                   shareable (?q=); the button was missing. */}
               <span className="mt-2 block">
@@ -1303,6 +1564,32 @@ function SearchPageContent() {
                         {result.product.description}
                       </p>
                     )}
+                    {/* B1: which query words this product's text
+                        carries (tokenized match, not a spec claim). */}
+                    {result.matchedTerms && result.matchedTerms.length > 0 && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Matched: {result.matchedTerms.join(' · ')}
+                      </p>
+                    )}
+                    {/* B4: active deal on this product (ranked-deals
+                        endpoint, the same rows the deals page
+                        renders). No deal, no badge — never a guessed
+                        discount; a % deal, a $ deal, or both. */}
+                    {(() => {
+                      const deal = dealByProduct[result.product.id];
+                      if (!deal || (deal.discountPercentage <= 0 && deal.savingsAmount <= 0)) return null;
+                      return (
+                        <p className="mt-1 text-xs font-medium text-green-600">
+                          On deal
+                          {deal.discountPercentage > 0 && `: ${deal.discountPercentage}% off`}
+                          {deal.savingsAmount > 0 && (
+                            <>
+                              {' '}— save <Price usd={deal.savingsAmount} showOriginal={false} />
+                            </>
+                          )}
+                        </p>
+                      );
+                    })()}
                     <div className="mt-2 flex items-start gap-1.5 rounded-md bg-blue-50 p-2 text-xs text-blue-700 dark:bg-blue-950 dark:text-blue-300">
                       <Star className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
                       <span>{result.aiExplanation}</span>

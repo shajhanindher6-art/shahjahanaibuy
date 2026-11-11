@@ -192,6 +192,7 @@ export default function ScanPage() {
                 type="file"
                 accept="image/*"
                 className="hidden"
+                aria-label="Upload a product photo"
                 onChange={(e) => handleFile(e.target.files?.[0])}
               />
               <div className="flex flex-wrap gap-2">

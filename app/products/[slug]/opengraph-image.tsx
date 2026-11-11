@@ -33,6 +33,7 @@ async function loadProduct(slug: string): Promise<{
       .from('products')
       .select('id, name, brand')
       .eq('slug', slug)
+      .neq('slug', 'sample-laptop')
       .is('deleted_at', null)
       .single();
     if (!product) return null;

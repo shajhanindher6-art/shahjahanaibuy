@@ -26,11 +26,13 @@ import { Button } from '@/components/ui/button';
 import { ShareButtons } from '@/components/products/share-buttons';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { formatOriginalAmount } from '@/services/currency';
 import {
   GUIDED_CATEGORIES,
   loadGuidedCandidates,
   parseBudgetFinderParams,
   rankGuidedPicks,
+  rankRelaxedGuidedPicks,
 } from '@/services/guided-finder';
 
 export const dynamic = 'force-dynamic';
@@ -68,26 +70,52 @@ interface BudgetFinderProps {
 }
 
 export default async function BudgetFinderPage({ searchParams }: BudgetFinderProps) {
-  const { category, budgetUsd, budgetError } = parseBudgetFinderParams(searchParams);
+  const { category, budgetUsd, budgetOriginal, budgetCurrency, budgetError } =
+    parseBudgetFinderParams(searchParams);
   const hasQuery = category !== null || budgetUsd !== null;
 
+  const candidates =
+    hasQuery && !budgetError
+      ? await loadGuidedCandidates(await createSupabaseServerClient())
+      : [];
   const picks =
     hasQuery && !budgetError
-      ? rankGuidedPicks(await loadGuidedCandidates(await createSupabaseServerClient()), {
+      ? rankGuidedPicks(candidates, {
           category,
           budgetUsd,
           sortBy: 'deal',
           limit: 12,
         })
       : null;
+  // B1: nearest-miss fallback, shown only under the empty state.
+  // The Budget Finder takes no must-haves, so there is nothing to
+  // relax and this is [] in practice — wired here so the shared
+  // ranker change covers this page too if must-haves are ever
+  // added to its form.
+  const relaxed =
+    picks !== null && picks.length === 0
+      ? rankRelaxedGuidedPicks(
+          candidates,
+          { category, budgetUsd, sortBy: 'deal' },
+          3
+        )
+      : [];
 
+  // B9: show the amount the visitor actually wrote — "20,000 PKR
+  // (≈ $71.00)" — not just the converted USD figure.
+  const budgetLabel =
+    budgetUsd !== null
+      ? budgetCurrency && budgetCurrency !== 'USD' && budgetOriginal !== null
+        ? `${formatOriginalAmount(budgetOriginal)} ${budgetCurrency} (≈ $${budgetUsd.toFixed(2)})`
+        : `$${budgetUsd.toFixed(2)}`
+      : null;
   const heading =
-    category && budgetUsd !== null
-      ? `Best ${category} under $${budgetUsd.toFixed(2)}`
+    category && budgetLabel
+      ? `Best ${category} under ${budgetLabel}`
       : category
         ? `Best ${category} — pick a budget to narrow it down`
-        : budgetUsd !== null
-          ? `Best products under $${budgetUsd.toFixed(2)}`
+        : budgetLabel
+          ? `Best products under ${budgetLabel}`
           : 'Find the best product under your budget';
 
   return (
@@ -131,19 +159,33 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
               </div>
               <div>
                 <label htmlFor="budget" className="text-sm font-medium">
-                  Max budget (USD)
+                  Max budget
                 </label>
+                {/* Text, not number: a budget may carry a currency
+                    ("20K PKR"), which a number input cannot hold.
+                    parseBudgetFinderParams validates it server-side. */}
                 <input
                   id="budget"
                   name="budget"
-                  type="number"
-                  min="1"
-                  step="1"
+                  type="text"
                   inputMode="decimal"
-                  placeholder="e.g. 1000"
-                  defaultValue={budgetUsd !== null ? String(budgetUsd) : ''}
+                  placeholder="e.g. 1000 or 20K PKR"
+                  // The amount as written ("20000 PKR"), not the
+                  // converted USD figure — re-submitting "20000"
+                  // alone would mean $20,000.
+                  defaultValue={
+                    budgetOriginal !== null
+                      ? budgetCurrency && budgetCurrency !== 'USD'
+                        ? `${budgetOriginal} ${budgetCurrency}`
+                        : String(budgetOriginal)
+                      : ''
+                  }
                   className="mt-1 min-h-[44px] w-full rounded-md border bg-background px-3 py-2 text-sm"
                 />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Another currency works too, e.g. 20K PKR — converted
+                  to USD at an approximate rate.
+                </p>
               </div>
             </div>
             {budgetError && (
@@ -180,8 +222,8 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
                   <EmptyState
                     eyebrow="No priced match"
                     title={
-                      category && budgetUsd !== null
-                        ? `No priced ${category} under $${budgetUsd.toFixed(2)}`
+                      category && budgetLabel
+                        ? `No priced ${category} under ${budgetLabel}`
                         : 'No priced match for this budget'
                     }
                     description="No product with a verified price fits this budget and category right now — the catalog is small. Try a higher budget or a different category."
@@ -194,6 +236,71 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
                       </Link>
                     }
                   />
+                  {/* B1: nearest-miss fallback (see the note where
+                      `relaxed` is computed — the Budget Finder
+                      takes no must-haves, so this is empty in
+                      practice, but the section is wired for the
+                      shared ranker). */}
+                  {relaxed.length > 0 && (
+                    <div className="mt-8">
+                      <h3 className="text-lg font-semibold">Closest matches</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        No exact match, but these come closest — each
+                        misses at least one must-have, as labelled.
+                      </p>
+                      <div className="mt-4 space-y-4">
+                        {relaxed.map((pick, i) => (
+                          <article key={pick.slug} className="rounded-lg border p-6">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                  Closest match {i + 1} · {pick.verdict}
+                                </p>
+                                <h3 className="mt-1 text-lg font-semibold">
+                                  <Link
+                                    href={`/products/${pick.slug}`}
+                                    className="underline-offset-4 hover:underline"
+                                  >
+                                    {pick.name}
+                                  </Link>
+                                </h3>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  {pick.brand ?? 'Unknown brand'}
+                                  {pick.category ? ` · ${pick.category}` : ''}
+                                  {pick.merchantName ? ` · at ${pick.merchantName}` : ''}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-xl font-bold">
+                                  ${(pick.bestPriceUsd as number).toFixed(2)}
+                                </p>
+                                {pick.savingPct !== null && (
+                                  <p className="text-sm font-medium text-green-700">
+                                    Save {pick.savingPct}%
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                              {pick.why.map((line) => (
+                                <li key={line}>{line}</li>
+                              ))}
+                            </ul>
+                            <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                              Matches {pick.matchedMustHaveCount} of {pick.totalMustHaves} must-haves
+                              — misses: {pick.missedMustHaves.join(', ')}
+                            </p>
+                            <Link
+                              href={`/products/${pick.slug}`}
+                              className="mt-4 inline-flex min-h-[44px] items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+                            >
+                              View product →
+                            </Link>
+                          </article>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

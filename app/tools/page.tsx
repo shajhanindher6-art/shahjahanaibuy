@@ -3,29 +3,37 @@
  *
  * Links only: this page lists the 13 buildable Section 7 AI tools
  * plus the 3 Section 11 tools (help-me-choose, budget-finder,
- * store-finder) and the 4 Section 13 tools (price-history,
- * gift-splitter, forecast-explainer, currency-converter) and links
- * out to each tool's own /tools/* page. No tool logic lives here
- * — every tool is built (or honestly marked not ready) on its own
- * page.
+ * store-finder), the 4 Section 13 tools (price-history,
+ * gift-splitter, forecast-explainer, currency-converter) and the
+ * 5 Section 14 tools (price-alert-simulator, deal-checker,
+ * landed-cost, price-protection, emi-calculator) and links out to
+ * each tool's own /tools/* page. No tool logic lives here — every
+ * tool is built (or honestly marked not ready) on its own page.
  * The 7 blocked Section 7 items (recall, review summarizer, size &
  * fit, photo authenticity, voice shopping, video summaries, family
  * shopper) are NOT listed: each is blocked on missing data or a
  * missing dependency, and this hub never links to a tool that does
  * not exist yet.
+ *
+ * Chrome (Section 14, I-4): the language-dependent strings render
+ * in components/tools/tools-hub-content.tsx via the toolsHub* dict
+ * keys; tool names/descriptions stay English. ItemList JSON-LD for
+ * the hub is emitted below (Section 14, Chunk 6).
  */
 
-import Link from 'next/link';
-import { Wrench } from 'lucide-react';
+import { appConfig } from '@/lib/config/app';
+import { buildToolsItemListJsonLd, toJsonLd } from '@/lib/json-ld';
+import type { DictKey } from '@/lib/i18n';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { ToolsHubContent } from '@/components/tools/tools-hub-content';
 
 const TOOL_GROUPS: Array<{
-  heading: string;
+  headingKey: DictKey;
   tools: Array<{ name: string; href: string; description: string; isNew?: boolean }>;
 }> = [
   {
-    heading: 'Everyday tools — AI that helps daily',
+    headingKey: 'toolsHubGroupEveryday',
     tools: [
       {
         name: 'Help Me Choose — guided shopping quiz',
@@ -77,6 +85,41 @@ const TOOL_GROUPS: Array<{
         isNew: true,
       },
       {
+        name: 'Price Alert Simulator',
+        href: '/tools/price-alert-simulator',
+        description:
+          'Pick a product and a target price — see whether that price was already met, has been recorded before, or has never been recorded. Recorded prices only, no predictions, and it creates no real alert.',
+        isNew: true,
+      },
+      {
+        name: 'Deal Checker',
+        href: '/tools/deal-checker',
+        description:
+          'Found a price somewhere? Check it against recorded prices — real deal, cheaper than current, not a deal, or cannot verify. Recorded prices only, no invented data.',
+        isNew: true,
+      },
+      {
+        name: 'Landed Cost Calculator',
+        href: '/tools/landed-cost',
+        description:
+          'Estimate the full landed cost of an import — price, shipping, duty and VAT — from rates you enter yourself. An estimate, never an official duty figure.',
+        isNew: true,
+      },
+      {
+        name: 'Price Protection Check',
+        href: '/tools/price-protection',
+        description:
+          'Bought something and the price dropped after? Check whether a lower price was recorded inside your protection window. No sign-in needed — and it cannot promise a refund.',
+        isNew: true,
+      },
+      {
+        name: 'EMI Calculator',
+        href: '/tools/emi-calculator',
+        description:
+          'Monthly installment, total payable, and total interest for any price, at the interest rate your lender quoted. No rate is preset — you enter it.',
+        isNew: true,
+      },
+      {
         name: 'AI Shopping List Optimizer',
         href: '/tools/list-optimizer',
         description:
@@ -109,7 +152,7 @@ const TOOL_GROUPS: Array<{
     ],
   },
   {
-    heading: 'Money-saving tools — savings you can see',
+    headingKey: 'toolsHubGroupMoney',
     tools: [
       {
         name: 'AI Savings Dashboard',
@@ -144,7 +187,7 @@ const TOOL_GROUPS: Array<{
     ],
   },
   {
-    heading: 'Trust, safety & health — AI that protects',
+    headingKey: 'toolsHubGroupTrust',
     tools: [
       {
         name: 'AI Eco Shopping Coach',
@@ -155,7 +198,7 @@ const TOOL_GROUPS: Array<{
     ],
   },
   {
-    heading: 'Future AI — what comes next',
+    headingKey: 'toolsHubGroupFuture',
     tools: [
       {
         name: 'AI Smart Home Reorder Agent',
@@ -177,79 +220,20 @@ export default function AiToolsHubPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
-      <main className="container mx-auto flex-1 px-4 py-12">
-        <div className="mx-auto max-w-2xl">
-          <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <Wrench className="h-7 w-7 text-blue-600" /> AI tools
-          </h1>
-          <p className="mt-2 text-muted-foreground">
-            The AI tools that make SmartBuy useful every day — AI that
-            builds your list, counts your spending, manages your
-            subscriptions, answers your questions, and shows your savings.
-            Each tool below has its own page; pick one to open it.
-          </p>
-
-          {TOOL_GROUPS.map((group) => (
-            <section key={group.heading} className="mt-10">
-              <h2 className="text-xl font-semibold">{group.heading}</h2>
-              <div className="mt-4 space-y-4">
-                {group.tools.map((tool) => (
-                  <article key={tool.href} className="rounded-lg border p-6">
-                    <h3 className="text-lg font-semibold">
-                      <Link
-                        href={tool.href}
-                        className="underline-offset-4 hover:underline"
-                      >
-                        {tool.name}
-                      </Link>{' '}
-                      {tool.isNew ? (
-                        <span className="ml-1 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 align-middle text-xs font-semibold text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                          New
-                        </span>
-                      ) : null}
-                    </h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {tool.description}
-                    </p>
-                    <Link
-                      href={tool.href}
-                      className="mt-4 inline-flex min-h-[44px] items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-                    >
-                      Open tool →
-                    </Link>
-                  </article>
-                ))}
-              </div>
-            </section>
-          ))}
-
-          <p className="mt-8 text-sm text-muted-foreground">
-            Some AI tools are still waiting on real data — recall alerts,
-            review summaries, size and fit, photo checks, voice shopping,
-            video summaries, and the family shopper. They are not listed
-            here and will appear only once their data source exists.
-          </p>
-
-          {/* Roadmap hub (Section 11): what is coming next, with
-              honest status per item and no fake dates. Separate
-              from the "Future AI" group above, which lists tools
-              that are already built. */}
-          <div className="mt-8 rounded-lg border p-6">
-            <h2 className="text-lg font-semibold">What&apos;s coming next</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              The roadmap for tools still being built — what each one will
-              do, and where it stands. No launch dates are promised until
-              the work is real.
-            </p>
-            <Link
-              href="/coming-soon"
-              className="mt-4 inline-flex min-h-[44px] items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-            >
-              See the roadmap →
-            </Link>
-          </div>
-        </div>
-      </main>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: toJsonLd(
+            buildToolsItemListJsonLd(
+              appConfig.url,
+              TOOL_GROUPS.flatMap((g) =>
+                g.tools.map((t) => ({ name: t.name, path: t.href }))
+              )
+            )
+          ),
+        }}
+      />
+      <ToolsHubContent groups={TOOL_GROUPS} />
       <SiteFooter />
     </div>
   );

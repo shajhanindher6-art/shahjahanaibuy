@@ -16,14 +16,56 @@
 
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import type { Metadata } from 'next';
 import { ExternalLink, Radio } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EventCountdown } from '@/components/seasonal/countdown';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getLiveSessionDetail, liveSessionStatusLabel } from '@/lib/live-sessions';
+import { appConfig } from '@/lib/config/app';
+import { buildLiveSessionEventJsonLd, toJsonLd } from '@/lib/json-ld';
 
 export const dynamic = 'force-dynamic';
+
+// Section 14, Chunk 6: per-session metadata — title/description
+// from the recorded session (host note when one exists), self-
+// canonical per session. Until migration 033 runs there is no
+// session to read, so the fallback title covers that case.
+export async function generateMetadata({
+  params,
+}: {
+  params: { slug: string };
+}): Promise<Metadata> {
+  const supabase = await createSupabaseServerClient();
+  const { session, liveEnabled } = await getLiveSessionDetail(supabase, params.slug);
+  if (!liveEnabled || !session) {
+    return { title: 'Live shopping — SmartBuy AI' };
+  }
+  const title = `${session.title} — SmartBuy AI`;
+  const description =
+    session.hostNote ??
+    'A scheduled live shopping session — a host walks through real products, each linking to its product page with its real current price.';
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: `${appConfig.url}/live/${session.slug}`,
+    },
+    openGraph: {
+      title,
+      description,
+      url: `${appConfig.url}/live/${session.slug}`,
+      type: 'website',
+      locale: 'en_US',
+    },
+    twitter: {
+      card: 'summary',
+      title,
+      description,
+    },
+  };
+}
 
 /**
  * Recorded merchant prices are USD unless a 3-letter currency code
@@ -79,6 +121,14 @@ export default async function LiveSessionPage({ params }: { params: { slug: stri
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 14, Chunk 6: Event schema from the recorded session
+          (scheduled start, recorded end, host note as description). */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: toJsonLd(buildLiveSessionEventJsonLd(appConfig.url, session)),
+        }}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <p className="text-sm font-medium text-muted-foreground">

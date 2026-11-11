@@ -446,6 +446,17 @@ async function FeaturedProductsStrip({ language }: { language: Language }) {
             ))}
           </div>
         )}
+        {/* Section 14, chunk 5: the full catalog lives at /products
+            (search, filters, sorting, pagination) — the strip above
+            only ever shows the first 6. */}
+        <div className="mt-8 text-center">
+          <Link
+            href="/products"
+            className="inline-flex min-h-[44px] items-center rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+          >
+            View all products →
+          </Link>
+        </div>
       </div>
     </section>
   );

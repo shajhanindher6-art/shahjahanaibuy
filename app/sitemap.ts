@@ -83,6 +83,19 @@ const STATIC_PAGES: Array<{
   { path: '/tools/gift-splitter', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools/forecast-explainer', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools/currency-converter', priority: 0.6, changeFrequency: 'weekly' },
+  // Section 14: the 5 new tools + /products index + /partners +
+  // /referrals + the two new seasonal event pages (Cyber Monday
+  // 2026-11-30, Eid al-Adha 2027-05-16 expected — verified dates).
+  { path: '/tools/price-alert-simulator', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/deal-checker', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/landed-cost', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/price-protection', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/emi-calculator', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/products', priority: 0.7, changeFrequency: 'weekly' },
+  { path: '/partners', priority: 0.5, changeFrequency: 'monthly' },
+  { path: '/referrals', priority: 0.5, changeFrequency: 'monthly' },
+  { path: '/events/cyber-monday', priority: 0.6, changeFrequency: 'monthly' },
+  { path: '/events/eid-al-adha', priority: 0.6, changeFrequency: 'monthly' },
   { path: '/coming-soon', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools/list-optimizer', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools/expense-tracker', priority: 0.6, changeFrequency: 'weekly' },
@@ -170,6 +183,10 @@ async function productSitemap(baseUrl: string): Promise<MetadataRoute.Sitemap> {
       .from('products')
       .select('slug, updated_at')
       .is('deleted_at', null)
+      // Section 14: the sample-laptop row is a DB health-check row —
+      // it must never appear in the sitemap (same exclusion as
+      // getProducts in services/products.ts).
+      .neq('slug', 'sample-laptop')
       .order('updated_at', { ascending: false })
       .limit(500);
 
@@ -224,6 +241,9 @@ async function taxonomySitemap(baseUrl: string): Promise<MetadataRoute.Sitemap> 
       .from('products')
       .select('brand, category')
       .is('deleted_at', null)
+      // Section 14: exclude the sample-laptop health-check row, or
+      // its brand ('Sample') would mint a /brands/sample URL.
+      .neq('slug', 'sample-laptop')
       .limit(500);
 
     if (!products) return [];
