@@ -11,14 +11,56 @@
 
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import type { Metadata } from 'next';
 import { Award, BadgeCheck, Store } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { ShareButtons } from '@/components/products/share-buttons';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getCreatorBySlug } from '@/lib/creator-storefront';
+import { appConfig } from '@/lib/config/app';
+import { buildCreatorPersonJsonLd, toJsonLd } from '@/lib/json-ld';
 
 export const dynamic = 'force-dynamic';
+
+// Section 14, Chunk 6: per-creator metadata — display name and bio
+// from the recorded storefront, self-canonical per creator. An
+// unknown slug 404s (see the component); the fallback title covers
+// the metadata call for that slug.
+export async function generateMetadata({
+  params,
+}: {
+  params: { slug: string };
+}): Promise<Metadata> {
+  const supabase = await createSupabaseServerClient();
+  const creator = await getCreatorBySlug(supabase, params.slug);
+  if (!creator) {
+    return { title: 'Creator not found — SmartBuy AI' };
+  }
+  const title = `${creator.displayName ?? 'Creator'} — SmartBuy AI`;
+  const description =
+    creator.bio ??
+    `A creator storefront on SmartBuy AI with ${creator.verifiedDeals} verified deal${creator.verifiedDeals !== 1 ? 's' : ''}.`;
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: `${appConfig.url}/creators/${creator.slug}`,
+    },
+    openGraph: {
+      title,
+      description,
+      url: `${appConfig.url}/creators/${creator.slug}`,
+      type: 'website',
+      locale: 'en_US',
+    },
+    twitter: {
+      card: 'summary',
+      title,
+      description,
+    },
+  };
+}
 
 export default async function CreatorStorefrontPage({
   params,
@@ -32,6 +74,14 @@ export default async function CreatorStorefrontPage({
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 14, Chunk 6: Person schema from the recorded
+          storefront (display name, own bio, storefront URL). */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: toJsonLd(buildCreatorPersonJsonLd(appConfig.url, creator)),
+        }}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">

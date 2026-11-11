@@ -1,4 +1,15 @@
+import type { Metadata } from 'next';
 import DashboardShell from '@/components/layout/dashboard-shell';
+
+// Section 14, Chunk 6: robots noindex — /dashboard is auth-gated
+// (and disallowed in robots.txt); it is not content to index. No
+// canonical or Open Graph: a gated page has no public URL to share.
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 /**
  * Dashboard layout — Server Component.

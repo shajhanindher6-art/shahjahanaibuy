@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/layout/site-header';
+import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { appConfig } from '@/lib/config/app';
 import { ContactForm } from './contact-form';
@@ -31,7 +32,7 @@ export default function ContactPage() {
       <SiteHeader />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
-          <h1 className="text-3xl font-bold">Contact Us</h1>
+          <LocalizedHeading dictKey="pageHeadingContact" className="text-3xl font-bold" />
           <p className="mt-2 text-muted-foreground">
             Questions about SmartBuy AI, Premium, or a business plan? Send us a message by
             email.

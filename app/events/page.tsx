@@ -1,7 +1,7 @@
 /**
  * Seasonal events index — /events.
  *
- * Lists the three event landing pages (Black Friday, 11.11, Eid)
+ * Lists the five event landing pages (Black Friday, Cyber Monday, 11.11, Eid al-Fitr, Eid al-Adha)
  * from the same SEASONAL_EVENTS data the [slug] pages render, so
  * the list and the pages can never disagree. Dates are calendar
  * facts from that data; the Eid date is labelled "expected" there
@@ -13,6 +13,7 @@
 import Link from 'next/link';
 import { CalendarDays } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
+import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { SiteFooter } from '@/components/layout/site-footer';
 import type { Metadata } from 'next';
 import { appConfig } from '@/lib/config/app';
@@ -50,9 +51,11 @@ export default function EventsIndexPage() {
       <SiteHeader />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
-          <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <CalendarDays className="h-7 w-7 text-blue-600" /> Seasonal events
-          </h1>
+          <LocalizedHeading
+            dictKey="pageHeadingEvents"
+            className="flex items-center gap-2 text-3xl font-bold"
+            icon={<CalendarDays className="h-7 w-7 text-blue-600" />}
+          />
           <p className="mt-2 text-muted-foreground">
             The year&apos;s big sale events, and how to shop each one without trusting the
             badge — check the price history, set an alert at the price you would actually

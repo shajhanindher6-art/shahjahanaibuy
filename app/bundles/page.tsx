@@ -3,6 +3,8 @@
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { ShoppingBasket } from 'lucide-react';
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { BundleAllocator } from '@/components/bundle/bundle-allocator';
 import { ComboBundles } from '@/components/bundle/combo-bundles';
 
@@ -15,6 +17,7 @@ import { ComboBundles } from '@/components/bundle/combo-bundles';
  * prices. No price is invented and the total never exceeds the budget.
  */
 export default function BundlesPage() {
+  const { language } = useRegion();
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
       <SiteHeader />
@@ -22,7 +25,7 @@ export default function BundlesPage() {
         <div className="mb-8 text-center">
           <h1 className="flex items-center justify-center gap-2 text-3xl font-bold sm:text-4xl">
             <ShoppingBasket className="h-8 w-8 text-blue-600" />
-            Budget-to-Cart Allocator
+            {tFor(language, 'pageHeadingBundles')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             One bundle, one budget — the best combination across the categories you need

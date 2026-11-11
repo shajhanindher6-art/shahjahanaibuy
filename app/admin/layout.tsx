@@ -10,8 +10,19 @@
  */
 
 import { redirect } from 'next/navigation';
+import type { Metadata } from 'next';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
+
+// Section 14, Chunk 6: robots noindex — /admin is auth-gated (and
+// disallowed in robots.txt); it is not content to index. No
+// canonical or Open Graph: a gated page has no public URL to share.
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 /**
  * `force-dynamic`: /admin is auth-gated (admin role only), so there is

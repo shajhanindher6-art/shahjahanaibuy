@@ -20,6 +20,8 @@ import { fetchTimed } from '@/lib/fetch-timed';
 import { computeTrendStats, filterPointsByRange, type TrendPoint } from '@/lib/price-trend';
 import { slugify } from '@/lib/brand-category-seo';
 import { Price } from '@/components/region/price';
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
 import { PriceTrendSparkline } from '@/components/products/price-trend-sparkline';
 import { DecisionMatrix } from '@/components/comparison/decision-matrix';
@@ -29,6 +31,12 @@ import {
   CompareValueChecks,
   lowestPrice,
 } from '@/components/comparison/compare-value-checks';
+import {
+  bestDiscount,
+  lowestRetailerPrice,
+  priceGapLabel,
+  priceRangeLabel,
+} from '@/lib/compare-pricing';
 // Option 16: repairability + regret risk per compared product.
 import { RepairabilityMatrix } from '@/components/analytics/RepairabilityMatrix';
 import { RegretRiskBadge } from '@/components/analytics/RegretRiskBadge';
@@ -148,6 +156,7 @@ interface Comparison {
 
 export default function ComparePage() {
   const router = useRouter();
+  const { language } = useRegion();
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<Array<{ id: string; name: string; slug: string; brand: string | null; image_url: string | null }>>([]);
   const [selectedProducts, setSelectedProducts] = useState<Array<{ id: string; name: string; slug: string }>>([]);
@@ -155,6 +164,11 @@ export default function ComparePage() {
   const [loading, setLoading] = useState(false);
   const [comparing, setComparing] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  // Section 14, Chunk 1 — affiliate disclosure flag from the
+  // comparison API (true only when a real tag/publisher id is
+  // configured server-side). Drives the disclosure note under the
+  // merchant links; tag values are never exposed.
+  const [affiliateEnabled, setAffiliateEnabled] = useState(false);
   // A failed comparison used to fail silently: comparison stayed null
   // and the page just showed the "Select products" empty state again,
   // as if nothing had been attempted. Surface the failure instead.
@@ -267,6 +281,7 @@ export default function ComparePage() {
       const data = await res.json();
       if (data.success) {
         setComparison(data.data);
+        setAffiliateEnabled(data.meta?.affiliateEnabled === true);
       } else {
         setCompareError('Comparison could not be loaded. Please try again.');
       }
@@ -393,7 +408,7 @@ export default function ComparePage() {
         <div className="mb-8 text-center">
           <h1 className="flex items-center justify-center gap-2 text-3xl font-bold sm:text-4xl">
             <GitCompare className="h-8 w-8 text-blue-600" aria-hidden="true" />
-            Product Comparison
+            {tFor(language, 'pageHeadingCompare')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             Compare products across retailers with AI-powered insights
@@ -607,6 +622,12 @@ export default function ComparePage() {
                 const allPrices = comparison.products.flatMap((p2) => p2.retailers.map((r) => r.price));
                 const overallMin = allPrices.length > 0 ? Math.min(...allPrices) : null;
                 const rating = p.retailers.find((r) => r.rating !== null && r.rating !== undefined)?.rating;
+                // B10/B11/B15: discount, gap and range for this
+                // product, from the retailer rows already in the
+                // response (see lib/compare-pricing).
+                const discount = bestDiscount(p.retailers);
+                const gap = priceGapLabel(minPrice, overallMin);
+                const range = priceRangeLabel(prices);
                 return (
                   <Card key={p.productId}>
                     <CardContent className="space-y-2 p-4">
@@ -625,6 +646,30 @@ export default function ComparePage() {
                           <span className={cn('font-bold', minPrice === overallMin ? 'text-green-600' : '')}>
                             <Price usd={minPrice} showFxNote />
                           </span>
+                        ) : (
+                          <span className="text-muted-foreground">No listings</span>
+                        )}
+                      </p>
+                      <p className="text-sm">
+                        <span className="font-medium">Best discount: </span>
+                        {discount !== null ? (
+                          <span className="font-semibold text-green-600">−{discount}%</span>
+                        ) : (
+                          <span className="text-muted-foreground">No discount listed</span>
+                        )}
+                      </p>
+                      <p className="text-sm">
+                        <span className="font-medium">Price gap: </span>
+                        {gap !== null ? (
+                          <span className={cn(gap === 'Cheapest' ? 'font-semibold text-green-600' : '')}>{gap}</span>
+                        ) : (
+                          <span className="text-muted-foreground">No listings</span>
+                        )}
+                      </p>
+                      <p className="text-sm">
+                        <span className="font-medium">Price range: </span>
+                        {range !== null ? (
+                          <span>{range}</span>
                         ) : (
                           <span className="text-muted-foreground">No listings</span>
                         )}
@@ -665,8 +710,40 @@ export default function ComparePage() {
                         <div className="space-y-0.5 text-sm">
                           {p.retailers.map((r) => (
                             <p key={r.retailerName}>
-                              <span className="font-medium">{r.retailerName}: </span>
+                              {/* Section 14, Chunk 1 — merchant
+                                  outbound link. The URL comes from
+                                  the comparison API, already passed
+                                  through the env-gated affiliate
+                                  transform server-side (no tag when
+                                  nothing is configured); a retailer
+                                  with no URL stays plain text. */}
+                              {r.url ? (
+                                <a
+                                  href={r.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-medium underline underline-offset-2"
+                                >
+                                  {r.retailerName}
+                                </a>
+                              ) : (
+                                <span className="font-medium">{r.retailerName}</span>
+                              )}
+                              <span>: </span>
                               <Price usd={r.price} showFxNote />
+                              {/* B10: compare-at price + discount for
+                                  this listing, from the retailer row
+                                  the API already returns. */}
+                              {r.originalPrice !== null && r.originalPrice !== undefined && r.originalPrice > r.price && (
+                                <span className="ml-1 text-xs text-muted-foreground line-through">
+                                  <Price usd={r.originalPrice} />
+                                </span>
+                              )}
+                              {r.discount !== null && r.discount !== undefined && r.discount > 0 && (
+                                <span className="ml-1 text-xs font-semibold text-green-600">
+                                  −{r.discount}%
+                                </span>
+                              )}
                             </p>
                           ))}
                         </div>
@@ -675,14 +752,24 @@ export default function ComparePage() {
                         <span className="font-medium">30-day change: </span>
                         <TrendChangeCell slug={p.slug} />
                       </p>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="min-h-[44px]"
-                        onClick={() => router.push(`/products/${p.slug || p.productId}`)}
-                      >
-                        View Details
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="min-h-[44px]"
+                          onClick={() => router.push(`/products/${p.slug || p.productId}`)}
+                        >
+                          View Details
+                        </Button>
+                        {/* B12: price alert from the mobile card —
+                            same dialog as the product page; guests get
+                            its sign-in prompt, not a dead end. */}
+                        <PriceAlertDialog
+                          productId={p.productId}
+                          productName={p.name}
+                          currentPrice={minPrice}
+                        />
+                      </div>
                     </CardContent>
                   </Card>
                 );
@@ -728,6 +815,65 @@ export default function ComparePage() {
                       );
                     })}
                   </tr>
+                  {/* B10: best discount — the API already computes
+                      each retailer's discount from its compare-at
+                      price (services/ai-comparison.ts); this row
+                      only shows the largest one per product. */}
+                  <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <td scope="row" className="p-3 text-sm font-medium">Best discount</td>
+                    {comparison.products.map((p) => {
+                      const discount = bestDiscount(p.retailers);
+                      return (
+                        <td key={p.productId} className="p-3">
+                          {discount !== null ? (
+                            <span className="font-semibold text-green-600">−{discount}%</span>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">No discount listed</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  {/* B11: price gap vs the cheapest product in this
+                      comparison — "$0" would read as free, so the
+                      cheapest product says "Cheapest". */}
+                  <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <td scope="row" className="p-3 text-sm font-medium">Price gap vs cheapest</td>
+                    {comparison.products.map((p) => {
+                      const prices = p.retailers.map((r) => r.price);
+                      const minPrice = lowestRetailerPrice(prices);
+                      const allPrices = comparison.products.flatMap((p2) => p2.retailers.map((r) => r.price));
+                      const overallMin = lowestRetailerPrice(allPrices);
+                      const gap = priceGapLabel(minPrice, overallMin);
+                      return (
+                        <td key={p.productId} className="p-3 text-sm">
+                          {gap !== null ? (
+                            <span className={cn(gap === 'Cheapest' ? 'font-semibold text-green-600' : '')}>{gap}</span>
+                          ) : (
+                            <span className="text-muted-foreground">No listings</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  {/* B15: price range across the product's own
+                      retailers — one price when every listing
+                      agrees, a range when they differ. */}
+                  <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <td scope="row" className="p-3 text-sm font-medium">Price range</td>
+                    {comparison.products.map((p) => {
+                      const range = priceRangeLabel(p.retailers.map((r) => r.price));
+                      return (
+                        <td key={p.productId} className="p-3 text-sm">
+                          {range !== null ? (
+                            range
+                          ) : (
+                            <span className="text-muted-foreground">No listings</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
                   {/* Section 13: merchant × product price grid — one
                       row per retailer across all compared products,
                       from the retailers[] already in the response.
@@ -741,7 +887,40 @@ export default function ComparePage() {
                         return (
                           <td key={p.productId} className="p-3">
                             {row ? (
-                              <Price usd={row.price} showFxNote />
+                              <span className="flex flex-col gap-1">
+                                {/* B10: compare-at price (struck
+                                    through) + discount for this
+                                    listing, from the retailer row the
+                                    API already returns. */}
+                                <span className="flex flex-wrap items-baseline gap-1">
+                                  <Price usd={row.price} showFxNote />
+                                  {row.originalPrice !== null && row.originalPrice !== undefined && row.originalPrice > row.price && (
+                                    <span className="text-xs text-muted-foreground line-through">
+                                      <Price usd={row.originalPrice} />
+                                    </span>
+                                  )}
+                                  {row.discount !== null && row.discount !== undefined && row.discount > 0 && (
+                                    <Badge variant="secondary" className="bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300">
+                                      −{row.discount}%
+                                    </Badge>
+                                  )}
+                                </span>
+                                {/* Section 14, Chunk 1 — merchant
+                                    outbound link (see the mobile card
+                                    above for the transform note). No
+                                    URL, no link — never a guessed
+                                    retailer address. */}
+                                {row.url && (
+                                  <a
+                                    href={row.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs font-medium text-primary underline underline-offset-2"
+                                  >
+                                    Visit {name}
+                                  </a>
+                                )}
+                              </span>
                             ) : (
                               <span className="text-sm text-muted-foreground">Not listed</span>
                             )}
@@ -862,20 +1041,41 @@ export default function ComparePage() {
                     <td scope="row" className="p-3 text-sm font-medium">Actions</td>
                     {comparison.products.map((p) => (
                       <td key={p.productId} className="p-3">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="min-h-[44px]"
-                          onClick={() => router.push(`/products/${p.slug || p.productId}`)}
-                        >
-                          View Details
-                        </Button>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="min-h-[44px]"
+                            onClick={() => router.push(`/products/${p.slug || p.productId}`)}
+                          >
+                            View Details
+                          </Button>
+                          {/* B12: price alert from the matrix — the
+                              same dialog the product page uses;
+                              guests get its sign-in prompt. */}
+                          <PriceAlertDialog
+                            productId={p.productId}
+                            productName={p.name}
+                            currentPrice={lowestRetailerPrice(p.retailers.map((r) => r.price))}
+                          />
+                        </div>
                       </td>
                     ))}
                   </tr>
                 </tbody>
               </table>
             </div>
+
+            {/* Section 14, Chunk 1 — affiliate disclosure, rendered
+                ONLY when the server reports a real tag/publisher id
+                configured. With nothing configured there is no note,
+                because there is nothing to disclose. */}
+            {affiliateEnabled && (
+              <p className="text-xs text-muted-foreground">
+                Affiliate disclosure: SmartBuy may earn a commission from qualifying purchases
+                made through these retailer links, at no extra cost to you.
+              </p>
+            )}
 
             {/* Summary banner (Option 14-B): deterministic badges
                 earned from real specs/prices only — renders nothing

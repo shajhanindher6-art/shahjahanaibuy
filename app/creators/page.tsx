@@ -17,6 +17,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import type { Metadata } from 'next';
 import { appConfig } from '@/lib/config/app';
 import { getTopCreators } from '@/lib/creator-storefront';
+import { BADGE_THRESHOLDS, nextBadge } from '@/lib/creator-rewards';
 
 export const dynamic = 'force-dynamic';
 
@@ -80,6 +81,37 @@ export default async function CreatorsPage() {
             or a merchant-price match, never from votes.
           </p>
 
+          {/* Section 14, chunk 9 — badge ladder. The thresholds are
+              program rules from lib/creator-rewards.ts (10 points per
+              verified deal; a badge needs verified deals, never
+              votes), so the ladder is honest even when no creator is
+              listed yet: it describes the rules, not invented holders.
+              No revenue-share figure appears — the share is not
+              configured (see lib/creator-rewards.ts). */}
+          <div className="mt-8 rounded-lg border p-6">
+            <h2 className="text-lg font-semibold">Badge ladder</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Badges are earned only with verified deals — 10 points per verified deal, and a
+              badge needs the verified-deal count, not just points. Upvotes never earn points
+              or badges.
+            </p>
+            <ol className="mt-4 space-y-2 text-sm">
+              {BADGE_THRESHOLDS.map((t) => (
+                <li key={t.badge} className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{t.label}</span>
+                  <span className="text-muted-foreground">
+                    — {t.verifiedDeals} verified deal{t.verifiedDeals !== 1 ? 's' : ''} ·{' '}
+                    {t.points} points
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <p className="mt-3 text-sm text-muted-foreground">
+              No badge yet below 1 verified deal. There is no higher badge than Platinum
+              Contributor — 30 verified deals is the top of the ladder.
+            </p>
+          </div>
+
           {creators.length === 0 ? (
             <div className="mt-8 rounded-lg border p-6">
               <p className="font-medium">No creator storefronts yet.</p>
@@ -117,6 +149,15 @@ export default async function CreatorsPage() {
                     </span>
                     <span>·</span>
                     <span>{creator.points} points</span>
+                    <span>·</span>
+                    <span>
+                      {(() => {
+                        const next = nextBadge(creator.verifiedDeals);
+                        return next
+                          ? `Next: ${next.label} at ${next.verifiedDeals} verified deals (${next.verifiedDeals - creator.verifiedDeals} to go)`
+                          : 'Top of the ladder — Platinum Contributor';
+                      })()}
+                    </span>
                   </p>
                   <Link
                     href={`/creators/${creator.slug}`}

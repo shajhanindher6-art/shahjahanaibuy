@@ -22,6 +22,7 @@ import { createClient } from '@supabase/supabase-js';
 import { env } from '@/lib/config/env';
 import { appConfig } from '@/lib/config/app';
 import { SiteHeader } from '@/components/layout/site-header';
+import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { deriveTaxonomySlugs, slugify } from '@/lib/brand-category-seo';
@@ -46,6 +47,7 @@ async function getBrands(): Promise<Array<{ name: string; slug: string; count: n
     const { data } = await supabase
       .from('products')
       .select('brand')
+      .neq('slug', 'sample-laptop')
       .is('deleted_at', null)
       .limit(500);
     if (!data) return [];
@@ -84,7 +86,7 @@ export default async function BrandsIndexPage() {
             {' / '}
             <span>Brands</span>
           </nav>
-          <h1 className="text-3xl font-bold">Browse by brand</h1>
+          <LocalizedHeading dictKey="pageHeadingBrands" className="text-3xl font-bold" />
           <p className="mt-2 text-muted-foreground">
             Every brand in the catalog — pick one to see its products and
             compare prices across retailers.

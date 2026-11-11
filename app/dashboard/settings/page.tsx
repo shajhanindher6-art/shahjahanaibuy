@@ -18,6 +18,9 @@ import {
   isGuestPushSubscribed,
 } from '@/lib/push-client';
 import { WebhookChannelsCard } from '@/components/dashboard/webhook-channels-card';
+import { PushSelfTest } from '@/components/dashboard/push-self-test';
+import { DataExportCard } from '@/components/dashboard/data-export-card';
+import { DeleteAccountCard } from '@/components/dashboard/delete-account-card';
 import { LANGUAGES, REGIONS } from '@/lib/region';
 import { AgentMemorySettings } from '@/components/agent/agent-memory-settings';
 import { AgentRulesManager } from '@/components/agent/agent-rules-manager';
@@ -406,6 +409,23 @@ export default function SettingsPage() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Section 14, Chunk 7 — push self-test: five checks ending
+          in a real test notification, with honest failure states
+          when push is not configured or the browser is not
+          subscribed. */}
+      <PushSelfTest />
+
+      {/* Section 14, Chunk 7 — download your own data as JSON
+          (wishlists, alerts, buy list, savings, searches, referral
+          link). No secrets are ever included. */}
+      <DataExportCard />
+
+      {/* Section 14, Chunk 7 — permanent account deletion, typed
+          DELETE to confirm. The route deletes the user's rows and
+          the auth user; without the service-role key it 503s and
+          deletes nothing. */}
+      <DeleteAccountCard />
     </div>
   );
 }

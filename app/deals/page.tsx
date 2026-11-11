@@ -18,13 +18,20 @@ import { appConfig } from '@/lib/config/app';
 import { buildItemListJsonLd, toJsonLd } from '@/lib/json-ld';
 import { Price } from '@/components/region/price';
 import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { CommunityDeals } from '@/components/deals/community-deals';
+import { DealHotspotsCalendar } from '@/components/deals/deal-hotspots-calendar';
 import { NewsletterCapture } from '@/components/home/newsletter-capture';
 import { AutoCouponHub } from '@/components/deals/auto-coupon-hub';
 import { ShareButtons } from '@/components/products/share-buttons';
 import { CuratedDealOfTheDay } from '@/components/curators/curated-deal-of-the-day';
 import { CurationGuidelines } from '@/components/curators/curation-guidelines';
 import { SEASONAL_EVENTS } from '@/components/seasonal/events';
+import {
+  filterDealsByMinDiscount,
+  paginateList,
+  sortCoupons,
+} from '@/lib/deal-list';
 
 interface RankedDeal {
   id: string;
@@ -121,7 +128,7 @@ interface Coupon {
 
 export default function DealsPage() {
   const router = useRouter();
-  const { region } = useRegion();
+  const { region, language } = useRegion();
   const [deals, setDeals] = useState<RankedDeal[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [merchantNames, setMerchantNames] = useState<Record<string, string>>({});
@@ -137,6 +144,9 @@ export default function DealsPage() {
   const [merchantFilter, setMerchantFilter] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
   const [dealPriceBand, setDealPriceBand] = useState<DealPriceBand>('all');
+  // B14: minimum discount filter ("at least 20% off"), from the
+  // discountPercentage already on every ranked deal. '' = no minimum.
+  const [minDiscount, setMinDiscount] = useState('');
   const [dealsPage, setDealsPage] = useState(1);
   const dealsUrlRef = useRef({
     type: '',
@@ -145,6 +155,7 @@ export default function DealsPage() {
     merchant: '',
     brand: '',
     band: 'all' as DealPriceBand,
+    minDiscount: '',
     page: 1,
   });
   dealsUrlRef.current = {
@@ -154,6 +165,7 @@ export default function DealsPage() {
     merchant: merchantFilter,
     brand: brandFilter,
     band: dealPriceBand,
+    minDiscount,
     page: dealsPage,
   };
 
@@ -165,6 +177,7 @@ export default function DealsPage() {
       merchant: string;
       brand: string;
       band: DealPriceBand;
+      minDiscount: string;
       page: number;
     }>) => {
       const s = { ...dealsUrlRef.current, ...patch };
@@ -175,6 +188,7 @@ export default function DealsPage() {
       if (s.merchant) params.set('merchant', s.merchant);
       if (s.brand) params.set('brand', s.brand);
       if (s.band !== 'all') params.set('band', s.band);
+      if (s.minDiscount) params.set('minDiscount', s.minDiscount);
       if (s.page > 1) params.set('page', String(s.page));
       const qs = params.toString();
       router.replace(qs ? `/deals?${qs}` : '/deals');
@@ -244,6 +258,8 @@ export default function DealsPage() {
       if (b) setBrandFilter(b);
       const band = params.get('band');
       if (band === 'under-100' || band === '100-500' || band === '500-plus') setDealPriceBand(band);
+      const md = params.get('minDiscount');
+      if (md === '10' || md === '20' || md === '30') setMinDiscount(md);
       const p = Math.max(1, Number(params.get('page') ?? 1) || 1);
       if (p > 1) setDealsPage(p);
     } catch {
@@ -280,7 +296,8 @@ export default function DealsPage() {
   // Section 13: sort + filters, applied client-side to the fetched
   // rows (the ranked endpoint returns AI order; the sort keys below
   // reorder the same rows — biggest % off, biggest $ saving, ending
-  // soonest — from fields already on the cards).
+  // soonest — from fields already on the cards). B14 adds the
+  // minimum-discount filter (same discountPercentage field).
   const displayedDeals = useMemo(() => {
     let items = deals;
     if (merchantFilter) {
@@ -295,6 +312,7 @@ export default function DealsPage() {
         (d) => d.currentPrice === null || d.currentPrice === undefined || inDealPriceBand(d.currentPrice, dealPriceBand)
       );
     }
+    items = filterDealsByMinDiscount(items, minDiscount ? Number(minDiscount) : null);
     const sorted = [...items];
     switch (dealSort) {
       case 'discount':
@@ -314,23 +332,47 @@ export default function DealsPage() {
         break; // 'ai': the API's ranked order.
     }
     return sorted;
-  }, [deals, merchantFilter, brandFilter, dealPriceBand, dealSort]);
+  }, [deals, merchantFilter, brandFilter, dealPriceBand, dealSort, minDiscount]);
 
+  // B9: coupons respect the shared sort control too — the old code
+  // only filtered them by merchant, so "Ending soonest" / "Biggest
+  // % off" silently did nothing on the Coupons tab. 'discount' and
+  // 'savings' order by the listed discount value (see lib/deal-list:
+  // % and $ values are not converted into each other).
   const displayedCoupons = useMemo(() => {
-    if (!merchantFilter) return coupons;
-    return coupons.filter(
-      (c) => c.merchantId !== null && merchantNames[c.merchantId] === merchantFilter
-    );
-  }, [coupons, merchantFilter, merchantNames]);
+    const filtered = !merchantFilter
+      ? coupons
+      : coupons.filter(
+          (c) => c.merchantId !== null && merchantNames[c.merchantId] === merchantFilter
+        );
+    return sortCoupons(filtered, dealSort);
+  }, [coupons, merchantFilter, merchantNames, dealSort]);
+
+  const featuredDeals = deals.filter((d) => d.isFeatured);
+  const regularDeals = deals.filter((d) => !d.isFeatured);
 
   const dealFiltersActive =
-    dealSort !== 'ai' || merchantFilter !== '' || brandFilter !== '' || dealPriceBand !== 'all';
-  const dealsTotalPages = Math.max(1, Math.ceil(displayedDeals.length / DEALS_PAGE_SIZE));
+    dealSort !== 'ai' || merchantFilter !== '' || brandFilter !== '' || dealPriceBand !== 'all' || minDiscount !== '';
+  // B7: pagination applies ALWAYS, not only when filters are on.
+  // The old grid rendered the full unfiltered list (up to 30
+  // fetched deals) and only paged the filtered list — page 2 of an
+  // unfiltered view did not exist. The base list is the filtered
+  // list when filters are active; otherwise it is the regular
+  // (non-featured) deals, because featured deals already render in
+  // the Featured section above — except when a category is selected
+  // or Featured Only is on, when the Featured section is hidden and
+  // the grid must show every fetched deal (featured included), or
+  // the featured deals of that category would vanish entirely.
+  const featuredShownSeparately =
+    !activeCategory && !featuredOnly && featuredDeals.length > 0;
+  const dealsBaseList = dealFiltersActive
+    ? displayedDeals
+    : featuredShownSeparately
+      ? (regularDeals.length > 0 ? regularDeals : deals)
+      : deals;
+  const dealsTotalPages = Math.max(1, Math.ceil(dealsBaseList.length / DEALS_PAGE_SIZE));
   const dealsEffectivePage = Math.min(dealsPage, dealsTotalPages);
-  const pagedDeals = displayedDeals.slice(
-    (dealsEffectivePage - 1) * DEALS_PAGE_SIZE,
-    dealsEffectivePage * DEALS_PAGE_SIZE
-  );
+  const pagedDeals = paginateList(dealsBaseList, dealsEffectivePage, DEALS_PAGE_SIZE);
 
   // Section 13, Chunk E: ItemList of the product-linked deals on
   // the current page only (same pattern as the search page's result
@@ -365,17 +407,15 @@ export default function DealsPage() {
     setMerchantFilter('');
     setBrandFilter('');
     setDealPriceBand('all');
+    setMinDiscount('');
     setDealsPage(1);
-    writeDealsUrl({ sort: 'ai', merchant: '', brand: '', band: 'all', page: 1 });
+    writeDealsUrl({ sort: 'ai', merchant: '', brand: '', band: 'all', minDiscount: '', page: 1 });
   };
 
   const goToDealsPage = (nextPage: number) => {
     setDealsPage(nextPage);
     writeDealsUrl({ page: nextPage });
   };
-
-  const featuredDeals = deals.filter((d) => d.isFeatured);
-  const regularDeals = deals.filter((d) => !d.isFeatured);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
@@ -390,7 +430,7 @@ export default function DealsPage() {
         <div className="mb-8 text-center">
           <h1 className="flex items-center justify-center gap-2 text-3xl font-bold sm:text-4xl">
             <Sparkles className="h-8 w-8 text-amber-500" />
-            Smart Deal Finder
+            {tFor(language, 'pageHeadingDeals')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             AI-ranked deals, flash sales, coupons, and hidden discounts
@@ -540,6 +580,27 @@ export default function DealsPage() {
                   <SelectItem value="under-100">Under $100</SelectItem>
                   <SelectItem value="100-500">$100 – $500</SelectItem>
                   <SelectItem value="500-plus">Over $500</SelectItem>
+                </SelectContent>
+              </Select>
+              {/* B14: minimum discount — "at least 20% off" — from
+                  the discountPercentage already on every deal. */}
+              <Select
+                value={minDiscount || 'any'}
+                onValueChange={(v) => {
+                  const next = v === 'any' ? '' : v;
+                  setMinDiscount(next);
+                  setDealsPage(1);
+                  writeDealsUrl({ minDiscount: next, page: 1 });
+                }}
+              >
+                <SelectTrigger aria-label="Filter by minimum discount" className="w-[160px]">
+                  <SelectValue placeholder="Any discount" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">Any discount</SelectItem>
+                  <SelectItem value="10">10% off or more</SelectItem>
+                  <SelectItem value="20">20% off or more</SelectItem>
+                  <SelectItem value="30">30% off or more</SelectItem>
                 </SelectContent>
               </Select>
             </>
@@ -697,21 +758,21 @@ export default function DealsPage() {
               <h2 className="mb-4 text-xl font-bold">
                 {activeCategory ? DEAL_CATEGORIES.find((c) => c.key === activeCategory)?.label : 'All Deals'}
               </h2>
-              {dealFiltersActive && (
+              {/* B7: the count + pager describe the paged base list
+                  (see the dealsBaseList note above) — always, not
+                  only when filters are on. */}
+              {dealsBaseList.length > 0 && (
                 <p className="mb-4 text-sm text-muted-foreground">
-                  Showing {(dealsEffectivePage - 1) * DEALS_PAGE_SIZE + 1}–{(dealsEffectivePage - 1) * DEALS_PAGE_SIZE + pagedDeals.length} of {displayedDeals.length} deal{displayedDeals.length !== 1 ? 's' : ''}
-                  {displayedDeals.length !== deals.length && ` (of ${deals.length} before filters)`}
+                  Showing {(dealsEffectivePage - 1) * DEALS_PAGE_SIZE + 1}–{(dealsEffectivePage - 1) * DEALS_PAGE_SIZE + pagedDeals.length} of {dealsBaseList.length} deal{dealsBaseList.length !== 1 ? 's' : ''}
+                  {dealFiltersActive && displayedDeals.length !== deals.length && ` (of ${deals.length} before filters)`}
                 </p>
               )}
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {(dealFiltersActive
-                  ? pagedDeals
-                  : featuredOnly ? deals : regularDeals.length > 0 ? regularDeals : deals
-                ).map((deal) => (
+                {pagedDeals.map((deal) => (
                   <DealCard key={deal.id} deal={deal} onClick={() => deal.product && router.push(`/products/${deal.product.slug}`)} />
                 ))}
               </div>
-              {dealFiltersActive && dealsTotalPages > 1 && (
+              {dealsTotalPages > 1 && (
                 <div className="mt-6 flex items-center justify-center gap-2">
                   <Button variant="outline" size="sm" disabled={dealsEffectivePage <= 1} onClick={() => goToDealsPage(dealsEffectivePage - 1)}>
                     Previous
@@ -729,6 +790,15 @@ export default function DealsPage() {
         )}
 
         <CommunityDeals />
+
+        {/* Section 14, Chunk 1 — the Deal Hotspots Calendar was dead
+            code (zero importers). It is self-fetching from the live
+            /api/v1/deal-hotspots endpoint and shows RECORDED drops
+            and deal starts only — no prediction — so it belongs here
+            on /deals rather than in the bin. */}
+        <div className="mt-8">
+          <DealHotspotsCalendar />
+        </div>
 
         {/* Section 13, item 51 — deal-alert capture on the deals
             page (capture only; sending starts once email delivery
@@ -802,6 +872,9 @@ function DealCard({ deal, featured, onClick }: { deal: RankedDeal; featured?: bo
   const endDate = deal.deal ? new Date(deal.deal.endAt) : null;
   const hoursLeft = endDate ? Math.round((endDate.getTime() - Date.now()) / (60 * 60 * 1000)) : null;
   const isFlash = deal.dealType === 'flash';
+  // B8: merchant label for the outbound link, from the deal's own
+  // URL hostname (same helper as the merchant filter above).
+  const merchantHost = dealMerchantHost(deal);
 
   return (
     <Card
@@ -894,8 +967,39 @@ function DealCard({ deal, featured, onClick }: { deal: RankedDeal; featured?: bo
           </div>
         )}
 
+        {/* B8: the end date for longer-running deals (the countdown
+            above only covers the last 48h), and "Ended" for a stale
+            ranked row whose end passed — both from deal.endAt, never
+            a guessed date. */}
+        {endDate && hoursLeft !== null && hoursLeft >= 48 && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Ends {endDate.toLocaleDateString()}
+          </p>
+        )}
+        {endDate && hoursLeft !== null && hoursLeft <= 0 && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Ended {endDate.toLocaleDateString()}
+          </p>
+        )}
+
         {deal.deal?.description && (
           <p className="mt-2 text-xs text-muted-foreground line-clamp-2">{deal.deal.description}</p>
+        )}
+
+        {/* B8: outbound link to the retailer's deal page, from the
+            deal's own URL. The card click still opens the SmartBuy
+            product page, so the link stops propagation. No URL, no
+            link — never a guessed retailer address. */}
+        {deal.deal?.url && (
+          <a
+            href={deal.deal.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="mt-3 block text-center text-sm font-medium text-blue-600 underline underline-offset-2"
+          >
+            View deal at {merchantHost ? dealMerchantLabel(merchantHost) : 'retailer'} →
+          </a>
         )}
 
         <Button size="sm" variant="outline" className="mt-3 min-h-[44px] w-full">

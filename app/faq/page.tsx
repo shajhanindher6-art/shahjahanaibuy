@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { headers } from 'next/headers';
 import { SiteHeader } from '@/components/layout/site-header';
+import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { appConfig } from '@/lib/config/app';
@@ -37,7 +38,7 @@ export default function FaqPage() {
       />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
-          <h1 className="text-3xl font-bold">Frequently Asked Questions</h1>
+          <LocalizedHeading dictKey="pageHeadingFaq" className="text-3xl font-bold" />
           <p className="mt-2 text-muted-foreground">
             The same questions and answers as the{' '}
             <Link href="/help" className="underline">

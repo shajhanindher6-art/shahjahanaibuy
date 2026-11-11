@@ -341,7 +341,12 @@ export default function BillingPage() {
                       {record.status}
                     </Badge>
                     {record.invoice_url && (
-                      <a href={record.invoice_url} target="_blank" rel="noopener noreferrer">
+                      <a
+                        href={record.invoice_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`View invoice from ${new Date(record.created_at).toLocaleDateString()}`}
+                      >
                         <Button variant="ghost" size="sm">
                           <ExternalLink className="h-4 w-4" />
                         </Button>

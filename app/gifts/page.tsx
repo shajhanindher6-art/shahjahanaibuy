@@ -26,6 +26,9 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { Price } from '@/components/region/price';
 import { REGIONS } from '@/lib/region';
 import { trackAffiliateClick } from '@/lib/affiliate-beacon';
+import { buildGiftShareUrl, parseGiftShareParams } from '@/lib/gift-share';
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 
 const OCCASIONS = ['Birthday', 'Anniversary', 'Wedding', 'Graduation', 'New home', 'Thank you', 'Holiday', 'Just because'];
 
@@ -46,6 +49,7 @@ interface GiftPick {
 }
 
 export default function GiftsPage() {
+  const { language } = useRegion();
   const [occasion, setOccasion] = useState('Birthday');
   const [budgetText, setBudgetText] = useState('');
   const [country, setCountry] = useState('US');
@@ -54,27 +58,54 @@ export default function GiftsPage() {
   const [error, setError] = useState<string | null>(null);
   const [picks, setPicks] = useState<GiftPick[] | null>(null);
   const [meta, setMeta] = useState<{ shippingNote?: string; storeKind?: string; affiliateEnabled?: boolean } | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
 
-  // Pre-fill the budget from the ?budget= URL parameter on first load
-  // (e.g. /gifts?budget=1000). Only a finite positive number is
-  // accepted; anything else (abc, empty, Infinity, 0, negatives) is
-  // ignored and the field stays empty — never crash, never invent a
-  // budget. Read via window.location (not useSearchParams) so the
-  // page needs no Suspense boundary. The prefilled text flows through
-  // the same server budget parser as typed input: the route wraps it
-  // as "under <text>", so "1000" parses as $1000 USD.
+  // Section 14, chunk 9 — shareable URL: pre-fill every input from
+  // the query string (?occasion=&budget=&country=&interests=), the
+  // same pattern as the quiz ?answers= URL. Only values inside the
+  // picker's own option lists are accepted (see lib/gift-share.ts);
+  // anything else is dropped and the field keeps its default — never
+  // crash, never invent an input. Read via window.location (not
+  // useSearchParams) so the page needs no Suspense boundary. The
+  // budget text flows through the same server budget parser as typed
+  // input: the route wraps it as "under <text>", so "1000" parses as
+  // $1000 USD.
   useEffect(() => {
     try {
-      const raw = new URLSearchParams(window.location.search).get('budget');
-      if (raw === null) return;
-      const trimmed = raw.trim();
-      if (trimmed === '') return;
-      const value = Number(trimmed);
-      if (Number.isFinite(value) && value > 0) setBudgetText(trimmed);
+      const parsed = parseGiftShareParams(
+        window.location.search,
+        OCCASIONS,
+        REGIONS.map((r) => r.code),
+      );
+      if (parsed.occasion) setOccasion(parsed.occasion);
+      if (parsed.budgetText) setBudgetText(parsed.budgetText);
+      if (parsed.country) setCountry(parsed.country);
+      if (parsed.interests) setInterests(parsed.interests);
     } catch {
-      // Unparseable query string: leave the budget field empty.
+      // Unparseable query string: leave the fields at their defaults.
     }
   }, []);
+
+  async function copyShareLink() {
+    const url = buildGiftShareUrl(window.location.origin, {
+      occasion,
+      budgetText: budgetText.trim() || undefined,
+      country,
+      interests: interests.trim() || undefined,
+    });
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+    } catch {
+      // Clipboard unavailable — fall back to selecting the URL text.
+      const el = document.getElementById('gift-share-link') as HTMLInputElement | null;
+      if (el) {
+        el.value = url;
+        el.focus();
+        el.select();
+      }
+    }
+  }
 
   async function run() {
     setError(null);
@@ -113,7 +144,7 @@ export default function GiftsPage() {
         <div className="mx-auto max-w-2xl space-y-6">
           <div>
             <h1 className="flex items-center gap-2 text-3xl font-bold">
-              <Gift className="h-7 w-7 text-pink-600" /> Gift Finder
+              <Gift className="h-7 w-7 text-pink-600" /> {tFor(language, 'pageHeadingGifts')}
             </h1>
             <p className="mt-2 text-muted-foreground">
               Tell us the occasion, your budget, the recipient&apos;s country and interests, and
@@ -152,6 +183,7 @@ export default function GiftsPage() {
               <label className="block text-sm font-medium">Recipient&apos;s country</label>
               <select
                 value={country}
+                aria-label="Recipient's country"
                 onChange={(e) => setCountry(e.target.value)}
                 className="w-full rounded-md border px-3 py-2 text-sm"
               >
@@ -170,6 +202,17 @@ export default function GiftsPage() {
               <Button onClick={run} disabled={loading} className="w-full">
                 <Search className="mr-2 h-4 w-4" /> {loading ? 'Matching…' : 'Find gifts'}
               </Button>
+              <Button type="button" variant="outline" onClick={copyShareLink} className="w-full">
+                {shareCopied ? 'Share link copied' : 'Copy share link'}
+              </Button>
+              {/* Hidden fallback target for browsers without clipboard
+                  permission: copyShareLink writes the URL here so the
+                  user can select and copy it by hand. */}
+              <input id="gift-share-link" readOnly aria-hidden="true" tabIndex={-1} className="sr-only" defaultValue="" />
+              <p className="text-xs text-muted-foreground">
+                The share link carries your occasion, budget, country, and interests — opening it
+                re-runs the same search.
+              </p>
               {loading && <LoadingSpinner />}
               {error && <p className="text-sm text-red-600">{error}</p>}
             </CardContent>

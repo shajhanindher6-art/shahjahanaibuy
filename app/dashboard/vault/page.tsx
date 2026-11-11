@@ -259,6 +259,7 @@ export default function VaultPage() {
                 <textarea
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                   rows={3}
+                  aria-label="Receipt text"
                   value={extractedText}
                   onChange={(e) => setExtractedText(e.target.value)}
                   placeholder="Paste receipt text here if you want it stored with this item."

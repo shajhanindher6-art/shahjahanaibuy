@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
+import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { appConfig } from '@/lib/config/app';
 
@@ -19,7 +20,7 @@ export default function AboutPage() {
       <SiteHeader />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
-          <h1 className="text-3xl font-bold">About SmartBuy AI</h1>
+          <LocalizedHeading dictKey="pageHeadingAbout" className="text-3xl font-bold" />
           <p className="mt-4 text-muted-foreground">
             SmartBuy AI helps shoppers make confident decisions. It brings together product
             search, price tracking across retailers, price-drop alerts, and AI-powered

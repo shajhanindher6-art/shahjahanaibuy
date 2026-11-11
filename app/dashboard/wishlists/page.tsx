@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Heart, Plus, Share2, Trash2, Bell, ArrowRight } from 'lucide-react';
+import { Heart, Plus, Share2, Trash2, Bell, ArrowRight, Pencil } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +34,11 @@ export default function WishlistsPage() {
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [creating, setCreating] = useState(false);
+  // Section 14, Chunk 7 — inline rename (the PATCH endpoint
+  // already accepted { name }; the UI had no way to use it).
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renaming, setRenaming] = useState(false);
 
   const fetchWishlists = useCallback(async () => {
     setLoading(true);
@@ -98,6 +103,36 @@ export default function WishlistsPage() {
       }
     } catch {
       toast({ title: 'Failed to delete wishlist', variant: 'destructive' });
+    }
+  };
+
+  // Section 14, Chunk 7 — rename via the existing PATCH endpoint.
+  // Empty names are rejected client-side; a failed PATCH leaves the
+  // old name in place.
+  const saveRename = async (id: string) => {
+    const name = renameValue.trim();
+    if (!name) {
+      toast({ title: 'A wishlist needs a name', variant: 'destructive' });
+      return;
+    }
+    setRenaming(true);
+    try {
+      const res = await fetch(`/api/v1/wishlists/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.slice(0, 100) }),
+      });
+      if (res.ok) {
+        toast({ title: 'Wishlist renamed' });
+        setRenamingId(null);
+        fetchWishlists();
+      } else {
+        toast({ title: 'Failed to rename wishlist', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Failed to rename wishlist', variant: 'destructive' });
+    } finally {
+      setRenaming(false);
     }
   };
 
@@ -175,8 +210,31 @@ export default function WishlistsPage() {
             <Card key={wl.id} className="transition-shadow hover:shadow-md">
               <CardHeader>
                 <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-base">{wl.name}</CardTitle>
+                  <div className="min-w-0 flex-1">
+                    {renamingId === wl.id ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') void saveRename(wl.id);
+                            if (e.key === 'Escape') setRenamingId(null);
+                          }}
+                          className="h-8"
+                          maxLength={100}
+                          autoFocus
+                          aria-label="Wishlist name"
+                        />
+                        <Button size="sm" onClick={() => void saveRename(wl.id)} disabled={renaming}>
+                          Save
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setRenamingId(null)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <CardTitle className="text-base">{wl.name}</CardTitle>
+                    )}
                     {wl.description && <p className="mt-1 text-sm text-muted-foreground">{wl.description}</p>}
                   </div>
                   <Badge variant={wl.isPublic ? 'default' : 'secondary'}>
@@ -221,6 +279,17 @@ export default function WishlistsPage() {
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => shareWishlist(wl.id)}>
                     <Share2 className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setRenamingId(wl.id);
+                      setRenameValue(wl.name);
+                    }}
+                    aria-label={`Rename ${wl.name}`}
+                  >
+                    <Pencil className="h-4 w-4" />
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => deleteWishlist(wl.id)}>
                     <Trash2 className="h-4 w-4 text-red-500" />

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import type { Language } from '@/lib/region';
 import { getAllPosts } from '@/lib/blog/posts';
 import { appConfig } from '@/lib/config/app';
@@ -164,7 +165,7 @@ export default function BlogPage() {
       <SiteHeader />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
-          <h1 className="text-3xl font-bold">{copy.title}</h1>
+          <h1 className="text-3xl font-bold">{tFor(language, 'pageHeadingBlog')}</h1>
           <p className="mt-2 text-muted-foreground">
             Shopping guides, deal explainers, and product updates — written
             from SmartBuy&apos;s real features and data.

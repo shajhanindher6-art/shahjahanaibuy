@@ -90,6 +90,27 @@ export default function ApiDocsPage() {
             <li>With a valid API key: 120 requests/minute per key.</li>
             <li>Over the limit: HTTP 429 with a reset time. Do not retry in a tight loop.</li>
           </ul>
+          <p className="mt-3 text-muted-foreground">
+            The per-minute limit is enforced per endpoint as well as per caller, and the
+            per-endpoint limit varies: most read endpoints allow 120 requests/minute per IP
+            (for example <code className="rounded bg-muted px-1">GET /api/v1/ai-summary/[productId]</code>{' '}
+            and <code className="rounded bg-muted px-1">GET /api/v1/community-deals</code>),
+            while write endpoints are stricter — submitting a community deal and creating a
+            referral link each allow 30 requests/minute per IP. The limit that applies is
+            the one the endpoint states when it answers 429.
+          </p>
+
+          <h3 className="mt-6 text-lg font-semibold">Rate-limit headers — what is (and is not) sent</h3>
+          <p className="mt-3 text-muted-foreground">
+            The API does <strong>not</strong> send <code className="rounded bg-muted px-1">Retry-After</code>{' '}
+            or <code className="rounded bg-muted px-1">X-RateLimit-*</code> headers today — no
+            response carries them, so do not rely on headers to learn the limit. The reset
+            time is in the JSON error body instead: every 429 body carries{' '}
+            <code className="rounded bg-muted px-1">error.details.resetAt</code> (ISO 8601,
+            the UTC midnight ending the current quota day for daily quotas, or the end of
+            the current minute window for per-minute limits). Wait until that time before
+            retrying.
+          </p>
 
           {/* Section 12, chunk C — daily quotas. These numbers are
               the live enforcement in lib/api-quota.ts (imported
@@ -143,6 +164,126 @@ export default function ApiDocsPage() {
             </Link>
             .
           </p>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Quota state is kept in memory (see lib/api-quota.ts): the counter resets when the
+            server instance restarts and is not shared across instances, so a burst spread
+            across instances can briefly exceed the daily cap. The durable counter table is
+            defined but its migration has not been applied — the in-memory behaviour above is
+            what the API actually does today.
+          </p>
+
+          <h3 className="mt-6 text-lg font-semibold">What a quota 429 looks like</h3>
+          <p className="mt-3 text-muted-foreground">
+            A daily-quota breach answers 429 with the tier, the limit, how many requests you
+            have used, the reset time, the next tier up (when one exists), and the pricing
+            page — all in the body, not in headers:
+          </p>
+          <pre className="mt-3 overflow-x-auto rounded-lg bg-muted p-4 text-sm">
+            {`HTTP/1.1 429 Too Many Requests
+{
+  "success": false,
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "API quota exceeded for the Free tier (1,000 requests/day). Upgrade to Premium for 10,000 requests/day. See /pricing. Quota resets at 2026-11-12T00:00:00.000Z.",
+    "details": {
+      "tier": "free",
+      "limit": 1000,
+      "used": 1001,
+      "resetAt": "2026-11-12T00:00:00.000Z",
+      "upgradeTier": "premium",
+      "billingUrl": "/pricing"
+    }
+  }
+}`}
+          </pre>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Anonymous callers get the same shape with a per-IP message instead (create a free
+            API key for 1,000 requests/day). Every request counts toward the quota — including
+            requests that end up over it — and a key whose owner has no active paid
+            subscription stays on the free quota.
+          </p>
+
+          <h2 className="mt-8 text-xl font-semibold">Response format</h2>
+          <p className="mt-3 text-muted-foreground">
+            Every response uses the same envelope. Success is{' '}
+            <code className="rounded bg-muted px-1">{'{ "success": true, "data": … }'}</code>{' '}
+            (with an optional <code className="rounded bg-muted px-1">meta</code> object for
+            notices such as the demo-data flag); errors are{' '}
+            <code className="rounded bg-muted px-1">{'{ "success": false, "error": { "code", "message", "details"? } }'}</code>
+            . Check <code className="rounded bg-muted px-1">success</code> first — the HTTP
+            status alone does not tell you whether a body is data or an error.
+          </p>
+
+          <h2 className="mt-8 text-xl font-semibold">Errors</h2>
+          <p className="mt-3 text-muted-foreground">
+            All error codes, from the response helpers in lib/api/responses.ts. The message is
+            human-readable; the code is the stable value to switch on.
+          </p>
+          <table className="mt-4 w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b text-left">
+                <th className="py-2 pr-4 font-semibold">HTTP status</th>
+                <th className="py-2 pr-4 font-semibold">Code</th>
+                <th className="py-2 font-semibold">When it happens</th>
+              </tr>
+            </thead>
+            <tbody className="text-muted-foreground">
+              <tr className="border-b">
+                <td className="py-2 pr-4">400</td>
+                <td className="py-2 pr-4 font-mono">BAD_REQUEST</td>
+                <td className="py-2">The request is malformed (for example, a missing required field).</td>
+              </tr>
+              <tr className="border-b">
+                <td className="py-2 pr-4">401</td>
+                <td className="py-2 pr-4 font-mono">UNAUTHORIZED</td>
+                <td className="py-2">Sign-in is required for this endpoint.</td>
+              </tr>
+              <tr className="border-b">
+                <td className="py-2 pr-4">403</td>
+                <td className="py-2 pr-4 font-mono">FORBIDDEN</td>
+                <td className="py-2">Signed in, but not allowed (for example, admin-only endpoints).</td>
+              </tr>
+              <tr className="border-b">
+                <td className="py-2 pr-4">404</td>
+                <td className="py-2 pr-4 font-mono">NOT_FOUND</td>
+                <td className="py-2">The product, deal, or resource does not exist.</td>
+              </tr>
+              <tr className="border-b">
+                <td className="py-2 pr-4">409</td>
+                <td className="py-2 pr-4 font-mono">CONFLICT</td>
+                <td className="py-2">The request conflicts with current state (for example, a duplicate).</td>
+              </tr>
+              <tr className="border-b">
+                <td className="py-2 pr-4">422</td>
+                <td className="py-2 pr-4 font-mono">VALIDATION_ERROR</td>
+                <td className="py-2">The input failed validation — the message names the problem.</td>
+              </tr>
+              <tr className="border-b">
+                <td className="py-2 pr-4">429</td>
+                <td className="py-2 pr-4 font-mono">RATE_LIMITED</td>
+                <td className="py-2">Per-minute limit or daily quota exceeded — see the reset time in error.details.resetAt.</td>
+              </tr>
+              <tr className="border-b">
+                <td className="py-2 pr-4">500</td>
+                <td className="py-2 pr-4 font-mono">INTERNAL_ERROR</td>
+                <td className="py-2">Something failed on the server. Retry later; the detail is not exposed.</td>
+              </tr>
+              <tr>
+                <td className="py-2 pr-4">503</td>
+                <td className="py-2 pr-4 font-mono">SERVICE_UNAVAILABLE</td>
+                <td className="py-2">The feature is not set up yet (for example, a database table the owner still needs to create).</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Example error body (unknown product):
+          </p>
+          <pre className="mt-3 overflow-x-auto rounded-lg bg-muted p-4 text-sm">
+            {`{
+  "success": false,
+  "error": { "code": "NOT_FOUND", "message": "Product not found" }
+}`}
+          </pre>
 
           <h2 className="mt-8 text-xl font-semibold">Endpoints</h2>
           <p className="mt-3 text-sm text-muted-foreground">Base URL: {BASE_URL}</p>
@@ -162,6 +303,47 @@ export default function ApiDocsPage() {
             {`curl "${BASE_URL}/api/v1/public/products?pageSize=5" \\
   -H "x-api-key: sbk_live_your_key_here"`}
           </pre>
+          <p className="mt-3 text-muted-foreground">
+            A products-list response — the data is the catalog page, and{' '}
+            <code className="rounded bg-muted px-1">meta</code> carries the pagination plus the
+            data notice (prices are demo/seed data, not live retailer prices):
+          </p>
+          <pre className="mt-3 overflow-x-auto rounded-lg bg-muted p-4 text-sm">
+            {`{
+  "success": true,
+  "data": [ { "id": "…", "name": "MacBook Air 13", "slug": "macbook-air-13", "brand": "Apple", "category": "laptops", "…" : "…" } ],
+  "meta": {
+    "page": 1,
+    "pageSize": 5,
+    "total": 10,
+    "totalPages": 2,
+    "dataNotice": "Catalog data only. Prices shown on SmartBuy AI are demo/seed data, not live retailer prices."
+  }
+}`}
+          </pre>
+          <p className="mt-3 text-muted-foreground">
+            Price history for one product (by slug, or by{' '}
+            <code className="rounded bg-muted px-1">product_id</code>):
+          </p>
+          <pre className="mt-3 overflow-x-auto rounded-lg bg-muted p-4 text-sm">
+            {`curl "${BASE_URL}/api/v1/public/prices?slug=macbook-air-13"
+
+{
+  "success": true,
+  "data": {
+    "productId": "…",
+    "prices": [ { "price": 999, "recordedAt": "2026-11-10T…" } ],
+    "source": "recorded",
+    "dataNotice": "Recorded price history only — these are demo/seed prices, not live retailer prices."
+  }
+}`}
+          </pre>
+          <p className="mt-3 text-sm text-muted-foreground">
+            List endpoints cap <code className="rounded bg-muted px-1">pageSize</code> at 100
+            (default 20). The deals endpoint returns active deals soonest-ending first; the
+            predictions-accuracy endpoint reports &ldquo;not enough history yet&rdquo; until 20
+            predictions have resolved.
+          </p>
 
           <h2 className="mt-8 text-xl font-semibold">Data honesty</h2>
           <p className="mt-3 text-muted-foreground">

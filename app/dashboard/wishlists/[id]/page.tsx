@@ -56,6 +56,13 @@ export default function DashboardWishlistDetailPage() {
   const [items, setItems] = useState<TrackedItem[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  // Section 14, Chunk 7 — move an item to another of the owner's
+  // lists (POST to the target, then DELETE here). Only lists other
+  // than this one are offered; with one list there is nothing to
+  // move to and no control renders.
+  const [otherLists, setOtherLists] = useState<Array<{ id: string; name: string }>>([]);
+  const [moveTarget, setMoveTarget] = useState<Record<string, string>>({});
+  const [movingId, setMovingId] = useState<string | null>(null);
 
   const fetchDetail = useCallback(async () => {
     setLoading(true);
@@ -88,6 +95,16 @@ export default function DashboardWishlistDetailPage() {
     } catch {
       setItems(null);
     }
+    try {
+      const listsRes = await fetch('/api/v1/wishlists');
+      const listsData = await listsRes.json();
+      const all: Array<{ id: string; name: string }> = (listsData?.data ?? [])
+        .filter((w: { id: string }) => w.id !== id)
+        .map((w: { id: string; name: string }) => ({ id: w.id, name: w.name }));
+      setOtherLists(all);
+    } catch {
+      setOtherLists([]);
+    }
   }, [id]);
 
   useEffect(() => {
@@ -105,6 +122,37 @@ export default function DashboardWishlistDetailPage() {
       }
     } catch {
       toast({ title: 'Failed to remove item', variant: 'destructive' });
+    }
+  };
+
+  // Section 14, Chunk 7 — move to another list: add to the target
+  // first, delete here only after the add confirms, so a failed
+  // move never loses the item.
+  const moveItem = async (item: TrackedItem) => {
+    const targetId = moveTarget[item.itemId];
+    if (!targetId || movingId) return;
+    setMovingId(item.itemId);
+    try {
+      const addRes = await fetch(`/api/v1/wishlists/${targetId}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: item.product.id }),
+      });
+      if (!addRes.ok) {
+        toast({ title: 'Failed to move item', variant: 'destructive' });
+        return;
+      }
+      const delRes = await fetch(`/api/v1/wishlists/${id}/items/${item.itemId}`, { method: 'DELETE' });
+      if (!delRes.ok) {
+        toast({ title: 'Item was added to the other list, but could not be removed here', variant: 'destructive' });
+        return;
+      }
+      toast({ title: 'Item moved' });
+      fetchDetail();
+    } catch {
+      toast({ title: 'Failed to move item', variant: 'destructive' });
+    } finally {
+      setMovingId(null);
     }
   };
 
@@ -233,6 +281,33 @@ export default function DashboardWishlistDetailPage() {
                     <Trash2 className="h-4 w-4 text-red-500" />
                   </Button>
                 </div>
+                {otherLists.length > 0 && (
+                  <div className="mt-3 flex gap-2">
+                    <select
+                      className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                      value={moveTarget[item.itemId] ?? ''}
+                      onChange={(e) =>
+                        setMoveTarget((prev) => ({ ...prev, [item.itemId]: e.target.value }))
+                      }
+                      aria-label={`Move ${item.product.name} to another wishlist`}
+                    >
+                      <option value="">Move to…</option>
+                      {otherLists.map((list) => (
+                        <option key={list.id} value={list.id}>
+                          {list.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!moveTarget[item.itemId] || movingId === item.itemId}
+                      onClick={() => void moveItem(item)}
+                    >
+                      {movingId === item.itemId ? 'Moving…' : 'Move'}
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
