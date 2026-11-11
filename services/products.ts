@@ -186,6 +186,14 @@ export async function getProducts(
         count: 'exact',
       })
       .is('deleted_at', null)
+      // Exclude the database health-check row ('sample-laptop'). Every
+      // other caller already excludes it (recommendations, bundles,
+      // gifts, sustainability); this was the one leak, surfacing it
+      // in the public products API and the /brands/* + /categories/*
+      // pages. Excluding in the query (not post-filtering) keeps the
+      // exact count / pagination honest. The row itself stays in the
+      // live database for health checks — it is never deleted here.
+      .neq('slug', 'sample-laptop')
       .order('created_at', { ascending: false })
       .range(offset, offset + pageSize - 1);
 
