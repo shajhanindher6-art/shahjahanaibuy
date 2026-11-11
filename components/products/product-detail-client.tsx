@@ -121,9 +121,29 @@ const StoreSplitSection = dynamic(
   () => import('@/components/products/store-split-section').then((m) => m.StoreSplitSection),
   { ssr: false, loading: () => <LoadingSpinner /> }
 );
-import { TrustCheckSection } from '@/components/products/trust-check-section';
-import { FakeNessChecker } from '@/components/products/fake-ness-checker';
-import { SmartPool } from '@/components/pools/smart-pool';
+// Section 10 Chunk 3: below-fold trust/pool sections — dynamic with
+// ssr:false so they stay out of the First Load bundle (350 kB
+// budget), same pattern as the calculators above. Client component,
+// so .then() on the dynamic import is fine here (the crash rule
+// bans it only in Server Components).
+const TrustCheckSection = dynamic(
+  () =>
+    import('@/components/products/trust-check-section').then(
+      (m) => m.TrustCheckSection
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const FakeNessChecker = dynamic(
+  () =>
+    import('@/components/products/fake-ness-checker').then(
+      (m) => m.FakeNessChecker
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
+const SmartPool = dynamic(
+  () => import('@/components/pools/smart-pool').then((m) => m.SmartPool),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
 const UpcyclingBlueprints = dynamic(
   () =>
     import('@/components/products/upcycling-blueprints').then(
@@ -265,9 +285,30 @@ const CashbackCouponsSection = dynamic(
     ),
   { loading: () => <LoadingSpinner /> }
 );
-import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
-import { WishlistButton } from '@/components/products/wishlist-button';
-import { ShareButtons } from '@/components/products/share-buttons';
+// Section 10 Chunk 3: hero action buttons — dynamic (SSR kept, no
+// ssr:false: they are first-paint content) so their chunks split out
+// of the First Load bundle, same pattern as the tab components above.
+const PriceAlertDialog = dynamic(
+  () =>
+    import('@/components/products/price-alert-dialog').then(
+      (m) => m.PriceAlertDialog
+    ),
+  { loading: () => <LoadingSpinner /> }
+);
+const WishlistButton = dynamic(
+  () =>
+    import('@/components/products/wishlist-button').then(
+      (m) => m.WishlistButton
+    ),
+  { loading: () => <LoadingSpinner /> }
+);
+const ShareButtons = dynamic(
+  () =>
+    import('@/components/products/share-buttons').then(
+      (m) => m.ShareButtons
+    ),
+  { loading: () => <LoadingSpinner /> }
+);
 const AIReviewSummarizer = dynamic(
   () =>
     import('@/components/products/ai-review-summarizer').then(
@@ -290,8 +331,20 @@ import { trackAffiliateClick } from '@/lib/affiliate-beacon';
 import { getRegionByCountry } from '@/lib/region';
 import { tFor } from '@/lib/i18n';
 import type { ProductInitialData } from '@/lib/product-seo';
-import { SiteHeader } from '@/components/layout/site-header';
-import { SiteFooter } from '@/components/layout/site-footer';
+// Section 10 Chunk 3: header/footer — dynamic so their chunks split
+// out of the First Load bundle. SiteHeader is first-paint, so it
+// keeps SSR (no ssr:false); SiteFooter sits at the very bottom of
+// the page, so ssr:false defers it until after hydration.
+const SiteHeader = dynamic(
+  () =>
+    import('@/components/layout/site-header').then((m) => m.SiteHeader),
+  { loading: () => <LoadingSpinner /> }
+);
+const SiteFooter = dynamic(
+  () =>
+    import('@/components/layout/site-footer').then((m) => m.SiteFooter),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
 import {
   bestCoupon,
   couponValueLabel,
@@ -357,7 +410,16 @@ import {
   type ProductTranslation,
 } from '@/lib/product-translations';
 import { estimateLandedCostForCheckout } from '@/lib/local-payments';
-import { TrustScoreCard } from '@/components/merchant/trust-score-card';
+// Section 10 Chunk 3: per-merchant trust card — dynamic with
+// ssr:false (it renders in the below-hero Where-to-Buy rows, gated
+// on merchantTrustLoaded) so it stays out of the First Load bundle.
+const TrustScoreCard = dynamic(
+  () =>
+    import('@/components/merchant/trust-score-card').then(
+      (m) => m.TrustScoreCard
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
 import { VerifiedMerchantBadge } from '@/components/merchant/verified-badge';
 import { AccuracyFlag } from '@/components/merchant/accuracy-flag';
 import {
@@ -1164,9 +1226,20 @@ export default function ProductDetailClient({
           <Card className="overflow-hidden">
             <div className="flex h-80 items-center justify-center bg-slate-100 dark:bg-slate-800">
               {product.imageUrl && !imageFailed ? (
+                // Section 10 Chunk 3: next/image does NOT fit here —
+                // product images come from arbitrary merchant hosts
+                // (seed: i.ebayimg.com, example.com) while
+                // next.config.js remotePatterns allows only
+                // unsplash/pexels, and next.config.js is outside this
+                // chunk's file list — next/image would throw
+                // "Invalid src prop" and break the hero image. So
+                // the sanctioned fallback: lazy + sized raw img (the
+                // h-80 container already sizes it, so no CLS).
                 <img
                   src={product.imageUrl}
                   alt={product.name}
+                  loading="lazy"
+                  decoding="async"
                   onError={() => setImageFailed(true)}
                   className="h-full w-full object-cover"
                 />

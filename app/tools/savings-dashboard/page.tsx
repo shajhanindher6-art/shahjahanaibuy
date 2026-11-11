@@ -85,7 +85,9 @@ export default function SavingsDashboardPage() {
             How much you have actually saved — from confirmed savings only.
             Every figure below is computed from your recorded savings
             ledger at read time. Nothing is estimated, and nothing is
-            added for a deal you did not confirm.
+            added for a deal you did not confirm. Every figure uses
+            deterministic rules on your confirmed savings ledger —
+            no LLM, nothing guessed.
           </p>
 
           {!signedIn ? (

@@ -170,35 +170,39 @@ export default function DealsPage() {
           {DEAL_CATEGORIES.map((cat) => {
             const Icon = cat.icon;
             return (
-              <button
+              <Button
                 key={cat.key}
+                type="button"
+                variant="outline"
                 onClick={() => setActiveCategory(cat.key)}
                 className={cn(
                   // Touch target ≥44px (S3#22): min-h keeps the pill
                   // look while the hit area meets the minimum.
-                  'flex min-h-[44px] items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-all',
+                  'flex h-auto min-h-[44px] items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all',
                   activeCategory === cat.key
-                    ? 'border-blue-600 bg-blue-600 text-white'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                    ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-600 hover:text-white'
+                    : 'bg-card text-foreground hover:border-blue-300 dark:bg-muted'
                 )}
               >
                 <Icon className="h-4 w-4" />
                 {cat.label}
-              </button>
+              </Button>
             );
           })}
-          <button
+          <Button
+            type="button"
+            variant="outline"
             onClick={() => setFeaturedOnly(!featuredOnly)}
             className={cn(
-              'flex min-h-[44px] items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-all',
+              'flex h-auto min-h-[44px] items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all',
               featuredOnly
-                ? 'border-amber-500 bg-amber-500 text-white'
-                : 'border-slate-200 bg-white text-slate-700 hover:border-amber-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                ? 'border-amber-500 bg-amber-500 text-white hover:bg-amber-500 hover:text-white'
+                : 'bg-card text-foreground hover:border-amber-300 dark:bg-muted'
             )}
           >
             <Sparkles className="h-4 w-4" />
             Featured Only
-          </button>
+          </Button>
         </div>
 
         {/* S5#13 — curated deal of the day for the visitor's
@@ -406,7 +410,7 @@ function DealCard({ deal, featured, onClick }: { deal: RankedDeal; featured?: bo
         </div>
 
         {deal.product?.imageUrl && (
-          <div className="relative mb-3 h-32 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
+          <div className="relative mb-3 h-32 overflow-hidden rounded-lg bg-muted">
             {/* next/image with `unoptimized`: product image hosts are
                 not in next.config remotePatterns (only Unsplash /
                 Pexels are), so optimization would reject them at

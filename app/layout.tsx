@@ -169,20 +169,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   // S5#12 RTL + lang: the saved sb-language cookie is the only
   // server-known language. A supported saved language sets both
   // <html lang> and dir (rtl for Arabic); anything else stays
-  // lang="en" dir="ltr". The client provider still owns live
-  // switching — it sets document.documentElement.lang on change
-  // (dir flips on the next load; see lib/i18n.ts).
+  // lang="en" dir="ltr". The client provider owns live switching
+  // and flips BOTH lang and dir on change, no reload needed
+  // (components/region/region-provider.tsx sets
+  // document.documentElement.dir in its [language] effect).
   const htmlLang =
     savedLanguage && isSupportedLanguage(savedLanguage) ? savedLanguage : 'en';
   const htmlDir = isRtlLanguage(htmlLang) ? 'rtl' : 'ltr';
   // Site-wide structured data (S4#15 builders, imported only):
   // WebApplication (existing) + Organization + WebSite in one
-  // @graph. No SearchAction — /search ignores ?q= — and no
-  // social profiles: no verified handle exists.
+  // @graph. SearchAction IS wired: /search reads `?q=` (Section
+  // 10, chunk 1), so the sitelinks search box target is real.
+  // No social profiles: no verified handle exists.
   const siteJsonLd = toJsonLdGraph(
     structuredData,
     buildOrganizationJsonLd(appConfig.url),
-    buildWebSiteJsonLd(appConfig.url)
+    buildWebSiteJsonLd(appConfig.url, `${appConfig.url}/search?q={search_term_string}`)
   );
   return (
     <html lang={htmlLang} dir={htmlDir} suppressHydrationWarning>
@@ -199,13 +201,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className={`${inter.variable} font-sans antialiased`}>
+        {/* Skip link (Section 10, 2026-11-11): first focusable
+            element on every page. Jumps to the #main-content wrapper
+            below (pages render their own <main> inside it); the link
+            is visually hidden until keyboard focus. */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+        >
+          Skip to content
+        </a>
         <Providers
           initialCountryCode={initialCountryCode}
           initialLanguage={savedLanguage as Language | null}
           initialSource={initialSource}
           nonce={nonce}
         >
-          <PageTransition>{children}</PageTransition>
+          <div id="main-content" tabIndex={-1} className="outline-none">
+            <PageTransition>{children}</PageTransition>
+          </div>
           <Toaster />
           <ServiceWorkerRegister />
           <InstallPrompt />

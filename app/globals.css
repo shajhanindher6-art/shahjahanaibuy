@@ -106,6 +106,16 @@
     @apply bg-background text-foreground;
     font-feature-settings: 'rlig' 1, 'calt' 1;
   }
+  /* Global keyboard-focus style (Section 10, 2026-11-11): every
+     focusable element gets a visible 2px ring-colour outline
+     unless the component defines its own :focus-visible style
+     (e.g. Button's focus-visible:ring-2, which wins on
+     specificity). Without this, plain links and custom controls
+     showed no focus indicator at all. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
 }
 
 /* AI Glass dashboard — frosted-glass card used by the dashboard

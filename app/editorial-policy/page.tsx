@@ -1,7 +1,17 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { appConfig } from '@/lib/config/app';
+
+export const metadata: Metadata = {
+  title: 'Editorial Policy — SmartBuy AI',
+  description:
+    'How SmartBuy AI writes, checks, and corrects its blog — and what it never publishes.',
+  alternates: {
+    canonical: `${appConfig.url}/editorial-policy`,
+  },
+};
 
 export default function EditorialPolicyPage() {
   return (
@@ -37,7 +47,7 @@ export default function EditorialPolicyPage() {
             price, and no affiliate or partnership claim.
           </p>
           <p className="mt-4 text-muted-foreground">
-            Articles are written in English. The rest of the site works in eight languages,
+            Articles are written in English. The rest of the site works in 20 languages,
             but blog content is English only, and it is not machine-translated and presented
             as native copy.
           </p>

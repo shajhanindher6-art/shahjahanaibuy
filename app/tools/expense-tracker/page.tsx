@@ -14,6 +14,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
@@ -70,6 +71,7 @@ export default function ExpensesPage() {
   const [trend, setTrend] = useState<MonthTrendPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [unauthorized, setUnauthorized] = useState(false);
   const [expensesEnabled, setExpensesEnabled] = useState(true);
   const [monthValue, setMonthValue] = useState(currentMonthValue());
   const [budgets, setBudgets] = useState<Partial<Record<ExpenseCategory, number>>>({});
@@ -91,6 +93,11 @@ export default function ExpensesPage() {
       const params = new URLSearchParams({ year, month: monthNum });
       const res = await fetch(`/api/v1/tools/expenses?${params.toString()}`);
       const json = await res.json().catch(() => null);
+      if (res.status === 401) {
+        setUnauthorized(true);
+        return;
+      }
+      setUnauthorized(false);
       if (res.ok && json?.success && json.data) {
         const data = json.data as ExpensesResponse;
         setExpenses(data.expenses);
@@ -160,6 +167,8 @@ export default function ExpensesPage() {
         setNote('');
         setFormOk(true);
         await load(monthValue);
+      } else if (res.status === 401) {
+        setFormError('Sign in to record an expense.');
       } else {
         setFormError(json?.error?.message ?? 'Could not record the expense. Try again.');
       }
@@ -181,7 +190,9 @@ export default function ExpensesPage() {
           Monthly spend by category, from expenses you record yourself.
           The amount is always entered by you or taken from a recorded
           price — never guessed. No receipt photos are uploaded: nothing
-          leaves your device except the numbers you type.
+          leaves your device except the numbers you type. Totals, trends
+          and budget flags are computed with deterministic rules from
+          your recorded expenses — no LLM, nothing guessed.
         </p>
 
         {!expensesEnabled && (
@@ -279,6 +290,18 @@ export default function ExpensesPage() {
         <div className="mt-6">
           {loading ? (
             <LoadingSpinner />
+          ) : unauthorized ? (
+            <div>
+              <EmptyState
+                title="Sign in to see your expenses"
+                description="Your expenses are private to your account."
+              />
+              <p className="mt-4 text-sm">
+                <Link href="/sign-in" className="underline">
+                  Sign in
+                </Link>
+              </p>
+            </div>
           ) : failed ? (
             <EmptyState
               title="Expenses could not be loaded"

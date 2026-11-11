@@ -1,5 +1,16 @@
+import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { appConfig } from '@/lib/config/app';
+
+export const metadata: Metadata = {
+  title: 'Terms of Service — SmartBuy AI',
+  description:
+    'SmartBuy AI Terms of Service (draft for owner review): using the site, accounts, retailer links, affiliate links, and plans.',
+  alternates: {
+    canonical: `${appConfig.url}/terms`,
+  },
+};
 
 /**
  * Terms of Service — DRAFT for owner review before launch (see the

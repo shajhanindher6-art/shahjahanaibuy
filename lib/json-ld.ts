@@ -67,9 +67,9 @@ export function buildBreadcrumbJsonLd(
 /**
  * WebSite schema. `searchUrlTemplate` adds the SearchAction
  * (sitelinks search box) — pass it ONLY when the target actually
- * honours the query: /search does not read `?q=` yet (Section 2,
- * item 30g), so no page wires a SearchAction today. When /search
- * gains `?q=` support, wire `${siteUrl}/search?q={search_term_string}`.
+ * honours the query. /search reads `?q=` (Section 10, chunk 1:
+ * deep-linkable / shareable search), so the layout wires
+ * `${siteUrl}/search?q={search_term_string}`.
  */
 export function buildWebSiteJsonLd(
   siteUrl: string,

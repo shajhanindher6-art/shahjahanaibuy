@@ -1,6 +1,16 @@
+import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { appConfig } from '@/lib/config/app';
+
+export const metadata: Metadata = {
+  title: 'Privacy Policy — SmartBuy AI',
+  description:
+    'SmartBuy AI Privacy Policy (draft for owner review): what is collected, how it is used, and what stays on your own device.',
+  alternates: {
+    canonical: `${appConfig.url}/privacy`,
+  },
+};
 
 /**
  * Privacy Policy — DRAFT for owner review before launch (see the

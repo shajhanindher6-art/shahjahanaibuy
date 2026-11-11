@@ -35,8 +35,8 @@ function getScoreColor(score: number): { bg: string; text: string; ring: string;
     };
   }
   return {
-    bg: 'bg-slate-400',
-    text: 'text-slate-600 dark:text-slate-400',
+    bg: 'bg-muted-foreground',
+    text: 'text-muted-foreground',
     ring: 'ring-slate-400/20',
     label: 'Wait for Better Price',
   };

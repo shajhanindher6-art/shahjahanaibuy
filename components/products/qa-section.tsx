@@ -5,9 +5,6 @@
  * visitor ask a new one. Answers come from the SmartBuy team (admin)
  * — never auto-generated. With no questions it shows an honest empty
  * state ("No questions yet"), never seeded Q&A.
- *
- * Wiring note (wave 2): this component is NOT yet mounted in
- * product-detail-client.tsx — that wiring is a separate step.
  */
 
 'use client';

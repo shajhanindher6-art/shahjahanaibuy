@@ -144,20 +144,22 @@ export function BundleAllocator() {
             ) : (
               <div className="flex flex-wrap gap-2">
                 {categories.map((category) => (
-                  <button
+                  <Button
                     key={category}
                     type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => toggleCategory(category)}
                     aria-pressed={selected.includes(category)}
                     className={cn(
-                      'rounded-full border px-3 py-1.5 text-sm transition-colors',
+                      'h-auto rounded-full px-3 py-1.5 text-sm transition-colors',
                       selected.includes(category)
-                        ? 'border-blue-600 bg-blue-600 text-white'
-                        : 'border-slate-300 hover:border-blue-400 dark:border-slate-600'
+                        ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-600 hover:text-white'
+                        : 'hover:border-blue-400'
                     )}
                   >
                     {category}
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}
@@ -204,12 +206,14 @@ export function BundleAllocator() {
                   {result.picks.map((pick) => (
                     <li key={pick.id} className="flex items-center justify-between gap-3 py-3">
                       <div>
-                        <button
+                        <Button
+                          type="button"
+                          variant="link"
                           onClick={() => router.push(`/products/${pick.slug}`)}
-                          className="font-medium hover:underline"
+                          className="h-auto justify-start p-0 font-medium text-inherit hover:text-inherit"
                         >
                           {pick.name}
-                        </button>
+                        </Button>
                         <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
                           <span>{pick.category}</span>
                           {pick.brand && <span>{pick.brand}</span>}

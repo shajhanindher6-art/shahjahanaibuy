@@ -54,7 +54,7 @@ export function AnimatedStat({ icon: Icon, label, value, subtext, href }: Animat
         <Icon className="h-5 w-5" />
       </div>
       <p className="text-2xl font-bold tabular-nums">{display.toLocaleString()}</p>
-      <p className="mt-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">{label}</p>
+      <p className="mt-0.5 text-xs font-medium text-muted-foreground">{label}</p>
       <p className="mt-0.5 text-xs text-muted-foreground">{subtext}</p>
     </Link>
   );

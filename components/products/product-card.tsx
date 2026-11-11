@@ -40,7 +40,7 @@ export function ProductCard({ product, href, className, showReason }: ProductCar
   return (
     <Card className={cn('group cursor-pointer overflow-hidden transition-all hover:shadow-lg hover:border-blue-200 focus-within:ring-2 focus-within:ring-blue-600 dark:hover:border-blue-800', className)}>
       <Link href={link} aria-label={`View ${product.name}`} className="block focus-visible:outline-none">
-        <div className="relative h-40 overflow-hidden bg-slate-100 dark:bg-slate-800">
+        <div className="relative h-40 overflow-hidden bg-muted">
           {product.imageUrl && !imageFailed ? (
             <img
               src={product.imageUrl}
@@ -71,6 +71,10 @@ export function ProductCard({ product, href, className, showReason }: ProductCar
           )}
           {product.dealScore == null && product.matchScore != null && (
             <div className="absolute right-2 top-2">
+              {/* Intentionally NOT a design token (Section 10 sweep):
+                  this chip sits on the product image and must stay a
+                  dark translucent surface with white text in BOTH
+                  modes — bg-foreground would flip light in dark mode. */}
               <span className="rounded-full bg-slate-900/80 px-2 py-1 text-xs font-semibold text-white">
                 Match {Math.round(Math.max(0, Math.min(100, product.matchScore)))}%
               </span>

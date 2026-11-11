@@ -85,7 +85,7 @@ export function CategoryInflation({ className }: { className?: string }) {
                       'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold',
                       entry.direction === 'up' && 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
                       entry.direction === 'down' && 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-                      entry.direction === 'flat' && 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                      entry.direction === 'flat' && 'bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground'
                     )}
                   >
                     {entry.direction === 'up' ? (

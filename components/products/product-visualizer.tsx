@@ -83,7 +83,7 @@ export function ProductVisualizer({
       {dimensions && boxStyle ? (
         <div>
           <div
-            className="relative rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900"
+            className="relative rounded-lg border border-slate-200 bg-muted/50 p-4 dark:border-slate-700 dark:bg-card"
             aria-label={`Dimension diagram for ${productName}`}
           >
             <div
@@ -106,7 +106,7 @@ export function ProductVisualizer({
           </p>
           <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
             <div
-              className="h-2 bg-slate-400"
+              className="h-2 bg-muted-foreground"
               style={{
                 width: Math.max(
                   8,

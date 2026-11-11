@@ -57,10 +57,10 @@ export function FakeNessChecker({ slug }: { slug: string }) {
     return (
       <div className="rounded-xl border p-4">
         <div className="flex items-start gap-3">
-          <Clock className="mt-0.5 h-6 w-6 flex-shrink-0 text-slate-400" />
+          <Clock className="mt-0.5 h-6 w-6 flex-shrink-0 text-muted-foreground" />
           <div>
             <h4 className="font-bold">Not enough history to check</h4>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{result.reason}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{result.reason}</p>
           </div>
         </div>
       </div>
@@ -100,7 +100,7 @@ export function FakeNessChecker({ slug }: { slug: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="font-bold">{title}</h4>
             {result.risePct !== null && (
-              <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+              <span className="text-xs font-medium text-muted-foreground">
                 Rise {pct(result.risePct)}
                 {result.dropPct !== null && result.dropPct > 0
                   ? ` · Drop ${pct(-result.dropPct)}`
@@ -108,8 +108,8 @@ export function FakeNessChecker({ slug }: { slug: string }) {
               </span>
             )}
           </div>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{result.reason}</p>
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-sm text-muted-foreground">{result.reason}</p>
+          <p className="mt-2 text-xs text-muted-foreground">
             Based on {result.pointCount} recorded price
             {result.pointCount === 1 ? '' : 's'} over the last 30 days
             {result.spanDays > 0 ? ` (span ${result.spanDays} days)` : ''}. Pattern

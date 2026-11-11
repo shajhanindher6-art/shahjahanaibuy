@@ -112,6 +112,8 @@ export default function TradeInPage() {
             Before buying new, see what your old product is worth and
             where you can trade it in. Trade-in programs are listed
             only when a real program is confirmed — none are invented.
+            Values and programs come from recorded data with
+            deterministic rules — no LLM, nothing guessed.
           </p>
 
           <div className="mt-8">

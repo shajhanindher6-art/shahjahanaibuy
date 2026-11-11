@@ -38,7 +38,7 @@ export function RepairabilityMatrix({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Wrench className="h-5 w-5 text-slate-500" />
+          <Wrench className="h-5 w-5 text-muted-foreground" />
           Repairability{title ? ` — ${title}` : ''}
         </CardTitle>
         <CardDescription>
@@ -72,7 +72,7 @@ export function RepairabilityMatrix({
                         : 'Not Recommended for Long-Term Use'}
                   </Badge>
                 </div>
-                <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+                <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-muted">
                   <div
                     className={cn(
                       'h-full rounded-full',

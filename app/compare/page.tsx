@@ -276,18 +276,20 @@ export default function ComparePage() {
             {showSearch && searchResults.length > 0 && (
               <div className="mt-4 space-y-2 rounded-lg border border-slate-200 p-2 dark:border-slate-700">
                 {searchResults.map((product) => (
-                  <button
+                  <Button
                     key={product.id}
+                    type="button"
+                    variant="ghost"
                     onClick={() => addProduct({ id: product.id, name: product.name, slug: product.slug })}
                     aria-label={`Add ${product.name} to comparison`}
-                    className="flex min-h-[44px] w-full items-center justify-between rounded-md p-2 text-left transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 dark:hover:bg-slate-800"
+                    className="h-auto min-h-[44px] w-full justify-between whitespace-normal rounded-md p-2 text-left font-normal"
                   >
                     <div>
                       <span className="font-medium">{product.name}</span>
                       {product.brand && <span className="ml-2 text-sm text-muted-foreground">{product.brand}</span>}
                     </div>
                     <Plus className="h-4 w-4 text-blue-600" />
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}
@@ -297,13 +299,16 @@ export default function ComparePage() {
                 {selectedProducts.map((product) => (
                   <Badge key={product.id} variant="secondary" className="flex items-center gap-1 py-1.5">
                     {product.name}
-                    <button
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
                       onClick={() => removeProduct(product.id)}
                       aria-label={`Remove ${product.name} from comparison`}
-                      className="ml-1 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 dark:hover:bg-slate-700"
+                      className="ml-1 rounded-full"
                     >
                       <X className="h-3 w-3" />
-                    </button>
+                    </Button>
                   </Badge>
                 ))}
               </div>

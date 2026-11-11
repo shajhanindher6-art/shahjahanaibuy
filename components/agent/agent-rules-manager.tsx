@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import {
   loadGuestRules,
   newGuestRule,
@@ -200,14 +201,14 @@ export function AgentRulesManager({ signedIn }: { signedIn: boolean }) {
   }
 
   if (loading) {
-    return <p className="text-sm text-slate-500">Loading agent rules…</p>;
+    return <p className="text-sm text-muted-foreground">Loading agent rules…</p>;
   }
 
   return (
-    <section aria-label="Autonomous price rules" className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+    <section aria-label="Autonomous price rules" className="space-y-4 rounded-xl border border-slate-200 bg-card p-4 dark:border-slate-700">
       <div>
         <h3 className="text-base font-semibold">Autonomous rules — &ldquo;alert me under $…&rdquo;</h3>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
+        <p className="text-sm text-muted-foreground">
           Set a target price for a product and the agent watches it for you. When the recorded
           price drops to your target, the existing price-alert chain notifies you.
         </p>
@@ -235,7 +236,7 @@ export function AgentRulesManager({ signedIn }: { signedIn: boolean }) {
             value={productSlug}
             onChange={(e) => setProductSlug(e.target.value)}
             placeholder="e.g. macbook-air-13"
-            className="mt-1 block w-56 rounded-md border border-slate-300 px-2 py-1.5 dark:border-slate-600 dark:bg-slate-800"
+            className="mt-1 block w-56 rounded-md border border-slate-300 px-2 py-1.5 dark:border-slate-600 dark:bg-muted"
           />
         </label>
         <label className="block text-sm">
@@ -248,7 +249,7 @@ export function AgentRulesManager({ signedIn }: { signedIn: boolean }) {
             value={targetPrice}
             onChange={(e) => setTargetPrice(e.target.value)}
             placeholder="e.g. 800"
-            className="mt-1 block w-32 rounded-md border border-slate-300 px-2 py-1.5 dark:border-slate-600 dark:bg-slate-800"
+            className="mt-1 block w-32 rounded-md border border-slate-300 px-2 py-1.5 dark:border-slate-600 dark:bg-muted"
           />
         </label>
         {signedIn && (
@@ -257,7 +258,7 @@ export function AgentRulesManager({ signedIn }: { signedIn: boolean }) {
             <select
               value={channel}
               onChange={(e) => setChannel(e.target.value as 'email' | 'push' | 'both')}
-              className="mt-1 block rounded-md border border-slate-300 px-2 py-1.5 dark:border-slate-600 dark:bg-slate-800"
+              className="mt-1 block rounded-md border border-slate-300 px-2 py-1.5 dark:border-slate-600 dark:bg-muted"
             >
               <option value="email">Email</option>
               <option value="push">Push</option>
@@ -265,18 +266,18 @@ export function AgentRulesManager({ signedIn }: { signedIn: boolean }) {
             </select>
           </label>
         )}
-        <button
+        <Button
           type="button"
+          size="sm"
           onClick={() => void createRule()}
           disabled={saving || productSlug.trim() === '' || targetPrice.trim() === ''}
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
         >
           {saving ? 'Saving…' : 'Add rule'}
-        </button>
+        </Button>
       </div>
 
       {rules.length === 0 ? (
-        <p className="text-sm text-slate-500 dark:text-slate-400">
+        <p className="text-sm text-muted-foreground">
           No rules yet — add your first target price above.
         </p>
       ) : (
@@ -292,14 +293,14 @@ export function AgentRulesManager({ signedIn }: { signedIn: boolean }) {
               >
                 {rule.productName ?? rule.productSlug}
               </Link>
-              <span className="text-slate-500 dark:text-slate-400">
+              <span className="text-muted-foreground">
                 under ${rule.targetPriceUsd} · {rule.channel === 'local' ? 'device only' : rule.channel}
               </span>
               <span
                 className={
                   rule.active
                     ? 'rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700 dark:bg-green-950 dark:text-green-300'
-                    : 'rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                    : 'rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground dark:bg-muted dark:text-muted-foreground'
                 }
               >
                 {rule.active ? 'Watching' : 'Paused'}
@@ -310,20 +311,22 @@ export function AgentRulesManager({ signedIn }: { signedIn: boolean }) {
                 </span>
               )}
               <span className="ml-auto flex gap-2">
-                <button
+                <Button
                   type="button"
+                  variant="link"
                   onClick={() => void toggleRule(rule)}
-                  className="text-blue-600 hover:underline dark:text-blue-400"
+                  className="h-auto p-0 text-sm"
                 >
                   {rule.active ? 'Pause' : 'Resume'}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="link"
                   onClick={() => void deleteRule(rule)}
-                  className="text-red-600 hover:underline dark:text-red-400"
+                  className="h-auto p-0 text-sm text-red-600 hover:text-red-600 dark:text-red-400 dark:hover:text-red-400"
                 >
                   Delete
-                </button>
+                </Button>
               </span>
             </li>
           ))}

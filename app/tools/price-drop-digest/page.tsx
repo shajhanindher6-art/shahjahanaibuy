@@ -136,7 +136,9 @@ export default function PriceDropDigestPage() {
           <p className="mt-2 text-muted-foreground">
             One summary of the price drops on the products you watch — top
             deals first, with one line per deal explaining why it is a
-            deal. Nothing you do not watch ever appears here.
+            deal. Nothing you do not watch ever appears here. The digest
+            is assembled with deterministic rules from recorded price
+            drops on products you watch — no LLM, nothing guessed.
           </p>
 
           <div className="mt-8 flex flex-wrap items-center gap-3">

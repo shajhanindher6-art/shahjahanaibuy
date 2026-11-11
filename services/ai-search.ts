@@ -143,7 +143,14 @@ export async function aiSearch(
       .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at', {
         count: 'exact',
       })
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      // Exclude the database health-check row ('sample-laptop') —
+      // same exclusion as services/products.ts getProducts. Without
+      // it, search still surfaced the row even though the public
+      // products API and /brands + /categories pages exclude it.
+      // The row itself stays in the live database for health
+      // checks — it is never deleted here.
+      .neq('slug', 'sample-laptop');
 
     // Strip the WHOLE budget expression ("under 20K PKR", not just
     // "under 20"), or "K PKR" would leak into the product ilike

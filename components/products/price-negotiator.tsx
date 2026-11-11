@@ -191,7 +191,7 @@ export function PriceNegotiator({
         {gap && draft && (
           <div className="space-y-2">
             <Label>Message draft — copy and send it to the seller yourself</Label>
-            <p className="rounded-lg border bg-slate-50 p-3 text-sm leading-relaxed dark:bg-slate-900">
+            <p className="rounded-lg border bg-muted/50 p-3 text-sm leading-relaxed dark:bg-card">
               {draft}
             </p>
             <div className="flex flex-wrap gap-2">

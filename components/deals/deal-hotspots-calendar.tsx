@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import type { HotspotMonth } from '@/services/deal-hotspots';
 
 interface HotspotsResponse {
@@ -119,18 +120,21 @@ export function DealHotspotsCalendar({ className }: { className?: string }) {
                 const key = `${m.year}-${m.month}`;
                 const active = selected && `${selected.year}-${selected.month}` === key;
                 return (
-                  <button
+                  <Button
                     key={key}
+                    type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => setSelectedKey(key)}
                     className={cn(
-                      'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                      'h-auto rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
                       active
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                        ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-600 hover:text-white'
+                        : 'bg-muted text-foreground hover:bg-accent'
                     )}
                   >
                     {monthLabel(m.year, m.month)}
-                  </button>
+                  </Button>
                 );
               })}
             </div>

@@ -17,6 +17,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
@@ -60,6 +61,7 @@ export default function SubscriptionManagerPage() {
   const [rarelyUsedIds, setRarelyUsedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [unauthorized, setUnauthorized] = useState(false);
   const [subscriptionsEnabled, setSubscriptionsEnabled] = useState(true);
 
   const [name, setName] = useState('');
@@ -79,6 +81,11 @@ export default function SubscriptionManagerPage() {
     try {
       const res = await fetch('/api/v1/tools/consumer-subscriptions');
       const json = await res.json().catch(() => null);
+      if (res.status === 401) {
+        setUnauthorized(true);
+        return;
+      }
+      setUnauthorized(false);
       if (res.ok && json?.success && json.data) {
         const data = json.data as SubscriptionsResponse;
         setSubscriptions(data.subscriptions);
@@ -157,6 +164,8 @@ export default function SubscriptionManagerPage() {
         resetForm();
         setFormOk(true);
         await load();
+      } else if (res.status === 401) {
+        setFormError('Sign in to save a subscription.');
       } else {
         setFormError(
           json?.error?.message ?? 'Could not save the subscription. Try again.'
@@ -179,6 +188,8 @@ export default function SubscriptionManagerPage() {
       const json = await res.json().catch(() => null);
       if (res.ok && json?.success) {
         await load();
+      } else if (res.status === 401) {
+        setFormError('Sign in to manage subscriptions.');
       } else {
         setFormError(json?.error?.message ?? 'Could not remove the subscription. Try again.');
       }
@@ -197,7 +208,9 @@ export default function SubscriptionManagerPage() {
           place, with renewal reminders and flags for duplicates and
           subscriptions you rarely use. Cheaper alternatives are only
           suggested from real recorded prices: none is recorded, so none
-          is suggested here — never a made-up price.
+          is suggested here — never a made-up price. Reminders and
+          duplicate flags are computed with deterministic rules from the
+          subscriptions you record — no LLM, nothing guessed.
         </p>
 
         {!subscriptionsEnabled && (
@@ -290,6 +303,18 @@ export default function SubscriptionManagerPage() {
         <div className="mt-8">
           {loading ? (
             <LoadingSpinner />
+          ) : unauthorized ? (
+            <div>
+              <EmptyState
+                title="Sign in to manage your subscriptions"
+                description="Your subscriptions are private to your account."
+              />
+              <p className="mt-4 text-sm">
+                <Link href="/sign-in" className="underline">
+                  Sign in
+                </Link>
+              </p>
+            </div>
           ) : failed ? (
             <EmptyState
               title="Subscriptions could not be loaded"

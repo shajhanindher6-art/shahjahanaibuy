@@ -26,7 +26,7 @@ export function AuthenticityBlock({ authenticity }: AuthenticityBlockProps) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <ShieldCheck className="h-5 w-5 text-slate-500" />
+          <ShieldCheck className="h-5 w-5 text-muted-foreground" />
           Authenticity check
         </CardTitle>
         <CardDescription>

@@ -2,8 +2,8 @@
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useCallback, useMemo, useEffect, useRef, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, SlidersHorizontal, X, Star, TrendingDown, Link2, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +26,7 @@ import {
   VoiceSearchButton,
   speakSearchSummary,
 } from '@/components/search/voice-search-button';
+import { SearchAutocomplete } from '@/components/search/search-autocomplete';
 import { ProductSearchResults } from '@/components/search/product-search-results';
 import type { LocalFirstSearchData } from '@/services/local-first-search';
 import { useRegion } from '@/components/region/region-provider';
@@ -69,8 +70,9 @@ const SUGGESTED_QUERIES = [
   'Best noise cancelling headphones under $200',
 ];
 
-export default function SearchPage() {
+function SearchPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { language } = useRegion();
   const [query, setQuery] = useState('');
   // Voice search: set when a spoken transcript starts a search, so the
@@ -78,6 +80,11 @@ export default function SearchPage() {
   // for typed searches or filter changes).
   const voiceSearchRef = useRef(false);
   const voiceLangRef = useRef('en-US');
+  // ?q= guard (Section 10, chunk 1): the last query that was
+  // searched from the URL (or written to it by performSearch), so
+  // the ?q= effect below never re-runs a search that already ran
+  // when performSearch's router.replace re-renders the page.
+  const lastSearchedRef = useRef<string | null>(null);
   const [searchMode, setSearchMode] = useState<'text' | 'url'>('text');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [webResults, setWebResults] = useState<WebSearchResult[]>([]);
@@ -190,6 +197,17 @@ export default function SearchPage() {
     // here would still see the pre-click value.
     const effectiveMode = mode ?? searchMode;
 
+    // Deep-linkable search (Section 10, chunk 1): a text search
+    // writes ?q=… into the URL, so the search is shareable and
+    // bookmarkable, and the ?q= effect below re-runs it on load.
+    // lastSearchedRef stops that effect re-running the search we
+    // just did when the URL update re-renders the page.
+    if (effectiveMode === 'text') {
+      const trimmed = searchQuery.trim();
+      lastSearchedRef.current = trimmed;
+      router.replace(`/search?q=${encodeURIComponent(trimmed)}`);
+    }
+
     try {
       const body: Record<string, unknown> = { pageSize: 20 };
 
@@ -276,10 +294,28 @@ export default function SearchPage() {
     } finally {
       setLoading(false);
     }
-  }, [filters, searchMode, liveWeb]);
+  }, [filters, searchMode, liveWeb, router]);
+
+  // ?q= support (Section 10, chunk 1): /search?q=laptop runs the
+  // search on load — deep-linkable, shareable, bookmarkable, and
+  // the target the header search and the SearchAction JSON-LD
+  // point at. Runs once per distinct ?q= value (guarded by
+  // lastSearchedRef); filter/sort changes never re-trigger it.
+  useEffect(() => {
+    const q = searchParams.get('q')?.trim() ?? '';
+    if (!q) return;
+    if (lastSearchedRef.current === q) return;
+    lastSearchedRef.current = q;
+    setQuery(q);
+    setSearchMode('text');
+    void performSearch(q, 'text');
+  }, [searchParams, performSearch]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    // Empty submit clears the deep link instead of leaving a
+    // stale ?q= in the URL.
+    if (!query.trim()) router.replace('/search');
     performSearch(query);
   };
 
@@ -483,19 +519,32 @@ export default function SearchPage() {
           <div className="flex flex-wrap gap-2">
             <div className="relative min-w-[200px] flex-1">
               {searchMode === 'text' ? (
-                <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                <SearchAutocomplete
+                  value={query}
+                  onChange={setQuery}
+                  onSubmit={(q) => performSearch(q, 'text')}
+                  onSelectSuggestion={(suggestion) =>
+                    router.push(`/products/${suggestion.slug}`)
+                  }
+                  placeholder={tFor(language, 'searchPlaceholder')}
+                  inputId="search-page-input"
+                  ariaLabel="Search for products"
+                  autoFocus
+                />
               ) : (
-                <Link2 className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                <>
+                  <Link2 className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="url"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Paste a product URL (e.g. https://...)"
+                    aria-label="Paste a product URL to search"
+                    className="pl-10"
+                    autoFocus
+                  />
+                </>
               )}
-              <Input
-                type={searchMode === 'url' ? 'url' : 'text'}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={searchMode === 'url' ? 'Paste a product URL (e.g. https://...)' : tFor(language, 'searchPlaceholder')}
-                aria-label={searchMode === 'url' ? 'Paste a product URL to search' : 'Search for products'}
-                className="pl-10"
-                autoFocus
-              />
             </div>
             <Button type="submit" disabled={loading || !query.trim()} className="min-h-[44px]">
               {loading ? <LoadingSpinner size="sm" /> : 'Search'}
@@ -822,9 +871,21 @@ export default function SearchPage() {
                 <CardContent className="flex flex-col gap-4 p-4 sm:flex-row">
                   <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
                     {result.product.imageUrl && !failedImages.has(result.product.id) ? (
+                      // Lazy + sized <img> (Section 10, chunk 1):
+                      // next/image is NOT usable here — its
+                      // remotePatterns allowlist (next.config.js)
+                      // covers only unsplash/pexels, while product
+                      // photos come from merchant hosts, so Image
+                      // would throw at runtime. loading="lazy" +
+                      // explicit dimensions give the same
+                      // below-fold saving without the allowlist.
                       <img
                         src={result.product.imageUrl}
                         alt={result.product.name}
+                        width={96}
+                        height={96}
+                        loading="lazy"
+                        decoding="async"
                         className="h-full w-full object-cover"
                         onError={() =>
                           setFailedImages((prev) => new Set(prev).add(result.product.id))
@@ -975,9 +1036,16 @@ export default function SearchPage() {
                   <CardContent className="flex gap-4 p-4">
                     <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
                       {web.thumbnail ? (
+                        // Same lazy + sized <img> as the catalog
+                        // cards above (next/image allowlist does not
+                        // cover retailer thumbnail hosts).
                         <img
                           src={web.thumbnail}
                           alt={web.title}
+                          width={96}
+                          height={96}
+                          loading="lazy"
+                          decoding="async"
                           className="h-full w-full object-cover"
                           onError={(e) => {
                             (e.currentTarget as HTMLImageElement).style.display = 'none';
@@ -1037,5 +1105,22 @@ export default function SearchPage() {
       </div>
       <SiteFooter />
     </div>
+  );
+}
+
+// useSearchParams() requires a Suspense boundary in the App
+// Router (Next 13.5): the ?q= reader above is wrapped so the page
+// still builds and streams instead of failing the build.
+export default function SearchPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center">
+          <LoadingSpinner size="lg" />
+        </div>
+      }
+    >
+      <SearchPageContent />
+    </Suspense>
   );
 }

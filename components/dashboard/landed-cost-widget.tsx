@@ -149,7 +149,7 @@ export function LandedCostWidget() {
             <Link
               key={item.productId}
               href={`/products/${item.productSlug}`}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-lg p-2 transition-colors hover:bg-slate-100/70 dark:hover:bg-slate-800/70"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg p-2 transition-colors hover:bg-muted/70"
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{item.productName}</p>

@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import {
   AGENT_CATEGORIES,
   applyPreferencesUpdate,
@@ -205,14 +206,14 @@ export function AgentMemorySettings({ signedIn }: { signedIn: boolean }) {
   }
 
   if (loading) {
-    return <p className="text-sm text-slate-500">Loading agent memory…</p>;
+    return <p className="text-sm text-muted-foreground">Loading agent memory…</p>;
   }
 
   return (
-    <section aria-label="AI shopping agent memory" className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+    <section aria-label="AI shopping agent memory" className="space-y-4 rounded-xl border border-slate-200 bg-card p-4 dark:border-slate-700">
       <div>
         <h3 className="text-base font-semibold">AI shopping agent — memory</h3>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
+        <p className="text-sm text-muted-foreground">
           When memory is on, the assistant remembers your budget and preferences so you do not
           have to repeat them — and it can watch prices for you. Memory is yours: turn it off
           any time, or delete it entirely.
@@ -257,7 +258,7 @@ export function AgentMemorySettings({ signedIn }: { signedIn: boolean }) {
               value={budget}
               onChange={(e) => setBudget(e.target.value)}
               placeholder="e.g. 800"
-              className="mt-1 block w-full max-w-xs rounded-md border border-slate-300 px-2 py-1.5 dark:border-slate-600 dark:bg-slate-800"
+              className="mt-1 block w-full max-w-xs rounded-md border border-slate-300 px-2 py-1.5 dark:border-slate-600 dark:bg-muted"
             />
           </label>
 
@@ -288,7 +289,7 @@ export function AgentMemorySettings({ signedIn }: { signedIn: boolean }) {
               value={brands}
               onChange={(e) => setBrands(e.target.value)}
               placeholder="e.g. Apple, Samsung"
-              className="mt-1 block w-full max-w-xs rounded-md border border-slate-300 px-2 py-1.5 dark:border-slate-600 dark:bg-slate-800"
+              className="mt-1 block w-full max-w-xs rounded-md border border-slate-300 px-2 py-1.5 dark:border-slate-600 dark:bg-muted"
             />
           </label>
 
@@ -302,16 +303,18 @@ export function AgentMemorySettings({ signedIn }: { signedIn: boolean }) {
           </label>
 
           <div className="flex flex-wrap gap-2">
-            <button
+            <Button
               type="button"
+              size="sm"
               onClick={() => void save({ consent: true })}
               disabled={saving}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
               {saving ? 'Saving…' : 'Save preferences'}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => {
                 if (confirmDelete) {
                   setConfirmDelete(false);
@@ -321,10 +324,10 @@ export function AgentMemorySettings({ signedIn }: { signedIn: boolean }) {
                 }
               }}
               disabled={saving}
-              className="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:hover:bg-red-950"
+              className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-600 dark:border-red-800 dark:hover:bg-red-950"
             >
               {confirmDelete ? 'Click again to delete my memory' : 'Delete my memory'}
-            </button>
+            </Button>
           </div>
 
           <div>
@@ -332,7 +335,7 @@ export function AgentMemorySettings({ signedIn }: { signedIn: boolean }) {
               Products you have viewed ({memory.seenProductSlugs.length})
             </h4>
             {memory.seenProductSlugs.length === 0 ? (
-              <p className="text-sm text-slate-500 dark:text-slate-400">
+              <p className="text-sm text-muted-foreground">
                 No products viewed yet — products you open will appear here once memory is on.
               </p>
             ) : (
@@ -346,14 +349,15 @@ export function AgentMemorySettings({ signedIn }: { signedIn: boolean }) {
                     </li>
                   ))}
                 </ul>
-                <button
+                <Button
                   type="button"
+                  variant="link"
                   onClick={() => void clearSeen()}
                   disabled={saving}
-                  className="mt-2 text-sm text-slate-500 underline hover:text-slate-700 disabled:opacity-50 dark:text-slate-400"
+                  className="mt-2 h-auto p-0 text-sm text-muted-foreground hover:text-foreground"
                 >
                   Clear viewed products
-                </button>
+                </Button>
               </>
             )}
           </div>

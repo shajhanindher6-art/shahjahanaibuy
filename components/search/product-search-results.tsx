@@ -195,11 +195,24 @@ export function ProductSearchResults({ data, loading, error }: ProductSearchResu
               {products.map((product) => (
                 <Card key={product.id}>
                   <CardContent className="flex gap-4 p-4">
-                    <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
+                    <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
                       {product.imageUrl ? (
+                        // Lazy + explicitly sized (Section 10,
+                        // 2026-11-11): these thumbnails sit below the
+                        // fold in the Global tab and must not block
+                        // first paint or shift layout while loading.
+                        // next/image is NOT used here on purpose:
+                        // next.config.js only allowlists
+                        // images.unsplash.com / images.pexels.com,
+                        // and these are arbitrary merchant URLs, so
+                        // next/image would reject them.
                         <img
                           src={product.imageUrl}
                           alt={product.name}
+                          width={96}
+                          height={96}
+                          loading="lazy"
+                          decoding="async"
                           className="h-full w-full object-cover"
                           onError={(e) => {
                             (e.currentTarget as HTMLImageElement).style.display = 'none';

@@ -247,7 +247,7 @@ export default function TrackingPage() {
               <Card key={item.itemId} className="transition-shadow hover:shadow-md">
                 <CardContent className="p-4">
                   <Link href={`/products/${item.product.slug}`}>
-                    <div className="mb-3 h-32 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
+                    <div className="mb-3 h-32 overflow-hidden rounded-lg bg-muted">
                       {item.product.imageUrl ? (
                         <Image src={item.product.imageUrl} alt={item.product.name} width={512} height={256} className="h-full w-full object-cover" />
                       ) : (

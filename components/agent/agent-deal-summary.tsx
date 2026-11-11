@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { loadGuestRules, type AgentRule, type DealSummary } from '@/lib/agent-memory';
+import { Button } from '@/components/ui/button';
 
 interface SummaryResponse {
   success: boolean;
@@ -74,11 +75,11 @@ export function AgentDealSummary({ signedIn }: { signedIn: boolean }) {
   }, [load]);
 
   if (loading) {
-    return <p className="text-sm text-slate-500">Building your deal summary…</p>;
+    return <p className="text-sm text-muted-foreground">Building your deal summary…</p>;
   }
 
   return (
-    <section aria-label="Agent deal summary" className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+    <section aria-label="Agent deal summary" className="space-y-3 rounded-xl border border-slate-200 bg-card p-4 dark:border-slate-700">
       <h3 className="text-base font-semibold">Your deal summary</h3>
 
       {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
@@ -90,12 +91,12 @@ export function AgentDealSummary({ signedIn }: { signedIn: boolean }) {
 
       {!signedIn ? (
         <>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-sm text-muted-foreground">
             Sign in to see your deal summary — device-only rules are not checked in the
             background, so there is no current price to compare them against.
           </p>
           {guestRules.length === 0 ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-sm text-muted-foreground">
               No rules on this device yet.
             </p>
           ) : (
@@ -105,7 +106,7 @@ export function AgentDealSummary({ signedIn }: { signedIn: boolean }) {
                   <Link href={`/products/${rule.productSlug}`} className="font-medium text-blue-600 hover:underline dark:text-blue-400">
                     {rule.productName ?? rule.productSlug}
                   </Link>{' '}
-                  <span className="text-slate-500 dark:text-slate-400">
+                  <span className="text-muted-foreground">
                     — watching for under ${rule.targetPriceUsd} (device only, price not checked)
                   </span>
                 </li>
@@ -120,7 +121,7 @@ export function AgentDealSummary({ signedIn }: { signedIn: boolean }) {
             {summary.items.length > 0 && (
               <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                  <tr className="border-b border-slate-200 text-xs text-muted-foreground dark:border-slate-700 dark:text-muted-foreground">
                     <th scope="col" className="py-1 pr-2 font-medium">Product</th>
                     <th scope="col" className="py-1 pr-2 font-medium">Your target</th>
                     <th scope="col" className="py-1 pr-2 font-medium">Recorded price</th>
@@ -147,7 +148,7 @@ export function AgentDealSummary({ signedIn }: { signedIn: boolean }) {
                             Target met
                           </span>
                         ) : item.priceUnknown ? (
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground dark:bg-muted dark:text-muted-foreground">
                             No price recorded
                           </span>
                         ) : (
@@ -161,17 +162,18 @@ export function AgentDealSummary({ signedIn }: { signedIn: boolean }) {
                 </tbody>
               </table>
             )}
-            <div className="space-y-0.5 text-xs text-slate-500 dark:text-slate-400">
+            <div className="space-y-0.5 text-xs text-muted-foreground">
               {priceBasis && <p>{priceBasis}</p>}
               {generatedAt && <p>Generated {new Date(generatedAt).toLocaleString()}.</p>}
             </div>
-            <button
+            <Button
               type="button"
+              variant="link"
               onClick={() => void load()}
-              className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+              className="h-auto p-0 text-sm"
             >
               Refresh summary
-            </button>
+            </Button>
           </>
         )
       )}

@@ -20,10 +20,14 @@ const buttonVariants = cva(
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        default: 'h-10 px-4 py-2',
+        // Section 10 (2026-11-11) touch targets: default + icon are
+        // 44px (WCAG 2.2 target size). `sm` stays h-9 on purpose —
+        // 115 usages in dense layouts (tables, admin, dashboards)
+        // where 44px would break rows; `lg` was already h-11.
+        default: 'h-11 px-4 py-2',
         sm: 'h-9 rounded-md px-3',
         lg: 'h-11 rounded-md px-8',
-        icon: 'h-10 w-10',
+        icon: 'h-11 w-11',
       },
     },
     defaultVariants: {

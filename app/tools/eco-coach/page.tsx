@@ -130,7 +130,9 @@ export default function EcoCoachPage() {
           Set a monthly carbon budget and see how your month is going.
           Recorded carbon counts first; anything estimated is labeled as
           an estimate, and lower-carbon alternatives are real catalog
-          products with lower recorded carbon.
+          products with lower recorded carbon. Budgets and carbon totals
+          are computed with deterministic rules from recorded data —
+          no LLM, nothing guessed.
         </p>
 
         {!budgetEnabled && (

@@ -1,4 +1,10 @@
+import { Suspense } from 'react';
 import Link from 'next/link';
+import { createClient } from '@supabase/supabase-js';
+import { env } from '@/lib/config/env';
+import { getProducts } from '@/services/products';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Price } from '@/components/region/price';
 import {
   Brain,
   TrendingDown,
@@ -83,6 +89,130 @@ const steps = [
   },
 ];
 
+/**
+ * Featured-products strip (Section 10, chunk 1) — above the fold,
+ * directly under the hero.
+ *
+ * Async server component, same anon-client pattern as
+ * BrowseByTaxonomy: real products from getProducts (the existing
+ * catalog data path — the health-check row is already excluded
+ * there) with their latest recorded price_history price. A
+ * product with no recorded price shows "Price not listed", never
+ * a guessed price. When the catalog is empty or the query fails,
+ * the section shows an honest "nothing to show" line instead of
+ * inventing products or breaking the homepage.
+ */
+async function FeaturedProductsStrip() {
+  let products: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    brand: string | null;
+    category: string | null;
+    imageUrl: string | null;
+    price: number | null;
+  }> = [];
+  try {
+    const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey, {
+      auth: { persistSession: false },
+    });
+    const { products: rows } = await getProducts(supabase, { pageSize: 6 });
+    products = await Promise.all(
+      rows.map(async (product) => {
+        let price: number | null = null;
+        try {
+          const { data: priceData } = await supabase
+            .from('price_history')
+            .select('price')
+            .eq('product_id', product.id)
+            .order('recorded_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const parsed =
+            priceData && typeof (priceData as { price: number | string }).price !== 'undefined'
+              ? parseFloat(String((priceData as { price: number | string }).price))
+              : null;
+          price = Number.isFinite(parsed) ? (parsed as number) : null;
+        } catch {
+          // No price for this card — "Price not listed", no error.
+        }
+        return {
+          id: product.id,
+          name: product.name,
+          slug: product.slug,
+          brand: product.brand,
+          category: product.category,
+          imageUrl: product.imageUrl,
+          price,
+        };
+      })
+    );
+  } catch {
+    products = [];
+  }
+
+  return (
+    <section className="border-t py-12 md:py-16" aria-label="Featured products">
+      <div className="container mx-auto px-4">
+        <div className="mx-auto max-w-2xl text-center">
+          <h2 className="text-2xl font-bold tracking-tight md:text-3xl">Featured products</h2>
+          <p className="mt-2 text-muted-foreground">
+            Real products from our catalog, with their latest recorded prices.
+          </p>
+        </div>
+        {products.length === 0 ? (
+          <p className="mx-auto mt-8 max-w-xl text-center text-sm text-muted-foreground">
+            No featured products to show right now — please check back soon.
+          </p>
+        ) : (
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {products.map((product) => (
+              <Link key={product.id} href={`/products/${product.slug}`}>
+                <Card className="group h-full transition-shadow hover:shadow-lg">
+                  <CardContent className="p-4">
+                    <div className="mb-3 h-40 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
+                      {product.imageUrl ? (
+                        // Lazy + sized <img>: product photos come
+                        // from merchant hosts outside next/image's
+                        // remotePatterns allowlist (next.config.js),
+                        // so next/image would throw at runtime.
+                        <img
+                          src={product.imageUrl}
+                          alt={product.name}
+                          width={320}
+                          height={160}
+                          loading="lazy"
+                          decoding="async"
+                          className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                          <Search className="h-8 w-8" />
+                        </div>
+                      )}
+                    </div>
+                    <h3 className="font-semibold leading-tight">{product.name}</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {[product.brand, product.category].filter(Boolean).join(' · ') || 'SmartBuy catalog'}
+                    </p>
+                    <div className="mt-2">
+                      {product.price !== null ? (
+                        <Price usd={product.price} className="text-lg font-bold text-blue-600" />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Price not listed</span>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function HomePage() {
   return (
     <>
@@ -97,6 +227,39 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        {/* Featured products strip (Section 10, chunk 1) — above
+            the fold, directly under the hero. Wrapped in Suspense so
+            a slow or hanging catalog query never blocks the homepage
+            shell: the section skeleton streams immediately and the
+            strip swaps in when its data resolves (or renders its
+            honest empty state on error). */}
+        <Suspense
+          fallback={
+            <section className="border-t py-12 md:py-16" aria-label="Featured products">
+              <div className="container mx-auto px-4">
+                <div className="mx-auto max-w-2xl text-center">
+                  <h2 className="text-2xl font-bold tracking-tight md:text-3xl">Featured products</h2>
+                  <p className="mt-2 text-muted-foreground">
+                    Real products from our catalog, with their latest recorded prices.
+                  </p>
+                </div>
+                <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="rounded-lg border p-4">
+                      <Skeleton className="mb-3 h-40 w-full" />
+                      <Skeleton className="h-5 w-3/4" />
+                      <Skeleton className="mt-2 h-4 w-1/2" />
+                    </div>
+                  ))}
+                </div>
+                <span className="sr-only">Loading featured products…</span>
+              </div>
+            </section>
+          }
+        >
+          <FeaturedProductsStrip />
+        </Suspense>
 
         {/* Stats Bar — real counts from the public APIs (see
             components/home/stats-bar.tsx). The old bar claimed
@@ -177,8 +340,11 @@ export default function HomePage() {
             Links are derived from the products table at render time
             (components/home/browse-by-taxonomy.tsx); the section
             renders nothing when the catalog has no brands or
-            categories. */}
-        <BrowseByTaxonomy />
+            categories. Wrapped in id="browse" so the mobile nav
+            "Brands" link (Section 10, chunk 1) lands here. */}
+        <div id="browse">
+          <BrowseByTaxonomy />
+        </div>
 
         {/* How It Works */}
         <section id="how-it-works" className="border-y bg-muted/30 py-20 md:py-28">

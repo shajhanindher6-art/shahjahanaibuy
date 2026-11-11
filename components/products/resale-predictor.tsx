@@ -63,14 +63,14 @@ export function ResalePredictor({
     return (
       <div className="rounded-xl border p-4">
         <div className="flex items-start gap-3">
-          <Clock className="mt-0.5 h-6 w-6 flex-shrink-0 text-slate-400" />
+          <Clock className="mt-0.5 h-6 w-6 flex-shrink-0 text-muted-foreground" />
           <div>
             <h4 className="font-bold">Resale value — not enough history yet</h4>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            <p className="mt-1 text-sm text-muted-foreground">
               {prediction.reason}
             </p>
             {recordedAnnualRate === null || recordedAnnualRate === undefined ? (
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              <p className="mt-1 text-sm text-muted-foreground">
                 No recorded annual depreciation rate yet — depreciation data
                 is still accumulating.
               </p>
@@ -91,12 +91,12 @@ export function ResalePredictor({
             <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
               {prediction.retentionPct24}%
             </span>
-            <span className="text-sm text-slate-600 dark:text-slate-400">
+            <span className="text-sm text-muted-foreground">
               of value retained after 24 months
             </span>
           </div>
           {prediction.projectedValueUsd24 !== null && currentPriceUsd !== null && (
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            <p className="mt-1 text-sm text-muted-foreground">
               Projected value at 24 months: ${prediction.projectedValueUsd24.toFixed(2)} (from
               current ${currentPriceUsd.toFixed(2)})
             </p>
@@ -104,7 +104,7 @@ export function ResalePredictor({
           {prediction.curve && (
             <table className="mt-3 w-full max-w-xs text-sm">
               <thead>
-                <tr className="text-left text-xs text-slate-500 dark:text-slate-400">
+                <tr className="text-left text-xs text-muted-foreground">
                   <th className="py-1 pr-2 font-medium">After</th>
                   <th className="py-1 font-medium">Value retained</th>
                 </tr>
@@ -115,7 +115,7 @@ export function ResalePredictor({
                     key={c.month}
                     className="border-t border-slate-100 dark:border-slate-800"
                   >
-                    <td className="py-1 pr-2 text-slate-600 dark:text-slate-400">
+                    <td className="py-1 pr-2 text-muted-foreground">
                       {c.month} months
                     </td>
                     <td className="py-1 font-medium">{c.retentionPct}%</td>
@@ -124,16 +124,16 @@ export function ResalePredictor({
               </tbody>
             </table>
           )}
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+          <p className="mt-2 text-sm text-muted-foreground">
             {prediction.reason}
           </p>
           {prediction.source === 'recorded' && prediction.recordedAnnualRatePct !== null && (
-            <p className="mt-1 text-sm font-medium text-slate-700 dark:text-slate-300">
+            <p className="mt-1 text-sm font-medium text-foreground dark:text-muted-foreground">
               Recorded rate: {prediction.recordedAnnualRatePct}% per year —
               this overrides the decline derived from recorded prices.
             </p>
           )}
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-2 text-xs text-muted-foreground">
             Simulated — not a resale quote or guarantee.{' '}
             {prediction.source === 'recorded' ? (
               <>Based on the recorded annual depreciation rate.</>

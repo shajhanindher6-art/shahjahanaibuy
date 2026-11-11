@@ -21,6 +21,7 @@ import { X } from 'lucide-react';
 import { bannerText, tFor } from '@/lib/i18n';
 import { languageMeta } from '@/lib/region';
 import { useRegion } from './region-provider';
+import { Button } from '@/components/ui/button';
 
 export function RegionBanner() {
   const { region, language, setLanguage, bannerVisible, dismissBanner } = useRegion();
@@ -47,31 +48,35 @@ export function RegionBanner() {
         <span className="text-blue-800 dark:text-blue-200">
           {bannerText(language, region.name, region.currency)}
         </span>
-        <button
+        <Button
           type="button"
+          variant="link"
           onClick={focusSwitcher}
-          className="font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-100"
+          className="h-auto p-0 font-semibold text-blue-700 underline-offset-2 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-100"
         >
           {tFor(language, 'bannerChange')}
-        </button>
+        </Button>
         {offerLanguage && (
-          <button
+          <Button
             type="button"
+            variant="link"
             onClick={() => setLanguage(offerLanguage)}
             aria-label={`Switch language to ${languageMeta(offerLanguage).nativeName}`}
-            className="font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-100"
+            className="h-auto p-0 font-semibold text-blue-700 underline-offset-2 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-100"
           >
             {languageMeta(offerLanguage).nativeName}
-          </button>
+          </Button>
         )}
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           onClick={dismissBanner}
           aria-label={tFor(language, 'bannerDismiss')}
-          className="ml-1 rounded p-0.5 text-blue-700 hover:bg-blue-100 dark:text-blue-300 dark:hover:bg-blue-900"
+          className="ml-1 h-8 w-8 rounded p-0.5 text-blue-700 hover:bg-blue-100 hover:text-blue-700 dark:text-blue-300 dark:hover:bg-blue-900 dark:hover:text-blue-300"
         >
           <X className="h-4 w-4" />
-        </button>
+        </Button>
       </div>
     </div>
   );

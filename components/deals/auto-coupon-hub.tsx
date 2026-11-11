@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   bestCoupon,
   couponValueLabel,
@@ -130,14 +131,15 @@ export function AutoCouponHub({
                   : ''}
               </p>
             </div>
-            <button
+            <Button
               type="button"
-              className="rounded border border-dashed border-green-300 bg-green-50 px-2 py-1 font-mono text-xs font-bold text-green-700 dark:border-green-700 dark:bg-green-950 dark:text-green-300"
+              variant="outline"
+              className="h-auto rounded border-dashed border-green-300 bg-green-50 px-2 py-1 font-mono text-xs font-bold text-green-700 hover:bg-green-50 hover:text-green-700 dark:border-green-700 dark:bg-green-950 dark:text-green-300 dark:hover:bg-green-950 dark:hover:text-green-300"
               title="Copy coupon code — paste it at the retailer's checkout"
               onClick={() => copyCode(coupon.code)}
             >
               {copied === coupon.code ? 'Copied!' : `${coupon.code} (tap to copy)`}
-            </button>
+            </Button>
           </div>
         ))}
         {valid.length > bestPerMerchant.length && (

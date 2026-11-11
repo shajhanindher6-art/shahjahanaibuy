@@ -157,20 +157,22 @@ export function ReviewForm({ slug, onReviewAdded }: ReviewFormProps) {
             <p className="mb-1.5 text-sm font-medium">Your rating *</p>
             <div className="flex gap-1" role="radiogroup" aria-label="Star rating">
               {[1, 2, 3, 4, 5].map((value) => (
-                <button
+                <Button
                   key={value}
                   type="button"
+                  variant="ghost"
+                  size="icon"
                   onClick={() => setRating(value)}
                   aria-label={`${value} star${value === 1 ? '' : 's'}`}
-                  className="rounded p-0.5"
+                  className="h-8 w-8 rounded p-0.5 hover:bg-transparent"
                 >
                   <Star
                     className={cn(
                       'h-7 w-7',
-                      value <= rating ? 'fill-yellow-400 text-yellow-400' : 'text-slate-300'
+                      value <= rating ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'
                     )}
                   />
-                </button>
+                </Button>
               ))}
               {rating > 0 && <span className="ml-2 self-center text-sm text-muted-foreground">{rating} / 5</span>}
             </div>

@@ -20,8 +20,46 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Line, LineChart, ResponsiveContainer } from 'recharts';
+import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
+
+// Section 10 Chunk 3: recharts is code-split out of every page that
+// renders a sparkline (compare, search, tracking). The chart chunk
+// loads only after the price points arrive, so cards never pay the
+// recharts cost up front. ssr:false: the sparkline is client-fetched
+// anyway (it renders null until the prices request resolves), so
+// server rendering would show nothing either. Client component, so
+// .then() on the dynamic import is fine here (the crash rule bans
+// it only in Server Components).
+const TrendLineChart = dynamic(
+  () =>
+    import('recharts').then((m) => {
+      const { Line, LineChart, ResponsiveContainer } = m;
+      return {
+        default: function TrendLineChartInner({
+          data,
+          stroke,
+        }: {
+          data: Array<{ i: number; price: number }>;
+          stroke: string;
+        }) {
+          return (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
+                <Line type="monotone" dataKey="price" stroke={stroke} strokeWidth={2} dot={false} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          );
+        },
+      };
+    }),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-full w-full animate-pulse rounded bg-slate-100 dark:bg-slate-800" />
+    ),
+  }
+);
 
 interface PriceTrendSparklineProps {
   slug: string;
@@ -78,11 +116,7 @@ export function PriceTrendSparkline({ slug, className, showChange = false }: Pri
   return (
     <div className={cn('flex items-center gap-2', className)}>
       <div className="h-10 w-28 shrink-0">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
-            <Line type="monotone" dataKey="price" stroke={stroke} strokeWidth={2} dot={false} isAnimationActive={false} />
-          </LineChart>
-        </ResponsiveContainer>
+        <TrendLineChart data={chartData} stroke={stroke} />
       </div>
       {showChange && changePct !== null && (
         <span className={cn('text-xs font-medium', fell ? 'text-green-600' : changePct > 0 ? 'text-red-600' : 'text-muted-foreground')}>

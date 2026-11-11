@@ -52,7 +52,7 @@ export function GlobalReadinessCard({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Globe className="h-5 w-5 text-slate-500" />
+          <Globe className="h-5 w-5 text-muted-foreground" />
           Global Readiness{title ? ` — ${title}` : ''}
         </CardTitle>
         <CardDescription>

@@ -167,7 +167,8 @@ export default function FutureYouPlannerPage() {
             far) ÷ months remaining. Link a product and its current
             recorded price and alert status are shown — set a price-drop
             alert on the product page and you will be told when the deal
-            arrives.
+            arrives. The monthly amount is computed with a fixed formula
+            from your target and date — no LLM, nothing guessed.
           </p>
 
           {!signedIn ? (

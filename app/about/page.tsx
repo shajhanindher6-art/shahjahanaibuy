@@ -1,6 +1,17 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { appConfig } from '@/lib/config/app';
+
+export const metadata: Metadata = {
+  title: 'About — SmartBuy AI',
+  description:
+    'What SmartBuy AI is, what it does, and how it works — honest price tracking, deal scores, and reviews from real people only.',
+  alternates: {
+    canonical: `${appConfig.url}/about`,
+  },
+};
 
 export default function AboutPage() {
   return (
@@ -56,7 +67,7 @@ export default function AboutPage() {
             .
           </p>
           <p className="mt-4 text-muted-foreground">
-            The site works in eight languages and across sixty regions, with local stores
+            The site works in 20 languages and across 61 regions, with local stores
             listed by directory and link — never with invented local prices. What is
             recorded is shown; what is not recorded is shown as missing, not filled in.
           </p>

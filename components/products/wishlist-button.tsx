@@ -170,7 +170,7 @@ export function WishlistButton({ productId, productName, productSlug, variant = 
             {wishlists.map((wl) => (
               <div
                 key={wl.id}
-                className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+                className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:bg-muted/50 dark:hover:bg-muted"
               >
                 <div>
                   <span className="font-medium text-sm">{wl.name}</span>

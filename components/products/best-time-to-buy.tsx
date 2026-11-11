@@ -85,7 +85,7 @@ export function BestTimeToBuyIndicator({
               {Math.round(discountProbability)}% discount probability
             </span>
           </div>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{cfg.description}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{cfg.description}</p>
           {expectedSaleDate && rec !== 'buy_now' && (
             <p className={cn('mt-1.5 text-xs font-medium', cfg.text)}>
               Next predicted sale: {new Date(expectedSaleDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}

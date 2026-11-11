@@ -66,14 +66,14 @@ document for pages that emit a single script tag.
 
 | Schema | Where it is emitted | Status |
 |---|---|---|
-| `Organization` | — (builder ready) | **Wave 2** — belongs in `app/layout.tsx`, which this batch does not own. Wire `buildOrganizationJsonLd(appConfig.url)` into the layout's existing JSON-LD script. |
-| `WebSite` | — (builder ready) | **Wave 2** — same layout wiring as Organization. |
-| `WebSite` + `SearchAction` | — (builder supports it) | **Blocked** — `/search` does not read `?q=` yet (Section 2, item 30g, open user decision). A `SearchAction` pointing at a page that ignores the query would be misleading, so nothing emits one today. When `/search` gains `?q=` support, wire `${siteUrl}/search?q={search_term_string}`. |
+| `Organization` | Root layout (`app/layout.tsx`, `toJsonLdGraph` with `buildOrganizationJsonLd(appConfig.url)`) | **Live** — emitted site-wide in the layout's single JSON-LD `@graph`. |
+| `WebSite` | Root layout (`app/layout.tsx`, `toJsonLdGraph` with `buildWebSiteJsonLd(appConfig.url)`) | **Live** — emitted site-wide in the layout's single JSON-LD `@graph`. |
+| `WebSite` + `SearchAction` | — (builder supports it) | **Live** — `/search` reads `?q=` (Section 10) and `app/layout.tsx` emits `SearchAction` targeting `${siteUrl}/search?q={search_term_string}`. |
 | `BreadcrumbList` | Product pages (`lib/product-seo.ts`, Home → product) and blog articles (`app/blog/[slug]/page.tsx`, Home → Blog → article) | **Live in this batch.** No `/products` index page exists, so the product breadcrumb has no intermediate crumb. |
 | `Product` (+ `Offer`, `AggregateRating`) | Product pages via `lib/product-seo.ts` | **Live**, extended in this batch: now a `@graph` with the breadcrumb. |
 | `Article` | Blog articles (`app/blog/[slug]/page.tsx`) | **Live in this batch.** Author is a `Person` only when a name is recorded, otherwise the publishing `Organization`; `dateModified` only when a real update date exists. |
-| `FAQPage` | — (builder ready) | **No source yet** — there is no FAQ content source (no FAQ page data, no Q&A records). Wire `buildFaqJsonLd` when a real FAQ page exists; never invent questions/answers. |
-| `ItemList` | — (builder ready) | **Wave 2** — belongs on `/search` results and `/blog` listing, which this batch does not own. Callers must pass only real page URLs. |
+| `FAQPage` | Help Center (`app/help/page.tsx`, `buildFaqJsonLd` over the page's own FAQ list) and the standalone FAQ page (`app/faq/page.tsx`, same list imported from `/help` — one source of truth) | **Live** (Section 10, chunk 2). The FAQ source finally exists, so the builder is wired — no invented Q&A. |
+| `ItemList` | Search results (`app/search/page.tsx`, `buildItemListJsonLd` over the displayed catalog results) and brand/category listings (`lib/brand-category-seo.ts`, `app/brands/[slug]` + `app/categories/[slug]` — only when the listing is non-empty) | **Live** (Section 9 for brands/categories, search results wired in this batch's era). Callers pass only real page URLs. |
 
 ## 3. Blog metadata (S2#13)
 
@@ -110,7 +110,7 @@ real bio text.
 - **`sameAs` on Organization**: omitted — no verified social profiles
   on record.
 - **hreflang / localized routes**: out of scope for this batch. The
-  site has 8 UI languages but language switching is client-side,
+  site has 20 UI languages but language switching is client-side,
   `<html lang="en">` is hardcoded and no localized routes exist, so
   there is nothing real to declare. That needs localized routes first
   (separate work, layout + routing owners).
@@ -138,8 +138,10 @@ Files this batch does **not** own (wave 2, with evidence from
 ## 6. How to verify (after deploy)
 
 - `curl /robots.txt` — must list the single `/sitemap.xml` URL.
-- `curl /sitemap.xml` — valid `<urlset>` (~66 URLs: 35 static +
-  11 products + 20 blog posts with live data); no `<lastmod>` with
+- `curl /sitemap.xml` — valid `<urlset>` (~65 URLs: 35 static +
+  10 products + 20 blog posts with live data — 10, not 11, because
+  the `sample-laptop` database health-check row is excluded from
+  every public surface); no `<lastmod>` with
   today's date on static pages; blog `<lastmod>` values are real
   publish dates; product `<lastmod>` values are real `updated_at`.
 - `curl /sitemap/static.xml` — expected 404: the three-file split

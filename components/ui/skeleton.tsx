@@ -21,8 +21,9 @@ export { Skeleton };
  * skeleton is aria-hidden and its wrapper carries role="status" with
  * an accessible "Loading…" label.
  *
- * Wiring into pages is wave 2 — these components are ready to drop
- * into the loading/fallback branches (see the batch report wiring map).
+ * Wiring into pages is live (Section 10): app/loading.tsx,
+ * app/search/loading.tsx, app/deals/loading.tsx and
+ * app/compare/loading.tsx use these components as route loading states.
  */
 
 function SkeletonShell({

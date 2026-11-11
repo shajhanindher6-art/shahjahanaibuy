@@ -160,7 +160,9 @@ export default function MonthlyPlannerPage() {
             planner uses the Buy vs Wait engine on recorded price history —
             buy now, wait for a drop, or move it to next month — and the
             budget is a hard limit: a buy-now item that does not fit moves
-            to next month. Nothing here is a price forecast.
+            to next month. Nothing here is a price forecast. Buy, wait and
+            move-to-next-month calls are deterministic rules on recorded
+            price history — no LLM, nothing guessed.
           </p>
 
           {!signedIn ? (

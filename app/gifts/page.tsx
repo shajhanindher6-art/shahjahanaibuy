@@ -131,13 +131,16 @@ export default function GiftsPage() {
               <label className="block text-sm font-medium">Occasion</label>
               <div className="flex flex-wrap gap-2">
                 {OCCASIONS.map((o) => (
-                  <button
+                  <Button
                     key={o}
+                    type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => setOccasion(o)}
-                    className={`rounded-full border px-3 py-1.5 text-sm ${occasion === o ? 'border-pink-600 bg-pink-600 text-white' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800'}`}
+                    className={`h-auto rounded-full px-3 py-1.5 text-sm ${occasion === o ? 'border-pink-600 bg-pink-600 text-white hover:bg-pink-600 hover:text-white' : 'bg-card dark:bg-muted'}`}
                   >
                     {o}
-                  </button>
+                  </Button>
                 ))}
               </div>
               <label className="block text-sm font-medium">Budget (hard limit — picks never exceed it; leave blank for no budget limit)</label>

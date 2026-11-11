@@ -19,10 +19,11 @@ import { appConfig } from '@/lib/config/app';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ProductCard } from '@/components/products/product-card';
+import type { Product } from '@/types';
 import {
   buildTaxonomyJsonLd,
   buildTaxonomyMetadata,
-  slugify,
 } from '@/lib/brand-category-seo';
 import { getCategoryPageData } from '@/lib/brand-category-seo-server';
 
@@ -106,42 +107,29 @@ export default async function CategoryPage({
                 catalog
               </p>
               <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {page.products.map((product) => (
-                  <article
-                    key={product.slug}
-                    className="rounded-lg border p-5 transition-shadow hover:shadow-lg"
-                  >
-                    <h2 className="text-lg font-semibold leading-tight">
-                      <Link
-                        href={`/products/${product.slug}`}
-                        className="hover:text-primary hover:underline"
-                      >
-                        {product.name}
-                      </Link>
-                    </h2>
-                    {product.brand && (
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        <Link
-                          href={`/brands/${slugify(product.brand)}`}
-                          className="hover:text-primary hover:underline"
-                        >
-                          {product.brand}
-                        </Link>
-                      </p>
-                    )}
-                    {product.description && (
-                      <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
-                        {product.description}
-                      </p>
-                    )}
-                    <Link
-                      href={`/products/${product.slug}`}
-                      className="mt-4 inline-block text-sm font-medium text-primary hover:underline"
-                    >
-                      Compare prices →
-                    </Link>
-                  </article>
-                ))}
+                {page.products.map((product) => {
+                  // Section 10 (2026-11-11): same unification as
+                  // /brands/[slug] — the bespoke imageless card is
+                  // replaced by the shared ProductCard (see the
+                  // note there). No price or Deal Score is shown:
+                  // these pages never had that data, and none is
+                  // invented.
+                  const full = product as unknown as Product;
+                  return (
+                    <ProductCard
+                      key={product.slug}
+                      product={{
+                        id: full.id ?? product.slug,
+                        name: product.name,
+                        slug: product.slug,
+                        brand: product.brand,
+                        category: product.category,
+                        imageUrl: full.imageUrl ?? null,
+                        description: product.description,
+                      }}
+                    />
+                  );
+                })}
               </div>
             </>
           )}

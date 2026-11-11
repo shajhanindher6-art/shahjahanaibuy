@@ -1,7 +1,18 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { RELEASES, PENDING_SYNC_RELEASES, type ChangelogRelease } from './releases';
+import { appConfig } from '@/lib/config/app';
+
+export const metadata: Metadata = {
+  title: 'Changelog — SmartBuy AI',
+  description:
+    'What changed on SmartBuy AI, and when — built from the real release record, with commit IDs and changed files.',
+  alternates: {
+    canonical: `${appConfig.url}/changelog`,
+  },
+};
 
 function formatDate(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', {
@@ -52,7 +63,10 @@ export default function ChangelogPage() {
           <h1 className="text-3xl font-bold">Changelog</h1>
           <p className="mt-2 text-muted-foreground">
             What changed on SmartBuy AI, and when. This page is built from the real release
-            record — 55 releases, each with its commit and the files it changed.
+            record — {RELEASES.length + PENDING_SYNC_RELEASES.length} releases listed in
+            total ({RELEASES.length} in the sync record, plus{' '}
+            {PENDING_SYNC_RELEASES.length} more known from the project log but not yet in
+            the record), each with its commit and the files it changed.
           </p>
           <p className="mt-3 text-sm text-muted-foreground">
             An honest note: the release record contains commit IDs and changed files only —

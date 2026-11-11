@@ -50,7 +50,7 @@ export function AISidebar({ picks, drops }: { picks: AIPick[]; drops: DropToWatc
                 <Link
                   key={drop.productId}
                   href={`/products/${drop.productSlug}`}
-                  className="block rounded-lg border border-white/40 bg-white/50 p-2.5 transition-all hover:-translate-y-0.5 hover:shadow-md dark:bg-slate-800/50"
+                  className="block rounded-lg border border-white/40 bg-card/50 p-2.5 transition-all hover:-translate-y-0.5 hover:shadow-md dark:bg-muted/50"
                 >
                   <p className="text-sm font-medium leading-tight">{drop.productName}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -83,7 +83,7 @@ export function AISidebar({ picks, drops }: { picks: AIPick[]; drops: DropToWatc
                 <Link
                   key={pick.productId}
                   href={`/products/${pick.product.slug}`}
-                  className="block rounded-lg border border-white/40 bg-white/50 p-2.5 transition-all hover:-translate-y-0.5 hover:shadow-md dark:bg-slate-800/50"
+                  className="block rounded-lg border border-white/40 bg-card/50 p-2.5 transition-all hover:-translate-y-0.5 hover:shadow-md dark:bg-muted/50"
                 >
                   <p className="text-sm font-medium leading-tight">{pick.product.name}</p>
                   <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{pick.reason}</p>

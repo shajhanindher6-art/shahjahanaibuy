@@ -105,9 +105,9 @@ export function SmartDealWidget({ title = 'Smart Deals For You', limit = 6, clas
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: limit }).map((_, i) => (
             <div key={i} className="animate-pulse rounded-lg border p-4">
-              <div className="mb-3 h-32 rounded-lg bg-slate-100 dark:bg-slate-800" />
-              <div className="h-4 w-1/2 rounded bg-slate-100 dark:bg-slate-800" />
-              <div className="mt-2 h-3 w-3/4 rounded bg-slate-100 dark:bg-slate-800" />
+              <div className="mb-3 h-32 rounded-lg bg-muted" />
+              <div className="h-4 w-1/2 rounded bg-muted" />
+              <div className="mt-2 h-3 w-3/4 rounded bg-muted" />
             </div>
           ))}
         </div>
@@ -168,7 +168,7 @@ export function SmartDealWidget({ title = 'Smart Deals For You', limit = 6, clas
           <Card key={deal.dealId ?? deal.product!.id} className="transition-shadow hover:shadow-md">
             <Link href={`/products/${deal.product!.slug}`}>
               <CardContent className="p-4">
-                <div className="mb-3 h-32 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
+                <div className="mb-3 h-32 overflow-hidden rounded-lg bg-muted">
                   {deal.product!.imageUrl && !failedImages.has(deal.product!.id) ? (
                     <img
                       src={deal.product!.imageUrl}

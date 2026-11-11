@@ -74,7 +74,7 @@ export default function BookmarkletPage() {
                 Prefer to do it manually? Create a new bookmark, name it “Track on SmartBuy”,
                 and paste this as its URL:
               </p>
-              <code className="block break-all rounded-md bg-slate-100 p-3 text-xs dark:bg-slate-800">
+              <code className="block break-all rounded-md bg-muted p-3 text-xs dark:bg-muted">
                 {bookmarkletCode}
               </code>
             </CardContent>

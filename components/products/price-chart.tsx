@@ -5,6 +5,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Area, AreaChart
 } from 'recharts';
+import { Button } from '@/components/ui/button';
 
 interface PriceChartProps {
   data30Day: Array<{ date: string; price: number }>;
@@ -43,17 +44,20 @@ export function PriceChart({ data30Day, data90Day, data1Year }: PriceChartProps)
           { key: '90d' as const, label: '90 Days' },
           { key: '1y' as const, label: '1 Year' },
         ]).map((r) => (
-          <button
+          <Button
             key={r.key}
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={() => setRange(r.key)}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            className={`h-auto rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
               range === r.key
-                ? 'bg-blue-600 text-white'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-600 hover:text-white'
+                : 'bg-muted text-foreground hover:bg-accent'
             }`}
           >
             {r.label}
-          </button>
+          </Button>
         ))}
       </div>
 

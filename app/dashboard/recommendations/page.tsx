@@ -81,7 +81,7 @@ export default function RecommendationsPage() {
               onClick={() => router.push(`/products/${rec.product.slug}`)}
             >
               <CardContent className="p-4">
-                <div className="mb-3 h-40 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
+                <div className="mb-3 h-40 overflow-hidden rounded-lg bg-muted">
                   {rec.product.imageUrl ? (
                     <Image src={rec.product.imageUrl} alt={rec.product.name} width={480} height={320} className="h-full w-full object-cover" />
                   ) : (

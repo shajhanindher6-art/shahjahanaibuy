@@ -1,29 +1,50 @@
+/**
+ * Support page (Section 10, chunk 2). This page used to repeat four
+ * of the Help Center's FAQs in shortened form; that duplication is
+ * removed — the full questions and answers live in exactly one
+ * place, /help (mirrored on /faq), and this page links there
+ * instead of keeping a second copy that could drift.
+ */
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { appConfig } from '@/lib/config/app';
 
-const faqs = [
+export const metadata: Metadata = {
+  title: 'Support — SmartBuy AI',
+  description:
+    'SmartBuy AI support: answers to common questions, links to the help center, FAQ, and documentation — and how to contact us.',
+  alternates: {
+    canonical: `${appConfig.url}/support`,
+  },
+};
+
+const SUPPORT_LINKS = [
   {
-    question: 'How do price alerts work?',
-    answer:
-      'Create a price alert on a product page with your target price. When the price drops to that level, you are notified through your chosen notification channels.',
+    href: '/help',
+    title: 'Help Center',
+    description:
+      'The full answers: how price alerts work, how to cancel Premium, why you need an account, and what to do about a wrong price — plus step-by-step guides.',
   },
   {
-    question: 'How do I cancel Premium?',
-    answer:
-      'Go to Dashboard > Billing and open the customer portal, where you can manage or cancel your subscription.',
+    href: '/faq',
+    title: 'Frequently asked questions',
+    description:
+      'The same questions and answers as the Help Center, on their own page — price alerts, Premium, accounts, coupons, Deal Score, live prices, and reviews.',
   },
   {
-    question: 'Why do I need an account?',
-    answer:
-      'An account saves your wishlists, alerts, preferences, and recommendations so they are available whenever you sign in.',
+    href: '/docs',
+    title: 'Documentation',
+    description:
+      'Short guides to search, compare, deals, wishlists and alerts, and billing.',
   },
   {
-    question: 'I found a problem with a price or product. What should I do?',
-    answer:
-      'Contact us through the contact page and include the product name and the store link so we can check it.',
+    href: '/methodology',
+    title: 'How SmartBuy AI works',
+    description:
+      'Where prices come from, how the Deal Score is calculated, how reviews are verified, and how the site earns money — in plain language.',
   },
 ];
 
@@ -46,13 +67,20 @@ export default function SupportPage() {
             .
           </p>
           <div className="mt-8 space-y-4">
-            {faqs.map((faq) => (
-              <Card key={faq.question}>
+            {SUPPORT_LINKS.map((link) => (
+              <Card key={link.href}>
                 <CardHeader>
-                  <CardTitle className="text-base">{faq.question}</CardTitle>
+                  <CardTitle className="text-base">
+                    <Link href={link.href} className="underline-offset-4 hover:underline">
+                      {link.title}
+                    </Link>
+                  </CardTitle>
+                  <CardDescription>{link.description}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-muted-foreground">{faq.answer}</p>
+                  <Link href={link.href} className="text-sm font-medium underline">
+                    Go to {link.title.toLowerCase()}
+                  </Link>
                 </CardContent>
               </Card>
             ))}

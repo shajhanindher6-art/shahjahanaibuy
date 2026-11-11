@@ -4,8 +4,10 @@
  * Client page: pick products from the catalog, set quantities, and see
  * the cheapest split computed from REAL recorded merchant listings —
  * which item from which store, per-store totals, and the saving versus
- * buying everything from one store. Saving the list is optional and
- * needs a sign-in; optimizing a list works without saving.
+ * buying everything from one store. Optimizing a list SAVES it to the
+ * signed-in user's account: a list name and a sign-in are required,
+ * and there is no no-save optimize path — POST always saves the list
+ * (name + items) before optimizing.
  *
  * A product with no recorded merchant listing is shown as "no listing"
  * and excluded from the totals — no price is ever invented.
@@ -91,7 +93,7 @@ export default function ListOptimizerPage() {
         setListsEnabled(json.data.listsEnabled !== false);
       }
     } catch {
-      // Saved lists are optional — optimizing still works without them.
+      // A failed load just leaves the saved-lists section empty.
     }
   }, []);
 
@@ -192,7 +194,9 @@ export default function ListOptimizerPage() {
             them all — which item from which store — from real recorded
             merchant prices only. A product with no recorded listing is
             shown as “no listing” and left out of the totals; no price is
-            ever invented.
+            ever invented. The cheapest split is computed with
+            deterministic rules from recorded merchant prices — no LLM,
+            nothing guessed.
           </p>
 
           {catalogFailed ? (

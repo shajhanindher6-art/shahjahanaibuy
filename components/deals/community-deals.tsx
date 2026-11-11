@@ -166,23 +166,29 @@ export function CommunityDeals() {
         <Card key={deal.id}>
           <CardContent className="flex gap-3 p-4">
             <div className="flex flex-col items-center gap-1">
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
                 aria-label="Upvote"
                 disabled={!isAuthenticated}
                 onClick={() => vote(deal.id, 1)}
-                className={myVotes[deal.id] === 1 ? 'text-green-600' : 'text-muted-foreground'}
+                className={myVotes[deal.id] === 1 ? 'h-8 w-8 text-green-600 hover:text-green-600' : 'h-8 w-8 text-muted-foreground'}
               >
                 <ArrowBigUp className="h-5 w-5" />
-              </button>
+              </Button>
               <span className="text-sm font-bold">{deal.netScore}</span>
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
                 aria-label="Downvote"
                 disabled={!isAuthenticated}
                 onClick={() => vote(deal.id, -1)}
-                className={myVotes[deal.id] === -1 ? 'text-red-600' : 'text-muted-foreground'}
+                className={myVotes[deal.id] === -1 ? 'h-8 w-8 text-red-600 hover:text-red-600' : 'h-8 w-8 text-muted-foreground'}
               >
                 <ArrowBigDown className="h-5 w-5" />
-              </button>
+              </Button>
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -199,13 +205,15 @@ export function CommunityDeals() {
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 {deal.price !== null && <Price usd={deal.price} className="font-bold text-blue-600" />}
                 {deal.coupon_code && (
-                  <button
+                  <Button
+                    type="button"
+                    variant="outline"
                     onClick={() => copyCode(deal.coupon_code as string)}
-                    className="flex items-center gap-1 rounded-md border border-dashed px-2 py-1 font-mono text-sm font-bold"
+                    className="h-auto items-center gap-1 rounded-md border-dashed px-2 py-1 font-mono text-sm font-bold"
                   >
                     {deal.coupon_code}
                     {copied === deal.coupon_code ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                  </button>
+                  </Button>
                 )}
                 {deal.source_url && (
                   <a className="text-sm text-blue-600 underline" href={deal.source_url} target="_blank" rel="noopener noreferrer">

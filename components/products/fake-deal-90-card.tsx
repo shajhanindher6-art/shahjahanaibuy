@@ -69,10 +69,10 @@ export function FakeDeal90Card({ slug }: { slug: string }) {
     return (
       <div className="rounded-xl border p-4">
         <div className="flex items-start gap-3">
-          <Clock className="mt-0.5 h-6 w-6 flex-shrink-0 text-slate-400" />
+          <Clock className="mt-0.5 h-6 w-6 flex-shrink-0 text-muted-foreground" />
           <div>
             <h4 className="font-bold">History data pending — 90-day check</h4>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            <p className="mt-1 text-sm text-muted-foreground">
               {lowest90.reason} The 90-day lowest price and the 90-day fake-deal
               check need a full 90 days of recorded prices before they can say
               anything.
@@ -106,20 +106,20 @@ export function FakeDeal90Card({ slug }: { slug: string }) {
         />
         <div className="flex-1">
           <h4 className="font-bold">{title}</h4>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+          <p className="mt-1 text-sm text-muted-foreground">
             Lowest price in the last {NINETY_DAY_WINDOW_DAYS} days:{' '}
-            <span className="font-medium text-slate-900 dark:text-slate-100">
+            <span className="font-medium text-foreground">
               ${lowest90.lowest?.toFixed(2)}
             </span>{' '}
             across {lowest90.pointsInWindow} recorded prices (span{' '}
             {lowest90.spanDays} days).
           </p>
           {fake90.explanation && (
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            <p className="mt-1 text-sm text-muted-foreground">
               {fake90.explanation}
             </p>
           )}
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-2 text-xs text-muted-foreground">
             Pattern flag only — this describes the recorded prices, not any
             seller&apos;s intent.
           </p>

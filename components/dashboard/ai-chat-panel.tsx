@@ -179,7 +179,7 @@ export function AIChatPanel() {
               className={`inline-block rounded-2xl px-3 py-2 text-sm leading-relaxed ${
                 m.role === 'user'
                   ? 'bg-blue-600 text-white'
-                  : 'bg-white/70 text-slate-800 dark:bg-slate-800/70 dark:text-slate-100'
+                  : 'bg-card/70 text-foreground dark:bg-muted/70 dark:text-foreground'
               }`}
             >
               {m.content}
@@ -205,14 +205,16 @@ export function AIChatPanel() {
       </div>
       <div className="flex flex-wrap gap-1.5 border-t border-white/40 px-3 pt-2">
         {SUGGESTIONS.map((s) => (
-          <button
+          <Button
             key={s}
             type="button"
+            variant="secondary"
+            size="sm"
             onClick={() => send(s)}
-            className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-700 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200"
+            className="h-auto rounded-full px-2.5 py-1 text-xs"
           >
             {s}
-          </button>
+          </Button>
         ))}
       </div>
       <form
@@ -227,7 +229,7 @@ export function AIChatPanel() {
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask for a deal…"
           maxLength={500}
-          className="min-w-0 flex-1 rounded-full border border-slate-200 bg-white/80 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-900/80"
+          className="min-w-0 flex-1 rounded-full border border-slate-200 bg-card/80 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-700"
         />
         <Button type="submit" size="icon" disabled={sending || input.trim() === ''} className="shrink-0 rounded-full">
           <Send className="h-4 w-4" />

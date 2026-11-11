@@ -11,7 +11,7 @@
  * side.
  *
  * The test count is NOT asserted here: it is the result of a full
- * `npx vitest run` (1,180 passing, 111 files, 10 November 2026) and
+ * `npx vitest run` (1,223 passing, 113 files, 11 November 2026) and
  * any new test file — including this one — moves that total. The
  * press page dates it instead of presenting it as permanent.
  */

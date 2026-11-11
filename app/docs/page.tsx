@@ -1,7 +1,18 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { appConfig } from '@/lib/config/app';
+
+export const metadata: Metadata = {
+  title: 'Documentation — SmartBuy AI',
+  description:
+    'SmartBuy AI documentation: short guides to search, compare, deals, wishlists and alerts, and billing.',
+  alternates: {
+    canonical: `${appConfig.url}/docs`,
+  },
+};
 
 const guides = [
   {

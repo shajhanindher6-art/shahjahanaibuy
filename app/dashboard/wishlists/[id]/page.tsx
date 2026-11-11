@@ -151,9 +151,13 @@ export default function DashboardWishlistDetailPage() {
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">
               Could not load this list&apos;s items right now. The list itself is unchanged —{' '}
-              <button className="text-blue-600 underline" onClick={fetchDetail}>
+              {/* Section 10 (2026-11-11): design-system Button, not a
+                  raw <button> — h-auto/p-0 keep it an inline text
+                  link (the adjacent Link is text-blue-600 too), so
+                  the rendering is unchanged. */}
+              <Button type="button" variant="link" className="h-auto p-0 text-sm text-blue-600" onClick={fetchDetail}>
                 try again
-              </button>
+              </Button>
               , or view all saved products on the{' '}
               <Link className="text-blue-600 underline" href="/dashboard/tracking">
                 tracking page

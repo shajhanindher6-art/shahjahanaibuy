@@ -85,7 +85,7 @@ export function CostPerHourCard({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Clock className="h-5 w-5 text-slate-500" />
+          <Clock className="h-5 w-5 text-muted-foreground" />
           True Cost Per Hour
         </CardTitle>
         <CardDescription>What each active hour of use really costs</CardDescription>

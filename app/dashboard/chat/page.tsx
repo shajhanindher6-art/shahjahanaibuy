@@ -208,7 +208,7 @@ export default function ChatPage() {
   return (
     <div className="flex h-[calc(100vh-4rem)] gap-0">
       {/* Sidebar */}
-      <div className="hidden w-64 flex-col border-r border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900 md:flex">
+      <div className="hidden w-64 flex-col border-r border-slate-200 bg-muted/50 dark:border-slate-800 dark:bg-card md:flex">
         <div className="p-3">
           <Button onClick={createNewConversation} className="w-full" variant="outline">
             <Plus className="mr-2 h-4 w-4" /> New Chat
@@ -220,19 +220,21 @@ export default function ChatPage() {
           ) : conversations.length > 0 ? (
             <div className="space-y-1">
               {conversations.map((conv) => (
-                <button
+                <Button
                   key={conv.id}
+                  type="button"
+                  variant="ghost"
                   onClick={() => setActiveConversationId(conv.id)}
                   className={cn(
-                    'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                    'h-auto w-full justify-start gap-2 rounded-lg px-3 py-2 text-left text-sm font-normal',
                     activeConversationId === conv.id
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-800'
+                      ? 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted'
                   )}
                 >
                   <MessageSquare className="h-4 w-4 flex-shrink-0" />
                   <span className="truncate">{conv.title}</span>
-                </button>
+                </Button>
               ))}
             </div>
           ) : (
@@ -263,13 +265,15 @@ export default function ChatPage() {
                 <p className="mt-1 text-muted-foreground">Ask me about products, deals, comparisons, or budget recommendations</p>
                 <div className="mt-6 grid gap-2 sm:grid-cols-2">
                   {SUGGESTED_PROMPTS.map((prompt) => (
-                    <button
+                    <Button
                       key={prompt}
+                      type="button"
+                      variant="outline"
                       onClick={() => sendMessage(prompt)}
-                      className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-left text-sm transition-all hover:border-blue-300 hover:shadow-sm dark:border-slate-700 dark:bg-slate-800"
+                      className="h-auto w-full justify-start whitespace-normal rounded-lg px-4 py-3 text-left text-sm font-normal hover:border-blue-300 hover:shadow-sm"
                     >
                       {prompt}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </div>
@@ -293,17 +297,19 @@ export default function ChatPage() {
                     'max-w-[80%] rounded-2xl px-4 py-3',
                     msg.role === 'user'
                       ? 'bg-primary text-primary-foreground'
-                      : 'bg-slate-100 dark:bg-slate-800'
+                      : 'bg-muted'
                   )}
                 >
                   <p className="whitespace-pre-line text-sm">{msg.content}</p>
                   {msg.metadata?.products && msg.metadata.products.length > 0 && (
                     <div className="mt-3 grid gap-2">
                       {msg.metadata.products.map((p) => (
-                        <button
+                        <Button
                           key={p.id}
+                          type="button"
+                          variant="outline"
                           onClick={() => router.push(`/products/${p.slug}`)}
-                          className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 text-left transition-colors hover:border-blue-300 dark:border-slate-700 dark:bg-slate-900"
+                          className="h-auto w-full justify-start gap-2 whitespace-normal rounded-lg p-2 text-left font-normal hover:border-blue-300"
                         >
                           {p.imageUrl && (
                             <Image src={p.imageUrl} alt={p.name} width={40} height={40} className="h-10 w-10 rounded object-cover" />
@@ -315,14 +321,14 @@ export default function ChatPage() {
                           {p.price && (
                             <span className="text-sm font-bold text-green-600">${p.price.toFixed(2)}</span>
                           )}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   )}
                 </div>
                 {msg.role === 'user' && (
-                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 dark:bg-slate-700">
-                    <User className="h-5 w-5 text-slate-600 dark:text-slate-300" />
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-muted dark:bg-accent">
+                    <User className="h-5 w-5 text-muted-foreground" />
                   </div>
                 )}
               </div>
@@ -333,7 +339,7 @@ export default function ChatPage() {
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-cyan-500">
                   <Bot className="h-5 w-5 text-white" />
                 </div>
-                <div className="flex items-center gap-2 rounded-2xl bg-slate-100 px-4 py-3 dark:bg-slate-800">
+                <div className="flex items-center gap-2 rounded-2xl bg-muted px-4 py-3 dark:bg-muted">
                   <LoadingSpinner size="sm" />
                   <span className="text-sm text-muted-foreground">Thinking...</span>
                 </div>

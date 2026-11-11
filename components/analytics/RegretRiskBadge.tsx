@@ -154,7 +154,7 @@ export function RegretRiskBadge({
                 </Badge>
               </div>
               <div
-                className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-200"
+                className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-muted"
                 role="progressbar"
                 aria-valuenow={result.score}
                 aria-valuemin={0}

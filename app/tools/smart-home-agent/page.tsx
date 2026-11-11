@@ -113,7 +113,8 @@ export default function SmartHomePage() {
           prepares a reorder — as a pending confirmation. The agent never
           places an order or charges anything by itself: every order needs
           your explicit confirmation, and the handoff is the product page
-          with its retailer link.
+          with its retailer link. Reorders are prepared by deterministic
+          matching rules on device reports — no LLM, nothing guessed.
         </p>
 
         <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">

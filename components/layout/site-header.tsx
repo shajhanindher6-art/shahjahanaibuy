@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Menu, X, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { CountrySwitcher, LanguageSwitcher } from '@/components/region/country-s
 import { RegionBanner } from '@/components/region/region-banner';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor, type DictKey } from '@/lib/i18n';
+import { SearchAutocomplete } from '@/components/search/search-autocomplete';
 
 const navLinks: { href: string; key: DictKey }[] = [
   { href: '/', key: 'navHome' },
@@ -20,11 +21,37 @@ const navLinks: { href: string; key: DictKey }[] = [
   { href: '/#pricing', key: 'navPricing' },
 ];
 
+// Mobile-only links (Section 10, chunk 1): the mobile menu used to
+// list only the 4 homepage anchors, so a phone visitor could not
+// reach Search, Deals, Compare or Brands without scrolling. These
+// are plain-English labels — lib/i18n.ts is owned by another chunk,
+// so no new DictKeys were added here (i18n follow-up for the
+// coordinator). Brands points at the homepage browse section
+// (app/page.tsx wraps <BrowseByTaxonomy /> in id="browse").
+const mobileExtraLinks: { href: string; label: string }[] = [
+  { href: '/search', label: 'Search' },
+  { href: '/deals', label: 'Deals' },
+  { href: '/compare', label: 'Compare' },
+  { href: '/#browse', label: 'Brands' },
+];
+
 export function SiteHeader() {
   const pathname = usePathname();
+  const router = useRouter();
   const { isAuthenticated } = useAuth();
   const { language } = useRegion();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [headerQuery, setHeaderQuery] = useState('');
+
+  // Header search submits to the deep-linkable /search?q=… URL
+  // (Section 10, chunk 1) — the search page reads ?q= on load,
+  // so the URL is shareable and bookmarkable.
+  const submitHeaderSearch = (q: string) => {
+    const term = q.trim();
+    if (!term) return;
+    setMobileOpen(false);
+    router.push(`/search?q=${encodeURIComponent(term)}`);
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md">
@@ -61,6 +88,33 @@ export function SiteHeader() {
             ))}
           </nav>
         </div>
+
+        {/* Header search (Section 10, chunk 1): lg+ only. The header
+            row is already tight below ~500px (see the A2 comment
+            above), so the search box stays out of the mobile row —
+            phones get the same search inside the mobile menu below.
+            Submits to /search?q=…; picking a suggestion goes
+            straight to that product page. */}
+        <form
+          className="mx-2 hidden min-w-0 max-w-sm flex-1 lg:block"
+          role="search"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitHeaderSearch(headerQuery);
+          }}
+        >
+          <SearchAutocomplete
+            value={headerQuery}
+            onChange={setHeaderQuery}
+            onSubmit={submitHeaderSearch}
+            onSelectSuggestion={(suggestion) => {
+              setMobileOpen(false);
+              router.push(`/products/${suggestion.slug}`);
+            }}
+            placeholder={tFor(language, 'searchPlaceholder')}
+            inputId="header-search"
+          />
+        </form>
 
         <div className="flex min-w-0 items-center gap-1 sm:gap-2">
           {/* Global controls: country switcher collapses to a
@@ -106,6 +160,29 @@ export function SiteHeader() {
       {mobileOpen && (
         <nav className="border-t bg-background md:hidden">
           <div className="container mx-auto flex flex-col gap-1 px-4 py-4">
+            {/* Mobile search (Section 10, chunk 1): same
+                autocomplete + /search?q=… submit as the desktop
+                header box, inside the menu where there is room. */}
+            <form
+              className="mb-2"
+              role="search"
+              onSubmit={(e) => {
+                e.preventDefault();
+                submitHeaderSearch(headerQuery);
+              }}
+            >
+              <SearchAutocomplete
+                value={headerQuery}
+                onChange={setHeaderQuery}
+                onSubmit={submitHeaderSearch}
+                onSelectSuggestion={(suggestion) => {
+                  setMobileOpen(false);
+                  router.push(`/products/${suggestion.slug}`);
+                }}
+                placeholder={tFor(language, 'searchPlaceholder')}
+                inputId="mobile-search"
+              />
+            </form>
             {navLinks.map((link) => (
               <Link
                 key={link.href}
@@ -114,6 +191,16 @@ export function SiteHeader() {
                 onClick={() => setMobileOpen(false)}
               >
                 {tFor(language, link.key)}
+              </Link>
+            ))}
+            {mobileExtraLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={() => setMobileOpen(false)}
+              >
+                {link.label}
               </Link>
             ))}
             {!isAuthenticated && (

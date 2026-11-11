@@ -26,7 +26,7 @@ export function SupplyChainBlock({ supplyChain }: SupplyChainBlockProps) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Factory className="h-5 w-5 text-slate-500" />
+          <Factory className="h-5 w-5 text-muted-foreground" />
           Supply chain
         </CardTitle>
         <CardDescription>

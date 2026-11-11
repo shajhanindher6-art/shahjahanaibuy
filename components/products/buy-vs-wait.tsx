@@ -58,10 +58,10 @@ export function BuyVsWait({ slug }: { slug: string }) {
     return (
       <div className="rounded-xl border p-4">
         <div className="flex items-start gap-3">
-          <Clock className="mt-0.5 h-6 w-6 flex-shrink-0 text-slate-400" />
+          <Clock className="mt-0.5 h-6 w-6 flex-shrink-0 text-muted-foreground" />
           <div>
             <h4 className="font-bold">Not enough history yet</h4>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{prediction.reason}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{prediction.reason}</p>
           </div>
         </div>
       </div>
@@ -89,12 +89,12 @@ export function BuyVsWait({ slug }: { slug: string }) {
         <div className="flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="font-bold">{isBuy ? 'Buy Now' : 'Wait'}</h4>
-            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+            <span className="text-xs font-medium text-muted-foreground">
               {prediction.confidence}% confidence (estimate)
             </span>
           </div>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{prediction.reason}</p>
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-sm text-muted-foreground">{prediction.reason}</p>
+          <p className="mt-2 text-xs text-muted-foreground">
             Based on {prediction.pointCount} recorded price point
             {prediction.pointCount === 1 ? '' : 's'}
             {prediction.spanDays > 0 ? ` over ${prediction.spanDays} days` : ''}.
@@ -106,7 +106,7 @@ export function BuyVsWait({ slug }: { slug: string }) {
             This is an estimate, not a guaranteed future price.
           </p>
           {prediction.dropCount > 0 && (
-            <p className="mt-1 flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+            <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
               <AlertTriangle className="h-3 w-3" />
               {prediction.dropCount} recorded price drop
               {prediction.dropCount === 1 ? '' : 's'}

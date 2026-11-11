@@ -48,7 +48,13 @@
  * writes only the cookie — so a cookie WITHOUT a localStorage
  * country entry means server geo detection, and the language map
  * is applied for that visitor too (state only, same as above).
- * On every language change, document.documentElement.lang is set.
+ * On every language change, document.documentElement.lang AND
+ * document.documentElement.dir are set live (no reload) — the
+ * [language] effect below flips dir to 'rtl' for Arabic the
+ * moment the switch happens. (An older note in lib/i18n.ts still
+ * says dir flips only on the next load; that is out of date —
+ * lib/i18n.ts is not owned by this wave, so the note lives on
+ * there until its owner updates it.)
  *
  * FIRST-PAINT FLASH (safe fix, 2026-11-03 audit): this provider used
  * to always start at US/English and only resolve the real region in

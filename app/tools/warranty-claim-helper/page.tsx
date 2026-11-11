@@ -127,7 +127,9 @@ export default function WarrantyClaimsPage() {
           steps — plus a reminder before the warranty expires. Tracking a
           claim here only records it for you: SmartBuy never files the
           claim with the retailer, and no refund, repair or replacement
-          is promised.
+          is promised. Checklists and reminders are generated with
+          deterministic rules from your recorded receipts — no LLM,
+          nothing guessed.
         </p>
 
         {!claimsEnabled && (

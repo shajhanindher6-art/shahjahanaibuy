@@ -260,7 +260,7 @@ export default function BillingPage() {
                 <div className="flex items-center gap-2">
                   <div className={cn(
                     'flex h-10 w-10 items-center justify-center rounded-lg',
-                    plan.key === 'pro' ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-700'
+                    plan.key === 'pro' ? 'bg-blue-600' : 'bg-muted dark:bg-accent'
                   )}>
                     <Icon className={cn('h-5 w-5', plan.key === 'pro' ? 'text-white' : 'text-muted-foreground')} />
                   </div>

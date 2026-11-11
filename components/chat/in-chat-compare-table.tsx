@@ -50,10 +50,10 @@ export function InChatCompareTable({
   const cheapest = cheapestPrice(products);
 
   return (
-    <div className="mt-2 overflow-hidden rounded-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+    <div className="mt-2 overflow-hidden rounded-md border border-slate-200 bg-card dark:border-slate-700">
       <table className="w-full text-left text-xs">
         <thead>
-          <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+          <tr className="border-b border-slate-200 bg-muted/50 text-muted-foreground dark:border-slate-700 dark:bg-muted dark:text-muted-foreground">
             <th scope="col" className="px-2 py-1.5 font-medium">Product</th>
             <th scope="col" className="px-2 py-1.5 font-medium">Price</th>
             <th scope="col" className="px-2 py-1.5 font-medium" aria-label="Cheapest marker" />
@@ -76,21 +76,21 @@ export function InChatCompareTable({
                 <td className="px-2 py-1.5">
                   <Link
                     href={`/products/${p.slug}`}
-                    className="font-medium text-slate-800 hover:text-blue-600 dark:text-slate-100 dark:hover:text-blue-400"
+                    className="font-medium text-foreground hover:text-blue-600 dark:text-foreground dark:hover:text-blue-400"
                   >
                     {p.name}
                   </Link>
                   {p.brand && (
-                    <span className="block text-slate-500 dark:text-slate-400">{p.brand}</span>
+                    <span className="block text-muted-foreground">{p.brand}</span>
                   )}
                 </td>
                 <td className="whitespace-nowrap px-2 py-1.5 font-semibold text-green-600">
                   {p.price === null ? (
-                    <span className="font-normal text-slate-500 dark:text-slate-400">Not recorded</span>
+                    <span className="font-normal text-muted-foreground">Not recorded</span>
                   ) : approximate ? (
                     <>
                       ≈ {display}{' '}
-                      <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400">
+                      <span className="text-[10px] font-normal text-muted-foreground">
                         {formatUsd(p.price)}
                       </span>
                     </>
@@ -110,7 +110,7 @@ export function InChatCompareTable({
           })}
         </tbody>
       </table>
-      <p className="border-t border-slate-100 px-2 py-1 text-[10px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+      <p className="border-t border-slate-100 px-2 py-1 text-[10px] text-muted-foreground dark:border-slate-800 dark:text-muted-foreground">
         Prices are the lowest recorded merchant prices — not live retailer prices. Open a product
         for the full comparison.
       </p>

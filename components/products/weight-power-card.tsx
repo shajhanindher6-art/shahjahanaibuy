@@ -46,7 +46,7 @@ export function WeightPowerCard({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Scale className="h-5 w-5 text-slate-500" />
+          <Scale className="h-5 w-5 text-muted-foreground" />
           Weight &amp; Power{title ? ` — ${title}` : ''}
         </CardTitle>
         <CardDescription>

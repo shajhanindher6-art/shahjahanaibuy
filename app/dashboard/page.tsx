@@ -474,7 +474,7 @@ export default function DashboardPage() {
                     className="glass-card block p-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl animate-fade-in motion-reduce:animate-none"
                     style={{ animationDelay: `${i * 70}ms` }}
                   >
-                    <div className="mb-2 h-32 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
+                    <div className="mb-2 h-32 overflow-hidden rounded-lg bg-muted">
                       {rec.product.imageUrl ? (
                         <Image src={rec.product.imageUrl} alt={rec.product.name} width={512} height={256} className="h-full w-full object-cover" />
                       ) : (

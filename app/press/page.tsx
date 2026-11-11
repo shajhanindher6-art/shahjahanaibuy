@@ -7,17 +7,31 @@
  * source modules so a future change fails loudly instead of leaving
  * this page stale. The test count is the one figure that cannot be
  * derived at build time: it is the result of a full `npx vitest run`
- * (1,180 passing, 111 files, 10 November 2026) and moves whenever
- * tests are added, so it is dated, not presented as permanent.
+ * (1,223 passing, 113 test files, 11 November 2026) and moves whenever
+ * tests are added, so it is dated, not presented as permanent. The
+ * product count is 10: the catalog holds 11 rows, but the
+ * `sample-laptop` row is a database health-check row excluded from
+ * every public surface (services/products.ts, Section 10 fix), so
+ * the public catalog — and this page — counts 10.
  */
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { appConfig } from '@/lib/config/app';
 
+export const metadata: Metadata = {
+  title: 'Press — SmartBuy AI',
+  description:
+    'Press fact sheet for SmartBuy AI: real figures about the catalog, stores, regions, languages, and automated tests.',
+  alternates: {
+    canonical: `${appConfig.url}/press`,
+  },
+};
+
 const FACTS: Array<[string, string]> = [
   ['Live site', 'https://shahjahanaibuy-b1zp.vercel.app'],
-  ['Products in the catalog', '11'],
+  ['Products in the catalog', '10'],
   ['Merchant listings', '20'],
   ['Recorded price-history rows', '40'],
   ['Deals listed', '6'],
@@ -31,7 +45,7 @@ const FACTS: Array<[string, string]> = [
   ['Blog articles', '20 original English guides'],
   ['Database access policies (RLS)', '194 active'],
   ['Security headers', 'Grade A+ (securityheaders.com), nonce-based Content Security Policy'],
-  ['Automated tests passing', '1,180 passing (111 test files, full run 10 November 2026)'],
+  ['Automated tests passing', '1,223 passing (113 test files, full run 11 November 2026)'],
   ['Founder', 'Independent developer, GitHub: shajhanindher6-art'],
   ['Public repository', 'https://github.com/shajhanindher6-art/shahjahanaibuy'],
 ];

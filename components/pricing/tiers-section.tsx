@@ -61,7 +61,7 @@ export function TiersSection() {
                 className={`mt-6 inline-block rounded-lg px-4 py-2 text-center text-sm font-semibold ${
                   tier.highlighted
                     ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'bg-slate-100 text-slate-900 hover:bg-slate-200'
+                    : 'bg-muted text-foreground hover:bg-accent'
                 }`}
               >
                 {tier.cta}

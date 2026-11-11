@@ -421,13 +421,19 @@ export function AIDealFinderWidget() {
         // beneath it — closing it (X or the bubble) restores the buy
         // buttons; fully reserving page space would need layout changes
         // outside this component (see report).
-        <div className="flex h-[min(480px,calc(100dvh-6.5rem))] w-[calc(100vw-2rem)] max-w-sm flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex h-[min(480px,calc(100dvh-6.5rem))] w-[calc(100vw-2rem)] max-w-sm flex-col overflow-hidden rounded-xl border border-slate-200 bg-card shadow-xl dark:border-slate-700">
           <div className="flex items-center justify-between bg-blue-600 px-4 py-3 text-white">
             <p className="flex items-center gap-2 text-sm font-semibold">
               <Sparkles className="h-4 w-4" /> AI Deal Finder
             </p>
             <div className="flex items-center gap-1">
-              <button
+              {/* Section 10 (2026-11-11): design-system Button, not raw
+                  <button> — ghost + icon size (44px), with overrides
+                  so the blue header keeps its white-on-blue look. */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
                 onClick={() => {
                   setVoiceMode((v) => !v);
                   setVoiceError(null);
@@ -438,21 +444,31 @@ export function AIDealFinderWidget() {
                     ? 'Voice-first mode on: speak to send, replies are spoken'
                     : 'Voice-first mode: speak to send, replies are spoken'
                 }
-                className={cn('rounded p-1 hover:bg-blue-700', voiceMode && 'bg-blue-700 ring-1 ring-white')}
+                className={cn('text-white hover:bg-blue-700 hover:text-white', voiceMode && 'bg-blue-700 ring-1 ring-white')}
               >
                 <Mic className="h-4 w-4" />
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
                 onClick={() => setVoiceReplies((v) => !v)}
                 aria-label={speakRepliesOn ? 'Turn off spoken replies' : 'Turn on spoken replies'}
                 title={speakRepliesOn ? 'Spoken replies on' : 'Spoken replies off'}
-                className="rounded p-1 hover:bg-blue-700"
+                className="text-white hover:bg-blue-700 hover:text-white"
               >
                 {speakRepliesOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-              </button>
-              <button onClick={() => setOpen(false)} aria-label="Close chat" className="rounded p-1 hover:bg-blue-700">
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setOpen(false)}
+                aria-label="Close chat"
+                className="text-white hover:bg-blue-700 hover:text-white"
+              >
                 <X className="h-4 w-4" />
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -464,7 +480,7 @@ export function AIDealFinderWidget() {
                     'max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed',
                     m.role === 'user'
                       ? 'bg-blue-600 text-white'
-                      : 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100'
+                      : 'bg-muted text-foreground dark:bg-muted dark:text-foreground'
                   )}
                 >
                   <p className="whitespace-pre-line">{m.content}</p>
@@ -478,7 +494,7 @@ export function AIDealFinderWidget() {
                           <Link
                             key={p.id}
                             href={`/products/${p.slug}`}
-                            className="block rounded-md bg-white px-2 py-1.5 text-slate-800 hover:bg-blue-50 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                            className="block rounded-md bg-card px-2 py-1.5 text-foreground hover:bg-blue-50 dark:hover:bg-muted"
                           >
                             <span className="font-medium">{p.name}</span>
                             {p.brand && <span className="text-muted-foreground"> · {p.brand}</span>}
@@ -493,7 +509,7 @@ export function AIDealFinderWidget() {
             ))}
             {awaitingFirstChunk && (
               <div className="flex justify-start">
-                <div className="rounded-lg bg-slate-100 px-3 py-2 dark:bg-slate-800">
+                <div className="rounded-lg bg-muted px-3 py-2 dark:bg-muted">
                   <LoadingSpinner size="sm" />
                 </div>
               </div>
@@ -501,33 +517,47 @@ export function AIDealFinderWidget() {
           </div>
 
           <div className="flex flex-wrap gap-1.5 border-t border-slate-100 px-3 pt-2 dark:border-slate-800">
+            {/* Section 10 (2026-11-11): design-system Buttons, not raw
+                <button>s. variant="secondary" is the token for the
+                old bg-muted/dark:bg-muted chip; h-auto keeps
+                the compact chip height (44px would wreck the
+                wrapping chip row). */}
             {QUICK_CHIPS.map((chip) => (
-              <button
+              <Button
                 key={chip}
+                type="button"
+                variant="secondary"
+                size="sm"
                 onClick={() => send(chip)}
-                className="rounded-full bg-slate-100 px-2.5 py-1 text-xs hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"
+                className="h-auto rounded-full px-2.5 py-1 text-xs"
               >
                 {chip}
-              </button>
+              </Button>
             ))}
             {followUpChips.map((chip) => (
-              <button
+              <Button
                 key={chip.label}
+                type="button"
+                variant="secondary"
+                size="sm"
                 onClick={() => send(chip.message)}
-                className="rounded-full bg-blue-100 px-2.5 py-1 text-xs text-blue-800 hover:bg-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:hover:bg-blue-900"
+                className="h-auto rounded-full bg-blue-100 px-2.5 py-1 text-xs text-blue-800 hover:bg-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:hover:bg-blue-900"
               >
                 {chip.label}
-              </button>
+              </Button>
             ))}
             {recentSearches.map((recent) => (
-              <button
+              <Button
                 key={recent}
+                type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => send(recent)}
-                className="rounded-full border border-dashed border-slate-300 px-2.5 py-1 text-xs text-muted-foreground hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"
+                className="h-auto rounded-full border-dashed px-2.5 py-1 text-xs hover:bg-muted"
                 title="Your recent search"
               >
                 ↻ {recent}
-              </button>
+              </Button>
             ))}
           </div>
 
@@ -543,7 +573,7 @@ export function AIDealFinderWidget() {
               onChange={(e) => setVoiceLang(e.target.value)}
               aria-label="Voice language"
               title="Voice language (speech recognition and spoken replies)"
-              className="w-24 shrink-0 rounded-md border border-slate-200 bg-white px-1 text-xs dark:border-slate-700 dark:bg-slate-900"
+              className="w-24 shrink-0 rounded-md border border-slate-200 bg-card px-1 text-xs dark:border-slate-700"
             >
               {VOICE_LANGUAGES.map((l) => (
                 <option key={l.code} value={l.code}>
@@ -578,7 +608,7 @@ export function AIDealFinderWidget() {
             <p className="px-3 pb-2 text-xs text-amber-700 dark:text-amber-400">{voiceError}</p>
           )}
           {voiceMode && (
-            <p className="px-3 pb-2 text-xs text-slate-500 dark:text-slate-400">
+            <p className="px-3 pb-2 text-xs text-muted-foreground">
               Voice-first mode is on: tap the mic and speak — your words are sent automatically and
               replies are spoken aloud. Recognition runs in your browser only.
             </p>

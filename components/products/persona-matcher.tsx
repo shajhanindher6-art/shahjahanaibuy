@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { fetchProductAttributes } from '@/lib/fetch-product-attributes';
 import {
@@ -83,7 +84,7 @@ export function PersonaMatcher({
         ? 'bg-amber-500'
         : verdict === 'Not ideal'
           ? 'bg-rose-500'
-          : 'bg-slate-300 dark:bg-slate-700';
+          : 'bg-muted dark:bg-accent';
 
   return (
     <Card>
@@ -96,19 +97,21 @@ export function PersonaMatcher({
       <CardContent>
         <div className="flex flex-wrap gap-2" role="group" aria-label="Choose a use case">
           {PERSONAS.map((p) => (
-            <button
+            <Button
               key={p.id}
               type="button"
+              variant="outline"
+              size="sm"
               aria-pressed={selectedId === p.id}
               onClick={() => setSelectedId(p.id)}
               className={
                 selectedId === p.id
-                  ? 'rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-slate-900'
-                  : 'rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'
+                  ? 'h-auto rounded-full border-transparent bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground hover:text-background'
+                  : 'h-auto rounded-full px-4 py-2 text-sm font-medium text-foreground hover:bg-muted'
               }
             >
               {p.label}
-            </button>
+            </Button>
           ))}
         </div>
         <p className="mt-3 text-sm text-muted-foreground">{persona.description}</p>
@@ -121,7 +124,7 @@ export function PersonaMatcher({
         ) : (
           <>
             {attributes !== null && attributes.length === 0 && (
-              <p className="mt-4 rounded-md bg-slate-50 px-3 py-2 text-sm text-muted-foreground dark:bg-slate-800">
+              <p className="mt-4 rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground dark:bg-muted">
                 No specifications recorded for this product yet — only the category can be
                 judged.
               </p>
@@ -134,7 +137,7 @@ export function PersonaMatcher({
               {verdict && <span className={`pb-1 text-lg font-semibold ${verdictColor}`}>{verdict}</span>}
             </div>
             <div
-              className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"
+              className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted"
               role="progressbar"
               aria-valuenow={result.scorePct ?? undefined}
               aria-valuemin={0}

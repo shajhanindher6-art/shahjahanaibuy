@@ -123,19 +123,29 @@ export function PricePredictionBadge({ slug }: { slug: string }) {
 
   const config = BADGE_CONFIG[badge.label as BadgeLabel];
   const Icon = config.Icon;
+  // Meaning is never colour-only (Section 10, 2026-11-11): the
+  // verdict is always spelled out as text ("GREAT VALUE" /
+  // "BUY NOW" / "WAIT") next to a distinct icon, and the card
+  // repeats the reason in words below. The icon is decorative
+  // (aria-hidden — the text carries the meaning) and the card
+  // announces itself as a status when it loads in.
   return (
-    <div className={cn('flex flex-col gap-1.5 rounded-xl border p-3', config.cardClasses)}>
+    <div
+      role="status"
+      aria-label={`Price prediction: ${config.label} — ${badge.reason}`}
+      className={cn('flex flex-col gap-1.5 rounded-xl border p-3', config.cardClasses)}
+    >
       <span
         className={cn(
           'inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold',
           config.pillClasses
         )}
       >
-        <Icon className="h-3.5 w-3.5" />
+        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
         {config.label}
       </span>
-      <p className="text-sm text-slate-600 dark:text-slate-400">{badge.reason}</p>
-      <p className="text-xs text-slate-500 dark:text-slate-400">
+      <p className="text-sm text-muted-foreground">{badge.reason}</p>
+      <p className="text-xs text-muted-foreground">
         vs 30-day average — deterministic, from recorded prices only.
       </p>
     </div>

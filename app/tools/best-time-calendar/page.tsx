@@ -72,6 +72,8 @@ export default function BestTimePage() {
             For each category, the months when recorded prices were
             lowest. This comes from real recorded price history only —
             ranges, not exact dates, and no future price is promised.
+            Best months are computed with deterministic rules from
+            recorded price history — no LLM, nothing guessed.
           </p>
 
           {error ? (

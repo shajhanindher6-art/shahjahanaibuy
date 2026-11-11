@@ -117,7 +117,7 @@ export function AgentHuntsCard() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Bot className="h-5 w-5 text-slate-500" /> Autonomous deal hunting
+          <Bot className="h-5 w-5 text-muted-foreground" /> Autonomous deal hunting
         </CardTitle>
         <CardDescription>
           Standing instructions the agent checks during the 6-hour price refresh. A hunt only

@@ -1,6 +1,17 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { appConfig } from '@/lib/config/app';
+
+export const metadata: Metadata = {
+  title: 'How SmartBuy AI works — SmartBuy AI',
+  description:
+    'Methodology in plain language: where prices come from, how the Deal Score is calculated, how reviews are verified, and how SmartBuy AI earns money.',
+  alternates: {
+    canonical: `${appConfig.url}/methodology`,
+  },
+};
 
 export default function MethodologyPage() {
   return (

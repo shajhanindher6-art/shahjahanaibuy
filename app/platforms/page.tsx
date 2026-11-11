@@ -50,11 +50,11 @@ const STATUS_STYLES: Record<PlatformStatus, string> = {
   live: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
   configured: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
   'not-configured':
-    'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200',
+    'bg-muted text-foreground dark:bg-muted dark:text-foreground',
   'pending-approval':
     'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
   'search-links-only':
-    'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200',
+    'bg-muted text-foreground dark:bg-muted dark:text-foreground',
 };
 
 export default function PlatformsPage() {

@@ -183,7 +183,7 @@ export function TechBudgetWidget() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Wallet className="h-5 w-5 text-slate-500" />
+            <Wallet className="h-5 w-5 text-muted-foreground" />
             Tech Budget
           </CardTitle>
           <CardDescription>Monthly tech budget vs your wishlist</CardDescription>
@@ -204,7 +204,7 @@ export function TechBudgetWidget() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Wallet className="h-5 w-5 text-slate-500" />
+          <Wallet className="h-5 w-5 text-muted-foreground" />
           Tech Budget
         </CardTitle>
         <CardDescription>
