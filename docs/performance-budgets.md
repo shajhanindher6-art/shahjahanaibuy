@@ -6,21 +6,36 @@ Load, measured on a clean production build). Without a gate, every new
 feature grows it back. These budgets are enforced by CI
 (`.github/workflows/lighthouse.yml`); the numbers below are the contract.
 
-## Current baseline — UNVERIFIED LIVE (Section 13, 11 Nov 2026)
+## Current baseline — UNVERIFIED LIVE (Section 14, Chunk 1, 11 Nov 2026)
 
 No clean production build since Section 10 has printed a route
-table: the sandbox builds for Sections 10–12 all failed at
+table: the sandbox builds for Sections 10–13 all failed at
 `/sitemap.xml` (environmental — Node fetch to the placeholder
 Supabase host hangs; see the Section 10/11/12 build reports),
 so **no current First Load JS number exists for any route**.
 The last clean-build number was Section 10, 11 Nov 2026
-(product page 281 kB) — that predates Sections 11–13, so it is
+(product page 281 kB) — that predates Sections 11–14, so it is
 **not** the current baseline and must not be quoted as one.
 The current baseline is "unverified live": the ≤350 kB budget
 below is still the hard gate, and the first clean build (CI or
 Vercel) that prints a route table re-establishes the number —
 update this section with that number and date when it lands.
 Do not copy the 281 kB figure forward as if it were current.
+
+Section 14, Chunk 1 changes with bundle implications (all
+UNMEASURED — no build ran, so no size claim follows):
+- Deleted dead `components/products/price-chart.tsx` (recharts
+  chart, zero importers). Removing a dead component cannot grow a
+  bundle, but recharts is still imported elsewhere
+  (`price-history-graph.tsx`), so no dependency was dropped and
+  no saving is claimed.
+- Wired the self-fetching `DealHotspotsCalendar` into /deals. It
+  adds its client code to the /deals bundle and one live API call
+  (`/api/v1/deal-hotspots`) per visit; its size impact is
+  unmeasured until a clean build prints the /deals row.
+- Notifications list pagination/filters, the sidebar unread
+  badge, and /compare merchant links add small client code only;
+  likewise unmeasured.
 
 ## Budgets
 

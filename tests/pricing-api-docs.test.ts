@@ -21,6 +21,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TIERS, getTier } from '@/lib/tiers';
 import { ANONYMOUS_DAILY_QUOTA, API_QUOTAS } from '@/lib/api-quota';
+import { tFor } from '@/lib/i18n';
 
 const read = (rel: string) => readFileSync(join(process.cwd(), rel), 'utf8');
 const exists = (rel: string) => existsSync(join(process.cwd(), rel));
@@ -107,18 +108,20 @@ describe('Section 12 — api-docs daily quotas', () => {
 describe('Section 12 — footer', () => {
   it('links to the affiliate disclosure', () => {
     const footer = read('components/layout/site-footer.tsx');
-    expect(footer).toContain('Affiliate Disclosure');
     // The disclosure lives in the Methodology page (no standalone
     // disclosure page, and its heading carries no anchor id).
-    expect(footer).toContain("href: '/methodology#affiliate-disclosure', label: 'Affiliate Disclosure'");
+    // Section 14, I-2: labels are DictKeys now (labelKey); the
+    // English string lives in lib/i18n.ts, not in the footer file.
+    expect(footer).toContain("href: '/methodology#affiliate-disclosure', labelKey: 'footerLinkAffiliateDisclosure'");
+    expect(tFor('en', 'footerLinkAffiliateDisclosure')).toBe('Affiliate Disclosure');
   });
 
   it('points Brands and Categories at the real index pages', () => {
     const footer = read('components/layout/site-footer.tsx');
-    expect(footer).toContain("href: '/brands', label: 'Brands'");
-    expect(footer).toContain("href: '/categories', label: 'Categories'");
-    expect(footer).not.toContain("href: '/#browse', label: 'Brands'");
-    expect(footer).not.toContain("href: '/#browse', label: 'Categories'");
+    expect(footer).toContain("href: '/brands', labelKey: 'navBrands'");
+    expect(footer).toContain("href: '/categories', labelKey: 'footerLinkCategories'");
+    expect(footer).not.toContain("href: '/#browse', labelKey: 'navBrands'");
+    expect(footer).not.toContain("href: '/#browse', labelKey: 'footerLinkCategories'");
   });
 
   it('mounts the newsletter capture component', () => {

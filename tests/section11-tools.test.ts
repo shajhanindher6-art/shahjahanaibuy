@@ -110,14 +110,21 @@ describe('Section 11 — guided quiz + budget finder share one ranker', () => {
   });
 
   it('budget-finder params: valid, missing, and invalid budgets', () => {
+    // Section 14, Chunk 2 (B9): the parser now also returns the
+    // amount as written (budgetOriginal / budgetCurrency) so the
+    // page can show "20,000 PKR (≈ $71)" — a bare number stays USD.
     expect(parseBudgetFinderParams({ category: 'laptop', budget: '1000' })).toEqual({
       category: 'laptop',
       budgetUsd: 1000,
+      budgetOriginal: 1000,
+      budgetCurrency: 'USD',
       budgetError: null,
     });
     expect(parseBudgetFinderParams({})).toEqual({
       category: null,
       budgetUsd: null,
+      budgetOriginal: null,
+      budgetCurrency: null,
       budgetError: null,
     });
     const bad = parseBudgetFinderParams({ category: 'laptop', budget: 'free' });

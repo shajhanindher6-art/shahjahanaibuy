@@ -4,7 +4,11 @@ import {
   decodeQuizAnswers,
   encodeQuizAnswers,
   rankGuidedPicks,
+  rankRelaxedGuidedPicks,
   verdictForPick,
+  GUIDED_CATEGORIES,
+  GUIDED_MUST_HAVES,
+  GUIDED_USE_CASES,
   type GuidedAnswers,
   type GuidedCandidate,
 } from '@/services/guided-finder';
@@ -232,5 +236,141 @@ describe('quiz answers URL round-trip', () => {
     expect(answersToFinderInput({ ...answers, useCase: 'camera for photography' }).category).toBe(
       'camera'
     );
+  });
+});
+
+describe('rankRelaxedGuidedPicks (B1 nearest-miss fallback)', () => {
+  const products = [
+    candidate({
+      slug: 'laptop-battery',
+      name: 'Battery Laptop',
+      description: '24-hour battery life, lightweight chassis',
+      bestPriceUsd: 800,
+    }),
+    candidate({
+      slug: 'laptop-waterproof',
+      name: 'Tough Laptop',
+      description: 'Waterproof rugged laptop, sealed ports',
+      bestPriceUsd: 900,
+    }),
+    candidate({
+      slug: 'laptop-plain',
+      name: 'Plain Laptop',
+      description: 'A solid everyday laptop',
+      bestPriceUsd: 600,
+    }),
+  ];
+
+  it('returns closest picks with each missed must-have labelled', () => {
+    const relaxed = rankRelaxedGuidedPicks(products, {
+      mustHaveKeywords: ['Long battery life', 'Waterproof'],
+    });
+    // Both battery laptops match 1 of 2 (battery, not waterproof);
+    // the plain laptop matches 0 and is not a closest match.
+    expect(relaxed.map((p) => p.slug)).toEqual(['laptop-battery', 'laptop-waterproof']);
+    expect(relaxed[0].matchedMustHaveCount).toBe(1);
+    expect(relaxed[0].totalMustHaves).toBe(2);
+    expect(relaxed[0].missedMustHaves).toEqual(['Waterproof']);
+  });
+
+  it('ranks most matched must-haves first', () => {
+    const relaxed = rankRelaxedGuidedPicks(products, {
+      mustHaveKeywords: ['Long battery life', 'Lightweight', 'Waterproof'],
+    });
+    // laptop-battery matches battery + lightweight (2); the rugged
+    // one matches battery + waterproof (2) — tie broken by price;
+    // the plain laptop matches 0 and is dropped.
+    expect(relaxed.map((p) => p.slug)).toEqual(['laptop-battery', 'laptop-waterproof']);
+    expect(relaxed[0].matchedMustHaveCount).toBe(2);
+  });
+
+  it('keeps budget, category and brand hard even when relaxing', () => {
+    // Over-budget and wrong-brand closest matches are never picks.
+    expect(
+      rankRelaxedGuidedPicks(products, {
+        budgetUsd: 700,
+        mustHaveKeywords: ['Long battery life', 'Waterproof'],
+      })
+    ).toEqual([]);
+    expect(
+      rankRelaxedGuidedPicks(products, {
+        brand: 'Sony',
+        mustHaveKeywords: ['Long battery life', 'Waterproof'],
+      })
+    ).toEqual([]);
+    expect(
+      rankRelaxedGuidedPicks(products, {
+        category: 'phone',
+        mustHaveKeywords: ['Long battery life', 'Waterproof'],
+      })
+    ).toEqual([]);
+  });
+
+  it('returns [] with no must-haves, and caps at 3 by default', () => {
+    expect(rankRelaxedGuidedPicks(products, {})).toEqual([]);
+    expect(rankRelaxedGuidedPicks(products, { mustHaveKeywords: [] })).toEqual([]);
+    const many = Array.from({ length: 6 }, (_, i) =>
+      candidate({
+        slug: `p-${i}`,
+        description: 'waterproof laptop',
+        bestPriceUsd: 100 + i,
+      })
+    );
+    expect(
+      rankRelaxedGuidedPicks(many, { mustHaveKeywords: ['Waterproof', 'Lightweight'] })
+    ).toHaveLength(3);
+  });
+
+  it('never picks unpriced products or the sample-laptop demo row', () => {
+    const relaxed = rankRelaxedGuidedPicks(
+      [
+        candidate({ slug: 'sample-laptop', description: 'waterproof laptop', bestPriceUsd: 1 }),
+        candidate({ slug: 'unpriced', description: 'waterproof laptop', bestPriceUsd: null }),
+        candidate({ slug: 'ok', description: 'waterproof laptop', bestPriceUsd: 200 }),
+      ],
+      { mustHaveKeywords: ['Waterproof', 'Lightweight'] }
+    );
+    expect(relaxed.map((p) => p.slug)).toEqual(['ok']);
+  });
+});
+
+describe('guided finder option lists (B13 expansion)', () => {
+  it('adds the video-editing + phone-photography use cases', () => {
+    expect(GUIDED_USE_CASES.map((u) => u.value)).toContain('laptop for video editing');
+    expect(GUIDED_USE_CASES.map((u) => u.value)).toContain('phone for photography');
+    // The new use cases still derive a category via the parser.
+    expect(
+      answersToFinderInput({
+        useCase: 'laptop for video editing',
+        budgetUsd: null,
+        brand: null,
+        mustHaves: [],
+      }).category
+    ).toBe('laptop');
+    expect(
+      answersToFinderInput({
+        useCase: 'phone for photography',
+        budgetUsd: null,
+        brand: null,
+        mustHaves: [],
+      }).category
+    ).toBe('phone');
+  });
+
+  it('adds the 5G / touchscreen / noise-cancelling must-haves and the Mouse category', () => {
+    expect(GUIDED_MUST_HAVES).toContain('5G connectivity');
+    expect(GUIDED_MUST_HAVES).toContain('Touchscreen');
+    expect(GUIDED_MUST_HAVES).toContain('Noise cancelling');
+    expect(GUIDED_CATEGORIES).toContain('Mouse');
+  });
+
+  it('round-trips a shared link carrying a new must-have', () => {
+    const answers: GuidedAnswers = {
+      useCase: 'phone for photography',
+      budgetUsd: 1000,
+      brand: null,
+      mustHaves: ['5G connectivity'],
+    };
+    expect(decodeQuizAnswers(encodeQuizAnswers(answers))).toEqual(answers);
   });
 });

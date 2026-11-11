@@ -27,6 +27,9 @@ const NEW_SLUGS = [
   'warranty-returns-guide-online-shopping',
 ];
 
+/** Section 14, chunk 9 — the creator-program guide, published 2026-11-11. */
+const SECTION14_SLUGS = ['how-to-become-a-creator-on-smartbuy'];
+
 /** Rough word count over the rendered text of every block (same method used when drafting). */
 function countWords(blocks: Block[]): number {
   let words = 0;
@@ -45,9 +48,9 @@ function countWords(blocks: Block[]): number {
 }
 
 describe('blog posts', () => {
-  it('has the 10 launch articles plus 10 new articles', () => {
-    expect(POSTS.length).toBe(20);
-    for (const slug of [...EXISTING_SLUGS, ...NEW_SLUGS]) {
+  it('has the 10 launch articles plus 10 new articles plus the Section 14 creator guide', () => {
+    expect(POSTS.length).toBe(21);
+    for (const slug of [...EXISTING_SLUGS, ...NEW_SLUGS, ...SECTION14_SLUGS]) {
       expect(POSTS.some((p) => p.slug === slug)).toBe(true);
     }
   });
@@ -76,6 +79,13 @@ describe('blog posts', () => {
     for (const slug of NEW_SLUGS) {
       const post = POSTS.find((p) => p.slug === slug);
       expect(post?.datePublished).toBe('2026-11-10');
+    }
+  });
+
+  it('dates the Section 14 creator guide to 2026-11-11', () => {
+    for (const slug of SECTION14_SLUGS) {
+      const post = POSTS.find((p) => p.slug === slug);
+      expect(post?.datePublished).toBe('2026-11-11');
     }
   });
 

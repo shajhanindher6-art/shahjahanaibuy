@@ -10,8 +10,10 @@
 -- OWNER step (run once in the Supabase dashboard SQL editor).
 --
 --   * newsletter_subscribers stores ONLY the email address, where
---     it was captured (footer/homepage), and lifecycle timestamps.
---     No IP address, user agent, or cross-user data is stored.
+--     it was captured (footer/homepage/deals/digest/notifications —
+--     the five NEWSLETTER_SOURCES in lib/newsletter.ts), and
+--     lifecycle timestamps. No IP address, user agent, or
+--     cross-user data is stored.
 --   * Email is stored lowercased (the route normalizes before
 --     insert) and deduped by a unique index on lower(email), so
 --     one address can never have two rows — a repeat signup is
@@ -34,7 +36,7 @@ CREATE TABLE IF NOT EXISTS public.newsletter_subscribers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   email text NOT NULL,
   source text NOT NULL DEFAULT 'homepage'
-    CHECK (source IN ('footer', 'homepage')),
+    CHECK (source IN ('footer', 'homepage', 'deals', 'digest', 'notifications')),
   unsubscribe_token text NOT NULL UNIQUE DEFAULT gen_random_uuid()::text,
   created_at timestamptz NOT NULL DEFAULT now(),
   confirmed_at timestamptz NULL DEFAULT NULL,
@@ -58,6 +60,12 @@ ALTER TABLE public.newsletter_subscribers ENABLE ROW LEVEL SECURITY;
 -- Opt-in insert only: anyone may create their own signup, but
 -- anonymous clients can never read, update or delete rows.
 DROP POLICY IF EXISTS "newsletter_subscribers_insert_anon" ON public.newsletter_subscribers;
+-- Section 14, Chunk 1 — the CHECK above lists all five sources in
+-- lib/newsletter.ts (NEWSLETTER_SOURCES). It used to list only
+-- ('footer', 'homepage'), so a signup captured on /deals, the
+-- digest, or the notifications page would have been rejected by
+-- the database even though the route accepted the source. The RLS
+-- policy below must list the same five values.
 CREATE POLICY "newsletter_subscribers_insert_anon" ON public.newsletter_subscribers
   FOR INSERT TO anon
-  WITH CHECK (email IS NOT NULL AND email <> '' AND source IN ('footer', 'homepage'));
+  WITH CHECK (email IS NOT NULL AND email <> '' AND source IN ('footer', 'homepage', 'deals', 'digest', 'notifications'));

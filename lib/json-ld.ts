@@ -232,6 +232,83 @@ export function buildEventJsonLd(
   };
 }
 
+export interface LiveSessionEventJsonLdInput {
+  slug: string;
+  title: string;
+  /** Host note, only when recorded — used as the description. */
+  hostNote?: string | null;
+  /** Recorded scheduled start (starts_at). Sessions are scheduled by a host, so this is a real date, not an expectation. */
+  startsAt: string;
+  /** Recorded end, only when one is set. */
+  endsAt?: string | null;
+}
+
+/**
+ * Event schema for a live shopping session (Section 14, Chunk 6).
+ * Only recorded facts: title, page URL, the scheduled start, the
+ * recorded end when one exists, and the host note as description.
+ * No location is recorded — SmartBuy hosts no stream and the session
+ * links OUT to the provider's stream — and no performer: no host
+ * name is recorded anywhere (host_note is a note, not a name).
+ */
+export function buildLiveSessionEventJsonLd(
+  siteUrl: string,
+  session: LiveSessionEventJsonLdInput
+): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Event',
+    name: session.title,
+    url: `${siteUrl}/live/${session.slug}`,
+    startDate: session.startsAt,
+    ...(session.endsAt ? { endDate: session.endsAt } : {}),
+    ...(session.hostNote ? { description: session.hostNote } : {}),
+  };
+}
+
+export interface CreatorPersonJsonLdInput {
+  slug: string;
+  /** Display name when recorded; 'Creator' when the creator has none. */
+  displayName?: string | null;
+  /** The creator's own bio text, only when recorded. */
+  bio?: string | null;
+}
+
+/**
+ * Person schema for a creator storefront (Section 14, Chunk 6).
+ * Only recorded facts: the creator's display name, their own bio,
+ * and the storefront URL. No social profiles, follower counts, or
+ * earnings are recorded anywhere, so none are claimed.
+ */
+export function buildCreatorPersonJsonLd(
+  siteUrl: string,
+  creator: CreatorPersonJsonLdInput
+): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Person',
+    name: creator.displayName ?? 'Creator',
+    url: `${siteUrl}/creators/${creator.slug}`,
+    ...(creator.bio ? { description: creator.bio } : {}),
+  };
+}
+
+/**
+ * ItemList for the /tools hub (Section 14, Chunk 6). Thin wrapper
+ * over buildItemListJsonLd: callers pass the real tool pages (name +
+ * path) and get the hub's ItemList. Assembly wires one render line
+ * into app/tools/page.tsx (this chunk must not edit that file):
+ *   <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: toJsonLd(buildToolsItemListJsonLd(appConfig.url, TOOL_GROUPS.flatMap((g) => g.tools.map((t) => ({ name: t.name, path: t.href })))) }} />
+ * Only tools that exist are ever passed — the 7 blocked Section 7
+ * tools are never listed on the hub, so they never enter the list.
+ */
+export function buildToolsItemListJsonLd(
+  siteUrl: string,
+  tools: ItemListEntry[]
+): Record<string, unknown> {
+  return buildItemListJsonLd(siteUrl, tools);
+}
+
 export interface SoftwareApplicationJsonLdInput {
   /** Display name, from the extension manifest. */
   name: string;

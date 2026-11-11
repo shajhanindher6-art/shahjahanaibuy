@@ -23,12 +23,27 @@ export interface SearchFilters {
   budgetMax?: number;
   minRating?: number;
   availability?: string;
+  /**
+   * Server-side search filters (Section 14, Chunk 4 — B1). The
+   * search page used to apply store / rating / price-band in
+   * memory on one fetched page; they are server filters now, so
+   * the filtered total and the page agree.
+   */
+  store?: string;
+  priceBand?: 'all' | 'under-100' | '100-500' | '500-plus';
 }
 
 export interface AISearchResult {
   product: import('./index').Product;
   score: number;
   matchedAttributes: string[];
+  /**
+   * Query tokens the product's name/brand/category/description
+   * text actually carries (Section 14, Chunk 4 — B1, tokenized
+   * search). Text matching only, never a spec claim — the search
+   * card shows them as "Matched: …".
+   */
+  matchedTerms: string[];
   aiExplanation: string;
   /**
    * Latest recorded price_history price in USD, or null when no
@@ -83,6 +98,14 @@ export interface ParsedSearchIntent {
    */
   budget: number | null;
   /**
+   * Lower end of a price BAND ("between $500 and $1000"), in USD.
+   * Null when the query carries no band — a plain max budget leaves
+   * this null. Wired as a hard filter by aiSearch (priced products
+   * below it are dropped; unpriced products are kept, same as the
+   * max-budget convention).
+   */
+  budgetMin: number | null;
+  /**
    * Currency the user actually wrote, e.g. 'PKR' for "under 20K
    * PKR". Null when the query carried no budget at all. When the
    * user wrote no currency, this is 'USD' (bare numbers stay USD).
@@ -91,8 +114,28 @@ export interface ParsedSearchIntent {
   /** Amount exactly as written, before conversion (e.g. 20000). */
   budgetOriginal: number | null;
   brands: string[];
+  /**
+   * Brands the visitor explicitly EXCLUDED ("laptop not Apple",
+   * "phone without Samsung"). Applied as a hard filter by aiSearch
+   * and removed from `brands` above, so a negated brand is never
+   * also a positive match.
+   */
+  excludedBrands: string[];
+  /**
+   * Terms the visitor explicitly excluded ("without OLED", "no 5G").
+   * Description-keyword terms, applied as a hard filter against
+   * name + description + brand + category text.
+   */
+  excludedTerms: string[];
   attributes: Record<string, string>;
   intent: string;
+  /**
+   * An "X vs Y" compare query ("MacBook vs Dell XPS"), split into
+   * its two sides. Null when the query carries no `vs` / `versus`.
+   * aiSearch resolves both sides against the catalog and returns
+   * the pair in AISearchResults.compareProducts.
+   */
+  compareQuery: { first: string; second: string } | null;
 }
 
 // ---------------------------------------------------------------------------

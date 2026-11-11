@@ -1473,6 +1473,97 @@ export const POSTS: Post[] = [
       },
     ],
   },
+  {
+    slug: 'how-to-become-a-creator-on-smartbuy',
+    title: 'How to Become a Creator on SmartBuy',
+    excerpt:
+      'Creators are community members who share verified deals and earn points and badges for them. Here is how the program actually works — the slug, the verification rule, the points, and the badges — and what it does not promise.',
+    datePublished: '2026-11-11',
+    author: EDITORIAL_TEAM_AUTHOR,
+    lastUpdated: '2026-11-11',
+    readMinutes: 4,
+    tags: ['creators', 'community deals', 'badges', 'how-to'],
+    content: [
+      {
+        type: 'p',
+        text: 'SmartBuy has a creator program, and it is deliberately small and strict. Creators are community members who share deals other shoppers can trust — and the key word is verified. A creator is someone who has shared at least one deal that passed SmartBuy\'s verification check, and who has chosen a public storefront to show it on. This guide explains how that works, and what it does not promise.',
+      },
+      { type: 'h2', text: 'What a creator is — and is not' },
+      {
+        type: 'p',
+        text: 'A creator is a signed-in member who shares community deals. Guests cannot submit deals at all — every deal in the system belongs to a signed-in account. A creator appears on the public creators page only once two things are both true: they have a public storefront, and they have at least one verified deal. Until then, there is nothing to list, and the page says so plainly instead of inventing creators, bios, or follower counts.',
+      },
+      {
+        type: 'p',
+        text: 'What a creator is not matters just as much. Creators are not paid reviewers, and their deals are not advertisements — a deal earns its place by passing the same verification check as any other community deal, whoever submitted it. Popularity does not help either: upvotes never verify a deal and never earn points, however many a deal collects.',
+      },
+      { type: 'h2', text: 'Step 1: choose a public slug' },
+      {
+        type: 'p',
+        text: 'The first step is choosing a public slug for your storefront — the short name in your storefront address. A slug is 2 to 64 characters of lowercase letters, digits, and hyphens, and it must start and end with a letter or a digit. You set it on your profile, together with a short bio in your own words. Nothing about you is published except the three things you chose to make public: your slug, your bio, and your display name.',
+      },
+      {
+        type: 'p',
+        text: 'Pick a slug you are comfortable keeping. It is the address other shoppers will use to find your storefront, and it is how your verified deals are grouped together in one place. If you never set a slug, you can still submit deals — but you will not appear on the creators page, because there is no storefront to link to.',
+      },
+      { type: 'h2', text: 'Step 2: share a deal that can be checked' },
+      {
+        type: 'p',
+        text: 'The second step is submitting a deal, and the most important thing about a submission is that it can be checked. A good submission names the product, the merchant, and the price, and includes the source link where you found it. A coupon code helps when one applies. Vague submissions — a product name with no merchant, no price, and no link — cannot be verified by the price check, and can only ever be verified if an admin confirms them directly.',
+      },
+      {
+        type: 'list',
+        items: [
+          'Name the product exactly — link it to the catalog product when you can.',
+          'Name the merchant and give the price you actually saw.',
+          'Include the source link so anyone can check the deal themselves.',
+          'Add a coupon code only when one genuinely applies to that deal.',
+        ],
+      },
+      { type: 'h2', text: 'Step 3: how verification works' },
+      {
+        type: 'p',
+        text: 'Verification is the heart of the program, and it has exactly two paths. The first is admin confirmation: an admin reviews the deal and marks it verified. The second is a merchant-price match: the deal links a catalog product and a merchant, and that merchant\'s recorded price for the product is within 5% of the deal price. Either path verifies the deal. Upvotes are not a path at all — they never verify anything, and they never earn points.',
+      },
+      {
+        type: 'p',
+        text: 'That 5% rule is worth understanding, because it is what keeps the program honest. A deal claiming a price far below the merchant\'s own recorded price cannot be price-verified — the numbers simply do not match. It can still be verified by an admin, but only after a human has actually looked at it. Nothing in the system takes a submitter\'s word for a price.',
+      },
+      { type: 'h2', text: 'Points and the badge ladder' },
+      {
+        type: 'p',
+        text: 'Every verified deal earns 10 points. Unverified deals earn nothing — including popular ones. Points decide the public leaderboard, which ranks creators by points first, then by verified deals, with a fixed tie-break so the order is never random.',
+      },
+      {
+        type: 'table',
+        headers: ['Badge', 'Verified deals needed', 'Points'],
+        rows: [
+          ['Bronze Contributor', '1', '10'],
+          ['Silver Contributor', '5', '50'],
+          ['Gold Contributor', '15', '150'],
+          ['Platinum Contributor', '30', '300'],
+        ],
+      },
+      {
+        type: 'p',
+        text: 'Badges follow the verified-deal count, not just the points: one verified deal earns the Bronze badge, five earn Silver, fifteen earn Gold, and thirty earn Platinum — the top of the ladder. A badge can never be earned any other way, and there is no badge above Platinum. Your storefront shows your current badge and how many verified deals stand between you and the next one.',
+      },
+      { type: 'h2', text: 'What creators do not get — yet' },
+      {
+        type: 'p',
+        text: 'Two honest limits. First, there is no revenue share today. The program is built so a share can be configured — the owner sets a percentage, and only then can a share of affiliate revenue be computed for display — but no percentage is set, so every share computation returns nothing, and no payout is ever made by the site.',
+      },
+      {
+        type: 'p',
+        text: 'Second, a storefront with no verified deals still resolves — it simply shows no verified deals yet. That is by design: an empty storefront is not a failure, it is a starting point. The work is the same either way: share deals that can be checked, let verification do its job, and the points, the badge, and the ranking follow on their own.',
+      },
+      {
+        type: 'callout',
+        title: 'Verified means checked, not popular',
+        text: 'A deal is verified by an admin confirmation or by a merchant-price match within 5% — never by votes. Points and badges follow verified deals only: 10 points each, Bronze at 1, Silver at 5, Gold at 15, Platinum at 30.',
+      },
+    ],
+  },
 ];
 
 export function getAllPosts(): Post[] {

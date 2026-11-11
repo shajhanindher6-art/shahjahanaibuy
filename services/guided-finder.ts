@@ -42,6 +42,7 @@ import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { discountPercent } from '@/lib/deal-math';
 import { computeDealScore } from '@/lib/deal-score';
 import { parseSearchIntent } from './ai-search';
+import { parseBudgetFromQuery } from './currency';
 import { enrichProducts } from './personal-assistant';
 import { getProducts } from './products';
 
@@ -117,7 +118,9 @@ export interface GuidedAnswers {
 export const GUIDED_USE_CASES: Array<{ value: string; label: string }> = [
   { value: 'laptop for work', label: 'Work & study — a laptop' },
   { value: 'laptop for gaming', label: 'Gaming — a laptop or console' },
+  { value: 'laptop for video editing', label: 'Video editing — a laptop' },
   { value: 'phone for everyday use', label: 'Everyday use — a phone' },
+  { value: 'phone for photography', label: 'Photography — a phone' },
   { value: 'headphones for travel', label: 'Travel — headphones' },
   { value: 'camera for photography', label: 'Photography — a camera' },
   { value: 'tv for streaming', label: 'Home cinema — a TV' },
@@ -156,6 +159,9 @@ export const GUIDED_MUST_HAVES: string[] = [
   '4K display',
   'OLED display',
   'Waterproof',
+  '5G connectivity',
+  'Touchscreen',
+  'Noise cancelling',
 ];
 
 /** Categories offered by the Budget Finder form (raw labels; the
@@ -172,6 +178,7 @@ export const GUIDED_CATEGORIES: string[] = [
   'Monitors',
   'Speakers',
   'Keyboards',
+  'Mouse',
 ];
 
 // ---------------------------------------------------------------------------
@@ -347,6 +354,158 @@ export function rankGuidedPicks(
 }
 
 // ---------------------------------------------------------------------------
+// Nearest-miss fallback (B1)
+// ---------------------------------------------------------------------------
+
+/** An exact pick that failed on must-haves, shown ONLY under the
+ *  empty state — never mixed into exact picks. `missedMustHaves`
+ *  names every must-have the product failed, so the UI can label
+ *  it ("matches 2 of 3 must-haves — misses: Waterproof"). */
+export interface GuidedRelaxedPick extends GuidedPick {
+  missedMustHaves: string[];
+  matchedMustHaveCount: number;
+  totalMustHaves: number;
+}
+
+/**
+ * Relaxed pass over the same candidates: budget, category and
+ * brand stay HARD (a pick over budget is never a "closest match"
+ * either), but the must-have rule relaxes from "every must-have"
+ * to "at least one must-have, most matched first". A product
+ * matching NONE of the must-haves is not a closest match — it is
+ * just an unrelated product, so it is dropped. With no must-haves
+ * at all there is nothing to relax, so this returns [] (the exact
+ * pass already covers that case).
+ *
+ * Sorted by matched must-have count, then saving %, then Deal
+ * Score, then lowest price, then slug — the same tiebreaks as
+ * rankGuidedPicks, so the two lists never disagree about which
+ * of two products is "closer".
+ */
+export function rankRelaxedGuidedPicks(
+  candidates: GuidedCandidate[],
+  input: GuidedFinderInput,
+  limit = 3
+): GuidedRelaxedPick[] {
+  const mustHaves = (input.mustHaveKeywords ?? []).filter(
+    (m) => typeof m === 'string' && m.trim().length > 0
+  );
+  if (mustHaves.length === 0) return [];
+
+  const sortBy = input.sortBy ?? 'match';
+  const cappedLimit = Math.max(1, Math.min(10, limit));
+  const budget =
+    input.budgetUsd !== null &&
+    input.budgetUsd !== undefined &&
+    Number.isFinite(input.budgetUsd) &&
+    input.budgetUsd > 0
+      ? input.budgetUsd
+      : null;
+  const parsedCategory = input.category
+    ? (parseSearchIntent(input.category).category ?? input.category.toLowerCase().trim())
+    : null;
+  const brandNorm = input.brand ? input.brand.toLowerCase().trim() : null;
+
+  const picks: GuidedRelaxedPick[] = [];
+
+  for (const c of candidates) {
+    if ((GUIDED_EXCLUDED_SLUGS as readonly string[]).includes(c.slug)) continue;
+    if (c.bestPriceUsd === null || !Number.isFinite(c.bestPriceUsd) || c.bestPriceUsd <= 0) continue;
+    const price = c.bestPriceUsd as number;
+    if (budget !== null && price > budget) continue;
+
+    const productCategory = (c.category ?? '').toLowerCase();
+    if (parsedCategory) {
+      const cat = parsedCategory.toLowerCase();
+      if (productCategory.length === 0) continue;
+      if (!productCategory.includes(cat) && !cat.includes(productCategory)) continue;
+    }
+
+    const productBrand = (c.brand ?? '').toLowerCase();
+    if (brandNorm && productBrand !== brandNorm) continue;
+
+    const haystack = [c.name, c.brand ?? '', c.category ?? '', c.description ?? '']
+      .join(' ')
+      .toLowerCase();
+    const matchedPhrases: string[] = [];
+    const missedMustHaves: string[] = [];
+    const matchedKeywords: string[] = [];
+    for (const phrase of mustHaves) {
+      const matched = mustHaveMatches(phrase, haystack);
+      if (matched.length === 0) {
+        missedMustHaves.push(phrase);
+      } else {
+        matchedPhrases.push(phrase);
+        matchedKeywords.push(...matched);
+      }
+    }
+    // No must-have matched at all — not a closest match.
+    if (matchedPhrases.length === 0) continue;
+
+    const savingPct = discountPercent(price, c.compareAtUsd);
+    const why: string[] = [];
+    if (budget !== null) {
+      why.push(`$${price.toFixed(2)} — within your $${budget.toFixed(2)} budget`);
+    } else {
+      why.push(`Priced at $${price.toFixed(2)}${c.merchantName ? ` at ${c.merchantName}` : ''}`);
+    }
+    if (parsedCategory && productCategory.includes(parsedCategory.toLowerCase())) {
+      why.push(`Matches your ${parsedCategory} category`);
+    }
+    if (brandNorm && c.brand) why.push(`From your preferred brand ${c.brand}`);
+    if (matchedKeywords.length > 0) {
+      why.push(
+        `Matches ${matchedPhrases.length} of ${mustHaves.length} must-haves: ${Array.from(new Set(matchedKeywords)).join(', ')}`
+      );
+    }
+    if (savingPct !== null && c.compareAtUsd !== null) {
+      why.push(`Save ${savingPct}% vs $${c.compareAtUsd.toFixed(2)}`);
+    }
+    if (c.dealScore !== null) why.push(`Deal Score ${c.dealScore}/100`);
+
+    picks.push({
+      ...c,
+      savingPct,
+      matchCount:
+        (parsedCategory ? 1 : 0) + (brandNorm ? 1 : 0) + matchedKeywords.length,
+      why,
+      verdict: verdictForPick(savingPct, c.dealScore),
+      missedMustHaves,
+      matchedMustHaveCount: matchedPhrases.length,
+      totalMustHaves: mustHaves.length,
+    });
+  }
+
+  picks.sort((a, b) => {
+    if (b.matchedMustHaveCount !== a.matchedMustHaveCount) {
+      return b.matchedMustHaveCount - a.matchedMustHaveCount;
+    }
+    if (sortBy === 'deal') {
+      const sa = a.savingPct ?? -1;
+      const sb = b.savingPct ?? -1;
+      if (sb !== sa) return sb - sa;
+      const da = a.dealScore ?? -1;
+      const db = b.dealScore ?? -1;
+      if (db !== da) return db - da;
+    } else {
+      if (b.matchCount !== a.matchCount) return b.matchCount - a.matchCount;
+      const sa = a.savingPct ?? -1;
+      const sb = b.savingPct ?? -1;
+      if (sb !== sa) return sb - sa;
+      const da = a.dealScore ?? -1;
+      const db = b.dealScore ?? -1;
+      if (db !== da) return db - da;
+    }
+    const pa = a.bestPriceUsd as number;
+    const pb = b.bestPriceUsd as number;
+    if (pa !== pb) return pa - pb;
+    return a.slug.localeCompare(b.slug);
+  });
+
+  return picks.slice(0, cappedLimit);
+}
+
+// ---------------------------------------------------------------------------
 // Quiz answers <-> shareable URL
 // ---------------------------------------------------------------------------
 
@@ -424,13 +583,24 @@ export function answersToFinderInput(answers: GuidedAnswers): GuidedFinderInput 
  *  (`?category=...&budget=...`). Returns nulls for anything
  *  missing or unparseable — the page then shows the form instead
  *  of guessing. A non-positive or non-numeric budget is an error,
- *  not silently treated as "no limit". */
+ *  not silently treated as "no limit".
+ *
+ *  Multi-currency (B9): the budget is parsed with the same
+ *  parseBudgetFromQuery the search box uses, so "20K PKR" is a
+ *  ~$71 budget (budgetUsd 71, budgetOriginal 20000, budgetCurrency
+ *  'PKR'), not $20,000. A bare number ("1000") stays USD, exactly
+ *  as before. `budgetOriginal` / `budgetCurrency` let the page show
+ *  the amount the visitor actually wrote. */
 export function parseBudgetFinderParams(searchParams: {
   category?: string | string[];
   budget?: string | string[];
 }): {
   category: string | null;
   budgetUsd: number | null;
+  /** Amount exactly as written, before conversion (e.g. 20000 for "20K PKR"). */
+  budgetOriginal: number | null;
+  /** Currency written (or 'USD' for a bare number); null when no budget was given. */
+  budgetCurrency: string | null;
   budgetError: string | null;
 } {
   const rawCategory = Array.isArray(searchParams.category)
@@ -441,13 +611,28 @@ export function parseBudgetFinderParams(searchParams: {
     : searchParams.budget;
   const category = rawCategory && rawCategory.trim().length > 0 ? rawCategory.trim() : null;
   if (!rawBudget || rawBudget.trim().length === 0) {
-    return { category, budgetUsd: null, budgetError: null };
+    return { category, budgetUsd: null, budgetOriginal: null, budgetCurrency: null, budgetError: null };
   }
-  const budgetUsd = Number(rawBudget);
+  const trimmed = rawBudget.trim();
+  // Multi-currency first ("20K PKR", "under $500", "€500") — the
+  // same parser the search box uses, so the two tools agree.
+  const parsed = parseBudgetFromQuery(trimmed);
+  if (parsed) {
+    return {
+      category,
+      budgetUsd: parsed.budgetUsd,
+      budgetOriginal: parsed.budgetOriginal,
+      budgetCurrency: parsed.budgetCurrency,
+      budgetError: null,
+    };
+  }
+  // Bare number ("1000") — parseBudgetFromQuery only fires on a
+  // keyword / symbol / currency signal, so plain numbers land here.
+  const budgetUsd = Number(trimmed);
   if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) {
-    return { category, budgetUsd: null, budgetError: `"${rawBudget}" is not a valid budget — enter a positive amount in USD.` };
+    return { category, budgetUsd: null, budgetOriginal: null, budgetCurrency: null, budgetError: `"${rawBudget}" is not a valid budget — enter a positive amount, e.g. 1000 or "20K PKR".` };
   }
-  return { category, budgetUsd, budgetError: null };
+  return { category, budgetUsd, budgetOriginal: budgetUsd, budgetCurrency: 'USD', budgetError: null };
 }
 
 // ---------------------------------------------------------------------------

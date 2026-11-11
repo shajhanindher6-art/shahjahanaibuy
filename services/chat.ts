@@ -8,7 +8,7 @@ import { logger } from '@/lib/config/logger';
 import { FALLBACK_REGION, type Region } from '@/lib/region';
 import { parseSearchIntent } from './ai-search';
 import { stripBudgetFromQuery } from './currency';
-import { compareAssistant, dealsAssistant, recommendAssistant } from './personal-assistant';
+import { compareAssistant, couponsAssistant, dealsAssistant, recommendAssistant } from './personal-assistant';
 
 export interface ChatMessage {
   id: string;
@@ -199,6 +199,20 @@ export async function generateChatResponse(
   const region = options.region ?? FALLBACK_REGION;
   const intent = parseSearchIntent(userMessage);
   const lower = userMessage.toLowerCase();
+
+  // Coupon / cashback intent first: "any coupon for MacBook?" and
+  // "discount code" must reach couponsAssistant, not the compare
+  // route ("vs" below) or the deals route ("discount" below) —
+  // both would answer a different question than the one asked.
+  if (
+    lower.includes('coupon') ||
+    lower.includes('cashback') ||
+    lower.includes('promo code') ||
+    lower.includes('discount code') ||
+    lower.includes('voucher')
+  ) {
+    return couponsAssistant(supabase, userMessage, intent, region);
+  }
 
   if (lower.includes('compare') || lower.includes('vs') || lower.includes('versus')) {
     return compareAssistant(supabase, userMessage, intent, region);

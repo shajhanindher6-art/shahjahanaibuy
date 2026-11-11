@@ -242,6 +242,9 @@ async function fetchProducts(
     .from('products')
     .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at')
     .in('id', productIds)
+    // The 'sample-laptop' health-check row is not a real product —
+    // a deal pointing at it must never render as a deal card.
+    .neq('slug', 'sample-laptop')
     .is('deleted_at', null);
 
   const map = new Map<string, Product>();

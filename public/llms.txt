@@ -5,7 +5,9 @@
 ## Key pages
 
 - [Home](https://shahjahanaibuy-b1zp.vercel.app/): product search, deals, local stores by country
-- [Tools](https://shahjahanaibuy-b1zp.vercel.app/tools): AI shopping tools — guided quiz, budget finder, store finder, price history explorer, gift budget splitter, forecast explainer, currency converter, and more
+- [Tools](https://shahjahanaibuy-b1zp.vercel.app/tools): AI shopping tools — guided quiz, budget finder, store finder, price history explorer, gift budget splitter, forecast explainer, currency converter, price alert simulator, deal checker, landed cost calculator, price protection check, EMI calculator, and more
+- [Products](https://shahjahanaibuy-b1zp.vercel.app/products): all products with sort, brand/category filters, and pagination
+- [Partners](https://shahjahanaibuy-b1zp.vercel.app/partners): partnership enquiries (no partnership program yet) and [Referrals](https://shahjahanaibuy-b1zp.vercel.app/referrals): how referrals work (clicks counted only, points/badges from verified deals only)
 - [Pricing](https://shahjahanaibuy-b1zp.vercel.app/pricing): Free and Premium plans, quotas, and limits
 - [Brands](https://shahjahanaibuy-b1zp.vercel.app/brands) and [Categories](https://shahjahanaibuy-b1zp.vercel.app/categories): browse the catalog by brand or category
 - [Compare](https://shahjahanaibuy-b1zp.vercel.app/compare): product comparison across retailers
@@ -15,6 +17,18 @@
 - [Search](https://shahjahanaibuy-b1zp.vercel.app/search): local-first retailer search with a global import tab
 - [Deals](https://shahjahanaibuy-b1zp.vercel.app/deals): current deals (discovery only — no checkout on this site)
 - [Gifts](https://shahjahanaibuy-b1zp.vercel.app/gifts): deterministic gift recommender with a hard budget filter
+- [Live shopping](https://shahjahanaibuy-b1zp.vercel.app/live): scheduled live shopping sessions; no sessions are listed until a real session with a real date exists
+- [Creators](https://shahjahanaibuy-b1zp.vercel.app/creators): community members who share verified deals; a creator appears once they have a public storefront and at least one verified deal
+- [Events](https://shahjahanaibuy-b1zp.vercel.app/events): seasonal sale events (Black Friday, 11.11, Eid) with recorded dates only
+- [Extension](https://shahjahanaibuy-b1zp.vercel.app/extension): browser extension guide (unpacked developer-mode install only; not on any store yet)
+- [Platforms](https://shahjahanaibuy-b1zp.vercel.app/platforms): where SmartBuy finds products — live merchants plus search-link stores
+- [Price index](https://shahjahanaibuy-b1zp.vercel.app/price-index): recorded price movements across the catalog
+- [Market reports](https://shahjahanaibuy-b1zp.vercel.app/market-reports): market reports from recorded catalog data
+- [Mobile app](https://shahjahanaibuy-b1zp.vercel.app/mobile-app): about the planned native app (not yet built)
+- [Help](https://shahjahanaibuy-b1zp.vercel.app/help) and [FAQ](https://shahjahanaibuy-b1zp.vercel.app/faq): how SmartBuy works, answered from what the site actually does
+- [Methodology](https://shahjahanaibuy-b1zp.vercel.app/methodology): how prices, deal scores, and forecasts are computed — and their limits
+- [API docs](https://shahjahanaibuy-b1zp.vercel.app/api-docs): public API reference, quotas, and tiers
+- [Status](https://shahjahanaibuy-b1zp.vercel.app/status): service status and last-verified times
 - [Scanner](https://shahjahanaibuy-b1zp.vercel.app/scan): photo-based product matching (uploaded photos are never sent or stored)
 - [Privacy](https://shahjahanaibuy-b1zp.vercel.app/privacy) and [Terms](https://shahjahanaibuy-b1zp.vercel.app/terms)
 

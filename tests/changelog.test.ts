@@ -2,8 +2,28 @@ import { describe, expect, it } from 'vitest';
 import { RELEASES, PENDING_SYNC_RELEASES } from '../app/changelog/releases';
 
 describe('changelog releases', () => {
-  it('lists all 60 releases from the sync record', () => {
-    expect(RELEASES.length).toBe(60);
+  it('lists all 63 releases from the sync record plus Section 13', () => {
+    expect(RELEASES.length).toBe(63);
+  });
+
+  it('records Section 13: main push plus the two web follow-ups', () => {
+    const main = RELEASES.find((r) => r.sha === '0df20fc5d8c3eef4ae4d163e675939e1141d5246');
+    expect(main?.date).toBe('2026-11-11');
+    expect(main?.paths.length).toBe(131);
+    expect(main?.paths).toContain('app/tools/price-history/page.tsx');
+    expect(main?.paths).toContain('app/tools/currency-converter/page.tsx');
+    const chartDelete = RELEASES.find(
+      (r) => r.sha === '9296fb23dc6d9c2942027c157f0231eb3029ec43'
+    );
+    expect(chartDelete?.date).toBe('2026-11-11');
+    expect(chartDelete?.paths).toEqual(['components/ui/chart.tsx']);
+    const icons = RELEASES.find((r) => r.sha === 'edb30adcd54ce2a33ef38712193db153aecbedfc');
+    expect(icons?.date).toBe('2026-11-11');
+    expect(icons?.paths).toEqual([
+      'extension/icons/icon-16.png',
+      'extension/icons/icon-48.png',
+      'extension/icons/icon-128.png',
+    ]);
   });
 
   it('has unique full commit SHAs', () => {

@@ -2,24 +2,36 @@ import { describe, expect, it } from 'vitest';
 import { SEASONAL_EVENTS, RECORDED_DEALS, getEventBySlug } from '../components/seasonal/events';
 
 describe('seasonal events', () => {
-  it('has exactly three events: Black Friday, 11.11, and Eid', () => {
+  it('has exactly five events: Black Friday, Cyber Monday, 11.11, Eid al-Fitr, and Eid al-Adha', () => {
     expect(SEASONAL_EVENTS.map((e) => e.slug).sort()).toEqual(
-      ['11-11', 'black-friday', 'eid'].sort(),
+      ['11-11', 'black-friday', 'cyber-monday', 'eid', 'eid-al-adha'].sort(),
     );
   });
 
-  it('uses verified calendar dates (11.11 and Black Friday 2026)', () => {
+  it('uses verified calendar dates (11.11, Black Friday and Cyber Monday 2026)', () => {
     expect(getEventBySlug('11-11')?.startsAt).toBe('2026-11-11T00:00:00Z');
     expect(getEventBySlug('black-friday')?.startsAt).toBe('2026-11-27T00:00:00Z');
-    // Black Friday 2026 is a Friday (day after US Thanksgiving, Nov 26).
+    expect(getEventBySlug('cyber-monday')?.startsAt).toBe('2026-11-30T00:00:00Z');
+    // Black Friday 2026 is a Friday (day after US Thanksgiving, Nov 26);
+    // Cyber Monday is the following Monday.
     expect(new Date('2026-11-27T00:00:00Z').getUTCDay()).toBe(5);
+    expect(new Date('2026-11-30T00:00:00Z').getUTCDay()).toBe(1);
     expect(new Date('2026-11-11T00:00:00Z').getUTCDay()).toBe(3);
   });
 
-  it('labels the Eid date as expected, not confirmed', () => {
+  it('labels the Eid dates as expected, not confirmed', () => {
     const eid = getEventBySlug('eid');
     expect(eid?.dateExpected).toBe(true);
-    expect(eid?.startsAt).toBe('2027-03-20T00:00:00Z');
+    // Eid al-Fitr 2027: expected Tuesday, March 9 (Umm al-Qura / FCNA
+    // calculated calendars; March 10 where a local sighting runs long).
+    // The old 2027-03-20 date was Eid al-Fitr 2026's date, not 2027's.
+    expect(eid?.startsAt).toBe('2027-03-09T00:00:00Z');
+    const adha = getEventBySlug('eid-al-adha');
+    expect(adha?.dateExpected).toBe(true);
+    // Eid al-Adha 2027: expected Sunday, May 16 (10 Dhu al-Hijjah 1448);
+    // Pakistan / local-sighting countries may observe Monday, May 17.
+    expect(adha?.startsAt).toBe('2027-05-16T00:00:00Z');
+    expect(new Date('2027-05-16T00:00:00Z').getUTCDay()).toBe(0);
   });
 
   it('gives every event a description and tips, with no invented prices', () => {
@@ -31,7 +43,7 @@ describe('seasonal events', () => {
   });
 
   it('returns undefined for unknown slugs', () => {
-    expect(getEventBySlug('cyber-monday')).toBeUndefined();
+    expect(getEventBySlug('boxing-day')).toBeUndefined();
   });
 
   it('lists only the six recorded demo deals — nothing invented', () => {

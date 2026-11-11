@@ -8,8 +8,8 @@
  * network.
  *
  * Deliberately NOT asserted here: exact vitest counts as a fixed
- * number. The press page carries the final Section 13 full-run
- * totals (132 files / 1,490 tests); one test below asserts that
+ * number. The press page carries the final Section 14 full-run
+ * totals (151 files / 1,752 tests); one test below asserts that
  * exact string, so it must be updated together with the press page
  * whenever the suite grows.
  */
@@ -86,7 +86,7 @@ describe('press — refreshed counts, relative dates, qualified languages', () =
 
   it('carries the final Section 12 full-run counts (marker removed after finalizing)', () => {
     expect(text).not.toContain('SECTION12-FINAL-COUNTS');
-    expect(text).toContain('1,490 passing (132 test files, full run 11 November 2026)');
+    expect(text).toContain('1,752 passing (151 test files, full run 11 November 2026)');
   });
 
   it('has no hardcoded price-history calendar span', () => {

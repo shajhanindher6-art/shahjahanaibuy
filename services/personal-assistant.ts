@@ -82,6 +82,10 @@ export interface AssistantCoupon {
   code: string;
   discountType: string;
   discountValue: number;
+  /** Expiry from the coupons table, or null when none is recorded.
+   *  enrichProducts already drops expired rows; this lets answers
+   *  label the coupon with its validity ("valid until …"). */
+  validUntil: string | null;
 }
 
 export interface AssistantCashback {
@@ -227,6 +231,7 @@ export async function enrichProducts(
       code: row.code as string,
       discountType: row.discount_type as string,
       discountValue: parseNum(row.discount_value) ?? 0,
+      validUntil: (row.valid_until as string | null) ?? null,
     });
     couponsByMerchant.set(merchantId, list);
   }
@@ -736,8 +741,182 @@ export async function compareAssistant(
 }
 
 // ---------------------------------------------------------------------------
-// Deal intent ("Best deals today")
+// Coupon / cashback intent ("any coupon for MacBook?", "cashback?")
 // ---------------------------------------------------------------------------
+
+/** Validity label from the coupons table's valid_until — never
+ *  invented: a row with no expiry says so, and expired rows never
+ *  reach an answer (enrichProducts drops them; the merchant-wide
+ *  path below filters them too). Live validity of the seeded
+ *  SAVE10 / BESTBUY15 codes is therefore whatever the live table
+ *  says at request time — if the 90-day seed window has lapsed,
+ *  the answer honestly says no coupon is currently valid. */
+function validityLabel(validUntil: string | null): string {
+  if (!validUntil) return 'no expiry date recorded';
+  const d = new Date(validUntil);
+  if (Number.isNaN(d.getTime())) return 'no expiry date recorded';
+  return `valid until ${d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`;
+}
+
+function couponLine(c: AssistantCoupon): string {
+  const value =
+    c.discountType === 'percentage' ? `${c.discountValue}% off` : `$${c.discountValue} off`;
+  return `${c.code} (${value}, ${validityLabel(c.validUntil)})`;
+}
+
+/**
+ * Answer coupon / cashback questions from the coupons +
+ * cashback_offers tables — never inventing a code. With a named
+ * product, the answer covers that product's best retailer (its
+ * currently-valid coupons + its cashback offers). With no product
+ * named, it lists the currently-valid merchant coupons (optionally
+ * for the merchant named, e.g. "any Best Buy coupons?") and says
+ * cashback needs a product name, because cashback offers are
+ * per-product rows.
+ */
+export async function couponsAssistant(
+  supabase: AnySupabaseClient,
+  message: string,
+  intent: ParsedSearchIntent,
+  region: Region = FALLBACK_REGION
+): Promise<AssistantAnswer> {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select('id, name, slug, brand, category, image_url, confidence_score')
+      .is('deleted_at', null)
+      .neq('slug', 'sample-laptop')
+      .order('confidence_score', { ascending: false })
+      .limit(50);
+
+    if (error || !data) {
+      return {
+        content: 'Sorry, I could not check coupons right now. Please try again.',
+        metadata: null,
+      };
+    }
+
+    const matched = matchProductsByName(message, data as unknown as BasicProductRow[]);
+    const lower = message.toLowerCase();
+    const merchantSlug =
+      lower.includes('best buy') || lower.includes('bestbuy')
+        ? 'best-buy'
+        : lower.includes('amazon')
+          ? 'amazon'
+          : null;
+
+    if (matched.length > 0) {
+      const products = await enrichProducts(supabase, matched.slice(0, 3));
+      if (products.length === 0) {
+        return {
+          content:
+            `I couldn't find a priced product matching that name, so I can't check its coupons — ` +
+            `I only show coupons for products with a verified price. Try naming a product from the catalog.`,
+          metadata: null,
+        };
+      }
+      const lines: string[] = [];
+      for (const p of products) {
+        lines.push(
+          `${p.name} — ${formatPriceText(p.price, region)} at ${p.bestRetailer.name} ` +
+            `(${retailerDomain(p.bestRetailer, region)}).`
+        );
+        if (p.coupons.length > 0) {
+          lines.push(`Coupons at ${p.bestRetailer.name}: ${p.coupons.map(couponLine).join('; ')}.`);
+        } else {
+          lines.push(`No currently-valid coupons at ${p.bestRetailer.name} for this product.`);
+        }
+        if (p.cashback.length > 0) {
+          lines.push(
+            `Cashback: ${p.cashback
+              .map(
+                (cb) =>
+                  `${cb.title} (${cb.cashbackType === 'percentage' ? `${cb.cashbackValue}% cashback` : `$${cb.cashbackValue} cashback`})`
+              )
+              .join('; ')}.`
+          );
+        } else {
+          lines.push('No cashback offer is currently listed for this product.');
+        }
+        lines.push('');
+      }
+      lines.push(
+        "Coupon codes apply at the retailer's checkout, not inside SmartBuy. " +
+          'Only currently-valid coupons from our coupons table are shown — expired codes are never listed.'
+      );
+      return {
+        content: lines.join('\n').trim(),
+        metadata: { products: products.map(toCard), intent: intent.intent },
+      };
+    }
+
+    // No product named: merchant-wide coupons from the coupons table.
+    const [couponRes, merchantRes] = await Promise.all([
+      supabase
+        .from('coupons')
+        .select('code, merchant_id, discount_type, discount_value, valid_until')
+        .eq('active', true)
+        .limit(200),
+      supabase.from('merchants').select('id, name, slug'),
+    ]);
+    const merchantById = new Map(
+      ((merchantRes.data ?? []) as Array<{ id: string; name: string; slug: string }>).map((m) => [
+        m.id,
+        { name: m.name, slug: m.slug },
+      ])
+    );
+    const now = Date.now();
+    const valid = ((couponRes.data ?? []) as Array<Record<string, unknown>>)
+      .filter((row) => {
+        const validUntil = row.valid_until as string | null;
+        if (validUntil && new Date(validUntil).getTime() < now) return false;
+        if (merchantSlug) {
+          const merchant = merchantById.get(row.merchant_id as string);
+          if (!merchant || merchant.slug !== merchantSlug) return false;
+        }
+        return true;
+      })
+      .map((row) => ({
+        code: row.code as string,
+        discountType: row.discount_type as string,
+        discountValue: parseNum(row.discount_value) ?? 0,
+        validUntil: (row.valid_until as string | null) ?? null,
+        merchantName: merchantById.get(row.merchant_id as string)?.name ?? 'Retailer',
+      }));
+
+    if (valid.length === 0) {
+      const scope = merchantSlug
+        ? ` for ${merchantById.size > 0 ? [...merchantById.values()].find((m) => m.slug === merchantSlug)?.name ?? merchantSlug : merchantSlug}`
+        : '';
+      return {
+        content:
+          `I don't see any currently-valid coupons${scope} right now. ` +
+          `Coupons expire, so check the Deals page for the latest offers — or name a product and I'll check its coupons and cashback.`,
+        metadata: null,
+      };
+    }
+
+    const lines = ['Here are the currently-valid coupons I can see:', ''];
+    for (const c of valid) {
+      lines.push(`• ${couponLine(c)} — ${c.merchantName}.`);
+    }
+    lines.push('');
+    lines.push(
+      'Cashback offers are per product — name a product (e.g. "any cashback for MacBook Air 13?") and I will check its cashback.'
+    );
+    lines.push("Coupon codes apply at the retailer's checkout, not inside SmartBuy.");
+    return {
+      content: lines.join('\n'),
+      metadata: { products: [], intent: intent.intent },
+    };
+  } catch (err) {
+    logger.error('couponsAssistant: unexpected error', { error: String(err) });
+    return {
+      content: 'Sorry, I could not check coupons right now. Please try again.',
+      metadata: null,
+    };
+  }
+}
 
 export async function dealsAssistant(
   supabase: AnySupabaseClient,

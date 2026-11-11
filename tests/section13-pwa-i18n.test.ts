@@ -89,12 +89,12 @@ describe('PWA — update notice (service-worker-register.tsx)', () => {
   });
 });
 
-describe('i18n Phase 1 — 48-key parity', () => {
-  it('every language defines all 48 keys, no more and no fewer', () => {
+describe('i18n Phase 1 — 109-key parity (48 base + 59 Section 14 keys + 2 footer keys)', () => {
+  it('every language defines all 109 keys, no more and no fewer', () => {
     expect(Object.keys(DICTIONARIES).sort()).toEqual([...SUPPORTED_LANGUAGES].sort());
     for (const lang of SUPPORTED_LANGUAGES) {
       const keys = Object.keys(DICTIONARIES[lang]).sort();
-      expect(keys).toHaveLength(48);
+      expect(keys).toHaveLength(109);
       for (const key of PHASE_1_KEYS) {
         expect(typeof DICTIONARIES[lang][key]).toBe('string');
         expect(DICTIONARIES[lang][key].length).toBeGreaterThan(0);
@@ -121,15 +121,20 @@ describe('i18n Phase 1 — 48-key parity', () => {
   });
 });
 
-describe('i18n — heroSubtitle drops the real-time claim (item 31)', () => {
+describe('i18n — heroSubtitle is the honest single source (Section 14, I-1)', () => {
   it('no language promises real-time prices anymore', () => {
     for (const lang of SUPPORTED_LANGUAGES) {
       expect(DICTIONARIES[lang].heroSubtitle).not.toMatch(/real-?time/i);
     }
   });
 
-  it('the English subtitle promises price-drop alerts instead', () => {
-    expect(tFor('en', 'heroSubtitle')).toContain('price-drop alerts');
+  it('the English subtitle is the honest catalog subtitle, not the old price-drop-alerts one', () => {
+    // The old dictionary subtitle promised price-drop alerts; the
+    // honest subtitle (moved from hero-copy.tsx, now the single
+    // source of truth) claims only catalog search, recorded-price
+    // comparison and explained picks.
+    expect(tFor('en', 'heroSubtitle')).toContain('searches our catalog');
+    expect(tFor('en', 'heroSubtitle')).not.toContain('price-drop alerts');
   });
 });
 

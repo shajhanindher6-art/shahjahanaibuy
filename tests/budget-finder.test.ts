@@ -25,6 +25,8 @@ describe('parseBudgetFinderParams', () => {
     expect(parseBudgetFinderParams({ category: 'laptop', budget: '1000' })).toEqual({
       category: 'laptop',
       budgetUsd: 1000,
+      budgetOriginal: 1000,
+      budgetCurrency: 'USD',
       budgetError: null,
     });
   });
@@ -33,6 +35,8 @@ describe('parseBudgetFinderParams', () => {
     expect(parseBudgetFinderParams({})).toEqual({
       category: null,
       budgetUsd: null,
+      budgetOriginal: null,
+      budgetCurrency: null,
       budgetError: null,
     });
   });
@@ -41,11 +45,15 @@ describe('parseBudgetFinderParams', () => {
     expect(parseBudgetFinderParams({ category: 'Headphones' })).toEqual({
       category: 'Headphones',
       budgetUsd: null,
+      budgetOriginal: null,
+      budgetCurrency: null,
       budgetError: null,
     });
     expect(parseBudgetFinderParams({ budget: '250' })).toEqual({
       category: null,
       budgetUsd: 250,
+      budgetOriginal: 250,
+      budgetCurrency: 'USD',
       budgetError: null,
     });
   });
@@ -64,7 +72,34 @@ describe('parseBudgetFinderParams', () => {
   it('trims whitespace and takes the first value of repeated params', () => {
     expect(
       parseBudgetFinderParams({ category: ['  Laptops  ', 'Phones'], budget: [' 500 '] })
-    ).toEqual({ category: 'Laptops', budgetUsd: 500, budgetError: null });
+    ).toEqual({
+      category: 'Laptops',
+      budgetUsd: 500,
+      budgetOriginal: 500,
+      budgetCurrency: 'USD',
+      budgetError: null,
+    });
+  });
+
+  // B9: multi-currency budgets reuse the search box's parser, so
+  // "20K PKR" is a ~$71 budget — never $20,000.
+  it('parses multi-currency budgets ("20K PKR" -> ~$71, original kept)', () => {
+    expect(parseBudgetFinderParams({ budget: '20K PKR' })).toEqual({
+      category: null,
+      budgetUsd: 71,
+      budgetOriginal: 20000,
+      budgetCurrency: 'PKR',
+      budgetError: null,
+    });
+    expect(parseBudgetFinderParams({ budget: '20000 pkr' }).budgetUsd).toBe(71);
+    expect(parseBudgetFinderParams({ budget: 'under $500' })).toEqual({
+      category: null,
+      budgetUsd: 500,
+      budgetOriginal: 500,
+      budgetCurrency: 'USD',
+      budgetError: null,
+    });
+    expect(parseBudgetFinderParams({ budget: '€500' }).budgetUsd).toBe(540);
   });
 });
 

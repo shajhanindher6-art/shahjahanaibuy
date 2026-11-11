@@ -31,6 +31,24 @@ export interface ProductListOptions {
   category?: string;
   brand?: string;
   search?: string;
+  /**
+   * Sort key. Default 'newest' (created_at desc, the historical
+   * order). 'price' sorts by the lowest in-stock merchant_products
+   * price; 'name' sorts by product name. There is deliberately NO
+   * Deal Score sort: the score is 100/100 for every product today
+   * (calculateDiscountProbability returns 0 with <5 price points),
+   * so it would sort nothing.
+   */
+  sort?: 'newest' | 'price' | 'name';
+  /** Sort direction. Default 'desc' for newest, 'asc' otherwise. */
+  order?: 'asc' | 'desc';
+}
+
+/** Lowest in-stock merchant price for a product, plus how many
+ *  merchants have it in stock (the "at N stores" count). */
+export interface LowestMerchantPrice {
+  price: number;
+  merchantCount: number;
 }
 
 export interface ProductListResult {
@@ -161,6 +179,59 @@ function mapTag(row: TagRow): Tag {
   };
 }
 
+/**
+ * Lowest in-stock merchant price per product, batched over one
+ * `merchant_products` query (ordered by price ascending, so the
+ * first row per product is its cheapest in-stock listing).
+ *
+ * Only in-stock rows count: the price shown is a price the visitor
+ * can actually buy at, and merchantCount counts only merchants
+ * with the product in stock. A product with no in-stock listing
+ * is absent from the map (never a guessed price).
+ */
+export async function getLowestMerchantPrices(
+  supabase: AnySupabaseClient,
+  productIds: string[]
+): Promise<Map<string, LowestMerchantPrice>> {
+  const prices = new Map<string, LowestMerchantPrice>();
+  const ids = Array.from(new Set(productIds.filter(Boolean)));
+  if (ids.length === 0) return prices;
+  try {
+    const { data, error } = await supabase
+      .from('merchant_products')
+      .select('product_id, merchant_id, price')
+      .in('product_id', ids)
+      .is('deleted_at', null)
+      .eq('in_stock', true)
+      .order('price', { ascending: true });
+    if (error || !data) {
+      if (error) logger.warn('getLowestMerchantPrices: query failed', { error: error.message });
+      return prices;
+    }
+    const merchantsByProduct = new Map<string, Set<string>>();
+    for (const row of data as Array<{ product_id: string; merchant_id: string; price: number | string }>) {
+      const price = parseFloat(String(row.price));
+      if (!Number.isFinite(price)) continue;
+      if (!prices.has(row.product_id)) {
+        prices.set(row.product_id, { price, merchantCount: 0 });
+      }
+      let merchants = merchantsByProduct.get(row.product_id);
+      if (!merchants) {
+        merchants = new Set<string>();
+        merchantsByProduct.set(row.product_id, merchants);
+      }
+      if (row.merchant_id) merchants.add(row.merchant_id);
+    }
+    for (const [productId, merchants] of merchantsByProduct) {
+      const entry = prices.get(productId);
+      if (entry) entry.merchantCount = merchants.size;
+    }
+  } catch (err) {
+    logger.error('getLowestMerchantPrices: unexpected error', { error: String(err) });
+  }
+  return prices;
+}
+
 // ---------------------------------------------------------------------------
 // Product list (paginated, filterable)
 // ---------------------------------------------------------------------------
@@ -170,6 +241,13 @@ function mapTag(row: TagRow): Tag {
  *
  * Supports search (ilike on name), category filter, and brand filter.
  * Only non-soft-deleted products are returned.
+ *
+ * Sorting: 'newest' (default) and 'name' order in SQL, so pagination
+ * stays exact. 'price' sorts by the lowest in-stock merchant price,
+ * which lives in `merchant_products`, not `products` — so the
+ * filtered set is fetched first (at most 100 rows; the catalog is
+ * 10 products), sorted in memory, then paged. Unpriced products
+ * sort last in both directions: they have no price to rank by.
  */
 export async function getProducts(
   supabase: AnySupabaseClient,
@@ -178,6 +256,8 @@ export async function getProducts(
   const page = Math.max(1, options.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, options.pageSize ?? 20));
   const offset = (page - 1) * pageSize;
+  const sort = options.sort ?? 'newest';
+  const order = options.order ?? (sort === 'newest' ? 'desc' : 'asc');
 
   try {
     let query = supabase
@@ -194,8 +274,7 @@ export async function getProducts(
       // exact count / pagination honest. The row itself stays in the
       // live database for health checks — it is never deleted here.
       .neq('slug', 'sample-laptop')
-      .order('created_at', { ascending: false })
-      .range(offset, offset + pageSize - 1);
+      .order(sort === 'name' ? 'name' : 'created_at', { ascending: order === 'asc' });
 
     if (options.search) {
       // Search name, description, brand and category — not just name — so
@@ -212,6 +291,15 @@ export async function getProducts(
       query = query.eq('brand', options.brand);
     }
 
+    // Price sort needs the merchant prices first: fetch the whole
+    // filtered set (capped at 100 rows, the pageSize max) unsliced,
+    // sort in memory, then slice the requested page below.
+    if (sort === 'price') {
+      query = query.range(0, 99);
+    } else {
+      query = query.range(offset, offset + pageSize - 1);
+    }
+
     const { data, error, count } = await query;
 
     if (error) {
@@ -219,9 +307,25 @@ export async function getProducts(
       return { products: [], total: 0, page, pageSize, totalPages: 0 };
     }
 
-    const products = (data ?? []).map(mapProduct);
+    let products = (data ?? []).map(mapProduct);
     const total = count ?? 0;
     const totalPages = Math.ceil(total / pageSize);
+
+    if (sort === 'price') {
+      const lowest = await getLowestMerchantPrices(
+        supabase,
+        products.map((p) => p.id)
+      );
+      products = [...products].sort((a, b) => {
+        const pa = lowest.get(a.id)?.price ?? null;
+        const pb = lowest.get(b.id)?.price ?? null;
+        if (pa === null && pb === null) return 0;
+        if (pa === null) return 1;
+        if (pb === null) return -1;
+        return order === 'asc' ? pa - pb : pb - pa;
+      });
+      products = products.slice(offset, offset + pageSize);
+    }
 
     return { products, total, page, pageSize, totalPages };
   } catch (err) {
@@ -247,6 +351,7 @@ export async function getProductById(
       .from('products')
       .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at')
       .eq('id', id)
+      .neq('slug', 'sample-laptop')
       .is('deleted_at', null)
       .maybeSingle();
 
@@ -265,6 +370,12 @@ export async function getProductById(
 /**
  * Fetch a single product by slug.
  * Returns `null` if not found or on error.
+ *
+ * The 'sample-laptop' health-check row is excluded here, so it can
+ * never render as a public product page, SEO record, OG image, or
+ * [slug] sub-resource (merchants, prices, deals, QA, reviews) — all
+ * of those resolve through this function or getCachedProductBySlug.
+ * The row itself stays in the live database for health checks.
  */
 export async function getProductBySlug(
   supabase: AnySupabaseClient,
@@ -275,6 +386,7 @@ export async function getProductBySlug(
       .from('products')
       .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at')
       .eq('slug', slug)
+      .neq('slug', 'sample-laptop')
       .is('deleted_at', null)
       .maybeSingle();
 
@@ -448,8 +560,9 @@ export async function getCategories(
   try {
     const { data, error } = await supabase
       .from('products')
-      .select('category')
+      .select('slug, category')
       .not('category', 'is', null)
+      .neq('slug', 'sample-laptop')
       .is('deleted_at', null);
 
     if (error || !data) {
@@ -479,8 +592,9 @@ export async function getBrands(
   try {
     const { data, error } = await supabase
       .from('products')
-      .select('brand')
+      .select('slug, brand')
       .not('brand', 'is', null)
+      .neq('slug', 'sample-laptop')
       .is('deleted_at', null);
 
     if (error || !data) {

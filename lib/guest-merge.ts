@@ -48,6 +48,7 @@
 import { getGuestWishlist, clearGuestWishlist } from '@/lib/guest-wishlist';
 import { loadLocalAlerts, clearLocalAlerts } from '@/lib/local-alerts';
 import { getRecentlyViewed, clearRecentlyViewed } from '@/lib/recently-viewed';
+import { getGuestBuyList, clearGuestBuyList } from '@/lib/guest-buy-list';
 
 // ---------------------------------------------------------------------------
 // Shared shapes
@@ -84,7 +85,14 @@ export interface GuestViewMergeItem extends MergeableProduct {
   slug: string;
 }
 
-export type MergeCategory = 'wishlist' | 'alerts' | 'views';
+export interface GuestBuyListMergeItem {
+  productId: string;
+  slug: string;
+  name: string;
+  quantity: number;
+}
+
+export type MergeCategory = 'wishlist' | 'alerts' | 'views' | 'buyList';
 
 export interface GuestMergeResult {
   wishlistAdded: number;
@@ -92,6 +100,8 @@ export interface GuestMergeResult {
   alertsAdded: number;
   alertsAlreadyHad: number;
   viewsRecorded: number;
+  buyListAdded: number;
+  buyListAlreadyHad: number;
   searchesKept: number;
   /** False when any category failed to confirm — its guest data was
    *  kept on the device for the next sign-in retry. */
@@ -106,6 +116,8 @@ export function emptyGuestMergeResult(): GuestMergeResult {
     alertsAdded: 0,
     alertsAlreadyHad: 0,
     viewsRecorded: 0,
+    buyListAdded: 0,
+    buyListAlreadyHad: 0,
     searchesKept: 0,
     fullyMerged: true,
     failedCategories: [],
@@ -118,6 +130,7 @@ export function hasGuestMergeResult(result: GuestMergeResult): boolean {
     result.wishlistAdded > 0 ||
     result.alertsAdded > 0 ||
     result.viewsRecorded > 0 ||
+    result.buyListAdded > 0 ||
     result.searchesKept > 0
   );
 }
@@ -266,6 +279,40 @@ export function mergeRecentlyViewed(
   return { toRecord, alreadyHad };
 }
 
+export interface BuyListMerge {
+  /** Guest items not already on the account — safe to add (quantity preserved). */
+  toAdd: GuestBuyListMergeItem[];
+  /** Guest items the account already has — the signed-in entry wins. */
+  alreadyHad: GuestBuyListMergeItem[];
+}
+
+/**
+ * Dedupe guest buy-list items against the account's existing buy
+ * list, by productId. Guest-internal duplicates collapse to the
+ * first occurrence (quantities are NOT summed — the first
+ * occurrence's quantity is the one posted). Pure and deterministic.
+ */
+export function mergeGuestBuyList(
+  guest: GuestBuyListMergeItem[],
+  existing: MergeableProduct[]
+): BuyListMerge {
+  const toAdd: GuestBuyListMergeItem[] = [];
+  const alreadyHad: GuestBuyListMergeItem[] = [];
+  for (const item of guest) {
+    if (!normalizeId(item.productId)) continue;
+    const seen =
+      toAdd.some((t) => sameProduct(t, item)) ||
+      alreadyHad.some((t) => sameProduct(t, item));
+    if (seen) continue;
+    if (existing.some((e) => sameProduct(e, item))) {
+      alreadyHad.push(item);
+    } else {
+      toAdd.push(item);
+    }
+  }
+  return { toAdd, alreadyHad };
+}
+
 /** Recent-searches key shared by /search and /compare (same key, same
  *  8-item cap, case-insensitive dedupe). Signed-in users read this
  *  same device list — there is no separate signed-in list to merge
@@ -321,6 +368,11 @@ export function formatGuestMergeSummary(result: GuestMergeResult): string | null
   if (result.alertsAdded > 0) {
     parts.push(
       `${result.alertsAdded} price ${plural(result.alertsAdded, 'alert')}`
+    );
+  }
+  if (result.buyListAdded > 0) {
+    parts.push(
+      `${result.buyListAdded} buy-list ${plural(result.buyListAdded, 'item')}`
     );
   }
   if (result.viewsRecorded > 0) {
@@ -491,12 +543,14 @@ async function doRunGuestMerge(): Promise<GuestMergeResult | null> {
     const guestWishlist = getGuestWishlist();
     const guestAlerts = loadLocalAlerts();
     const guestViews = getRecentlyViewed();
+    const guestBuyList = getGuestBuyList();
     const guestSearches = readRecentSearches();
 
     if (
       guestWishlist.length === 0 &&
       guestAlerts.length === 0 &&
       guestViews.length === 0 &&
+      guestBuyList.length === 0 &&
       guestSearches.length === 0
     ) {
       return null;
@@ -526,6 +580,13 @@ async function doRunGuestMerge(): Promise<GuestMergeResult | null> {
     if (guestViews.length > 0) {
       const viewsOk = await mergeViewsCategory(guestViews, result);
       if (!viewsOk) result.failedCategories.push('views');
+    }
+
+    // Buy list: fetch the account's buy list, add only what's new
+    // (quantities preserved; the server dedupes by product).
+    if (guestBuyList.length > 0) {
+      const buyListOk = await mergeBuyListCategory(guestBuyList, result);
+      if (!buyListOk) result.failedCategories.push('buyList');
     }
 
     result.fullyMerged = result.failedCategories.length === 0;
@@ -621,6 +682,51 @@ async function mergeAlertsCategory(
     result.alertsAdded += 1;
   }
   clearLocalAlerts();
+  return true;
+}
+
+async function mergeBuyListCategory(
+  guestBuyList: ReturnType<typeof getGuestBuyList>,
+  result: GuestMergeResult
+): Promise<boolean> {
+  // GET /api/v1/buy-list returns BuyListItemView rows, whose
+  // product id is the snake_case product_id column.
+  const existingItems = await fetchJson<
+    Array<{ product_id?: string; productId?: string; slug?: string | null }>
+  >('/api/v1/buy-list');
+  if (existingItems === null) return false;
+  const existing: MergeableProduct[] = existingItems.map((i) => ({
+    productId: i.product_id ?? i.productId ?? null,
+    slug: i.slug ?? null,
+  }));
+
+  const { toAdd, alreadyHad } = mergeGuestBuyList(
+    guestBuyList.map((g) => ({
+      productId: g.id,
+      slug: g.slug,
+      name: g.name,
+      quantity: g.quantity,
+    })),
+    existing
+  );
+  result.buyListAlreadyHad = alreadyHad.length;
+  if (toAdd.length === 0) {
+    // Everything was already on the account — safe to clear.
+    clearGuestBuyList();
+    return true;
+  }
+
+  for (const item of toAdd) {
+    // The buy-list API takes camelCase productId (not product_id).
+    const ok = await postJson('/api/v1/buy-list', {
+      productId: item.productId,
+      quantity: item.quantity,
+    });
+    if (!ok) return false;
+    result.buyListAdded += 1;
+  }
+  // All server writes confirmed — only now clear the guest key.
+  clearGuestBuyList();
   return true;
 }
 

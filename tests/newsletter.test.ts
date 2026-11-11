@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { NextRequest } from 'next/server';
 import {
   NEWSLETTER_COPY,
+  NEWSLETTER_SOURCES,
   NEWSLETTER_SUBSCRIBED_MESSAGE,
   isValidEmailAddress,
   normalizeEmail,
@@ -336,5 +337,22 @@ describe('newsletter copy (honest, no fake delivery promises)', () => {
     // No public read: only an insert policy exists.
     expect(text).toContain('FOR INSERT TO anon');
     expect(text).not.toMatch(/FOR SELECT TO (anon|authenticated)/);
+  });
+
+  it('the source CHECK lists every NEWSLETTER_SOURCES value (Section 14, Chunk 1)', () => {
+    // The CHECK used to list only footer/homepage, so a signup from
+    // /deals, the digest or the notifications page would have been
+    // rejected by the database even though the route accepted it.
+    const migrationPath = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '..',
+      'supabase',
+      'migrations',
+      '20261111133000_036_newsletter_subscribers.sql'
+    );
+    const text = fs.readFileSync(migrationPath, 'utf8');
+    for (const source of NEWSLETTER_SOURCES) {
+      expect(text).toContain(`'${source}'`);
+    }
   });
 });

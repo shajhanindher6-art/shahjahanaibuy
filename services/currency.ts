@@ -357,6 +357,21 @@ export interface ParsedBudget {
   budgetCurrency: CurrencyCode;
 }
 
+/**
+ * A price BAND ("between $500 and $1000", "$500–$1000"), as opposed
+ * to the single max budget ParsedBudget carries. Both ends share one
+ * currency (the band's currency); USD figures are whole dollars
+ * converted with the same approximate static rates as
+ * parseBudgetFromQuery, so they are shown with "≈" in the UI.
+ */
+export interface ParsedPriceBand {
+  budgetMinUsd: number;
+  budgetMaxUsd: number;
+  budgetCurrency: CurrencyCode;
+  budgetOriginalMin: number;
+  budgetOriginalMax: number;
+}
+
 const AMOUNT = String.raw`(\d[\d,]*\.?\d*)`;
 const MULTIPLIER = String.raw`([kKmM]|lakh|lac|crore|thousand|million)?`;
 const CURRENCY_WORD =
@@ -419,6 +434,11 @@ function buildParsedBudget(
  *   "under 20000 pkr"  -> { budgetUsd: 71, budgetOriginal: 20000, budgetCurrency: 'PKR' }
  *   "under $20K"       -> { budgetUsd: 20000, budgetOriginal: 20000, budgetCurrency: 'USD' }
  *   "phone under €500" -> { budgetUsd: 540, budgetOriginal: 500, budgetCurrency: 'EUR' }
+ *
+ * NOTE: a price BAND ("between $500 and $1000") is NOT parsed here —
+ * parsePriceBandFromQuery owns it, and callers must check the band
+ * first: the symbol-first pattern below would otherwise read the
+ * band's lower end as the whole (max) budget.
  */
 export function parseBudgetFromQuery(query: string): ParsedBudget | null {
   const keywordMatch = KEYWORD_PATTERN.exec(query);
@@ -472,6 +492,73 @@ export function parseBudgetFromQuery(query: string): ParsedBudget | null {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Price bands ("between $500 and $1000", "$500–$1000")
+// ---------------------------------------------------------------------------
+
+// Groups: 1 = symbol, 2 = amount, 3 = multiplier, 4 = symbol,
+// 5 = amount, 6 = multiplier, 7 = currency word
+const BETWEEN_BAND_PATTERN = new RegExp(
+  `\\bbetween\\s*([€£₹₨$¥₩₺₱฿₫₴₦]?)\\s*${AMOUNT}\\s*${MULTIPLIER}\\s*(?:and|-|–|—|to)\\s*([€£₹₨$¥₩₺₱฿₫₴₦]?)\\s*${AMOUNT}\\s*${MULTIPLIER}\\s*${CURRENCY_WORD}`,
+  'i'
+);
+// A bare "500-1000" with no symbol and no "between" is NOT a band
+// (it could be a model number) — the dash form requires at least
+// one currency symbol. Groups: 1 = symbol, 2 = amount,
+// 3 = multiplier, 4 = symbol, 5 = amount, 6 = multiplier,
+// 7 = currency word
+const DASH_BAND_PATTERN = new RegExp(
+  `([€£₹₨$¥₩₺₱฿₫₴₦])\\s*${AMOUNT}\\s*${MULTIPLIER}\\s*[-–—]\\s*([€£₹₨$¥₩₺₱฿₫₴₦]?)\\s*${AMOUNT}\\s*${MULTIPLIER}\\s*${CURRENCY_WORD}`,
+  'i'
+);
+
+function bandEndpoint(
+  amountStr: string,
+  multiplierToken: string | undefined | null
+): { original: number } | null {
+  const amount = parseFloat(amountStr.replace(/,/g, ''));
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return { original: amount * multiplierFor(multiplierToken) };
+}
+
+/**
+ * Parse the first price-band expression in a query, or null when
+ * there is none. Examples:
+ *   "between $500 and $1000" -> { budgetMinUsd: 500, budgetMaxUsd: 1000, ... }
+ *   "laptop $500–$1000"      -> same (en dash, dollar signs)
+ *   "between 20K and 50K PKR" -> { budgetMinUsd: 71, budgetMaxUsd: 179, budgetCurrency: 'PKR', ... }
+ * Reversed ends ("between $1000 and $500") are normalized to
+ * min/max rather than rejected — the visitor's intent is the range.
+ */
+export function parsePriceBandFromQuery(query: string): ParsedPriceBand | null {
+  const match = BETWEEN_BAND_PATTERN.exec(query) ?? DASH_BAND_PATTERN.exec(query);
+  if (!match) return null;
+  const low = bandEndpoint(match[2], match[3]);
+  const high = bandEndpoint(match[5], match[6]);
+  if (!low || !high) return null;
+  // One currency for the whole band: an explicit currency word
+  // wins, then either endpoint's symbol, then any currency signal
+  // elsewhere in the query, then USD.
+  const currency =
+    currencyFromToken(match[7]) ??
+    currencyFromToken(match[1]) ??
+    currencyFromToken(match[4]) ??
+    detectCurrencyCode(query) ??
+    'USD';
+  const minOriginal = Math.min(low.original, high.original);
+  const maxOriginal = Math.max(low.original, high.original);
+  const minUsd = normalizeAmountToUsd(minOriginal, currency);
+  const maxUsd = normalizeAmountToUsd(maxOriginal, currency);
+  if (minUsd <= 0 || maxUsd <= 0 || minUsd >= maxUsd) return null;
+  return {
+    budgetMinUsd: minUsd,
+    budgetMaxUsd: maxUsd,
+    budgetCurrency: currency,
+    budgetOriginalMin: minOriginal,
+    budgetOriginalMax: maxOriginal,
+  };
+}
+
 const CURRENCY_CODE_ALTERNATION =
   String.raw`pkr|inr|eur|gbp|aed|usd|sar|cad|aud|cny|jpy|bdt|brl|try|qar|egp|mxn|krw|idr|thb|vnd|php|myr|sgd|ngn|kes|mad|pln|chf|zar|clp|ars|cop|pen|uah|twd|xof|ghs|ugx|lkr|npr|uyu|bob|pyg|crc|gtq|dop|pab|hnl|nio|czk|rs\.?|rupees?|dollars?|euros?|pounds?|sterling|dirhams?|riyals?|real|reais|lira|liras|won|baht|dong|ringgit|rand|zloty|naira`;
 
@@ -485,6 +572,17 @@ const CURRENCY_CODE_ALTERNATION =
 export function stripBudgetFromQuery(query: string): string {
   let cleaned = query;
   const globalPatterns = [
+    // Price bands first: "between $500 and $1000" / "$500–$1000"
+    // — otherwise the keyword/symbol patterns below would strip
+    // only the lower end and leave "$1000" in the search terms.
+    new RegExp(
+      `\\bbetween\\s*[€£₹₨$¥₩₺₱฿₫₴₦]?\\s*${AMOUNT}\\s*${MULTIPLIER}\\s*(?:and|-|–|—|to)\\s*[€£₹₨$¥₩₺₱฿₫₴₦]?\\s*${AMOUNT}\\s*${MULTIPLIER}\\s*${CURRENCY_WORD}`,
+      'gi'
+    ),
+    new RegExp(
+      `[€£₹₨$¥₩₺₱฿₫₴₦]\\s*${AMOUNT}\\s*${MULTIPLIER}\\s*[-–—]\\s*[€£₹₨$¥₩₺₱฿₫₴₦]?\\s*${AMOUNT}\\s*${MULTIPLIER}\\s*${CURRENCY_WORD}`,
+      'gi'
+    ),
     new RegExp(
       `${KEYWORD}\\s*[€£₹₨$¥₩₺₱฿₫₴₦]?\\s*${AMOUNT}\\s*${MULTIPLIER}\\s*${CURRENCY_WORD}`,
       'gi'

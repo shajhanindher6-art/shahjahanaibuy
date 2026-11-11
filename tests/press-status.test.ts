@@ -11,7 +11,7 @@
  * side.
  *
  * The test count is NOT asserted here: it is the result of a full
- * `npx vitest run` (1,490 passing, 132 test files, 11 November 2026) and
+ * `npx vitest run` (1,752 passing, 151 test files, 11 November 2026) and
  * any new test file — including this one — moves that total. The
  * press page dates it instead of presenting it as permanent.
  */
@@ -38,7 +38,7 @@ const PUBLISHED = {
   countriesWithLocalStore: 60,
   languages: 20,
   currencies: 51,
-  blogArticles: 20,
+  blogArticles: 21,
   merchantListings: 20,
   priceHistoryRows: 40,
   dealsListed: 6,
@@ -79,7 +79,7 @@ describe('press fact sheet — numbers trace to repo sources', () => {
     expect(Object.keys(USD_PER_UNIT)).toHaveLength(PUBLISHED.currencies);
   });
 
-  it('blog: 20 original English guides', () => {
+  it('blog: 21 original English guides', () => {
     expect(POSTS).toHaveLength(PUBLISHED.blogArticles);
   });
 

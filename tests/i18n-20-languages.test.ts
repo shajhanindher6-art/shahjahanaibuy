@@ -2,7 +2,7 @@
  * Tests for the 20-language i18n expansion (S5#12, lib/i18n.ts +
  * lib/region.ts).
  *
- * Key parity (48 DictKeys × 20 languages), detection (country →
+ * Key parity (109 DictKeys × 20 languages), detection (country →
  * language, browser tag → language), the auto-translated label set,
  * and the RTL flag. Translations themselves are machine
  * translations — these tests check coverage and plumbing, not
@@ -10,7 +10,9 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { DICTIONARIES, tFor, type DictKey } from '@/lib/i18n';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { DICTIONARIES, dirForLanguage, tFor, type DictKey } from '@/lib/i18n';
 import {
   AUTO_TRANSLATED_LANGUAGES,
   COUNTRY_LANGUAGE,
@@ -74,6 +76,72 @@ const EXPECTED_KEYS: DictKey[] = [
   'homeTestimonialsHeading',
   'homeCtaHeading',
   'homeCtaSubheading',
+  // Section 14, I-2: 35 footer link labels.
+  'footerLinkAiTools',
+  'footerLinkPlatforms',
+  'footerLinkCategories',
+  'footerLinkScanProduct',
+  'footerLinkEvents',
+  'footerLinkBundles',
+  'footerLinkGiftFinder',
+  'footerLinkTrackPrice',
+  'footerLinkAbout',
+  'footerLinkContact',
+  'footerLinkPress',
+  'footerLinkChangelog',
+  'footerLinkPrivacyPolicy',
+  'footerLinkBlog',
+  'footerLinkDocumentation',
+  'footerLinkSupport',
+  'footerLinkHelpCenter',
+  'footerLinkCreatorStorefronts',
+  'footerLinkMobileApp',
+  'footerLinkPartners',
+  'footerLinkReferrals',
+  'footerLinkP2pMatch',
+  'footerLinkWidgets',
+  'footerLinkBrowserExtension',
+  'footerLinkBookmarklet',
+  'footerLinkComingSoon',
+  'footerLinkMethodology',
+  'footerLinkAffiliateDisclosure',
+  'footerLinkPriceIndex',
+  'footerLinkMarketReports',
+  'footerLinkSustainability',
+  'footerLinkStatus',
+  'footerLinkApiDocs',
+  'footerLinkLiveShopping',
+  'footerLinkWarrantyPlans',
+  'footerLinkTermsOfService',
+  'footerLinkCookiePolicy',
+  // Section 14, I-4: 12 tools-hub chrome strings.
+  'toolsHubTitle',
+  'toolsHubIntro',
+  'toolsHubGroupEveryday',
+  'toolsHubGroupMoney',
+  'toolsHubGroupTrust',
+  'toolsHubGroupFuture',
+  'toolsHubNew',
+  'toolsHubOpenTool',
+  'toolsHubBlockedNote',
+  'toolsHubComingNext',
+  'toolsHubComingNextText',
+  'toolsHubSeeRoadmap',
+  // Section 14, I-5: 12 page headings. (Pricing reuses
+  // navPricing, Platforms reuses footerLinkPlatforms, Help Center
+  // reuses footerLinkHelpCenter — no duplicate keys for those.)
+  'pageHeadingSearch',
+  'pageHeadingDeals',
+  'pageHeadingCompare',
+  'pageHeadingBrands',
+  'pageHeadingCategories',
+  'pageHeadingEvents',
+  'pageHeadingBundles',
+  'pageHeadingGifts',
+  'pageHeadingBlog',
+  'pageHeadingFaq',
+  'pageHeadingAbout',
+  'pageHeadingContact',
 ];
 
 const NEW_12 = ['ar', 'zh', 'ja', 'ko', 'hi', 'bn', 'nl', 'sv', 'pl', 'ru', 'id', 'vi'] as const;
@@ -85,7 +153,7 @@ describe('20-language registry', () => {
     expect(new Set(SUPPORTED_LANGUAGES).size).toBe(20);
   });
 
-  it('has one dictionary per language with all 48 keys, no more and no fewer', () => {
+  it('has one dictionary per language with all 109 keys, no more and no fewer', () => {
     expect(Object.keys(DICTIONARIES).sort()).toEqual([...SUPPORTED_LANGUAGES].sort());
     for (const lang of SUPPORTED_LANGUAGES) {
       const keys = Object.keys(DICTIONARIES[lang]).sort();
@@ -112,6 +180,25 @@ describe('20-language registry', () => {
       expect(tFor(lang, 'navFeatures')).not.toBe(tFor('en', 'navFeatures'));
       expect(tFor(lang, 'buy')).not.toBe(tFor('en', 'buy'));
     }
+  });
+
+  it('gives the Section 14 keys real translations, not English, in the machine-translated languages', () => {
+    for (const lang of NEW_12) {
+      expect(tFor(lang, 'footerLinkAbout')).not.toBe(tFor('en', 'footerLinkAbout'));
+      expect(tFor(lang, 'toolsHubTitle')).not.toBe(tFor('en', 'toolsHubTitle'));
+      expect(tFor(lang, 'pageHeadingSearch')).not.toBe(tFor('en', 'pageHeadingSearch'));
+    }
+  });
+
+  it('renders the Section 14 English strings', () => {
+    expect(tFor('en', 'footerLinkScanProduct')).toBe('Scan a Product');
+    expect(tFor('en', 'footerLinkPrivacyPolicy')).toBe('Privacy Policy');
+    expect(tFor('en', 'toolsHubTitle')).toBe('AI tools');
+    expect(tFor('en', 'toolsHubGroupEveryday')).toBe('Everyday tools — AI that helps daily');
+    expect(tFor('en', 'toolsHubOpenTool')).toBe('Open tool');
+    expect(tFor('en', 'pageHeadingSearch')).toBe('AI Product Search');
+    expect(tFor('en', 'pageHeadingDeals')).toBe('Smart Deal Finder');
+    expect(tFor('en', 'pageHeadingAbout')).toBe('About SmartBuy AI');
   });
 });
 
@@ -199,6 +286,33 @@ describe('RTL', () => {
     expect(isRtlLanguage('ur')).toBe(false);
     expect(isRtlLanguage(null)).toBe(false);
     expect(isRtlLanguage(undefined)).toBe(false);
+  });
+
+  it('dirForLanguage is the single source of truth for html dir (Section 14, I-3)', () => {
+    expect(dirForLanguage('ar')).toBe('rtl');
+    for (const lang of SUPPORTED_LANGUAGES) {
+      if (lang !== 'ar') expect(dirForLanguage(lang)).toBe('ltr');
+    }
+  });
+});
+
+describe('heroSubtitle — single source of truth (Section 14, I-1)', () => {
+  it('is the honest subtitle in every language', () => {
+    // The honest subtitle claims only what the site does; it does
+    // not promise real-time prices or price-drop alerts.
+    expect(tFor('en', 'heroSubtitle')).toContain('searches our catalog');
+    expect(tFor('en', 'heroSubtitle')).not.toMatch(/real-?time/i);
+    expect(tFor('en', 'heroSubtitle')).not.toContain('price-drop alerts');
+    for (const lang of SUPPORTED_LANGUAGES) {
+      expect(DICTIONARIES[lang].heroSubtitle.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('hero-copy.tsx renders the dictionary string, with no local copy', () => {
+    const src = readFileSync(join(process.cwd(), 'components/home/hero-copy.tsx'), 'utf8');
+    expect(src).toContain("tFor(language, 'heroSubtitle')");
+    expect(src).not.toContain('const HONEST_SUBTITLE');
+    expect(src).not.toContain('HONEST_SUBTITLE[');
   });
 });
 
