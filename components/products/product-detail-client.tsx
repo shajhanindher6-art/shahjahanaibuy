@@ -436,6 +436,10 @@ import {
   saveGuestMemory,
   mergeSeenProducts,
 } from '@/lib/agent-memory';
+// Section 11, Chunk C: guest recently-viewed history (device-local
+// only). The signed-in path is separate — POST /api/v1/product-views
+// in fetchAll below — and is untouched.
+import { recordRecentlyViewed } from '@/lib/recently-viewed';
 // Enterprise #9 Verified Buyer (receipt-backed) + #11 Deal Urgency.
 import {
   fetchOwnVaultProductIds,
@@ -775,6 +779,34 @@ export default function ProductDetailClient({
       }
     }
   }, [user?.id, authLoading, slug]);
+
+  // Section 11, Chunk C: record this view in the guest
+  // recently-viewed history (device-local only). Once per product
+  // id, from the seeded/refreshed product row — so it fires on mount
+  // even before fetchAll finishes, and a re-view of the same product
+  // never double-records. Failures are swallowed inside the lib
+  // (never throws), so recording can never break the page.
+  const recentlyViewedRecordedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!product?.id) return;
+    if (recentlyViewedRecordedRef.current === product.id) return;
+    recentlyViewedRecordedRef.current = product.id;
+    recordRecentlyViewed({
+      id: product.id,
+      slug: product.slug,
+      name: product.name,
+      brand: product.brand,
+      category: product.category,
+      imageUrl: product.imageUrl,
+    });
+  }, [
+    product?.id,
+    product?.slug,
+    product?.name,
+    product?.brand,
+    product?.category,
+    product?.imageUrl,
+  ]);
 
   // Merchant trust for the Where-to-Buy rows. The product merchants
   // endpoint returns only merchantId + name, while the trust /

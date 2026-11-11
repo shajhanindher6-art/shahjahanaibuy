@@ -15,6 +15,13 @@ import {
   Globe,
   ArrowRight,
   Star,
+  Compass,
+  Wallet,
+  Store,
+  CalendarDays,
+  MessageCircleQuestion,
+  Recycle,
+  Wrench,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,6 +33,7 @@ import { ShareButtons } from '@/components/products/share-buttons';
 import { LocalStoresSection } from '@/components/home/local-stores-section';
 import { BrowseByTaxonomy } from '@/components/home/browse-by-taxonomy';
 import { StatsBar } from '@/components/home/stats-bar';
+import { RecentlyViewedStrip } from '@/components/home/recently-viewed-strip';
 import { HeroCopy } from '@/components/home/hero-copy';
 import { TiersSection } from '@/components/pricing/tiers-section';
 import { CurationGuidelines } from '@/components/curators/curation-guidelines';
@@ -88,6 +96,219 @@ const steps = [
       'Make confident decisions with explainable recommendations and real-time price alerts.',
   },
 ];
+
+/**
+ * Tools guest preview (Section 11, chunk B) — a logged-out visitor
+ * learns what each tool does WITHOUT signing in: a short honest
+ * description of what the tool does, and nothing else. No sample
+ * results, no invented numbers, no fake "example" output.
+ *
+ * What is verified here, and how:
+ * - The three "No sign-in needed" tools (best time to buy, product
+ *   Q&A, trade-in finder) call public APIs — their routes carry no
+ *   requireAuth, unlike the other ten tool APIs. Their descriptions
+ *   are taken from the tools' own pages.
+ * - The three "New" tools (help-me-choose, budget-finder,
+ *   store-finder) are being built in parallel: their descriptions
+ *   say only what the Section 11 brief defines them to do, and no
+ *   sign-in claim is made for them — their auth behaviour is not
+ *   verified yet.
+ * - The ten "Sign-in required" tools each call an API guarded by
+ *   requireAuth and show a sign-in screen when logged out, so the
+ *   preview says so plainly instead of pretending a guest can try
+ *   them. Their one-liners reuse the /tools hub copy.
+ */
+const toolsTryNow = [
+  {
+    icon: Compass,
+    name: 'Help Me Choose',
+    href: '/tools/help-me-choose',
+    badge: 'New',
+    description:
+      'A short guided quiz: answer a few questions about what you need and what matters most, and get a shortlist from the catalog. Your answers travel in a shareable link.',
+  },
+  {
+    icon: Wallet,
+    name: 'Budget Finder',
+    href: '/tools/budget-finder',
+    badge: 'New',
+    description:
+      'Tell it what you want and the most you want to spend — it shows the best matches in the catalog under your budget, with real recorded prices only.',
+  },
+  {
+    icon: Store,
+    name: 'Store Finder',
+    href: '/tools/store-finder',
+    badge: 'New',
+    description:
+      'Pick your country first and see which stores serve it. A directory only — it makes no shipping or delivery promises we cannot verify.',
+  },
+  {
+    icon: CalendarDays,
+    name: 'Best Time to Buy',
+    href: '/tools/best-time-calendar',
+    badge: 'No sign-in needed',
+    description:
+      'The best time of year to buy, per category, from recorded price history — ranges only, never a promised exact date.',
+  },
+  {
+    icon: MessageCircleQuestion,
+    name: 'Product Q&A',
+    href: '/tools/product-qa',
+    badge: 'No sign-in needed',
+    description:
+      'Pick a product and ask a question — the answer comes from its recorded specs and reviews only, labelled “AI answer” with its source. If the specs don’t cover it, it says so.',
+  },
+  {
+    icon: Recycle,
+    name: 'Trade-in Finder',
+    href: '/tools/trade-in-finder',
+    badge: 'No sign-in needed',
+    description:
+      'Before buying new, see what your old product is worth and where you can trade it in. Programs are listed only when a real program is confirmed — none are invented.',
+  },
+];
+
+const toolsNeedSignIn: Array<{ name: string; href: string; description: string }> = [
+  {
+    name: 'Shopping List Optimizer',
+    href: '/tools/list-optimizer',
+    description: 'Your whole list, cheapest way — which item to buy from which store, with the total and the saving.',
+  },
+  {
+    name: 'Receipt & Expense Tracker',
+    href: '/tools/expense-tracker',
+    description: 'What you spent, by category, each month — recorded when a purchase is confirmed.',
+  },
+  {
+    name: 'Subscription Manager',
+    href: '/tools/subscription-manager',
+    description: 'Every subscription in one place — renewal reminders, and a flag for duplicates or rarely used ones.',
+  },
+  {
+    name: 'Monthly Shopping Planner',
+    href: '/tools/monthly-planner',
+    description: 'Set a monthly budget and get a plan: what to buy now, what to wait on, and what to push to next month.',
+  },
+  {
+    name: 'Savings Dashboard',
+    href: '/tools/savings-dashboard',
+    description: '“How much have you saved so far” — total saved, this month, and your biggest saving, from confirmed recorded savings only.',
+  },
+  {
+    name: 'Price-Drop Digest',
+    href: '/tools/price-drop-digest',
+    description: 'One daily or weekly summary of your watched products — top deals first, each with one line saying why it is good.',
+  },
+  {
+    name: 'Eco Shopping Coach',
+    href: '/tools/eco-coach',
+    description: 'A monthly carbon budget, with coach advice on each purchase — recorded carbon first, estimates always labelled as estimates.',
+  },
+  {
+    name: 'Smart Home Reorder Agent',
+    href: '/tools/smart-home-agent',
+    description: 'Your home reorders itself: device triggers plus your reorder rules, with confirmation before every order.',
+  },
+  {
+    name: '“Future You” Planner',
+    href: '/tools/future-you-planner',
+    description: 'A saving plan for big purchases — set a target and a date, and get a monthly plan, linked to price-drop alerts.',
+  },
+  {
+    name: 'Warranty Claim Helper',
+    href: '/tools/warranty-claim-helper',
+    description: 'A step-by-step claim checklist from your Vault — documents, retailer or brand contact, and a reminder before expiry.',
+  },
+];
+
+function ToolsPreviewSection() {
+  return (
+    <section id="tools" className="border-t py-20 md:py-28" aria-label="AI tools">
+      <div className="container mx-auto px-4">
+        <div className="mx-auto max-w-2xl text-center">
+          <h2 className="flex items-center justify-center gap-2 text-3xl font-bold tracking-tight md:text-4xl">
+            <Wrench className="h-7 w-7 text-blue-600" /> AI tools — see what they do first
+          </h2>
+          <p className="mt-4 text-lg text-muted-foreground">
+            Every tool below does exactly what its card says — no sample
+            results, no made-up examples. Three are open to everyone, three
+            are new, and the rest work on your own data, so they ask you to
+            sign in first.
+          </p>
+        </div>
+
+        <div className="mt-16 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {toolsTryNow.map((tool) => (
+            <Card key={tool.href} className="group transition-shadow hover:shadow-lg">
+              <CardHeader>
+                <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                  <tool.icon className="h-6 w-6" />
+                </div>
+                <CardTitle className="text-xl">
+                  <Link href={tool.href} className="underline-offset-4 hover:underline">
+                    {tool.name}
+                  </Link>{' '}
+                  <span className="ml-1 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 align-middle text-xs font-semibold text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                    {tool.badge}
+                  </span>
+                </CardTitle>
+                <CardDescription className="text-sm leading-relaxed">
+                  {tool.description}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link
+                  href={tool.href}
+                  className="inline-flex min-h-[44px] items-center text-sm font-medium text-blue-600 hover:underline"
+                >
+                  Open tool <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* The ten tools that need sign-in: what each one does, in
+            one line, with the sign-in requirement stated plainly.
+            A guest learns what they do here — the tool pages
+            themselves show a sign-in screen when logged out. */}
+        <div className="mx-auto mt-12 max-w-3xl rounded-lg border p-6">
+          <h3 className="text-lg font-semibold">Ten more tools, after sign-in</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            These work on your own lists, spending, subscriptions and
+            savings, so they need an account. Nothing of yours is shown
+            until you sign in.
+          </p>
+          <ul className="mt-4 space-y-3">
+            {toolsNeedSignIn.map((tool) => (
+              <li key={tool.href} className="text-sm">
+                <Link href={tool.href} className="font-medium underline-offset-4 hover:underline">
+                  {tool.name}
+                </Link>{' '}
+                <span className="ml-1 inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  Sign-in required
+                </span>
+                <span className="block text-muted-foreground">{tool.description}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <Button asChild>
+              <Link href="/tools">
+                Browse all 16 tools
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/coming-soon">See what&apos;s coming next</Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 /**
  * Featured-products strip (Section 10, chunk 1) — above the fold,
@@ -261,6 +482,11 @@ export default function HomePage() {
           <FeaturedProductsStrip />
         </Suspense>
 
+        {/* Recently Viewed (Section 11, chunk C) — guest, device-local
+            history recorded on product pages. Renders nothing when
+            empty, so first-time visitors see no change. */}
+        <RecentlyViewedStrip />
+
         {/* Stats Bar — real counts from the public APIs (see
             components/home/stats-bar.tsx). The old bar claimed
             10M+ products / 500+ retailers / 99.9% uptime / <200ms,
@@ -299,6 +525,12 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        {/* AI tools guest preview (Section 11, chunk B) — what each
+            tool does, for a logged-out visitor, with no fake sample
+            results. Placed right after Features so the tools are
+            visible without scrolling past the deals sections. */}
+        <ToolsPreviewSection />
 
         {/* Smart Deal Recommendations */}
         <section className="border-t py-20 md:py-28">

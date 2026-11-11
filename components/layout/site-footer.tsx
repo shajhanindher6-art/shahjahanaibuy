@@ -6,6 +6,17 @@ const footerLinks = {
     { href: '/#features', label: 'Features' },
     { href: '/#pricing', label: 'Pricing' },
     { href: '/#how-it-works', label: 'How It Works' },
+    // Section 11, chunk B: the AI tools hub and the main
+    // browse surfaces. Brands and Categories have no index
+    // pages (only /brands/[slug] and /categories/[slug]), so
+    // both point at the homepage browse section (id="browse"),
+    // the same destination the mobile nav "Brands" link uses.
+    { href: '/tools', label: 'AI Tools' },
+    { href: '/deals', label: 'Deals' },
+    { href: '/compare', label: 'Compare' },
+    { href: '/platforms', label: 'Platforms' },
+    { href: '/#browse', label: 'Brands' },
+    { href: '/#browse', label: 'Categories' },
   ],
   Company: [
     { href: '/about', label: 'About' },
@@ -58,7 +69,7 @@ export function SiteFooter() {
               <h4 className="mb-3 text-sm font-semibold">{title}</h4>
               <ul className="space-y-2">
                 {links.map((link) => (
-                  <li key={link.href}>
+                  <li key={`${link.href}-${link.label}`}>
                     <Link
                       href={link.href}
                       className="text-sm text-muted-foreground transition-colors hover:text-foreground"

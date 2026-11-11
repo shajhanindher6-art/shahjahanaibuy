@@ -4,7 +4,7 @@ import { SiteFooter } from '@/components/layout/site-footer';
 
 import { useState, useCallback, useMemo, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, SlidersHorizontal, X, Star, TrendingDown, Link2, History } from 'lucide-react';
+import { Search, SlidersHorizontal, X, Star, TrendingDown, Link2, History, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -107,6 +107,11 @@ function SearchPageContent() {
   // found", telling the shopper the catalog had nothing when the
   // search itself had failed. A failure now says so, with a retry.
   const [searchError, setSearchError] = useState(false);
+  // Section 11, Chunk C: the query the visitor explicitly saved from
+  // the no-results empty state (via saveRecentSearch below, the same
+  // device-only list shown under Recent searches). Compared against
+  // the current query so the button resets itself for a new search.
+  const [savedSearch, setSavedSearch] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [filters, setFilters] = useState({
@@ -821,6 +826,37 @@ function SearchPageContent() {
                 >
                   Clear all filters
                 </Button>
+              </div>
+            )}
+            {/* Section 11, Chunk C: "save this search" for a query
+                with zero matches anywhere. Device-only — it re-saves
+                the query into Recent searches (saveRecentSearch
+                dedupes, so a text search already saved by
+                performSearch is just confirmed, not duplicated).
+                Honest limit in the copy: nothing checks for new
+                matches in the background and no email is ever sent —
+                the visitor re-runs the saved search to see if
+                anything new appeared. */}
+            {results.length === 0 && webResults.length === 0 && (
+              <div className="mt-4 flex flex-col items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    saveRecentSearch(query);
+                    setSavedSearch(query.trim());
+                  }}
+                  disabled={savedSearch !== null && savedSearch === query.trim()}
+                >
+                  <Bell className="mr-2 h-4 w-4" />
+                  {savedSearch !== null && savedSearch === query.trim()
+                    ? 'Search saved'
+                    : 'Save this search'}
+                </Button>
+                <p className="max-w-sm text-center text-xs text-muted-foreground">
+                  {savedSearch !== null && savedSearch === query.trim()
+                    ? 'Saved on this device — find it under Recent searches below the search box. We don\u2019t check for new matches in the background, so re-run it anytime to see if anything new appeared.'
+                    : 'Save this search on this device so you can re-run it later from Recent searches. No background checks, no emails.'}
+                </p>
               </div>
             )}
           </>

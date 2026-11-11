@@ -6,7 +6,7 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Tag, Zap, Clock, TrendingDown, Sparkles, ChevronRight, Copy, Check, CalendarDays } from 'lucide-react';
+import { Tag, Zap, Clock, TrendingDown, Sparkles, ChevronRight, Copy, Check, CalendarDays, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -250,6 +250,27 @@ export default function DealsPage() {
                 : 'Check back later for new deals and discounts'
             }
             icon={Tag}
+            action={
+              // Section 11, Chunk C: there is no product here to
+              // attach a guest price alert to (alerts are per
+              // product, via PriceAlertDialog), so the empty state
+              // routes to Search instead of faking a "notify me".
+              // The copy says so honestly: find a product, open it,
+              // tap Set Alert — guest alerts are saved on this
+              // device only, with no background checks.
+              <div className="flex flex-col items-center gap-2">
+                <Button asChild>
+                  <Link href="/search">
+                    <Bell className="mr-2 h-4 w-4" /> Find a product to watch
+                  </Link>
+                </Button>
+                <p className="max-w-sm text-xs text-muted-foreground">
+                  Price alerts are set per product: find a product, open it and tap Set Alert.
+                  Guest alerts are saved on this device only — nothing checks prices in the
+                  background.
+                </p>
+              </div>
+            }
           />
         )}
 

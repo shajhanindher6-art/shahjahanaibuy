@@ -28,11 +28,19 @@ const navLinks: { href: string; key: DictKey }[] = [
 // so no new DictKeys were added here (i18n follow-up for the
 // coordinator). Brands points at the homepage browse section
 // (app/page.tsx wraps <BrowseByTaxonomy /> in id="browse").
+// Section 11, chunk B: the AI tools hub and its three new tools
+// (help-me-choose, budget-finder, store-finder) are listed here too
+// — the 13 Section 7 tools were live but invisible, with zero
+// href="/tools" links anywhere on the site.
 const mobileExtraLinks: { href: string; label: string }[] = [
   { href: '/search', label: 'Search' },
   { href: '/deals', label: 'Deals' },
   { href: '/compare', label: 'Compare' },
   { href: '/#browse', label: 'Brands' },
+  { href: '/tools', label: 'AI Tools' },
+  { href: '/tools/help-me-choose', label: 'Help Me Choose' },
+  { href: '/tools/budget-finder', label: 'Budget Finder' },
+  { href: '/tools/store-finder', label: 'Store Finder' },
 ];
 
 export function SiteHeader() {
@@ -86,6 +94,20 @@ export function SiteHeader() {
                 {tFor(language, link.key)}
               </Link>
             ))}
+            {/* Section 11, chunk B: desktop Tools link. Plain
+                English, like the mobile-only links below —
+                lib/i18n.ts is owned by another chunk, so no new
+                DictKey was added here (i18n follow-up for the
+                coordinator). Active on every /tools/* page. */}
+            <Link
+              href="/tools"
+              className={cn(
+                'text-sm font-medium text-muted-foreground transition-colors hover:text-foreground',
+                pathname?.startsWith('/tools') && 'text-foreground'
+              )}
+            >
+              Tools
+            </Link>
           </nav>
         </div>
 

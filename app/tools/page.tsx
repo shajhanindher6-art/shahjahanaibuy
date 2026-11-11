@@ -1,9 +1,11 @@
 /**
  * AI tools hub — /tools.
  *
- * Links only: this page lists the 13 buildable Section 7 AI tools and
- * links out to each tool's own /tools/* page. No tool logic lives here —
- * every tool is built (or honestly marked not ready) on its own page.
+ * Links only: this page lists the 13 buildable Section 7 AI tools
+ * plus the 3 Section 11 tools (help-me-choose, budget-finder,
+ * store-finder) and links out to each tool's own /tools/* page. No
+ * tool logic lives here — every tool is built (or honestly marked
+ * not ready) on its own page.
  * The 7 blocked Section 7 items (recall, review summarizer, size &
  * fit, photo authenticity, voice shopping, video summaries, family
  * shopper) are NOT listed: each is blocked on missing data or a
@@ -18,11 +20,32 @@ import { SiteFooter } from '@/components/layout/site-footer';
 
 const TOOL_GROUPS: Array<{
   heading: string;
-  tools: Array<{ name: string; href: string; description: string }>;
+  tools: Array<{ name: string; href: string; description: string; isNew?: boolean }>;
 }> = [
   {
     heading: 'Everyday tools — AI that helps daily',
     tools: [
+      {
+        name: 'Help Me Choose — guided shopping quiz',
+        href: '/tools/help-me-choose',
+        description:
+          'Not sure what to buy? Answer a few quick questions about what you need and what matters most, and get a shortlist from the catalog. Your answers travel in a shareable link, so you can send the quiz to someone else.',
+        isNew: true,
+      },
+      {
+        name: 'Budget Finder',
+        href: '/tools/budget-finder',
+        description:
+          'Tell it what you want and the most you want to spend — it shows the best matches in the catalog under your budget, with real recorded prices only.',
+        isNew: true,
+      },
+      {
+        name: 'Store Finder',
+        href: '/tools/store-finder',
+        description:
+          'Pick your country first and see which stores serve it. A directory only — it makes no shipping or delivery promises we cannot verify.',
+        isNew: true,
+      },
       {
         name: 'AI Shopping List Optimizer',
         href: '/tools/list-optimizer',
@@ -148,7 +171,12 @@ export default function AiToolsHubPage() {
                         className="underline-offset-4 hover:underline"
                       >
                         {tool.name}
-                      </Link>
+                      </Link>{' '}
+                      {tool.isNew ? (
+                        <span className="ml-1 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 align-middle text-xs font-semibold text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                          New
+                        </span>
+                      ) : null}
                     </h3>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {tool.description}
@@ -171,6 +199,25 @@ export default function AiToolsHubPage() {
             video summaries, and the family shopper. They are not listed
             here and will appear only once their data source exists.
           </p>
+
+          {/* Roadmap hub (Section 11): what is coming next, with
+              honest status per item and no fake dates. Separate
+              from the "Future AI" group above, which lists tools
+              that are already built. */}
+          <div className="mt-8 rounded-lg border p-6">
+            <h2 className="text-lg font-semibold">What&apos;s coming next</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The roadmap for tools still being built — what each one will
+              do, and where it stands. No launch dates are promised until
+              the work is real.
+            </p>
+            <Link
+              href="/coming-soon"
+              className="mt-4 inline-flex min-h-[44px] items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+            >
+              See the roadmap →
+            </Link>
+          </div>
         </div>
       </main>
       <SiteFooter />

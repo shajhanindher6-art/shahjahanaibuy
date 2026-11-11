@@ -4,12 +4,13 @@ import { SiteFooter } from '@/components/layout/site-footer';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { GitCompare, Search, Trophy, Check, X, Plus } from 'lucide-react';
+import { GitCompare, Search, Trophy, Check, X, Plus, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
 import { CompareMatrixSkeleton } from '@/components/ui/skeleton';
 import { ShareButtons } from '@/components/products/share-buttons';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -152,6 +153,37 @@ export default function ComparePage() {
     setCompareError(null);
   };
 
+  // Section 11, Chunk C: "save this search" for the compare search
+  // box — device-only, reusing the /search page's recent-searches
+  // list ('smartbuy-recent-searches', same key, same 8-item cap and
+  // case-insensitive dedupe) so a saved term shows up under Recent
+  // searches on /search. No background checks, no emails — the saved
+  // term is only re-runnable from there. savedCompareTerm holds the
+  // last term actually stored, so the button resets itself as soon
+  // as the visitor types a different term.
+  const [savedCompareTerm, setSavedCompareTerm] = useState('');
+  const saveCompareSearch = () => {
+    const trimmed = searchTerm.trim();
+    if (!trimmed) return;
+    try {
+      const raw = window.localStorage.getItem('smartbuy-recent-searches');
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      const list = Array.isArray(parsed)
+        ? parsed.filter((q): q is string => typeof q === 'string')
+        : [];
+      const next = [
+        trimmed,
+        ...list.filter((q) => q.toLowerCase() !== trimmed.toLowerCase()),
+      ].slice(0, 8);
+      window.localStorage.setItem('smartbuy-recent-searches', JSON.stringify(next));
+      setSavedCompareTerm(trimmed);
+    } catch {
+      // Storage unavailable/blocked: report nothing as saved.
+    }
+  };
+  const compareSearchSaved =
+    savedCompareTerm !== '' && savedCompareTerm === searchTerm.trim();
+
   const runComparison = async (products: Array<{ id: string; name: string; slug: string }> = selectedProducts) => {
     if (products.length < 2) return;
     setComparing(true);
@@ -268,9 +300,30 @@ export default function ComparePage() {
             </div>
 
             {showSearch && !loading && searchResults.length === 0 && (
-              <p className="mt-4 text-sm text-muted-foreground">
-                No products found for that search. Try a different term.
-              </p>
+              <div className="mt-4 space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  No products found for that search. Try a different term.
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={saveCompareSearch}
+                    disabled={compareSearchSaved}
+                  >
+                    <Bell className="mr-2 h-4 w-4" />
+                    {compareSearchSaved ? 'Search saved' : 'Save this search'}
+                  </Button>
+                  {compareSearchSaved && (
+                    <p className="text-xs text-muted-foreground">
+                      Saved on this device — find it under Recent searches on the Search page.
+                      Nothing checks for new matches in the background; re-run it there to see
+                      if anything new appeared.
+                    </p>
+                  )}
+                </div>
+              </div>
             )}
 
             {showSearch && searchResults.length > 0 && (
@@ -338,6 +391,22 @@ export default function ComparePage() {
             title="Select products to compare"
             description="Search and add at least 2 products to see a detailed comparison"
             icon={GitCompare}
+            action={
+              selectedProducts.length === 1 ? (
+                <div className="flex flex-col items-center gap-2">
+                  <PriceAlertDialog
+                    productId={selectedProducts[0].id}
+                    productName={selectedProducts[0].name}
+                  />
+                  <p className="max-w-sm text-xs text-muted-foreground">
+                    Only one product so far — set a price alert on it while you look for a
+                    second. Guest alerts are saved on this device only.
+                  </p>
+                </div>
+              ) : (
+                <Button onClick={() => router.push('/search')}>Browse products</Button>
+              )
+            }
           />
         )}
 
