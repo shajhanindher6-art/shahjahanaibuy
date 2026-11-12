@@ -1,5 +1,7 @@
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
 import { Wallet } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -56,6 +58,7 @@ function readLocal(): { monthly: number; hours: number } {
 }
 
 export function TechBudgetWidget() {
+  const { language } = useRegion();
   const [data, setData] = useState<DashboardTechBudget | null>(null);
   const [signedIn, setSignedIn] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -184,7 +187,7 @@ export function TechBudgetWidget() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Wallet className="h-5 w-5 text-muted-foreground" />
-            Tech Budget
+            {tFor(language, 'dashTechBudget')}
           </CardTitle>
           <CardDescription>Monthly tech budget vs your wishlist</CardDescription>
         </CardHeader>
@@ -205,7 +208,7 @@ export function TechBudgetWidget() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Wallet className="h-5 w-5 text-muted-foreground" />
-          Tech Budget
+          {tFor(language, 'dashTechBudget')}
         </CardTitle>
         <CardDescription>
           {signedIn
@@ -299,7 +302,7 @@ export function TechBudgetWidget() {
                 Save budget
               </Button>
               <Button size="sm" variant="outline" onClick={() => setEditing(false)}>
-                Cancel
+                {tFor(language, 'commonCancel')}
               </Button>
             </div>
           </div>

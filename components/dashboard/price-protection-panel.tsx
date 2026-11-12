@@ -15,6 +15,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { ShieldCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -48,6 +50,7 @@ export function PriceProtectionPanel({
   loading?: boolean;
   onSubmitClaim?: (id: string) => void;
 }) {
+  const { language } = useRegion();
   return (
     <section id="price-protection" className="animate-fade-in motion-reduce:animate-none">
       <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
@@ -61,7 +64,7 @@ export function PriceProtectionPanel({
         <div className="glass-card h-32 animate-shimmer" />
       ) : watches.length === 0 ? (
         <div className="glass-card p-6 text-center">
-          <p className="text-sm font-medium">No protection watches yet</p>
+          <p className="text-sm font-medium">{tFor(language, 'dashNoProtectionWatches')}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Add a purchase to your Receipt Vault with a recorded amount, then watch it here for a
             price drop inside its protection window.

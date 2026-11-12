@@ -10,6 +10,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import Link from 'next/link';
 import { Brain, ArrowRight, Sparkles, TrendingDown } from 'lucide-react';
 import { CardContent } from '@/components/ui/card';
@@ -31,6 +33,7 @@ interface AIPick {
 }
 
 export function AISidebar({ picks, drops }: { picks: AIPick[]; drops: DropToWatch[] }) {
+  const { language } = useRegion();
   return (
     <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
       <AIChatPanel />
@@ -65,7 +68,7 @@ export function AISidebar({ picks, drops }: { picks: AIPick[]; drops: DropToWatc
               href="#drops-to-watch"
               className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
             >
-              See all <ArrowRight className="h-3 w-3" />
+              {tFor(language, 'commonSeeAll')} <ArrowRight className="h-3 w-3" />
             </Link>
           </CardContent>
         </div>

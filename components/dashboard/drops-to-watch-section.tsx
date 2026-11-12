@@ -16,6 +16,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import Link from 'next/link';
 import { TrendingDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +41,7 @@ export function DropsToWatchSection({
   drops: DropToWatch[];
   loading: boolean;
 }) {
+  const { language } = useRegion();
   return (
     <section
       id="drops-to-watch"
@@ -55,7 +58,7 @@ export function DropsToWatchSection({
         <div className="glass-card animate-shimmer h-32" />
       ) : drops.length === 0 ? (
         <div className="glass-card p-6 text-center">
-          <p className="text-sm font-medium">No drops simulated for your tracked items</p>
+          <p className="text-sm font-medium">{tFor(language, 'dashNoDropsSimulated')}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Track more products and check back — a simulated window appears when a real price drop pattern exists.
           </p>

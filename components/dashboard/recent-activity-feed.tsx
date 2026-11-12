@@ -17,6 +17,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Heart, Bell, Search, Clock } from 'lucide-react';
@@ -133,6 +135,7 @@ export function RecentActivityFeed({
   alertHistory?: ActivityAlertHistoryEntry[];
   searchHistory?: ActivitySearchEntry[];
 }) {
+  const { language } = useRegion();
   const [fetchedItems, setFetchedItems] = useState<ActivityTrackedItem[] | null>(null);
   const [fetchedAlerts, setFetchedAlerts] = useState<ActivityAlert[] | null>(null);
   const [fetchedHistory, setFetchedHistory] = useState<ActivityAlertHistoryEntry[] | null>(null);
@@ -202,7 +205,7 @@ export function RecentActivityFeed({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Clock className="h-5 w-5" aria-hidden="true" />
-          Recent activity
+          {tFor(language, 'dashRecentActivity')}
         </CardTitle>
         <CardDescription>
           Your latest saves, alert triggers, and searches — newest first.

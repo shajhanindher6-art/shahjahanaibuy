@@ -22,6 +22,7 @@
 
 'use client';
 
+import { tFor } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Globe, ArrowRight } from 'lucide-react';
@@ -57,7 +58,7 @@ interface WidgetData {
 }
 
 export function LandedCostWidget() {
-  const { countryCode, region } = useRegion();
+  const { countryCode, region, language } = useRegion();
   const [data, setData] = useState<WidgetData | null>(null);
   const [trackedCount, setTrackedCount] = useState(0);
   const [unpricedCount, setUnpricedCount] = useState(0);
@@ -123,7 +124,7 @@ export function LandedCostWidget() {
         </div>
       ) : trackedCount === 0 ? (
         <div className="glass-card p-6 text-center">
-          <p className="text-sm font-medium">No tracked products yet</p>
+          <p className="text-sm font-medium">{tFor(language, 'dashNoTrackedProducts')}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Save products to a wishlist and their estimated landed cost in your region will
             appear here.

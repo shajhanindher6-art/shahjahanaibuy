@@ -14,6 +14,8 @@
  */
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Bot, Pause, Play, Trash2 } from 'lucide-react';
@@ -28,6 +30,7 @@ import { AGENT_CATEGORIES } from '@/lib/agent-memory';
 import type { AgentHunt, HuntMatch } from '@/lib/agent-hunt';
 
 export function AgentHuntsCard() {
+  const { language } = useRegion();
   const [hunts, setHunts] = useState<AgentHunt[] | null>(null);
   const [matches, setMatches] = useState<HuntMatch[]>([]);
   const [huntsEnabled, setHuntsEnabled] = useState(true);
@@ -238,7 +241,7 @@ export function AgentHuntsCard() {
                     {saving ? 'Creating…' : 'Create hunt'}
                   </Button>
                   <Button type="button" size="sm" variant="outline" onClick={() => setShowForm(false)}>
-                    Cancel
+                    {tFor(language, 'commonCancel')}
                   </Button>
                 </div>
               </form>

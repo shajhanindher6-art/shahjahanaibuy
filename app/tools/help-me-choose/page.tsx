@@ -20,6 +20,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -125,6 +127,7 @@ function emptyAnswers(): GuidedAnswers {
 }
 
 function QuizInner() {
+  const { language } = useRegion();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [step, setStep] = useState(0);
@@ -220,7 +223,7 @@ function QuizInner() {
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <Compass className="h-7 w-7 text-blue-600" /> Help me choose
+            <Compass className="h-7 w-7 text-blue-600" /> {tFor(language, 'toolHeadingHelpMeChoose')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             Answer four quick questions and get ranked picks from real
@@ -420,7 +423,7 @@ function QuizInner() {
                     eyebrow="Could not load picks"
                     title="Something went wrong"
                     description={error}
-                    action={<Button onClick={() => void fetchPicks(answers)}>Try again</Button>}
+                    action={<Button onClick={() => void fetchPicks(answers)}>{tFor(language, 'commonTryAgain')}</Button>}
                   />
                 </div>
               )}

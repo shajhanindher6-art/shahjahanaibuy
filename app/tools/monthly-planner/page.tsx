@@ -12,6 +12,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { CalendarRange } from 'lucide-react';
@@ -69,6 +71,7 @@ const DECISION_VARIANT: Record<PlanDecision, 'default' | 'secondary' | 'outline'
 };
 
 export default function MonthlyPlannerPage() {
+  const { language } = useRegion();
   const [month, setMonth] = useState(currentMonth());
   const [budgetInput, setBudgetInput] = useState('300');
   const [slugsInput, setSlugsInput] = useState('');
@@ -153,7 +156,7 @@ export default function MonthlyPlannerPage() {
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <CalendarRange className="h-7 w-7 text-blue-600" /> Monthly shopping planner
+            <CalendarRange className="h-7 w-7 text-blue-600" /> {tFor(language, 'toolHeadingMonthlyPlanner')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             Set a monthly budget and the products you are considering. The

@@ -12,6 +12,8 @@
  */
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useState } from 'react';
 import { BellRing, Check, X, Minus } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,6 +35,7 @@ const STEP_LABELS: Array<{ id: string; label: string }> = [
 ];
 
 export function PushSelfTest() {
+  const { language } = useRegion();
   const [steps, setSteps] = useState<SelfTestStep[]>(
     STEP_LABELS.map((s) => ({ ...s, status: 'pending' as SelfTestStepStatus, detail: '' }))
   );
@@ -151,7 +154,7 @@ export function PushSelfTest() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <BellRing className="h-5 w-5" /> Push self-test
+          <BellRing className="h-5 w-5" /> {tFor(language, 'dashPushSelfTest')}
         </CardTitle>
         <CardDescription>
           Checks push notifications end to end on this browser and sends a real test

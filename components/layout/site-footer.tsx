@@ -121,7 +121,13 @@ export function SiteFooter() {
           </div>
           {Object.entries(footerLinks).map(([title, links]) => (
             <div key={title}>
-              <h4 className="mb-3 text-sm font-semibold">{tFor(language, title as DictKey)}</h4>
+              {/* Section 15, C7 (runtime a11y): these are h2, not h4 —
+                  the page's h1 is the only heading before them, so
+                  h4 skipped two levels and axe-core flagged
+                  heading-order on every page. The visual size comes
+                  from the text-sm class, not the heading level, so
+                  the footer looks identical. */}
+              <h2 className="mb-3 text-sm font-semibold">{tFor(language, title as DictKey)}</h2>
               <ul className="space-y-2">
                 {links.map((link) => (
                   <li key={`${link.href}-${link.labelKey}`}>

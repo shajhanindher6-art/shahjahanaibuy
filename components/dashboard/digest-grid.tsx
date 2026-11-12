@@ -15,6 +15,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Bell, Heart, Sparkles, TrendingDown } from 'lucide-react';
@@ -23,6 +25,7 @@ import { Price } from '@/components/region/price';
 import type { DigestData } from '@/app/api/v1/dashboard/digest/route';
 
 export function DigestGrid() {
+  const { language } = useRegion();
   const [data, setData] = useState<DigestData | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -56,7 +59,7 @@ export function DigestGrid() {
       style={{ animationDelay: '300ms' }}
     >
       <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
-        <Sparkles className="h-5 w-5 text-violet-600" /> Your shopping digest
+        <Sparkles className="h-5 w-5 text-violet-600" /> {tFor(language, 'dashYourDigest')}
       </h2>
       {loading ? (
         <div className="grid gap-4 lg:grid-cols-3">

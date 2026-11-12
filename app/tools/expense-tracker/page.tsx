@@ -13,6 +13,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
@@ -66,6 +68,7 @@ function loadBudgets(): Partial<Record<ExpenseCategory, number>> {
 }
 
 export default function ExpensesPage() {
+  const { language } = useRegion();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [totals, setTotals] = useState<MonthlyCategoryTotals | null>(null);
   const [trend, setTrend] = useState<MonthTrendPoint[]>([]);
@@ -185,7 +188,7 @@ export default function ExpensesPage() {
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
-        <h1 className="text-2xl font-bold">Expense tracker</h1>
+        <h1 className="text-2xl font-bold">{tFor(language, 'toolHeadingExpenseTracker')}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Monthly spend by category, from expenses you record yourself.
           The amount is always entered by you or taken from a recorded

@@ -1,5 +1,7 @@
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useState, useEffect, useCallback } from 'react';
 import { ExternalLink, Plus, Trash2, Globe } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -36,6 +38,7 @@ interface ExternalItem {
  * not automatic sync.
  */
 export function ExternalItemsManager() {
+  const { language } = useRegion();
   const { toast } = useToast();
   const [wishlists, setWishlists] = useState<Wishlist[]>([]);
   const [selectedId, setSelectedId] = useState('');
@@ -129,8 +132,7 @@ export function ExternalItemsManager() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Globe className="h-5 w-5" /> Add from any store
-          </CardTitle>
+            <Globe className="h-5 w-5" /> {tFor(language, 'dashAddFromStore')}          </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">

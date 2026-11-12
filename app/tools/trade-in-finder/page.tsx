@@ -10,6 +10,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Recycle } from 'lucide-react';
@@ -52,6 +54,7 @@ interface TradeInData {
 }
 
 export default function TradeInPage() {
+  const { language } = useRegion();
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [slug, setSlug] = useState('');
   const [data, setData] = useState<TradeInData | null>(null);
@@ -106,7 +109,7 @@ export default function TradeInPage() {
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <Recycle className="h-7 w-7 text-emerald-600" /> Trade-in &amp; second-hand finder
+            <Recycle className="h-7 w-7 text-emerald-600" /> {tFor(language, 'toolHeadingTradeInFinder')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             Before buying new, see what your old product is worth and

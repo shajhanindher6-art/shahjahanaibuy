@@ -12,6 +12,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
@@ -42,6 +44,7 @@ function currentMonth(): string {
 }
 
 export default function EcoCoachPage() {
+  const { language } = useRegion();
   const [month, setMonth] = useState(currentMonth());
   const [data, setData] = useState<EcoCoachResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -125,7 +128,7 @@ export default function EcoCoachPage() {
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
-        <h1 className="text-2xl font-bold">AI Eco Shopping Coach</h1>
+        <h1 className="text-2xl font-bold">{tFor(language, 'toolHeadingEcoCoach')}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Set a monthly carbon budget and see how your month is going.
           Recorded carbon counts first; anything estimated is labeled as

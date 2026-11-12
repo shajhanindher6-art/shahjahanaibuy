@@ -17,6 +17,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { PiggyBank } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import type { SavingsEvent } from '@/lib/savings';
@@ -37,11 +39,12 @@ export function basisLabel(basis: SavingsEvent['basis']): string {
 }
 
 export function SavingsHistory({ events, loading = false }: { events: SavingsEvent[]; loading?: boolean }) {
+  const { language } = useRegion();
   if (loading) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Savings history</CardTitle>
+          <CardTitle>{tFor(language, 'dashSavingsHistory')}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="glass-card animate-shimmer h-24" />
@@ -55,7 +58,7 @@ export function SavingsHistory({ events, loading = false }: { events: SavingsEve
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <PiggyBank className="h-5 w-5" aria-hidden="true" />
-          Savings history
+          {tFor(language, 'dashSavingsHistory')}
         </CardTitle>
         <CardDescription>
           Each confirmed purchase and what it saved — compare-at price minus the recorded price.

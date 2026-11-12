@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ProductCard, type ProductCardData } from '@/components/products/product-card';
-import { computeDealScoreFromPrediction } from '@/lib/deal-score';
+import { dealScoreForDisplay } from '@/lib/deal-score';
 
 interface SimilarProductsProps {
   productId: string;
@@ -46,7 +46,7 @@ export function SimilarProducts({ productId, productSlug, category, brand }: Sim
               if (!predRes.ok) return;
               const predData = await predRes.json();
               if (!predData.success || !predData.data) return;
-              const score = computeDealScoreFromPrediction(predData.data);
+              const score = dealScoreForDisplay(predData.data);
               if (score === null) return;
               setProducts((prev) =>
                 prev.map((p) => (p.id === item.id ? { ...p, dealScore: score } : p))

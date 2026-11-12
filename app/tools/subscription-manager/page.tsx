@@ -16,6 +16,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
@@ -54,6 +56,7 @@ function daysLabel(renewalDate: string | null): string {
 }
 
 export default function SubscriptionManagerPage() {
+  const { language } = useRegion();
   const [subscriptions, setSubscriptions] = useState<EnrichedSubscription[]>([]);
   const [totalMonthlyUsd, setTotalMonthlyUsd] = useState(0);
   const [reminders, setReminders] = useState<ConsumerSubscription[]>([]);
@@ -202,7 +205,7 @@ export default function SubscriptionManagerPage() {
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
-        <h1 className="text-2xl font-bold">Subscription manager</h1>
+        <h1 className="text-2xl font-bold">{tFor(language, 'toolHeadingSubscriptionManager')}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Your consumer subscriptions — streaming, apps, services — in one
           place, with renewal reminders and flags for duplicates and
@@ -410,7 +413,7 @@ export default function SubscriptionManagerPage() {
                             size="sm"
                             onClick={() => deleteSubscription(sub.id, sub.name)}
                           >
-                            Remove
+                            {tFor(language, 'commonRemove')}
                           </Button>
                         </div>
                       </div>

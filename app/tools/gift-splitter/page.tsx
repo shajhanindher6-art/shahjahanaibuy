@@ -19,6 +19,9 @@
  * pick.
  */
 
+import { cookies } from 'next/headers';
+import { isSupportedLanguage, type Language } from '@/lib/region';
+import { tFor } from '@/lib/i18n';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Gift } from 'lucide-react';
@@ -75,7 +78,18 @@ interface GiftSplitterProps {
 /** The form always shows 3 recipient rows (blank rows are ignored). */
 const FORM_ROWS = 3;
 
+/**
+ * Section 15 (C3): the server reads the same sb-language cookie the
+ * root layout and homepage use for dir/lang — a first-visit language
+ * switch via localStorage takes effect on the next load.
+ */
+function toolLanguage(): Language {
+  const saved = cookies().get('sb-language')?.value ?? null;
+  return saved && isSupportedLanguage(saved) ? saved : 'en';
+}
+
 export default async function GiftSplitterPage({ searchParams }: GiftSplitterProps) {
+  const language = toolLanguage();
   const { totalUsd, recipients, occasion, totalError } = parseGiftSplitParams(searchParams);
   const hasQuery = totalUsd !== null || recipients.length > 0;
   const inputError =
@@ -108,7 +122,7 @@ export default async function GiftSplitterPage({ searchParams }: GiftSplitterPro
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <Gift className="h-7 w-7 text-blue-600" /> Gift Budget Splitter
+            <Gift className="h-7 w-7 text-blue-600" /> {tFor(language, 'toolHeadingGiftSplitter')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             One total, several people: enter a budget and who it is

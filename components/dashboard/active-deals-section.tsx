@@ -14,6 +14,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Tag, ArrowRight, Clock } from 'lucide-react';
@@ -47,6 +49,7 @@ interface DealRow {
 }
 
 export function ActiveDealsSection() {
+  const { language } = useRegion();
   const [deals, setDeals] = useState<SmartDealItem[]>([]);
   const [endAtByProduct, setEndAtByProduct] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -148,7 +151,7 @@ export function ActiveDealsSection() {
                     <Price usd={deal.currentPrice} />
                   </p>
                 ) : (
-                  <p className="mt-1 text-xs text-muted-foreground">Price not listed</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{tFor(language, 'commonPriceNotListed')}</p>
                 )}
                 <p className="mt-2 rounded-md bg-blue-50/80 p-1.5 text-xs text-blue-700 dark:bg-blue-950/80 dark:text-blue-300">
                   {deal.reason}

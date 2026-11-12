@@ -10,6 +10,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import Link from 'next/link';
 import { Bell, BellOff, Activity } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -56,11 +58,12 @@ export function summarizeAlertHealth(alerts: AlertHealthAlert[]): AlertHealthSum
 }
 
 export function AlertHealth({ alerts, loading = false }: { alerts: AlertHealthAlert[]; loading?: boolean }) {
+  const { language } = useRegion();
   if (loading) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Alert health</CardTitle>
+          <CardTitle>{tFor(language, 'dashAlertHealth')}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="glass-card animate-shimmer h-24" />
@@ -76,7 +79,7 @@ export function AlertHealth({ alerts, loading = false }: { alerts: AlertHealthAl
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Activity className="h-5 w-5" aria-hidden="true" />
-          Alert health
+          {tFor(language, 'dashAlertHealth')}
         </CardTitle>
         <CardDescription>
           Are your price alerts actually watching — and have they ever fired?

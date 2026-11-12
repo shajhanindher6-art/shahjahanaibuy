@@ -23,6 +23,7 @@
 
 'use client';
 
+import { tFor } from '@/lib/i18n';
 import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useChat } from 'ai/react';
@@ -69,7 +70,7 @@ function productsFromDataEntry(entry: unknown): ChatProduct[] {
 }
 
 export function AIChatPanel() {
-  const { region } = useRegion();
+  const { region, language } = useRegion();
   const [input, setInput] = useState('');
   // The query behind the in-flight turn, for the JSON fallback in
   // onError (the hook's error callback does not receive it).
@@ -170,7 +171,7 @@ export function AIChatPanel() {
     <div className="glass-card flex flex-col overflow-hidden">
       <div className="flex items-center gap-2 border-b border-white/40 bg-gradient-to-r from-blue-600/90 to-violet-600/90 px-4 py-3 text-white">
         <Sparkles className="h-4 w-4" />
-        <p className="text-sm font-semibold">AI Assistant</p>
+        <p className="text-sm font-semibold">{tFor(language, 'dashAiAssistant')}</p>
       </div>
       <div className="flex max-h-80 min-h-48 flex-col gap-2 overflow-y-auto p-3">
         {view.map((m) => (

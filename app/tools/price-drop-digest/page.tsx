@@ -13,6 +13,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -36,6 +38,7 @@ interface DigestResponse {
 }
 
 export default function PriceDropDigestPage() {
+  const { language } = useRegion();
   const router = useRouter();
   const [digest, setDigest] = useState<PriceDropDigest | null>(null);
   const [frequency, setFrequency] = useState<'daily' | 'weekly'>('weekly');
@@ -273,7 +276,7 @@ export default function PriceDropDigestPage() {
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <Mail className="h-7 w-7 text-blue-600" /> Price-drop digest
+            <Mail className="h-7 w-7 text-blue-600" /> {tFor(language, 'toolHeadingPriceDropDigest')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             One summary of the price drops on the products you watch — top

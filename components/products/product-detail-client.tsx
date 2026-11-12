@@ -406,7 +406,7 @@ import { useAuth } from '@/features/auth/auth-provider';
 // Wave-2 wiring (combined batch): canonical Deal Score, forecast,
 // Q&A, carbon label, translations, payment handoff, merchant trust,
 // agent memory — components/libs already exist, mounted here.
-import { computeDealScoreFromPrediction } from '@/lib/deal-score';
+import { dealScoreForDisplay } from '@/lib/deal-score';
 import { resolveCarbonLabel } from '@/lib/sustainability';
 // Wave-2 components load on demand (same P0 pattern as the tab
 // components above): the forecast card lives in the Prediction tab,
@@ -570,6 +570,15 @@ interface Prediction {
   averagePrice: number | null;
   lowestPrice: number | null;
   highestPrice: number | null;
+  /**
+   * Price-history points behind this prediction, from the
+   * predictions API (Section 15, B1). The Deal Score badge is
+   * hidden while this is below DEAL_SCORE_MIN_DATA_POINTS (5)
+   * — the live catalog's 4 points per product all score a
+   * meaningless 100/100. Absent on predictions fetched before
+   * B1, which the gate treats as "not enough data".
+   */
+  dataPoints?: number | null;
   price30Day: Array<{ date: string; price: number }>;
   price90Day: Array<{ date: string; price: number }>;
   price1Year: Array<{ date: string; price: number }>;
@@ -1270,7 +1279,12 @@ export default function ProductDetailClient({
   // merchant compare-at basis (lib/deal-math discountPercent),
   // never the deals-table % — the two numbers answer different
   // questions and must never be mixed into one.
-  const dealScore = computeDealScoreFromPrediction(prediction);
+  // Section 15, B1: dealScoreForDisplay ALSO hides the badge while
+  // the prediction rests on fewer than DEAL_SCORE_MIN_DATA_POINTS
+  // (5) price points — the live catalog's 4 points per product all
+  // score a meaningless 100/100. The formula itself is unchanged;
+  // only the display is gated.
+  const dealScore = dealScoreForDisplay(prediction);
   // Carbon label (lib/sustainability.ts resolveCarbonLabel — the pure
   // core of getSustainabilitySummary, which itself needs a Supabase
   // client and cannot run in this client component): recorded
@@ -1410,9 +1424,11 @@ export default function ProductDetailClient({
             {prediction && dealScore !== null && (
               <div className="flex items-center gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
                 {/* Canonical Deal Score (lib/deal-score.ts
-                    computeDealScoreFromPrediction): 100 − prob×0.4 +
+                    dealScoreForDisplay): 100 − prob×0.4 +
                     price term + confidence×0.3, clamped 0–100. The
-                    badge still clamps as a second line of defence. */}
+                    badge still clamps as a second line of defence.
+                    Section 15, B1: hidden entirely while the
+                    prediction rests on fewer than 5 price points. */}
                 <DealScoreBadge
                   score={dealScore}
                   size="lg"
@@ -1486,7 +1502,7 @@ export default function ProductDetailClient({
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Sparkles className="h-5 w-5 text-blue-500" />
-                    AI Summary
+                    {tFor(language, 'productAiSummary')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -2020,7 +2036,7 @@ export default function ProductDetailClient({
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-base">
                         <ThumbsUp className="h-5 w-5 text-green-500" />
-                        Pros
+                        {tFor(language, 'productPros')}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -2038,7 +2054,7 @@ export default function ProductDetailClient({
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-base">
                         <ThumbsDown className="h-5 w-5 text-red-500" />
-                        Cons
+                        {tFor(language, 'productCons')}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -2057,7 +2073,7 @@ export default function ProductDetailClient({
               {summary?.alternatives && (summary.alternatives ?? []).length > 0 && (
                 <Card className="md:col-span-2">
                   <CardHeader>
-                    <CardTitle className="text-base">Alternatives</CardTitle>
+                    <CardTitle className="text-base">{tFor(language, 'productAlternatives')}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="flex flex-wrap gap-2">
@@ -2083,7 +2099,7 @@ export default function ProductDetailClient({
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <BarChart3 className="h-5 w-5 text-blue-500" />
-                  Price History
+                  {tFor(language, 'productPriceHistory')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -2099,7 +2115,7 @@ export default function ProductDetailClient({
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <TrendingDown className="h-5 w-5 text-purple-500" />
-                  Price Drop Prediction
+                  {tFor(language, 'productPriceDropPrediction')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -2225,7 +2241,7 @@ export default function ProductDetailClient({
             <ReviewForm slug={slug} onReviewAdded={refreshReviews} />
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Reviews</CardTitle>
+                <CardTitle className="text-base">{tFor(language, 'productReviews')}</CardTitle>
                 {/* With 0 reviews there is no average to state: the old
                     code rendered "0.0 average from 0 reviews" above the
                     "No reviews yet." empty state. */}
@@ -2316,7 +2332,7 @@ export default function ProductDetailClient({
           <TabsContent value="specs" className="mt-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Specifications</CardTitle>
+                <CardTitle className="text-base">{tFor(language, 'productSpecifications')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid gap-2 sm:grid-cols-2">

@@ -10,6 +10,8 @@
  */
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useState } from 'react';
 import { Download } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,6 +24,7 @@ import {
 } from '@/lib/data-export';
 
 export function DataExportCard() {
+  const { language } = useRegion();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -68,7 +71,7 @@ export function DataExportCard() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Download className="h-5 w-5" /> Download your data
+          <Download className="h-5 w-5" /> {tFor(language, 'dashDownloadData')}
         </CardTitle>
         <CardDescription>
           Get a copy of your SmartBuy data as a JSON file: your wishlists, price alerts, buy

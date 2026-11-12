@@ -9,7 +9,7 @@ import { DEFAULT_DUTY_PCT, standardRateForCountry } from '@/services/tax-estimat
 import { buildStoreSearchUrl, getStoresForCountry } from '@/lib/stores';
 import type { FxSource } from '@/services/fx-rates';
 import { formatFxStatus } from '@/lib/fx-status';
-import { trackAffiliateClick } from '@/lib/affiliate-beacon';
+import { buildGoUrl } from '@/lib/affiliate-beacon';
 
 interface FxState {
   rates: Partial<Record<CurrencyCode, number>>;
@@ -316,18 +316,17 @@ export function RegionArbitrageTable({
                   </td>
                   <td className="py-2">
                     <a
-                      href={transformedUrls[row.storeUrl] ?? row.storeUrl}
+                      href={
+                        row.storeUrl === '#'
+                          ? '#'
+                          : buildGoUrl(transformedUrls[row.storeUrl] ?? row.storeUrl, {
+                              productSlug: productSlug ?? null,
+                              merchantName: row.storeName,
+                            })
+                      }
                       target="_blank"
                       rel="noopener noreferrer"
                       className="underline underline-offset-2"
-                      onClick={() => {
-                        if (row.storeUrl === '#') return;
-                        trackAffiliateClick({
-                          productSlug: productSlug ?? null,
-                          merchantName: row.storeName,
-                          targetUrl: transformedUrls[row.storeUrl] ?? row.storeUrl,
-                        });
-                      }}
                     >
                       Search on {row.storeName}
                     </a>

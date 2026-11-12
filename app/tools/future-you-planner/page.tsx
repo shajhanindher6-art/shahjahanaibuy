@@ -14,6 +14,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Target } from 'lucide-react';
@@ -50,6 +52,7 @@ interface FutureYouResponse {
 }
 
 export default function FutureYouPlannerPage() {
+  const { language } = useRegion();
   const [goals, setGoals] = useState<Goal[]>([]);
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -159,7 +162,7 @@ export default function FutureYouPlannerPage() {
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <Target className="h-7 w-7 text-blue-600" /> Future You planner
+            <Target className="h-7 w-7 text-blue-600" /> {tFor(language, 'toolHeadingFutureYou')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             Saving for a big purchase? Set the target and the date, and the

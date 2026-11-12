@@ -11,6 +11,8 @@
  */
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Trash2 } from 'lucide-react';
@@ -27,6 +29,7 @@ import {
 } from '@/lib/account-deletion';
 
 export function DeleteAccountCard() {
+  const { language } = useRegion();
   const { signOut } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
@@ -68,7 +71,7 @@ export function DeleteAccountCard() {
     <Card className="border-red-200 dark:border-red-900">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-red-600 dark:text-red-400">
-          <Trash2 className="h-5 w-5" /> Delete my account
+          <Trash2 className="h-5 w-5" /> {tFor(language, 'dashDeleteAccount')}
         </CardTitle>
         <CardDescription>
           Permanently delete your SmartBuy account and all of your data. This cannot be

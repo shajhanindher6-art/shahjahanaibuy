@@ -186,7 +186,7 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
         setGuestEmailState('saved');
         toast({
           title: 'Email alert saved',
-          description: `We'll email ${guestEmail.trim()} when this triggers (sent when the scheduled price check runs). Unsubscribe anytime from the email.`,
+          description: `We'll email ${guestEmail.trim()} when this triggers (sent when the scheduled price check runs, if email delivery is configured). Unsubscribe anytime from the email.`,
         });
       } else {
         setGuestEmailState('error');
@@ -303,7 +303,7 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
               />
               {guestEmailState === 'saved' ? (
                 <p className="mt-1 text-xs text-green-600">
-                  Email alert saved — we&apos;ll email you when it triggers. Unsubscribe anytime from the email.
+                  Email alert saved — we&apos;ll email you when it triggers, if email delivery is configured. Unsubscribe anytime from the email.
                 </p>
               ) : guestEmailState === 'error' && guestEmailError ? (
                 <p className="mt-1 text-xs text-red-600">{guestEmailError}</p>

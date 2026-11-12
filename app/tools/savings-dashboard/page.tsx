@@ -10,6 +10,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { PiggyBank } from 'lucide-react';
@@ -34,6 +36,7 @@ function money(value: number): string {
 }
 
 export default function SavingsDashboardPage() {
+  const { language } = useRegion();
   const [data, setData] = useState<SavingsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [signedIn, setSignedIn] = useState(true);
@@ -79,7 +82,7 @@ export default function SavingsDashboardPage() {
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <PiggyBank className="h-7 w-7 text-blue-600" /> Savings dashboard
+            <PiggyBank className="h-7 w-7 text-blue-600" /> {tFor(language, 'toolHeadingSavingsDashboard')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             How much you have actually saved — from confirmed savings only.

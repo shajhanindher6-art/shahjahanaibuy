@@ -2,13 +2,15 @@
  * Premium tiers 2.0 — pricing section (S5#17).
  *
  * Free / Premium / Family / Team, rendered from lib/tiers.ts.
- * Premium keeps the live $9.99/month price. Family's price is "To
- * be announced" (owner decision pending — never an invented number)
- * and Team is custom/contact sales. The section also states the
- * price-lock guarantee and concierge honestly: price-lock is
- * included on Premium/Family/Team but dormant until Stripe is
- * configured (lib/price-lock.ts); concierge is a Team-tier human
- * help offer, not an automated service.
+ * Premium's $9.99/month label is the PLANNED price, not a live
+ * charge (Section 15 P2-5: priceStatus 'planned' in lib/tiers.ts
+ * — payments are not live yet, Stripe is in test mode). Family's
+ * price is "To be announced" (owner decision pending — never an
+ * invented number) and Team is custom/contact sales. The section
+ * also states the price-lock guarantee and concierge honestly:
+ * price-lock is included on Premium/Family/Team but dormant until
+ * Stripe is configured (lib/price-lock.ts); concierge is a
+ * Team-tier human help offer, not an automated service.
  *
  * Server component, no client JS. NOT wired into app/page.tsx yet —
  * homepage wiring is wave 2 (another worker owns app/page.tsx).

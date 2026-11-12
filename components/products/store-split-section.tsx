@@ -32,6 +32,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { buildStoreSearchUrl, getStoresSplit, type LocalStore } from '@/lib/stores';
+import { buildGoUrl } from '@/lib/affiliate-beacon';
 import { geoSourceLabel, type GeoDetectionSource } from '@/lib/platform-geo';
 import { checkoutHandoffHint } from '@/lib/local-payments';
 
@@ -73,7 +74,7 @@ function StoreRow({
       </div>
       <Button asChild variant="outline">
         <a
-          href={buildStoreSearchUrl(store, productName)}
+          href={buildGoUrl(buildStoreSearchUrl(store, productName))}
           target="_blank"
           rel="noopener noreferrer"
         >

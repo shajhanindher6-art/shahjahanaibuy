@@ -14,6 +14,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import Link from 'next/link';
 import { Heart } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -66,11 +68,12 @@ function formatUsd(value: number): string {
 }
 
 export function ListsAtAGlance({ items, loading = false }: { items: ListGlanceItem[]; loading?: boolean }) {
+  const { language } = useRegion();
   if (loading) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Your lists at a glance</CardTitle>
+          <CardTitle>{tFor(language, 'dashListsAtAGlance')}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="glass-card animate-shimmer h-24" />
@@ -86,7 +89,7 @@ export function ListsAtAGlance({ items, loading = false }: { items: ListGlanceIt
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Heart className="h-5 w-5" aria-hidden="true" />
-          Your lists at a glance
+          {tFor(language, 'dashListsAtAGlance')}
         </CardTitle>
         <CardDescription>
           What each wishlist holds and what its priced items cost right now.

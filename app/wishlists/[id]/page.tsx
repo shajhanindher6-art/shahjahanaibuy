@@ -23,7 +23,7 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ProductCard } from '@/components/products/product-card';
 import { ShareButtons } from '@/components/products/share-buttons';
-import { computeDealScoreFromPrediction } from '@/lib/deal-score';
+import { dealScoreForDisplay } from '@/lib/deal-score';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 
@@ -184,7 +184,7 @@ export default function SharedWishlistPage() {
           if (!predRes.ok) return;
           const predData = await predRes.json();
           if (!predData.success || !predData.data) return;
-          const score = computeDealScoreFromPrediction(predData.data);
+          const score = dealScoreForDisplay(predData.data);
           if (score === null) return;
           setDealScores((prev) => ({ ...prev, [item.product.id]: score }));
         } catch {

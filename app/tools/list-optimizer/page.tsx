@@ -15,6 +15,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ListChecks } from 'lucide-react';
@@ -52,6 +54,7 @@ interface OptimizerResponse {
 }
 
 export default function ListOptimizerPage() {
+  const { language } = useRegion();
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [catalogFailed, setCatalogFailed] = useState(false);
   const [rows, setRows] = useState<ListRow[]>([{ productSlug: '', quantity: 1 }]);
@@ -187,7 +190,7 @@ export default function ListOptimizerPage() {
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-3xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <ListChecks className="h-7 w-7 text-blue-600" /> Shopping list optimizer
+            <ListChecks className="h-7 w-7 text-blue-600" /> {tFor(language, 'toolHeadingListOptimizer')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             Add the products on your list and see the cheapest way to buy
@@ -243,7 +246,7 @@ export default function ListOptimizerPage() {
                   </div>
                   {rows.length > 1 ? (
                     <Button variant="outline" onClick={() => removeRow(index)}>
-                      Remove
+                      {tFor(language, 'commonRemove')}
                     </Button>
                   ) : null}
                 </div>

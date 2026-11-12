@@ -18,6 +18,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
 import { Copy, Check, Share2, Award, Link2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -40,8 +42,14 @@ interface ReferralLink {
 }
 
 export function ReferralCard() {
+  const { language } = useRegion();
   const [rewards, setRewards] = useState<RewardsMe | null>(null);
   const [referral, setReferral] = useState<ReferralLink | null>(null);
+  // Section 15, B13 — the referrer's own signup count from real
+  // referral_signups rows (GET /api/v1/referrals?mine=1). null
+  // means "unknown / unavailable" (e.g. migration 038 not applied
+  // yet): no count line is shown then, never a guessed number.
+  const [signups, setSignups] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -58,6 +66,22 @@ export function ReferralCard() {
         .then((res) => (res.ok ? res.json() : null))
         .then((json) => {
           if (!cancelled && json?.success && json.data?.url) setReferral(json.data as ReferralLink);
+        })
+        .catch(() => undefined),
+      fetch('/api/v1/referrals?mine=1')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((json) => {
+          // Only a real, available count is ever shown. When the
+          // count is unavailable the line stays hidden; when it
+          // is 0 the honest empty state below renders instead.
+          if (
+            !cancelled &&
+            json?.success &&
+            json.data?.available === true &&
+            typeof json.data?.signups === 'number'
+          ) {
+            setSignups(json.data.signups);
+          }
         })
         .catch(() => undefined),
     ]).then(() => {
@@ -106,7 +130,7 @@ export function ReferralCard() {
       <CardContent className="space-y-4">
         {referral ? (
           <div>
-            <p className="text-xs font-medium text-muted-foreground">Your referral link</p>
+            <p className="text-xs font-medium text-muted-foreground">{tFor(language, 'dashReferralLink')}</p>
             <div className="mt-1 flex items-center gap-2">
               <code id="referral-link-text" className="min-w-0 flex-1 truncate rounded-md bg-muted px-2 py-1.5 text-xs">
                 {referral.url}
@@ -120,6 +144,16 @@ export function ReferralCard() {
               <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
               {referral.clicks} click{referral.clicks === 1 ? '' : 's'} so far
             </p>
+            {signups !== null && signups > 0 && (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {signups} friend{signups === 1 ? '' : 's'} joined
+              </p>
+            )}
+            {signups === 0 && (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                No friends have joined yet — share your link to get started.
+              </p>
+            )}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">

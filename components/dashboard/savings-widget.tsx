@@ -16,6 +16,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { PiggyBank, Flame, Award } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { saverBadgeLabel, type SaverBadge } from '@/lib/savings';
@@ -41,6 +43,7 @@ function formatUsd(value: number): string {
 }
 
 export function SavingsWidget({ totalSaved, eventCount, streakWeeks, badge }: SavingsWidgetProps) {
+  const { language } = useRegion();
   return (
     <Card>
       <CardHeader>
@@ -54,7 +57,7 @@ export function SavingsWidget({ totalSaved, eventCount, streakWeeks, badge }: Sa
       </CardHeader>
       <CardContent>
         {eventCount === 0 ? (
-          <p className="text-sm text-muted-foreground">No savings recorded yet</p>
+          <p className="text-sm text-muted-foreground">{tFor(language, 'dashNoSavings')}</p>
         ) : (
           <div className="space-y-3">
             <p className="text-3xl font-bold">{formatUsd(totalSaved)}</p>

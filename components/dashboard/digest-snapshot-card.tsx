@@ -18,6 +18,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Mail, TrendingDown } from 'lucide-react';
@@ -31,6 +33,7 @@ interface DigestResponse {
 }
 
 export function DigestSnapshotCard() {
+  const { language } = useRegion();
   const [digest, setDigest] = useState<PriceDropDigest | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,7 +71,7 @@ export function DigestSnapshotCard() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Mail className="h-5 w-5" aria-hidden="true" />
-          This week&apos;s price-drop digest
+          {tFor(language, 'dashWeeklyDigest')}
         </CardTitle>
         <CardDescription>
           Drops on the products you watch, versus their 30-day average.

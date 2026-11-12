@@ -14,6 +14,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { CalendarClock } from 'lucide-react';
@@ -36,6 +38,7 @@ interface ProductRow {
 }
 
 export function UpcomingDealsSection() {
+  const { language } = useRegion();
   const [deals, setDeals] = useState<UpcomingDeal[]>([]);
   const [productById, setProductById] = useState<Map<string, ProductRow>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -82,7 +85,7 @@ export function UpcomingDealsSection() {
         <div className="glass-card animate-shimmer h-32" />
       ) : deals.length === 0 ? (
         <div className="glass-card p-6 text-center">
-          <p className="text-sm font-medium">No upcoming deals scheduled yet</p>
+          <p className="text-sm font-medium">{tFor(language, 'dashNoUpcomingDeals')}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Future-dated deals will appear here as soon as they are scheduled.
           </p>

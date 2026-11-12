@@ -28,6 +28,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Store } from 'lucide-react';
@@ -66,6 +68,7 @@ function readSavedCountry(): string | null {
 }
 
 export default function StoreFinderPage() {
+  const { language } = useRegion();
   const [countryCode, setCountryCode] = useState('US');
   const [query, setQuery] = useState('');
 
@@ -130,7 +133,7 @@ export default function StoreFinderPage() {
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <Store className="h-7 w-7 text-blue-600" /> Store Finder
+            <Store className="h-7 w-7 text-blue-600" /> {tFor(language, 'toolHeadingStoreFinder')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             Find the stores in your country, then search a product on

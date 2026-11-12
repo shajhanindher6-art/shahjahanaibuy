@@ -12,6 +12,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import Link from 'next/link';
 import { CheckCircle2, Circle, Bell, Heart, Calculator } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -37,6 +39,7 @@ export function deriveChecklistDone(state: ChecklistState): {
 }
 
 export function GettingStartedChecklist({ hasSavedProduct, hasAlert }: ChecklistState) {
+  const { language } = useRegion();
   const done = deriveChecklistDone({ hasSavedProduct, hasAlert });
 
   const items = [
@@ -106,7 +109,7 @@ export function GettingStartedChecklist({ hasSavedProduct, hasAlert }: Checklist
         </ul>
         <p className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
-            <Heart className="h-3.5 w-3.5" aria-hidden="true" /> Save
+            <Heart className="h-3.5 w-3.5" aria-hidden="true" /> {tFor(language, 'commonSave')}
           </span>
           <span className="flex items-center gap-1">
             <Bell className="h-3.5 w-3.5" aria-hidden="true" /> Alert

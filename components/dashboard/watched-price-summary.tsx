@@ -11,6 +11,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import Link from 'next/link';
 import { TrendingDown, TrendingUp, Target } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -71,11 +73,12 @@ function formatPct(value: number): string {
 }
 
 export function WatchedPriceSummary({ items, loading = false }: { items: WatchedPriceItem[]; loading?: boolean }) {
+  const { language } = useRegion();
   if (loading) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Your watched prices</CardTitle>
+          <CardTitle>{tFor(language, 'dashYourWatchedPrices')}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="glass-card animate-shimmer h-24" />
@@ -91,7 +94,7 @@ export function WatchedPriceSummary({ items, loading = false }: { items: Watched
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <TrendingDown className="h-5 w-5" aria-hidden="true" />
-          Your watched prices
+          {tFor(language, 'dashYourWatchedPrices')}
         </CardTitle>
         <CardDescription>
           The biggest moves across the products you are watching.
@@ -118,7 +121,7 @@ export function WatchedPriceSummary({ items, loading = false }: { items: Watched
                   </span>
                 </Link>
               ) : (
-                <p className="mt-1 text-sm text-muted-foreground">No price drops recorded yet</p>
+                <p className="mt-1 text-sm text-muted-foreground">{tFor(language, 'dashNoPriceDrops')}</p>
               )}
             </div>
             <div className="rounded-lg border p-3">

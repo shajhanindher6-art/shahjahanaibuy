@@ -16,6 +16,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import Link from 'next/link';
 import { ShoppingCart, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +41,7 @@ export function BuyListPanel({
   onRemove?: (id: string) => void;
   onQuantityChange?: (id: string, quantity: number) => void;
 }) {
+  const { language } = useRegion();
   const region = REGIONS.find((r) => r.code === regionCode) ?? REGIONS[0];
 
   return (
@@ -53,7 +56,7 @@ export function BuyListPanel({
         <div className="glass-card h-32 animate-shimmer" />
       ) : items.length === 0 ? (
         <div className="glass-card p-6 text-center">
-          <p className="text-sm font-medium">Your buy list is empty</p>
+          <p className="text-sm font-medium">{tFor(language, 'dashBuyListEmpty')}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Save products here to shortlist them. Prices are re-checked from the retailer when you
             view this list — nothing here is a checkout.

@@ -12,6 +12,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
@@ -30,6 +32,7 @@ interface SmartHomeResponse {
 }
 
 export default function SmartHomePage() {
+  const { language } = useRegion();
   const [rules, setRules] = useState<SmartHomeRule[]>([]);
   const [pending, setPending] = useState<PendingConfirmation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,7 +110,7 @@ export default function SmartHomePage() {
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
-        <h1 className="text-2xl font-bold">AI Smart Home Reorder Agent</h1>
+        <h1 className="text-2xl font-bold">{tFor(language, 'toolHeadingSmartHomeAgent')}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           When an IoT device reports it is running low, the matching rule
           prepares a reorder — as a pending confirmation. The agent never

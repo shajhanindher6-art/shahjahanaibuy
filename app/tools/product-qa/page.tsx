@@ -9,6 +9,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { MessageCircleQuestion, Sparkles } from 'lucide-react';
@@ -33,6 +35,7 @@ interface AiAnswer {
 }
 
 export default function AiQaPage() {
+  const { language } = useRegion();
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [slug, setSlug] = useState('');
   const [question, setQuestion] = useState('');
@@ -96,7 +99,7 @@ export default function AiQaPage() {
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <MessageCircleQuestion className="h-7 w-7 text-blue-600" /> AI Product Q&amp;A
+            <MessageCircleQuestion className="h-7 w-7 text-blue-600" /> {tFor(language, 'toolHeadingProductQa')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             Ask a question about a product — the answer comes from its

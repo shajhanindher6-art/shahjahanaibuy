@@ -1,5 +1,7 @@
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -48,6 +50,7 @@ interface WebhookStatusResponse {
 }
 
 export function WebhookChannelsCard() {
+  const { language } = useRegion();
   const { toast } = useToast();
   const [status, setStatus] = useState<WebhookStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -197,7 +200,7 @@ export function WebhookChannelsCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>WhatsApp, Telegram &amp; generic webhook alerts</CardTitle>
+        <CardTitle>{tFor(language, 'dashWebhookAlerts')}</CardTitle>
         <CardDescription>
           Get price-drop alerts on WhatsApp or Telegram, or POSTed to your
           own endpoint. Delivery needs both your settings below and the

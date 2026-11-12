@@ -120,6 +120,13 @@ const TOOL_GROUPS: Array<{
         isNew: true,
       },
       {
+        name: 'Coupons & Cashback Finder',
+        href: '/tools/coupons-cashback',
+        description:
+          'Find coupon codes and cashback offers by store and category. Demo / seed data — sample offers from the demo catalog, not live merchant offers.',
+        isNew: true,
+      },
+      {
         name: 'AI Shopping List Optimizer',
         href: '/tools/list-optimizer',
         description:
