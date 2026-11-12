@@ -18,8 +18,10 @@ import {
 import { getLatestPrices } from './price-history';
 import { predictPriceDrop } from './ai-predictions';
 import { dealScoreForDisplay } from '@/lib/deal-score';
+import { discountPercent } from '@/lib/deal-math';
 import {
   FEW_SEARCH_RESULTS,
+  levenshteinDistance,
   suggestSearchCorrection,
   type SearchCatalogTokens,
 } from '@/lib/search-suggestions';
@@ -253,6 +255,63 @@ function tokenMatchesText(text: string, token: string): boolean {
   return textContainsKeyword(text, token) || textContainsKeyword(text, `${token}s`);
 }
 
+/**
+ * Section 16, #37 — curated synonym map over the catalog's own
+ * vocabulary (10 products: laptop / phone / headphones / tv /
+ * tablet / watch / speaker / camera / console / monitor). A
+ * synonym is only ever a word shoppers actually type for a
+ * category the catalog carries — never a brand, never a spec, and
+ * never a generated variant. "notebook" expands to "laptop";
+ * "smartphone" / "cellphone" / "mobile" expand to "phone". The
+ * map is deliberately small: a wrong synonym would surface
+ * unrelated products, and a 10-product catalog needs no thesaurus.
+ */
+export const SEARCH_SYNONYMS: Record<string, string> = {
+  notebook: 'laptop',
+  netbook: 'laptop',
+  smartphone: 'phone',
+  cellphone: 'phone',
+  mobile: 'phone',
+  earbuds: 'headphones',
+  earphones: 'headphones',
+  television: 'tv',
+  smartwatch: 'watch',
+  tabletpc: 'tablet',
+};
+
+/**
+ * Expand query tokens with their canonical synonyms (Section 16,
+ * #37). The original token is kept first — the expanded token is
+ * appended, never a replacement — so scoring still credits the
+ * typed word and the "Matched: …" line can show the catalog word
+ * that actually matched. Pure.
+ */
+export function expandSearchTokens(tokens: string[]): string[] {
+  const expanded = [...tokens];
+  for (const token of tokens) {
+    const synonym = SEARCH_SYNONYMS[token];
+    if (synonym && !expanded.includes(synonym)) expanded.push(synonym);
+  }
+  return expanded;
+}
+
+/**
+ * Section 16, #37 — typo-tolerant word match. A token matches a
+ * catalog word when the Levenshtein distance is small relative to
+ * the token: distance ≤ 1 for tokens of 4–5 letters ("macbok" →
+ * "macbook" is distance 1), ≤ 2 for tokens of 6+ letters. Tokens
+ * shorter than 4 letters never fuzzy-match (a 1-edit distance on
+ * "air" would match half the catalog). Exact word-boundary matches
+ * always win first — this only runs when they fail — and the
+ * did-you-mean correction (Section 15, B10) still reports the
+ * corrected spelling, so the page never silently swaps the query.
+ */
+export function tokenMatchesWordFuzzy(token: string, word: string): boolean {
+  if (token.length < 4 || word.length < 4) return false;
+  const maxDistance = token.length >= 6 ? 2 : 1;
+  return levenshteinDistance(token, word.toLowerCase(), maxDistance) <= maxDistance;
+}
+
 export interface TokenMatch {
   /** Tokens found anywhere in name/brand/category/description. */
   matchedTerms: string[];
@@ -277,9 +336,21 @@ export function computeTokenMatches(
   const matchedTerms: string[] = [];
   const nameMatchedTerms: string[] = [];
   for (const token of tokens) {
-    if (!tokenMatchesText(haystack, token)) continue;
+    if (tokenMatchesText(haystack, token)) {
+      matchedTerms.push(token);
+      if (tokenMatchesText(nameLower, token)) nameMatchedTerms.push(token);
+      continue;
+    }
+    // Section 16, #37 — typo-tolerant fallback: the token still
+    // matches when it is within a small edit distance of a catalog
+    // word in the same text. "macbok" matches the "macbook" in a
+    // product name even when the zero-result retry never ran.
+    const words = haystack.split(/[^a-z0-9]+/).filter(Boolean);
+    if (!words.some((w) => tokenMatchesWordFuzzy(token, w))) continue;
     matchedTerms.push(token);
-    if (tokenMatchesText(nameLower, token)) nameMatchedTerms.push(token);
+    if (nameLower.split(/[^a-z0-9]+/).filter(Boolean).some((w) => tokenMatchesWordFuzzy(token, w))) {
+      nameMatchedTerms.push(token);
+    }
   }
   return { matchedTerms, nameMatchedTerms };
 }
@@ -292,7 +363,8 @@ export type AISearchSortKey =
   | 'price-desc'
   | 'match-desc'
   | 'deal-score'
-  | 'rating-desc';
+  | 'rating-desc'
+  | 'discount-desc';
 
 export const AI_SEARCH_SORT_KEYS: AISearchSortKey[] = [
   'relevance',
@@ -301,6 +373,7 @@ export const AI_SEARCH_SORT_KEYS: AISearchSortKey[] = [
   'match-desc',
   'deal-score',
   'rating-desc',
+  'discount-desc',
 ];
 
 /**
@@ -657,6 +730,12 @@ export async function aiSearch(
     let tokens = compareQuery
       ? tokenizeSearchTerms(compareQuery.first, parsedIntent)
       : tokenizeSearchTerms(options.query, parsedIntent);
+    // Section 16, #37 — synonym expansion: the expanded tokens
+    // drive the candidate query AND the coverage score, so
+    // "notebook" finds laptops. The original token stays first in
+    // the list, so matchedTerms still credits the typed word when
+    // it matches, and the expanded word when only it does.
+    tokens = expandSearchTokens(tokens);
 
     const budget = options.filters?.budgetMax ?? parsedIntent.budget;
     // B3: the band's lower end is a hard filter too (priced
@@ -746,7 +825,7 @@ export async function aiSearch(
       const corrected = await suggestFuzzyCorrection(supabase, options.query, parsedIntent);
       if (corrected) {
         didYouMean = corrected;
-        const correctedTokens = tokenizeSearchTerms(corrected, parsedIntent);
+        const correctedTokens = expandSearchTokens(tokenizeSearchTerms(corrected, parsedIntent));
         if (correctedTokens.length > 0 && correctedTokens.join(' ') !== tokens.join(' ')) {
           const retry = await buildCandidateQuery(correctedTokens);
           if (!retry.error && (retry.data ?? []).length > 0) {
@@ -832,6 +911,7 @@ export async function aiSearch(
         matchedTerms,
         aiExplanation: explanation,
         currentPrice: null,
+        discountPercent: null,
         stores: [],
         rating: null,
         ratingCount: 0,
@@ -855,6 +935,24 @@ export async function aiSearch(
           .toLowerCase();
         return !parsedIntent.excludedTerms.some((t) => textContainsKeyword(haystack, t.toLowerCase()));
       });
+    }
+
+    // Section 16, #37 — zero-coverage filter: the candidate query
+    // above is substring ilike (%phone% also matches the
+    // "headphones" category), so a candidate can arrive here
+    // carrying NONE of the query's tokens — "smartphone" (expanded
+    // to "phone") returned the Sony headphones as a second result
+    // even though no token matches it by word boundary or fuzzy
+    // distance. computeTokenMatches is the word-boundary/fuzzy
+    // rule the search actually promises, so when the query
+    // produced tokens (and this is not an explicit "X vs Y" pair,
+    // whose sides are the answer by name), drop candidates with
+    // no matched term. Token-less queries (e.g. "a", which
+    // tokenizes to nothing) keep the whole candidate set — there
+    // is nothing to match against, and the discount-desc sort
+    // relies on that.
+    if (presetRows === null && tokens.length > 0) {
+      results = results.filter((r) => r.matchedTerms.length > 0);
     }
 
     // Latest prices for every result (awaited before sorting).
@@ -886,7 +984,7 @@ export async function aiSearch(
       const [mpRes, reviewsRes] = await Promise.all([
         supabase
           .from('merchant_products')
-          .select('product_id, merchant_id')
+          .select('product_id, merchant_id, price, compare_at_price')
           .in('product_id', resultIds)
           .is('deleted_at', null)
           .limit(200),
@@ -897,7 +995,25 @@ export async function aiSearch(
           .is('deleted_at', null)
           .limit(500),
       ]);
-      const mpRows = (mpRes.data ?? []) as Array<{ product_id: string; merchant_id: string }>;
+      const mpRows = (mpRes.data ?? []) as Array<{ product_id: string; merchant_id: string; price?: number | string | null; compare_at_price?: number | string | null }>;
+      // Section 16, #30 — best recorded discount per product: the
+      // largest discountPercent(price, compare_at_price) across its
+      // merchant rows. Null when no row carries a compare-at price
+      // above its price — never 0% and never synthesized. The
+      // recorded rows are the only source; live-DB compare-at
+      // values were not re-verified (the seed sets them).
+      const discountByProduct = new Map<string, number>();
+      for (const row of mpRows) {
+        const price = parseFloat(String(row.price ?? ''));
+        const compareAt =
+          row.compare_at_price === null || row.compare_at_price === undefined
+            ? null
+            : parseFloat(String(row.compare_at_price));
+        const pct = discountPercent(price, compareAt);
+        if (pct === null) continue;
+        const best = discountByProduct.get(row.product_id);
+        if (best === undefined || pct > best) discountByProduct.set(row.product_id, pct);
+      }
       const merchantIds = Array.from(new Set(mpRows.map((r) => r.merchant_id).filter(Boolean)));
       let nameById = new Map<string, string>();
       if (merchantIds.length > 0) {
@@ -927,6 +1043,7 @@ export async function aiSearch(
       }
       for (const r of results) {
         r.stores = storesByProduct.get(r.product.id) ?? [];
+        r.discountPercent = discountByProduct.get(r.product.id) ?? null;
         const count = ratingCountMap.get(r.product.id) ?? 0;
         r.ratingCount = count;
         r.rating = count > 0 ? Math.round(((ratingSum.get(r.product.id) ?? 0) / count) * 10) / 10 : null;
@@ -1064,6 +1181,12 @@ export async function aiSearch(
       });
     } else if (sort === 'rating-desc') {
       results.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1) || b.score - a.score);
+    } else if (sort === 'discount-desc') {
+      // Section 16, #30 — biggest recorded discount first; no
+      // discount (null) sorts last, never first.
+      results.sort(
+        (a, b) => (b.discountPercent ?? -1) - (a.discountPercent ?? -1) || b.score - a.score
+      );
     } else {
       // 'relevance' and 'match-desc' are both score desc — the
       // score already blends confidence, matched attributes and

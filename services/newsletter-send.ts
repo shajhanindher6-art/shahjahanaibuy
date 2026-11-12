@@ -27,10 +27,9 @@
  * The sender takes a service-role client — subscriber emails are
  * never readable via the anon/authenticated API.
  *
- * No route calls this yet: sending is owner-triggered (apply 036,
- * set RESEND_API_KEY, verify the sender in Resend first). Batch
- * is capped (default 100, max 500 per call) so one run cannot
- * spray the whole list.
+ * Called by POST /api/v1/admin/newsletter/send (Section 16, #31,
+ * admin-only). Batch is capped (default 100, max 500 per call) so
+ * one run cannot spray the whole list.
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';

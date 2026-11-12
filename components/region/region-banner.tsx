@@ -13,8 +13,9 @@
  * never shows a Roman-Urdu-only button inside another language's
  * UI: on a first visit the detected language is already applied
  * by auto-detection, so the offer simply does not appear then.
- * (The old `bannerOfferUrdu` dictionary key is retained for
- * 28-key parity but is no longer rendered here.)
+ * (Section 16 deleted the old `bannerOfferUrdu` dictionary key
+ * along with five other dead keys; the banner sentence itself is
+ * now an English-only template in lib/i18n.ts bannerText().)
  */
 
 import { X } from 'lucide-react';

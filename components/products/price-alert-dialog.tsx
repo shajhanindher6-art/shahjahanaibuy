@@ -27,6 +27,7 @@ import {
   subscribeGuestPush,
   getGuestPushToken,
 } from '@/lib/push-client';
+import { PushOptInPrompt } from '@/components/home/push-opt-in-prompt';
 
 interface PriceAlertDialogProps {
   productId: string;
@@ -435,6 +436,17 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
                   </div>
                 ))}
               </div>
+            )}
+
+            {/* Section 16, #35 — push opt-in, surfaced right after
+                alert creation: once the user has an active alert
+                (this list re-fetches after Create Alert), the prompt
+                asks them to turn on push so the alert can actually
+                reach them. The prompt itself stays honest — when
+                VAPID keys are unconfigured it says so and disables
+                the button instead of pretending push works. */}
+            {alerts.length > 0 && (
+              <PushOptInPrompt context="product" />
             )}
           </div>
         )}

@@ -166,3 +166,33 @@ export function spendTrend(
   }
   return points;
 }
+
+/** One CSV cell: quote when the value contains a comma, quote, or newline (RFC 4180). */
+function csvCell(value: string | number | null): string {
+  if (value === null) return '';
+  const text = String(value);
+  if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
+/**
+ * Section 16, #50 — CSV export of the caller's own recorded
+ * expenses (the month's list the page already loaded). Pure and
+ * deterministic: header row + one row per expense, in the order
+ * given. No new data is fetched and nothing is uploaded — the page
+ * downloads this string as a file in the browser.
+ */
+export function expensesToCsv(expenses: Expense[]): string {
+  const header = 'spent_on,category,amount_usd,source,product_slug,note';
+  const rows = expenses.map((e) =>
+    [
+      csvCell(e.spentOn),
+      csvCell(e.category),
+      csvCell(roundToCents(e.amountUsd).toFixed(2)),
+      csvCell(e.source),
+      csvCell(e.productSlug),
+      csvCell(e.note),
+    ].join(',')
+  );
+  return [header, ...rows].join('\n');
+}

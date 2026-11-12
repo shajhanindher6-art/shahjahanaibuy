@@ -3,9 +3,28 @@
 import { useState } from 'react';
 import { Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  DEAL_SCORE_MIN_DATA_POINTS,
+  formatDealScoreWithheld,
+} from '@/lib/deal-score';
 
 interface DealScoreBadgeProps {
-  score: number;
+  /**
+   * Canonical Deal Score (lib/deal-score.ts dealScoreForDisplay) —
+   * null when the prediction rests on too few price points (or no
+   * prediction exists). Null does NOT render an empty badge: see
+   * dataPoints below.
+   */
+  score: number | null;
+  /**
+   * Recorded price-history points behind the prediction (Section
+   * 16, item 10). When score is null AND this is known and below
+   * DEAL_SCORE_MIN_DATA_POINTS (5), the badge renders the honest
+   * withheld state — "Score withheld · 4 of 5 points" — instead
+   * of vanishing silently. When the count is unknown (null), the
+   * badge renders nothing rather than guessing a count.
+   */
+  dataPoints?: number | null;
   size?: 'sm' | 'md' | 'lg';
   showLabel?: boolean;
   className?: string;
@@ -50,7 +69,23 @@ const sizeConfig = {
   lg: { badge: 'h-14 w-14 text-lg', font: 'text-base', gap: 'gap-2.5' },
 };
 
-export function DealScoreBadge({ score, size = 'md', showLabel = false, className }: DealScoreBadgeProps) {
+export function DealScoreBadge({ score, dataPoints, size = 'md', showLabel = false, className }: DealScoreBadgeProps) {
+  // Section 16, item 10: a hidden badge with no explanation read
+  // as a broken page. When the score is withheld for too few
+  // points, say so — with the real count — instead of rendering
+  // nothing. Unknown count → render nothing, never a guessed count.
+  if (score === null || score === undefined) {
+    const withheld = formatDealScoreWithheld(dataPoints);
+    if (!withheld) return null;
+    return (
+      <span
+        className={cn('text-xs text-muted-foreground', className)}
+        title={`${withheld}. The Deal Score is shown once a prediction rests on at least ${DEAL_SCORE_MIN_DATA_POINTS} recorded price points.`}
+      >
+        Score withheld · {dataPoints} of {DEAL_SCORE_MIN_DATA_POINTS} points
+      </span>
+    );
+  }
   const colors = getScoreColor(score);
   const dims = sizeConfig[size];
   const clampedScore = Math.round(Math.max(0, Math.min(100, score)));

@@ -110,6 +110,42 @@ export function buildFaqJsonLd(
   };
 }
 
+export interface WebPageJsonLdInput {
+  /** Page name, as shown in the h1 (or the metadata title without the brand suffix). */
+  name: string;
+  /** One-sentence description, matching the page's metadata description when it has one. */
+  description?: string | null;
+  /** Path from the site root (e.g. '/compare'). */
+  path: string;
+}
+
+/**
+ * WebPage schema for a public route (Section 16, item 14).
+ * 29 public routes had no page-level JSON-LD — only the site-wide
+ * Organization / WebSite / WebApplication block in app/layout.tsx.
+ * Only recorded facts: the page's own name, description and URL,
+ * plus isPartOf pointing at the site. No rating, price, author or
+ * date is ever claimed here. Combined with a BreadcrumbList and/or
+ * ItemList via toJsonLdGraph by components/seo/page-json-ld.tsx.
+ */
+export function buildWebPageJsonLd(
+  siteUrl: string,
+  page: WebPageJsonLdInput
+): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebPage',
+    name: page.name,
+    ...(page.description ? { description: page.description } : {}),
+    url: `${siteUrl}${page.path}`,
+    isPartOf: {
+      '@type': 'WebSite',
+      name: 'SmartBuy AI',
+      url: siteUrl,
+    },
+  };
+}
+
 export interface ItemListEntry {
   name: string;
   /** Path from the site root (e.g. '/products/macbook-air-13'). */

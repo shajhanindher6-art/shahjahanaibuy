@@ -18,6 +18,9 @@ interface SimilarProductsProps {
 
 export function SimilarProducts({ productId, productSlug, category, brand }: SimilarProductsProps) {
   const [products, setProducts] = useState<ProductCardData[]>([]);
+  // Section 16, item 10: recorded point counts behind each card's
+  // score, so a withheld score can say why (4 of 5 points).
+  const [dealScorePoints, setDealScorePoints] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   const fetchSimilar = useCallback(async () => {
@@ -47,6 +50,18 @@ export function SimilarProducts({ productId, productSlug, category, brand }: Sim
               const predData = await predRes.json();
               if (!predData.success || !predData.data) return;
               const score = dealScoreForDisplay(predData.data);
+              // Section 16, item 10: keep the point count even when
+              // the score is withheld — the card says "4 of 5
+              // points" instead of showing no badge with no reason.
+              if (
+                typeof predData.data.dataPoints === 'number' &&
+                Number.isFinite(predData.data.dataPoints)
+              ) {
+                setDealScorePoints((prev) => ({
+                  ...prev,
+                  [item.id]: predData.data.dataPoints,
+                }));
+              }
               if (score === null) return;
               setProducts((prev) =>
                 prev.map((p) => (p.id === item.id ? { ...p, dealScore: score } : p))
@@ -96,7 +111,14 @@ export function SimilarProducts({ productId, productSlug, category, brand }: Sim
         ) : products.length > 0 ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {products.map((p) => (
-              <ProductCard key={p.id} product={p} showReason />
+              <ProductCard
+                key={p.id}
+                product={{
+                  ...p,
+                  dealScoreDataPoints: dealScorePoints[p.id] ?? p.dealScoreDataPoints ?? null,
+                }}
+                showReason
+              />
             ))}
           </div>
         ) : (

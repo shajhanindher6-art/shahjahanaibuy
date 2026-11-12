@@ -44,6 +44,17 @@
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     }
   ],
+  "display_override": ["standalone"],
+  "share_target": {
+    "action": "/go",
+    "method": "GET",
+    "enctype": "application/x-www-form-urlencoded",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "u"
+    }
+  },
   "screenshots": [],
   "prefer_related_applications": false
 }

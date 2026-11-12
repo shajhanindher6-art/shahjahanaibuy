@@ -50,7 +50,22 @@ const nextConfig = {
     ],
   },
   experimental: {
-    optimizePackageImports: ['lucide-react'],
+    // Section 16, #46: only lucide-react was covered. Each package
+    // below is verified imported in the tree (grep, 12 Nov 2026) —
+    // nothing is listed speculatively. Gains are small except
+    // recharts (the chart library); the rest are single-import
+    // barrel packages where the transform trims unused re-exports.
+    // date-fns was checked and is NOT imported anywhere, so it is
+    // deliberately absent from this list.
+    optimizePackageImports: [
+      'lucide-react',
+      'recharts',
+      'react-day-picker',
+      'embla-carousel-react',
+      'cmdk',
+      'sonner',
+      'vaul',
+    ],
     serverComponentsExternalPackages: ['resend', 'web-push', 'stripe'],
   },
   // Section 12: the old /pricing -> /#pricing temporary redirect was

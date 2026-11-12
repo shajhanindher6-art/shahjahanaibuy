@@ -68,6 +68,13 @@ export function ProductGallery({ images, fallbackImageUrl, productName }: Produc
           <img
             src={mainUrl}
             alt={mainAlt}
+            // Section 16, #47: intrinsic size for the layout — the
+            // rendered box is fluid width (the lg:grid-cols-2 column,
+            // ~550px on desktop) × fixed h-80 (320px); CSS
+            // h-full w-full object-cover still governs display, the
+            // attributes only give the browser the aspect ratio.
+            width={550}
+            height={320}
             loading="lazy"
             decoding="async"
             onError={() => setImageFailed(true)}
@@ -102,6 +109,11 @@ export function ProductGallery({ images, fallbackImageUrl, productName }: Produc
               <img
                 src={img.url}
                 alt={img.altText ?? `${productName} photo ${index + 1}`}
+                // Section 16, #47: the thumbnail button is exactly
+                // h-14 w-14 (56px), so the attributes match the
+                // rendered box 1:1.
+                width={56}
+                height={56}
                 loading="lazy"
                 decoding="async"
                 className="h-full w-full object-cover"

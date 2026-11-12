@@ -17,6 +17,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getCachedProductBySlug } from '@/services/products';
 import { getMerchantProducts } from '@/services/commerce';
 import { getReviewSummary } from '@/services/reviews';
+import { deriveOfferPriceValidUntil } from '@/lib/product-seo';
 import type { ProductSeoData } from '@/lib/product-seo';
 
 /**
@@ -51,9 +52,11 @@ export async function getProductSeo(
       // with the SEO facts so the page can render "Prices last
       // checked" server-side — no extra query, no client fetch.
       dataFreshness: product.dataFreshness ?? null,
-      // No validity window exists in merchant data — see
-      // ProductSeoData.priceValidUntil in lib/product-seo.ts.
-      priceValidUntil: null,
+      // Section 16, item 12: validity derived from the recorded
+      // freshness + the 7-day stale threshold (null when the price
+      // is already stale or no freshness is recorded — the offers
+      // block is then suppressed or dateless, never backdated).
+      priceValidUntil: deriveOfferPriceValidUntil(product.dataFreshness ?? null),
       inStock:
         listings.length === 0
           ? null

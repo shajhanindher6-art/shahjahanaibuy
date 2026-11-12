@@ -35,6 +35,10 @@ interface SharedItem {
     brand: string | null;
     category: string | null;
     imageUrl: string | null;
+    /** Recorded `products.data_freshness` (Section 16, item 9). */
+    dataFreshness: string | null;
+    /** Latest recorded price (Section 16, item 9). */
+    price: number | null;
   };
   targetPrice: number | null;
   addedAt: string;
@@ -166,6 +170,9 @@ export default function SharedWishlistPage() {
   // prediction simply leaves that card without a badge — never a
   // synthesized score.
   const [dealScores, setDealScores] = useState<Record<string, number>>({});
+  // Section 16, item 10: recorded point counts behind each score,
+  // so a withheld score can say why (4 of 5 points).
+  const [dealScorePoints, setDealScorePoints] = useState<Record<string, number>>({});
   const dealScoreAttemptedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -184,6 +191,17 @@ export default function SharedWishlistPage() {
           if (!predRes.ok) return;
           const predData = await predRes.json();
           if (!predData.success || !predData.data) return;
+          // Section 16, item 10: keep the point count even when the
+          // score is withheld — the card says "4 of 5 points".
+          if (
+            typeof predData.data.dataPoints === 'number' &&
+            Number.isFinite(predData.data.dataPoints)
+          ) {
+            setDealScorePoints((prev) => ({
+              ...prev,
+              [item.product.id]: predData.data.dataPoints,
+            }));
+          }
           const score = dealScoreForDisplay(predData.data);
           if (score === null) return;
           setDealScores((prev) => ({ ...prev, [item.product.id]: score }));
@@ -310,6 +328,13 @@ export default function SharedWishlistPage() {
                         category: item.product.category,
                         imageUrl: item.product.imageUrl,
                         dealScore: dealScores[item.product.id] ?? null,
+                        // Section 16, items 9–10: recorded price +
+                        // freshness for the stale badge, point count
+                        // for the withheld-score note.
+                        price: item.product.price ?? null,
+                        dataFreshness: item.product.dataFreshness ?? null,
+                        dealScoreDataPoints:
+                          dealScorePoints[item.product.id] ?? null,
                       }}
                     />
                     {item.targetPrice !== null && (

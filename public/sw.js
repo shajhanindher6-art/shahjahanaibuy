@@ -187,9 +187,47 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// Message handler for update prompts
+// Message handler for update prompts + Section 16, #40 offline
+// precache of recently-viewed product pages.
+//
+// CACHE_URLS: the app posts { type: 'CACHE_URLS', urls: [...] }
+// (same-origin /products/[slug] URLs the visitor just viewed —
+// see lib/recently-viewed.ts). Each URL is fetched once into the
+// RUNTIME_CACHE so the page can be re-read offline. This is the
+// SAME cache the navigation handler already fills on every visit
+// (handleNavigationRequest) — it adds no new serving behaviour,
+// only makes the recently-viewed set proactively cached instead of
+// depending on the navigation having happened to populate it.
+//
+// Honesty boundary (unchanged): offline *prices* are never served
+// as live prices. A cached product page is the page as last seen
+// on the network, and the offline page (app/offline/page.tsx) says
+// so plainly. Nothing here caches /api/ responses (the fetch
+// handler still skips /api/ entirely), and no price data is ever
+// written to a cache by this worker. Same-origin only, max 20
+// URLs per message; failures are swallowed per URL.
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+    return;
   }
+  if (!event.data || event.data.type !== 'CACHE_URLS' || !Array.isArray(event.data.urls)) {
+    return;
+  }
+  event.waitUntil(
+    caches.open(RUNTIME_CACHE).then((cache) =>
+      Promise.all(
+        event.data.urls.slice(0, 20).map((rawUrl) => {
+          try {
+            const url = new URL(rawUrl, self.location.origin);
+            if (url.origin !== self.location.origin) return null;
+            if (!url.pathname.startsWith('/products/')) return null;
+            return cache.add(url.pathname + url.search).catch(() => null);
+          } catch {
+            return null;
+          }
+        })
+      ).then(() => trimCache(RUNTIME_CACHE, MAX_RUNTIME_ENTRIES))
+    )
+  );
 });

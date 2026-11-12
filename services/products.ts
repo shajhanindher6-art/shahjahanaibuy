@@ -13,6 +13,7 @@
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { swrGet, cacheKey } from '@/lib/cache';
 import { logger } from '@/lib/config/logger';
+import { discountPercent } from '@/lib/deal-math';
 import type { Product, ProductImage } from '@/types';
 import type {
   ProductVariant,
@@ -45,10 +46,17 @@ export interface ProductListOptions {
 }
 
 /** Lowest in-stock merchant price for a product, plus how many
- *  merchants have it in stock (the "at N stores" count). */
+ *  merchants have it in stock (the "at N stores" count). Section
+ *  16, #30: `compareAtPrice` is the cheapest row's recorded
+ *  compare-at price (null when the row carries none) and
+ *  `discountPercent` is that row's discountPercent(price,
+ *  compareAtPrice) — null when there is no real saving. Both come
+ *  from recorded merchant rows only. */
 export interface LowestMerchantPrice {
   price: number;
   merchantCount: number;
+  compareAtPrice?: number | null;
+  discountPercent?: number | null;
 }
 
 export interface ProductListResult {
@@ -199,7 +207,7 @@ export async function getLowestMerchantPrices(
   try {
     const { data, error } = await supabase
       .from('merchant_products')
-      .select('product_id, merchant_id, price')
+      .select('product_id, merchant_id, price, compare_at_price')
       .in('product_id', ids)
       .is('deleted_at', null)
       .eq('in_stock', true)
@@ -209,11 +217,26 @@ export async function getLowestMerchantPrices(
       return prices;
     }
     const merchantsByProduct = new Map<string, Set<string>>();
-    for (const row of data as Array<{ product_id: string; merchant_id: string; price: number | string }>) {
+    for (const row of data as Array<{ product_id: string; merchant_id: string; price: number | string; compare_at_price?: number | string | null }>) {
       const price = parseFloat(String(row.price));
       if (!Number.isFinite(price)) continue;
       if (!prices.has(row.product_id)) {
-        prices.set(row.product_id, { price, merchantCount: 0 });
+        // Section 16, #30 — the first row is the cheapest (query
+        // orders by price), so its compare-at price is the discount
+        // basis for the lowest price shown.
+        const compareAt =
+          row.compare_at_price === null || row.compare_at_price === undefined
+            ? null
+            : parseFloat(String(row.compare_at_price));
+        prices.set(row.product_id, {
+          price,
+          merchantCount: 0,
+          compareAtPrice: Number.isFinite(compareAt as number) ? (compareAt as number) : null,
+          discountPercent: discountPercent(
+            price,
+            Number.isFinite(compareAt as number) ? (compareAt as number) : null
+          ),
+        });
       }
       let merchants = merchantsByProduct.get(row.product_id);
       if (!merchants) {

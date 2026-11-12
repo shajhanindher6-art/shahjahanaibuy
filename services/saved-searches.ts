@@ -24,6 +24,14 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import {
+  SEARCH_SYNONYMS,
+  computeTokenMatches,
+  expandSearchTokens,
+  parseSearchIntent,
+  tokenizeSearchTerms,
+} from '@/services/ai-search';
+import { queueNotification } from '@/services/notifications';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,6 +43,18 @@ export interface SavedSearch {
   name: string;
   /** The /search query string, e.g. "q=laptop&sort=price-asc". */
   query: string;
+  /**
+   * Section 16, #32 — opted in to "notify me when a new product
+   * matches this saved search" (migration 042 column; false until
+   * the owner applies it AND the user turns it on).
+   */
+  notifyOnMatch: boolean;
+  /**
+   * Section 16, #32 — last time the refresh chain queued a match
+   * notification for this search; null = never notified. The
+   * matcher only considers products created after this timestamp.
+   */
+  lastNotifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -113,6 +133,8 @@ interface SavedSearchRow {
   user_id: string;
   name: string;
   query: string;
+  notify_on_match?: boolean | null;
+  last_notified_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -123,15 +145,29 @@ function mapSavedSearch(row: SavedSearchRow): SavedSearch {
     userId: row.user_id,
     name: row.name,
     query: row.query,
+    // Pre-042 rows (migration unapplied) carry no columns — read
+    // as opted-out / never notified, never as a missing search.
+    notifyOnMatch: row.notify_on_match ?? false,
+    lastNotifiedAt: row.last_notified_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-/** Postgres "relation does not exist" — migration 039 unapplied. */
+/** Postgres "relation does not exist" — migration 039 unapplied.
+ * Supabase PostgREST reports a missing table as PGRST205
+ * ("Could not find the table ..."), NOT 42P01 — both codes (and
+ * the PostgREST message) must be recognised, or a missing table
+ * is misread as a generic load failure (which made the refresh
+ * chain report completed_with_failures while 042 was unapplied). */
 function isMissingTableError(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
-  return error.code === '42P01' || /relation .* does not exist/i.test(error.message ?? '');
+  return (
+    error.code === '42P01' ||
+    error.code === 'PGRST205' ||
+    /relation .* does not exist/i.test(error.message ?? '') ||
+    /could not find the table/i.test(error.message ?? '')
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -150,7 +186,7 @@ export async function listSavedSearches(
   try {
     const { data, error } = await supabase
       .from('saved_searches')
-      .select('id, user_id, name, query, created_at, updated_at')
+      .select('id, user_id, name, query, notify_on_match, last_notified_at, created_at, updated_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
     if (error || !data) {
@@ -192,7 +228,7 @@ export async function createSavedSearch(
         name: validated.name,
         query: validated.query,
       })
-      .select('id, user_id, name, query, created_at, updated_at')
+      .select('id, user_id, name, query, notify_on_match, last_notified_at, created_at, updated_at')
       .single();
     if (error || !data) {
       if (error && isMissingTableError(error)) return { error: 'missing-table' };
@@ -238,5 +274,226 @@ export async function deleteSavedSearch(
   } catch (err) {
     logger.error('deleteSavedSearch: unexpected error', { error: String(err) });
     return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Match notifications (Section 16, #32)
+// ---------------------------------------------------------------------------
+
+export type SetSavedSearchNotifyError = 'missing-table' | 'not-found' | 'failed';
+
+/**
+ * Turn match notifications on/off for one of the caller's saved
+ * searches. Turning ON also stamps last_notified_at = now, so
+ * only products added AFTER the opt-in can ever match — enabling
+ * notifications never spams the user with the existing catalog.
+ * Turning OFF clears nothing else; re-enabling re-stamps the
+ * timestamp. Returns the updated row, or a discriminated error:
+ * 'missing-table' (migration 042 unapplied → 503), 'not-found'
+ * (id does not exist or belongs to someone else → 404), 'failed'.
+ */
+export async function setSavedSearchNotify(
+  supabase: AnySupabaseClient,
+  userId: string,
+  id: string,
+  notify: boolean
+): Promise<{ savedSearch: SavedSearch } | { error: SetSavedSearchNotifyError }> {
+  if (typeof id !== 'string' || id.trim() === '') return { error: 'not-found' };
+  try {
+    const update: { notify_on_match: boolean; last_notified_at?: string } = {
+      notify_on_match: notify,
+    };
+    if (notify) update.last_notified_at = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('saved_searches')
+      .update(update)
+      .eq('user_id', userId)
+      .eq('id', id)
+      .select('id, user_id, name, query, notify_on_match, last_notified_at, created_at, updated_at')
+      .single();
+    if (error || !data) {
+      if (error && isMissingTableError(error)) return { error: 'missing-table' };
+      if (error && error.code === 'PGRST116') return { error: 'not-found' };
+      if (error) {
+        logger.warn('setSavedSearchNotify: update failed', { error: error.message });
+      }
+      return { error: 'not-found' };
+    }
+    return { savedSearch: mapSavedSearch(data as unknown as SavedSearchRow) };
+  } catch (err) {
+    logger.error('setSavedSearchNotify: unexpected error', { error: String(err) });
+    return { error: 'failed' };
+  }
+}
+
+/** Minimal product shape the matcher needs — name/brand/category/
+ *  description text plus created_at (the "new product" clock). */
+export interface SavedSearchMatchProduct {
+  id: string;
+  name: string;
+  slug: string;
+  brand: string | null;
+  category: string | null;
+  description: string | null;
+  createdAt: string;
+}
+
+/**
+ * Pure matcher: which of `products` match this saved search?
+ * The search's `q` is tokenized with the same tokenizer the
+ * search itself uses (plus its synonym expansion and
+ * typo-tolerant matching), and a product matches only when EVERY
+ * q token matches its name/brand/category/description text — a
+ * saved search is an AND over its words, so "sony headphones"
+ * never matches a Sony TV. A search with no `q` (or no tokens)
+ * matches nothing — it is a filter-only save, not a product
+ * query. Only products created after `since` (the search's
+ * last_notified_at) are considered "new" and returned.
+ */
+export function findSavedSearchMatches(
+  savedSearch: Pick<SavedSearch, 'query' | 'lastNotifiedAt'>,
+  products: SavedSearchMatchProduct[]
+): SavedSearchMatchProduct[] {
+  const params = new URLSearchParams(savedSearch.query);
+  const q = params.get('q') ?? '';
+  if (q.trim() === '') return [];
+  const intent = parseSearchIntent(q);
+  // Same token pipeline as the search itself: synonym expansion
+  // + typo-tolerant matching (Section 16, #37). A token counts as
+  // matched when it OR its synonym matched — "notebook" matches a
+  // laptop product via the expanded "laptop" token.
+  const originalTokens = tokenizeSearchTerms(q, intent);
+  const tokens = expandSearchTokens(originalTokens);
+  if (tokens.length === 0) return [];
+  const since = savedSearch.lastNotifiedAt ? Date.parse(savedSearch.lastNotifiedAt) : 0;
+  return products.filter((product) => {
+    if (Number.isFinite(since) && since > 0 && Date.parse(product.createdAt) <= since) return false;
+    const { matchedTerms } = computeTokenMatches(tokens, {
+      name: product.name,
+      brand: product.brand,
+      category: product.category,
+      description: product.description,
+    });
+    return originalTokens.every(
+      (t) => matchedTerms.includes(t) || (SEARCH_SYNONYMS[t] !== undefined && matchedTerms.includes(SEARCH_SYNONYMS[t]))
+    );
+  });
+}
+
+export interface SavedSearchNotifyResult {
+  ok: boolean;
+  reason?: 'table-missing' | 'load-failed';
+  /** Opted-in searches scanned this run. */
+  searchesChecked: number;
+  /** Notifications queued (one per search × new matching product). */
+  notified: number;
+}
+
+/**
+ * Refresh-chain step (Section 16, #32): notify opted-in users
+ * when a NEW product matches their saved search. Loads every
+ * opted-in saved search (service-role client — this reads many
+ * users' rows, so it must only ever run from the refresh chain)
+ * and the current product set, then queues one notification_queue
+ * row per (search, new matching product) via queueNotification —
+ * the existing notification pipeline delivers it; nothing here
+ * sends email/push directly. After queuing, the search's
+ * last_notified_at advances to now so the same product is never
+ * notified twice. Fail closed: a missing table (042 unapplied)
+ * returns ok:false 'table-missing' and queues nothing.
+ *
+ * `notify` is injectable for tests; production passes
+ * queueNotification.
+ */
+export async function notifySavedSearchMatches(
+  supabase: AnySupabaseClient,
+  notify: (
+    client: AnySupabaseClient,
+    userId: string,
+    type: string,
+    channel: string,
+    subject: string,
+    body: string,
+    data: Record<string, unknown> | null
+  ) => Promise<boolean> = (
+    client,
+    userId,
+    type,
+    channel,
+    subject,
+    body,
+    data
+  ) => queueNotification(client, userId, type, channel, subject, body, data)
+): Promise<SavedSearchNotifyResult> {
+  const empty: SavedSearchNotifyResult = { ok: false, searchesChecked: 0, notified: 0 };
+  try {
+    const { data: searchRows, error: searchError } = await supabase
+      .from('saved_searches')
+      .select('id, user_id, name, query, notify_on_match, last_notified_at, created_at, updated_at')
+      .eq('notify_on_match', true)
+      .order('created_at', { ascending: true });
+    if (searchError) {
+      if (isMissingTableError(searchError)) return { ...empty, reason: 'table-missing' };
+      logger.warn('notifySavedSearchMatches: saved-search load failed', {
+        error: searchError.message,
+      });
+      return { ...empty, reason: 'load-failed' };
+    }
+    const searches = ((searchRows ?? []) as unknown as SavedSearchRow[]).map(mapSavedSearch);
+    if (searches.length === 0) return { ok: true, searchesChecked: 0, notified: 0 };
+
+    const { data: productRows, error: productError } = await supabase
+      .from('products')
+      .select('id, name, slug, brand, category, description, created_at')
+      .is('deleted_at', null)
+      .neq('slug', 'sample-laptop')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (productError || !productRows) {
+      logger.warn('notifySavedSearchMatches: product load failed', {
+        error: productError?.message,
+      });
+      return { ok: false, searchesChecked: searches.length, notified: 0, reason: 'load-failed' };
+    }
+    const products: SavedSearchMatchProduct[] = (productRows as unknown as Array<Record<string, unknown>>).map(
+      (row) => ({
+        id: String(row.id),
+        name: String(row.name),
+        slug: String(row.slug),
+        brand: (row.brand as string | null) ?? null,
+        category: (row.category as string | null) ?? null,
+        description: (row.description as string | null) ?? null,
+        createdAt: String(row.created_at),
+      })
+    );
+
+    let notified = 0;
+    const now = new Date().toISOString();
+    for (const search of searches) {
+      const matches = findSavedSearchMatches(search, products);
+      for (const product of matches) {
+        const queued = await notify(
+          supabase,
+          search.userId,
+          'saved_search_match',
+          'in_app',
+          `New match for "${search.name}": ${product.name}`,
+          `A new product matches your saved search "${search.name}": ${product.name}.`,
+          { savedSearchId: search.id, productId: product.id, productSlug: product.slug }
+        );
+        if (queued) notified++;
+      }
+      if (matches.length > 0) {
+        await supabase
+          .from('saved_searches')
+          .update({ last_notified_at: now })
+          .eq('id', search.id);
+      }
+    }
+    return { ok: true, searchesChecked: searches.length, notified };
+  } catch (err) {
+    logger.error('notifySavedSearchMatches: unexpected error', { error: String(err) });
+    return { ...empty, reason: 'load-failed' };
   }
 }

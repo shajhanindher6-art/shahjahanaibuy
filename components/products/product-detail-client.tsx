@@ -1421,36 +1421,54 @@ export default function ProductDetailClient({
               <PriceTrendSparkline slug={slug} showChange />
             </div>
 
-            {prediction && dealScore !== null && (
+            {prediction && (
               <div className="flex items-center gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
                 {/* Canonical Deal Score (lib/deal-score.ts
                     dealScoreForDisplay): 100 − prob×0.4 +
                     price term + confidence×0.3, clamped 0–100. The
                     badge still clamps as a second line of defence.
                     Section 15, B1: hidden entirely while the
-                    prediction rests on fewer than 5 price points. */}
+                    prediction rests on fewer than 5 price points.
+                    Section 16, item 10: hidden no longer means
+                    silent — the badge renders the withheld state
+                    ("4 of 5 points") and the copy beside it says
+                    why, so the missing score reads as a reasoned
+                    "not yet", not a broken page. */}
                 <DealScoreBadge
                   score={dealScore}
+                  dataPoints={prediction.dataPoints}
                   size="lg"
                   showLabel
                 />
                 <div className="flex-1">
                   <p className="text-sm font-medium">Deal Score</p>
-                  <p className="text-xs text-muted-foreground">
-                    {/* (6) Reconciles the "100 / Excellent Deal" badge
-                        with a 0% discount probability: the score
-                        rewards buying NOW (price at/near its recorded
-                        low scores highest), while the discount
-                        probability is about a FUTURE drop — and a high
-                        future-drop chance LOWERS this score, because
-                        waiting may pay off. So 100 next to 0% means
-                        "good now, no drop expected", not "a drop is
-                        coming". */}
-                    Value of buying now, from recorded price history: highest when the price is at
-                    or near its recorded low. A high chance of a future price drop lowers this
-                    score instead — so a high score with a low discount probability means
-                    &ldquo;good now, no drop expected&rdquo;, not &ldquo;a drop is coming&rdquo;.
-                  </p>
+                  {dealScore !== null ? (
+                    <p className="text-xs text-muted-foreground">
+                      {/* (6) Reconciles the "100 / Excellent Deal" badge
+                          with a 0% discount probability: the score
+                          rewards buying NOW (price at/near its recorded
+                          low scores highest), while the discount
+                          probability is about a FUTURE drop — and a high
+                          future-drop chance LOWERS this score, because
+                          waiting may pay off. So 100 next to 0% means
+                          "good now, no drop expected", not "a drop is
+                          coming". */}
+                      Value of buying now, from recorded price history: highest when the price is at
+                      or near its recorded low. A high chance of a future price drop lowers this
+                      score instead — so a high score with a low discount probability means
+                      &ldquo;good now, no drop expected&rdquo;, not &ldquo;a drop is coming&rdquo;.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Withheld until the prediction rests on at least 5
+                      recorded price points
+                      {prediction.dataPoints != null
+                        ? ` — this product has ${prediction.dataPoints} so far`
+                        : ''}
+                      . A score from fewer points would be a 4-point
+                      artifact, not a deal signal.
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -2298,6 +2316,7 @@ export default function ProductDetailClient({
                                 alt={`Photo attached to the review by ${review.authorName ?? 'Anonymous'}`}
                                 className="h-20 w-20 rounded-md object-cover"
                                 loading="lazy"
+                                decoding="async"
                               />
                             ))}
                           </div>

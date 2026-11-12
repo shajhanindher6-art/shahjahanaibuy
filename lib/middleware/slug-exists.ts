@@ -24,6 +24,17 @@
  * public env vars (NEXT_PUBLIC_SUPABASE_URL /
  * NEXT_PUBLIC_SUPABASE_ANON_KEY — the anon key is public by design).
  * It never imports the Supabase JS client or any server-only module.
+ * The four static registries imported below (search terms, seasonal
+ * events, store directory, blog posts) are pure data modules — their
+ * import chains were verified to contain no server-only, Node-only,
+ * or React code (lib/stores.ts, lib/blog/posts.ts and
+ * components/seasonal/events.ts have no imports at all;
+ * lib/search-terms.ts pulls only lib/stores.ts and
+ * lib/brand-category-seo.ts, whose only imports are a type-only
+ * `next` import and the import-free lib/json-ld.ts). They are the
+ * SAME getters the pages call, so the middleware mirrors each
+ * page's own notFound() logic exactly instead of a copy that can
+ * drift. Cost: these registries join the edge middleware bundle.
  *
  * EXISTENCE DEFINITIONS — mirrors the page data layer exactly:
  * - product: a row in `products` with that slug, deleted_at IS NULL,
@@ -41,6 +52,42 @@
  *   reachable from the index or sitemap, so the middleware treats
  *   it as unknown. The page layer's own check still applies on
  *   the pass-through path.)
+ * - find: getSearchTermBySlug(query) is non-null — the slug is one
+ *   of the 500 curated SEARCH_TERMS (lib/search-terms.ts). The
+ *   getter slugifies its input, so mixed case / spaces resolve
+ *   exactly as the page does (app/find/[query]/page.tsx:92).
+ * - event: getEventBySlug(slug) finds one of the 5 SEASONAL_EVENTS
+ *   (components/seasonal/events.ts, exact match —
+ *   app/events/[slug]/page.tsx:52).
+ * - blog: getPostBySlug(slug) finds one of the 21 POSTS
+ *   (lib/blog/posts.ts, exact match — app/blog/[slug]/page.tsx:157).
+ * - store: findStorePage(country, slug) is non-null — the
+ *   (country, slug) pair is one of the 84 store pages (80 local +
+ *   4 worldwide under `global`, lib/store-directory.ts,
+ *   case-insensitive — app/stores/[country]/[slug]/page.tsx:76).
+ *   A slug that exists only in another country is unknown here,
+ *   exactly as the page 404s it.
+ * - live: a row in `live_shopping_sessions` with that slug
+ *   (app/live/[slug]/page.tsx:119 via getLiveSessionDetail). Until
+ *   migration 033 runs the table does not exist: PostgREST answers
+ *   non-200, the check throws, and the request FAILS OPEN — the
+ *   page then renders its honest "not set up yet" state with 200,
+ *   never a 404. A 404 is returned ONLY when the table exists and
+ *   positively has no row with that slug.
+ * - creator: NOT CHECKABLE with the anon key, so ALWAYS pass
+ *   (fail-open by necessity, not by error). The page resolves a
+ *   creator via `profiles.creator_slug`
+ *   (app/creators/[slug]/page.tsx:72 via getCreatorBySlug), and
+ *   that lookup needs the SERVICE-ROLE client because the only
+ *   profiles select policy is `profiles_select_own`
+ *   (TO authenticated USING auth.uid() = id, migration 001) — an
+ *   anon REST query on profiles returns [] for EVERY slug, real
+ *   creators included, so checking it would 404 every real
+ *   storefront. creator_rewards IS publicly readable but carries
+ *   no slug column, so it cannot substitute. Covering /creators
+ *   needs an owner-gated data change (e.g. a public read policy
+ *   on creator_slug, or a public slug view) — never the service
+ *   key in edge middleware. Pinned by tests.
  *
  * FAIL-OPEN, always: any fetch error, timeout, non-200 from
  * Supabase, or missing env resolves to 'pass' — the request
@@ -49,7 +96,21 @@
  * "does not exist" answer. Never 500, never blocks a valid page.
  */
 
-export type SlugKind = 'product' | 'brand' | 'category';
+import { getSearchTermBySlug } from '@/lib/search-terms';
+import { getEventBySlug } from '@/components/seasonal/events';
+import { findStorePage } from '@/lib/store-directory';
+import { getPostBySlug } from '@/lib/blog/posts';
+
+export type SlugKind =
+  | 'product'
+  | 'brand'
+  | 'category'
+  | 'find'
+  | 'event'
+  | 'live'
+  | 'creator'
+  | 'store'
+  | 'blog';
 
 export interface SlugCheckEnv {
   supabaseUrl: string | null;
@@ -84,32 +145,87 @@ export function slugifySlugValue(value: string): string {
 
 /**
  * Parse a pathname into a slug check, or null when it is not one of
- * the three slug routes. Only exactly-two-segment paths match, so
- * the index pages (/products, /brands, /categories) and any deeper
- * sub-paths pass through untouched.
+ * the slug routes. Two-segment paths match /products, /brands,
+ * /categories, /find, /events, /live, /creators and /blog; the only
+ * three-segment route is /stores/[country]/[slug]. Index pages and
+ * any deeper sub-paths pass through untouched. `country` is set
+ * only for store routes.
  */
 export function matchSlugRoute(pathname: string): {
   kind: SlugKind;
   slug: string;
+  country?: string;
 } | null {
   const parts = pathname.split('/').filter(Boolean);
-  if (parts.length !== 2) return null;
-  const [head, rawSlug] = parts;
-  if (head !== 'products' && head !== 'brands' && head !== 'categories') {
-    return null;
+  if (parts.length === 2) {
+    const [head, rawSlug] = parts;
+    const kindByHead: Record<string, SlugKind> = {
+      products: 'product',
+      brands: 'brand',
+      categories: 'category',
+      find: 'find',
+      events: 'event',
+      live: 'live',
+      creators: 'creator',
+      blog: 'blog',
+    };
+    const kind = kindByHead[head];
+    if (!kind) return null;
+    let slug: string;
+    try {
+      slug = decodeURIComponent(rawSlug);
+    } catch {
+      // Malformed percent-encoding — fail open, let the page handle it.
+      return null;
+    }
+    if (!slug) return null;
+    return { kind, slug };
   }
-  let slug: string;
-  try {
-    slug = decodeURIComponent(rawSlug);
-  } catch {
-    // Malformed percent-encoding — fail open, let the page handle it.
-    return null;
+  if (parts.length === 3 && parts[0] === 'stores') {
+    const [, rawCountry, rawSlug] = parts;
+    let country: string;
+    let slug: string;
+    try {
+      country = decodeURIComponent(rawCountry);
+      slug = decodeURIComponent(rawSlug);
+    } catch {
+      // Malformed percent-encoding — fail open, let the page handle it.
+      return null;
+    }
+    if (!country || !slug) return null;
+    return { kind: 'store', slug, country };
   }
-  if (!slug) return null;
-  const kind: SlugKind =
-    head === 'products' ? 'product' : head === 'brands' ? 'brand' : 'category';
-  return { kind, slug };
+  return null;
 }
+
+/**
+ * Pure in-memory existence check for the four static-registry
+ * routes — the SAME getters the pages call, so the definition
+ * cannot drift from the page's own notFound() logic. No fetch, no
+ * env, never throws for a well-formed input. `country` is only
+ * read for 'store'.
+ */
+export function localSlugExists(
+  kind: 'find' | 'event' | 'store' | 'blog',
+  slug: string,
+  country?: string
+): boolean {
+  switch (kind) {
+    case 'find':
+      // getSearchTermBySlug slugifies its input — mixed case and
+      // spaces resolve exactly as the /find page does.
+      return getSearchTermBySlug(slug) !== null;
+    case 'event':
+      return getEventBySlug(slug) !== undefined;
+    case 'blog':
+      return getPostBySlug(slug) !== undefined;
+    case 'store':
+      return findStorePage(country ?? null, slug) !== null;
+  }
+}
+
+/** Kinds whose existence is checked with one Supabase REST fetch. */
+export type RestSlugKind = 'product' | 'brand' | 'category' | 'live';
 
 function restHeaders(anonKey: string): Record<string, string> {
   return {
@@ -124,9 +240,13 @@ function restHeaders(anonKey: string): Record<string, string> {
  * THROWS on missing env, fetch failure, timeout, or a non-200 from
  * Supabase — the caller (resolveSlugRequest) turns any throw into a
  * fail-open 'pass'. One REST fetch per call, edge-compatible.
+ * Only REST kinds are accepted here: the static-registry kinds
+ * (find / event / store / blog) never reach this function — they
+ * are answered by localSlugExists — and 'creator' is fail-open by
+ * necessity (see the header), so it never reaches it either.
  */
 export async function slugExists(
-  kind: SlugKind,
+  kind: RestSlugKind,
   slug: string,
   env: SlugCheckEnv,
   fetchFn: typeof fetch = fetch
@@ -148,6 +268,24 @@ export async function slugExists(
     const res = await fetchFn(url, { headers, signal });
     if (!res.ok) {
       throw new Error(`slug-exists: products check HTTP ${res.status}`);
+    }
+    const rows = (await res.json()) as Array<{ slug: string }>;
+    return rows.length > 0;
+  }
+
+  if (kind === 'live') {
+    // Same shape as the page's getLiveSessionBySlug (slug eq only,
+    // no deleted filter — sessions have none). A missing table
+    // (migration 033 not run) answers non-200 (PGRST205) -> throw
+    // -> fail-open, so the page renders its honest "not set up
+    // yet" state instead of a 404.
+    const url =
+      `${supabaseUrl}/rest/v1/live_shopping_sessions` +
+      `?slug=eq.${encodeURIComponent(slug)}` +
+      `&select=slug&limit=1`;
+    const res = await fetchFn(url, { headers, signal });
+    if (!res.ok) {
+      throw new Error(`slug-exists: live check HTTP ${res.status}`);
     }
     const rows = (await res.json()) as Array<{ slug: string }>;
     return rows.length > 0;
@@ -179,6 +317,14 @@ export type SlugDecision = 'pass' | 'rewrite';
  * existence check positively says the slug does not exist; every
  * other outcome — not a slug route, slug exists, or ANY error —
  * is 'pass' (current behaviour preserved).
+ *
+ * Per-request cost: the four static-registry routes (find / event /
+ * store / blog) cost ZERO fetches — a pure in-memory lookup. The
+ * REST routes (product / brand / category / live) cost exactly ONE
+ * Supabase REST fetch. /creators costs nothing and always passes:
+ * the anon key cannot positively determine creator existence
+ * (profiles RLS — see the header), so any other answer would risk
+ * 404ing real storefronts.
  */
 export async function resolveSlugRequest(
   pathname: string,
@@ -187,6 +333,17 @@ export async function resolveSlugRequest(
 ): Promise<SlugDecision> {
   const match = matchSlugRoute(pathname);
   if (!match) return 'pass';
+  if (
+    match.kind === 'find' ||
+    match.kind === 'event' ||
+    match.kind === 'store' ||
+    match.kind === 'blog'
+  ) {
+    return localSlugExists(match.kind, match.slug, match.country)
+      ? 'pass'
+      : 'rewrite';
+  }
+  if (match.kind === 'creator') return 'pass';
   try {
     const exists = await slugExists(match.kind, match.slug, env, fetchFn);
     return exists ? 'pass' : 'rewrite';

@@ -19,6 +19,11 @@
 
 import type { Metadata } from 'next';
 import {
+  getPriceAgeDays,
+  isPriceStale,
+  STALE_PRICE_DAYS,
+} from '@/lib/price-freshness';
+import {
   buildBreadcrumbJsonLd,
   toJsonLdGraph,
 } from '@/lib/json-ld';
@@ -45,11 +50,20 @@ export interface ProductSeoData {
   dataFreshness: string | null;
   /**
    * ISO date until which the recorded price is valid, or null.
-   * Merchant data carries no validity window, so this is null today
-   * and the Offer omits priceValidUntil rather than inventing one
-   * (seed prices are demo figures — claiming they hold until a date
-   * would misrepresent them). When a live price source with a real
-   * validity window arrives, populate it in lib/product-seo-server.ts.
+   *
+   * POLICY (Section 16, item 12): crawlers used to read the
+   * 10-day-stale recorded price as a current offer with no validity
+   * date at all. Merchant data carries no validity window, so the
+   * date is DERIVED, never invented: data_freshness + the 7-day
+   * stale threshold (STALE_PRICE_DAYS, same threshold as the stale
+   * badge on the product page) — the price is treated as valid
+   * until the day it would be called stale. And once the recorded
+   * price IS stale (older than 7 days), buildProductJsonLd drops
+   * the offers block entirely (see below), so no crawler ever reads
+   * a stale price as a current offer. A null here means "no
+   * validity date": either no freshness is recorded, or the price
+   * is already stale. lib/product-seo-server.ts computes this from
+   * the row's data_freshness at request time.
    */
   priceValidUntil: string | null;
   /** True when any listing is in stock; null when no listings exist. */
@@ -134,19 +148,60 @@ export function buildProductMetadata(
 }
 
 /**
+ * Derive the offer validity date from the recorded freshness
+ * (Section 16, item 12 policy — see ProductSeoData.priceValidUntil).
+ * Returns data_freshness + STALE_PRICE_DAYS as an ISO date
+ * (YYYY-MM-DD), or null when no freshness is recorded, the date is
+ * unparseable, or the price is already stale (its validity window
+ * has closed — the caller then suppresses the offer, it does not
+ * emit a validity date in the past).
+ */
+export function deriveOfferPriceValidUntil(
+  dataFreshness: string | null | undefined,
+  now: Date = new Date()
+): string | null {
+  const age = getPriceAgeDays(dataFreshness, now);
+  if (age === null || age > STALE_PRICE_DAYS) return null;
+  const checked = new Date(dataFreshness as string);
+  if (!Number.isFinite(checked.getTime())) return null;
+  return new Date(
+    checked.getTime() + STALE_PRICE_DAYS * 86_400_000
+  )
+    .toISOString()
+    .slice(0, 10);
+}
+
+/**
  * Server-rendered Product JSON-LD, plus a BreadcrumbList, in one
  * `@graph` document. Same honesty rules as the client page used to
  * apply: offers only with a recorded price, availability only when
- * listings are known, aggregateRating only with ≥1 review,
- * priceValidUntil only when a real validity date is recorded.
- * There is no /products index page, so the breadcrumb is
- * Home → this product.
+ * listings are known, aggregateRating only with ≥1 review.
+ * The /products index page exists (Section 14); this breadcrumb
+ * still lists Home → this product only, matching the page's own
+ * breadcrumb trail — the index is not a step on the product trail.
+ *
+ * Section 16, item 12: the offers block is SUPPRESSED when the
+ * recorded price is stale (older than STALE_PRICE_DAYS) — crawlers
+ * must never read a stale price as a current offer. While fresh,
+ * the offer carries priceValidUntil (recorded when present,
+ * otherwise derived from data_freshness by
+ * deriveOfferPriceValidUntil). `now` is injectable for tests; it
+ * defaults to the request time.
  */
 export function buildProductJsonLd(
   seo: ProductSeoData,
-  siteUrl: string
+  siteUrl: string,
+  now: Date = new Date()
 ): string {
   const url = `${siteUrl}/products/${seo.slug}`;
+  // Stale recorded price → no offer at all (see the policy above).
+  // A missing freshness timestamp is NOT stale (nothing to label),
+  // so an offer with no recorded freshness still renders — without
+  // a priceValidUntil, exactly as before.
+  const offerStale = isPriceStale(seo.dataFreshness, now);
+  const showOffer = seo.lowestPrice !== null && !offerStale;
+  const priceValidUntil =
+    seo.priceValidUntil ?? deriveOfferPriceValidUntil(seo.dataFreshness, now);
   const product: Record<string, unknown> = {
     '@type': 'Product',
     name: seo.name,
@@ -157,15 +212,13 @@ export function buildProductJsonLd(
     gtin: seo.gtin ?? undefined,
     url,
     offers:
-      seo.lowestPrice !== null
+      showOffer
         ? {
             '@type': 'Offer',
             price: seo.lowestPrice,
             priceCurrency: 'USD',
             url,
-            ...(seo.priceValidUntil
-              ? { priceValidUntil: seo.priceValidUntil }
-              : {}),
+            ...(priceValidUntil ? { priceValidUntil } : {}),
             availability:
               seo.inStock === null
                 ? undefined

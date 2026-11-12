@@ -97,6 +97,31 @@ export function shouldShowDealScore(dataPoints: number | null | undefined): bool
 }
 
 /**
+ * Honest "why is there no score" label (Section 16, item 10).
+ * The badge is correctly hidden below DEAL_SCORE_MIN_DATA_POINTS,
+ * but nothing told the visitor why — a missing badge read as a
+ * broken page. Returns the withheld label when the count is known
+ * and below the threshold, null otherwise (shown, or unknown count
+ * — the caller renders nothing rather than guessing a count).
+ * The formula is untouched; this is display copy only.
+ */
+export function formatDealScoreWithheld(
+  dataPoints: number | null | undefined
+): string | null {
+  if (
+    typeof dataPoints !== 'number' ||
+    !Number.isFinite(dataPoints) ||
+    dataPoints >= DEAL_SCORE_MIN_DATA_POINTS
+  ) {
+    return null;
+  }
+  return (
+    `Deal Score withheld — only ${dataPoints} of ` +
+    `${DEAL_SCORE_MIN_DATA_POINTS} price points recorded`
+  );
+}
+
+/**
  * The display gate for a Deal Score: the canonical score when
  * the prediction rests on enough price points, null otherwise.
  * The formula itself (computeDealScoreFromPrediction) is

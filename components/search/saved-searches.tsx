@@ -22,7 +22,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Bookmark, Search, Trash2, X } from 'lucide-react';
+import { Bell, BellRing, Bookmark, Search, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,6 +35,8 @@ export interface SavedSearchView {
   name: string;
   query: string;
   createdAt: string;
+  /** Section 16, #32 — match notifications on for this search. */
+  notifyOnMatch?: boolean;
 }
 
 interface SavedSearchesProps {
@@ -58,6 +60,41 @@ export function SavedSearches({ currentQueryString }: SavedSearchesProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveDone, setSaveDone] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [notifyError, setNotifyError] = useState<string | null>(null);
+
+  // Section 16, #32 — "notify me when a new product matches this
+  // saved search". PATCHes the search; the refresh chain does the
+  // matching and queuing. A 503 means migration 042 is unapplied.
+  const handleToggleNotify = async (id: string, current: boolean) => {
+    if (togglingId) return;
+    setTogglingId(id);
+    setNotifyError(null);
+    try {
+      const res = await fetch(`/api/v1/saved-searches?id=${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notifyOnMatch: !current }),
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        const updated = data?.data as { notifyOnMatch?: boolean } | undefined;
+        setSaved((prev) =>
+          prev.map((s) =>
+            s.id === id ? { ...s, notifyOnMatch: updated?.notifyOnMatch ?? !current } : s
+          )
+        );
+      } else if (res.status === 503) {
+        setNotifyError('Match notifications are not available yet.');
+      } else {
+        setNotifyError('Could not change notification setting. Try again.');
+      }
+    } catch {
+      setNotifyError('Could not change notification setting. Try again.');
+    } finally {
+      setTogglingId(null);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -216,7 +253,9 @@ export function SavedSearches({ currentQueryString }: SavedSearchesProps) {
             <LoadingSpinner size="sm" />
           </div>
         ) : saved.length > 0 ? (
-          <ul className="space-y-2">
+          <>
+            {notifyError && <p className="text-sm text-red-600 dark:text-red-400">{notifyError}</p>}
+            <ul className="space-y-2">
             {saved.map((s) => (
               <li
                 key={s.id}
@@ -236,6 +275,27 @@ export function SavedSearches({ currentQueryString }: SavedSearchesProps) {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 shrink-0"
+                  onClick={() => void handleToggleNotify(s.id, s.notifyOnMatch ?? false)}
+                  disabled={togglingId === s.id}
+                  aria-label={`${s.notifyOnMatch ? 'Turn off' : 'Turn on'} match notifications for saved search ${s.name}`}
+                  title={
+                    s.notifyOnMatch
+                      ? 'Notify me is on — you will be notified when a new product matches this search'
+                      : 'Notify me when a new product matches this search'
+                  }
+                >
+                  {togglingId === s.id ? (
+                    <LoadingSpinner size="sm" />
+                  ) : s.notifyOnMatch ? (
+                    <BellRing className="h-4 w-4 text-blue-600" />
+                  ) : (
+                    <Bell className="h-4 w-4" />
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
                   onClick={() => void handleDelete(s.id)}
                   disabled={deletingId === s.id}
                   aria-label={`Delete saved search ${s.name}`}
@@ -249,6 +309,7 @@ export function SavedSearches({ currentQueryString }: SavedSearchesProps) {
               </li>
             ))}
           </ul>
+          </>
         ) : (
           status === 'ok' && (
             <EmptyState

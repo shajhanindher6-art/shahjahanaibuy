@@ -106,6 +106,42 @@ export interface BacktestReport {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Confidence display band (Section 16, item 11) — wording only,
+ * never a formula change: the confidence % itself is computed in
+ * forecastForHorizon from fit quality (R²), point count and
+ * horizon. Bands: < 40% low, 40–69% medium, ≥ 70% high. The live
+ * catalog's 4-point forecasts land in "low", which is exactly what
+ * the UI must now say instead of showing a bare percentage.
+ */
+export type ForecastConfidenceLabel = 'low' | 'medium' | 'high';
+
+export function forecastConfidenceLabel(
+  confidencePct: number
+): ForecastConfidenceLabel {
+  if (!Number.isFinite(confidencePct) || confidencePct < 40) return 'low';
+  if (confidencePct < 70) return 'medium';
+  return 'high';
+}
+
+/**
+ * One-line basis label for a forecast, from its existing inputs:
+ * "Based on 4 recorded price points · 21% confidence (low)".
+ * Callers render this wherever a forecast range is shown (product
+ * page forecast card, /tools/forecast-explainer) so the visitor can
+ * see how thin the history behind the range is.
+ */
+export function formatForecastBasis(
+  pointsUsed: number,
+  confidencePct: number
+): string {
+  const points = Number.isFinite(pointsUsed) ? Math.max(0, Math.floor(pointsUsed)) : 0;
+  return (
+    `Based on ${points} recorded price point${points === 1 ? '' : 's'} · ` +
+    `${confidencePct}% confidence (${forecastConfidenceLabel(confidencePct)})`
+  );
+}
+
 function toMs(iso: string): number {
   return new Date(iso).getTime();
 }

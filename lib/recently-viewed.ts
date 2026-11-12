@@ -16,7 +16,9 @@
  * each distinct viewed product is recorded on the account, and the
  * device key is cleared only after the server confirms the merge.
  * Until sign-in, the strip says so honestly: views are saved on
- * this device only.
+ * this device only. Once signed in, the strip merges this list
+ * with the account history (Section 16, #38 — GET
+ * /api/v1/product-views) and says "Synced to your account".
  */
 
 export interface RecentlyViewedItem {
@@ -106,6 +108,32 @@ export function recordRecentlyViewed(item: {
     ...readRaw().filter((i) => i.id !== item.id),
   ].slice(0, MAX_RECENTLY_VIEWED);
   writeRaw(next);
+  // Section 16, #40: proactively cache the just-viewed product
+  // page for offline reading (best-effort, never throws).
+  notifyServiceWorkerOfViewed(item.slug);
+}
+
+/**
+ * Section 16, #40 — ask the service worker to cache this product
+ * page for offline reading. Posts { type: 'CACHE_URLS' } to the
+ * controlling worker (public/sw.js), which fetches the page once
+ * into its runtime cache. Best-effort and silent: no service
+ * worker, no controller, or any error means nothing happens — the
+ * view is still recorded locally above. Only the page URL is sent,
+ * never the price (the worker never caches price data).
+ */
+export function notifyServiceWorkerOfViewed(slug: string): void {
+  try {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const controller = navigator.serviceWorker.controller;
+    if (!controller) return;
+    controller.postMessage({
+      type: 'CACHE_URLS',
+      urls: [`/products/${slug}`],
+    });
+  } catch {
+    // Offline precache is progressive enhancement; never throw.
+  }
 }
 
 /** Remove one product from the history. Never throws. */

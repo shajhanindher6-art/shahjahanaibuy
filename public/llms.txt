@@ -1,6 +1,6 @@
 # SmartBuy AI
 
-> SmartBuy AI is an AI-powered shopping intelligence site: price comparison across retailers, price-drop alerts and price history, deal finding, and an AI shopping assistant. Content is in English, with site chrome in 20 languages (English, Urdu, German, French, Spanish, Italian, Portuguese, Turkish, Arabic, Chinese, Japanese, Korean, Hindi, Bengali, Dutch, Swedish, Polish, Russian, Indonesian, Vietnamese) across 61 regions. Language scope, stated honestly: only 28 chrome strings are translated, 12 of the 20 languages are machine-translated, and all other content (product copy, guides, tool pages) is English only.
+> SmartBuy AI is an AI-powered shopping intelligence site: price comparison across retailers, price-drop alerts and price history, deal finding, and an AI shopping assistant. Content is in English, with site chrome in 20 languages (English, Urdu, German, French, Spanish, Italian, Portuguese, Turkish, Arabic, Chinese, Japanese, Korean, Hindi, Bengali, Dutch, Swedish, Polish, Russian, Indonesian, Vietnamese) across 61 regions. Language scope, stated honestly: only 167 chrome strings are translated, 12 of the 20 languages are machine-translated, and all other content (product copy, guides, tool pages) is English only.
 
 ## Key pages
 

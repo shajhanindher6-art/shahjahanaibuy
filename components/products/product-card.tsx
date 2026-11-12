@@ -6,6 +6,7 @@ import { Package } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
+import { StalePriceBadge } from '@/components/products/stale-price-badge';
 import { Price } from '@/components/region/price';
 import { cn } from '@/lib/utils';
 
@@ -21,6 +22,19 @@ export interface ProductCardData {
   /** Merchants with this product in stock (0 = unknown / none recorded). */
   merchantCount?: number | null;
   dealScore?: number | null;
+  /**
+   * Recorded price-history points behind dealScore (Section 16,
+   * item 10). When dealScore is null and this is known and below
+   * 5, the card says why the score is withheld instead of showing
+   * no badge with no explanation.
+   */
+  dealScoreDataPoints?: number | null;
+  /**
+   * Recorded `products.data_freshness` (Section 16, item 9).
+   * Drives the stale-price badge + age-in-days under the price;
+   * null/undefined renders no label, never a guessed age.
+   */
+  dataFreshness?: string | null;
   matchScore?: number | null;
   reason?: string | null;
 }
@@ -47,6 +61,15 @@ export function ProductCard({ product, href, className, showReason }: ProductCar
             <img
               src={product.imageUrl}
               alt={product.name}
+              // Section 16, #47: intrinsic size for the layout — the
+              // rendered box is fluid width (the xl 4-col grid card,
+              // ~300px) × fixed h-40 (160px); CSS h-full w-full
+              // object-cover still governs display, the attributes
+              // only give the browser the aspect ratio.
+              width={300}
+              height={160}
+              loading="lazy"
+              decoding="async"
               onError={() => setImageFailed(true)}
               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             />
@@ -67,6 +90,7 @@ export function ProductCard({ product, href, className, showReason }: ProductCar
             <div className="absolute right-2 top-2">
               <DealScoreBadge
                 score={product.dealScore}
+                dataPoints={product.dealScoreDataPoints}
                 size="sm"
               />
             </div>
@@ -110,6 +134,27 @@ export function ProductCard({ product, href, className, showReason }: ProductCar
               )}
             </p>
           )}
+          {/* Section 16, item 9: stale-price badge + age-in-days
+              under the price (nothing when the freshness is
+              unknown). Only meaningful next to a shown price. */}
+          {product.price != null && (
+            <div className="mt-1">
+              <StalePriceBadge dataFreshness={product.dataFreshness} />
+            </div>
+          )}
+          {/* Section 16, item 10: the withheld Deal Score note lives
+              in the card body (not over the image, where the badge
+              sits) — a card whose score is hidden for too few price
+              points says why. Unknown count → no note, never a
+              guessed count. */}
+          {product.dealScore == null &&
+            product.dealScoreDataPoints != null &&
+            product.dealScoreDataPoints < 5 && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Deal Score withheld — {product.dealScoreDataPoints} of 5
+                price points
+              </p>
+            )}
           {showReason && product.reason && (
             <div className="mt-2 rounded-md bg-blue-50 p-2 text-xs text-blue-700 dark:bg-blue-950 dark:text-blue-300">
               {product.reason}

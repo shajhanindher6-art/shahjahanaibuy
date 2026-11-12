@@ -5,8 +5,9 @@
  *
  * Reads the guest view history from lib/recently-viewed.ts
  * (device-local localStorage — the same store the product page
- * records into on mount; signed-in views live in product_views
- * and are NOT shown here). Listens for the store's change event
+ * records into on mount) and, for signed-in visitors, merges it
+ * with the account's product_views (Section 16, #38 — GET
+ * /api/v1/product-views). Listens for the store's change event
  * (and cross-tab storage events) so a view recorded on a product
  * page appears without a reload when the visitor comes back.
  *
@@ -22,6 +23,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Clock, Package, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/features/auth';
 import {
   clearRecentlyViewed,
   getRecentlyViewed,
@@ -31,7 +33,16 @@ import {
 } from '@/lib/recently-viewed';
 
 export function RecentlyViewedStrip() {
+  const { user } = useAuth();
   const [items, setItems] = useState<RecentlyViewedItem[]>([]);
+  // Section 16, #38 — signed-in sync: the strip merges the
+  // device-local list with the account's product_views (GET
+  // /api/v1/product-views), most-recent-first, deduped by product
+  // (the account row wins a duplicate — it carries the canonical
+  // viewedAt). Guests keep the local-only list and the honest
+  // "this device only" note. A failed server fetch falls back to
+  // the local list silently — the strip never breaks on it.
+  const [synced, setSynced] = useState(false);
 
   useEffect(() => {
     const refresh = () => setItems(getRecentlyViewed());
@@ -46,6 +57,44 @@ export function RecentlyViewedStrip() {
       window.removeEventListener('storage', onStorage);
     };
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setSynced(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/v1/product-views');
+        if (!res.ok) return;
+        const data = await res.json();
+        const serverItems = Array.isArray(data?.data)
+          ? (data.data as RecentlyViewedItem[])
+          : [];
+        if (cancelled) return;
+        setSynced(true);
+        setItems((prev) => {
+          const merged = [...serverItems];
+          const seen = new Set(serverItems.map((i) => i.id));
+          for (const item of prev) {
+            if (!seen.has(item.id)) {
+              merged.push(item);
+              seen.add(item.id);
+            }
+          }
+          return merged
+            .sort((a, b) => (a.viewedAt < b.viewedAt ? 1 : a.viewedAt > b.viewedAt ? -1 : 0))
+            .slice(0, 20);
+        });
+      } catch {
+        // Local list stays — the strip never breaks on a failed sync.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   // Honest empty state: no history → no strip at all.
   if (items.length === 0) return null;
@@ -63,6 +112,14 @@ export function RecentlyViewedStrip() {
           size="sm"
           onClick={() => {
             clearRecentlyViewed();
+            // Section 16, #38 — signed-in users clear the account
+            // history too, so cleared products do not reappear from
+            // the server on the next load. A failed DELETE leaves
+            // the local clear in place; the next sync re-reads the
+            // truth.
+            if (user) {
+              void fetch('/api/v1/product-views', { method: 'DELETE' }).catch(() => undefined);
+            }
             setItems([]);
           }}
         >
@@ -70,7 +127,9 @@ export function RecentlyViewedStrip() {
         </Button>
       </div>
       <p className="mb-4 text-sm text-muted-foreground">
-        Saved on this device only — sign in to keep your history across devices.
+        {synced
+          ? 'Synced to your account — visible on any device you sign in on.'
+          : 'Saved on this device only — sign in to keep your history across devices.'}
       </p>
       <div className="flex gap-4 overflow-x-auto pb-2">
         {items.map((item) => (

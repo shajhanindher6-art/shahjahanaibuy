@@ -6,21 +6,44 @@ Load, measured on a clean production build). Without a gate, every new
 feature grows it back. These budgets are enforced by CI
 (`.github/workflows/lighthouse.yml`); the numbers below are the contract.
 
-## Current baseline — UNVERIFIED LIVE (Section 14, Chunk 1, 11 Nov 2026)
+## Current baseline — Section 15 clean build (12 Nov 2026)
 
-No clean production build since Section 10 has printed a route
-table: the sandbox builds for Sections 10–13 all failed at
+Section 15's verification ran a clean production build that
+printed a route table (three runs, all exit 0 — the old
+`/sitemap.xml` environmental failure did not reproduce). The
+recorded number from that build:
+
+- **`/products/[slug]` First Load JS: 329 kB** (12 Nov 2026,
+  Section 15 gate, within the ≤350 kB budget).
+
+That 329 kB figure previously appeared nowhere in the repo; it is
+recorded here so the baseline is no longer "unverified live". The
+older history is kept below for context only: the last clean-build
+number before Section 15 was Section 10, 11 Nov 2026 (product
+page 281 kB — stale, superseded by the 329 kB Section 15 baseline)
+— that predates Sections 11–15, so it is **not** the
+current baseline and must not be quoted as one.
+
+Measured from the Section 16 gate clean build (12 Nov 2026,
+exit 0, 796 static pages):
+
+- **`/` (homepage) First Load JS: 320 kB** — Section 16 gate
+  clean build (budget ≤250 kB — **above the warning budget**;
+  warning only, not a hard fail).
+- **`/compare` First Load JS: 372 kB** — Section 16 gate clean
+  build (budget ≤400 kB — within budget).
+- **`/products/[slug]` First Load JS: 329 kB** — re-measured in
+  the same Section 16 gate build, unchanged from the Section 15
+  baseline and within the ≤350 kB budget. (The test-fix gate's
+  328 kB figure appears nowhere in the repo — no "328 kB" string
+  exists in docs/ or tests/ — so the 329 kB printed by this
+  build's route table is the recorded figure.)
+
+The sandbox builds for Sections 10–13 all failed at
 `/sitemap.xml` (environmental — Node fetch to the placeholder
-Supabase host hangs; see the Section 10/11/12 build reports),
-so **no current First Load JS number exists for any route**.
-The last clean-build number was Section 10, 11 Nov 2026
-(product page 281 kB) — that predates Sections 11–14, so it is
-**not** the current baseline and must not be quoted as one.
-The current baseline is "unverified live": the ≤350 kB budget
-below is still the hard gate, and the first clean build (CI or
-Vercel) that prints a route table re-establishes the number —
-update this section with that number and date when it lands.
-Do not copy the 281 kB figure forward as if it were current.
+Supabase host hangs; see the Section 10/11/12 build reports);
+Section 15's build did not hit that failure, which is why its
+number is the first re-established baseline since Section 10.
 
 Section 14, Chunk 1 changes with bundle implications (all
 UNMEASURED — no build ran, so no size claim follows):
@@ -41,9 +64,9 @@ UNMEASURED — no build ran, so no size claim follows):
 
 | Route | First Load JS | Notes |
 |---|---|---|
-| `/products/[slug]` | **≤ 350 kB** | Hard gate — CI fails the build above this. Baseline: unverified live since Section 10 (last clean-build number 281 kB, 11 Nov 2026 — stale, do not quote as current). |
-| `/` (homepage) | ≤ 250 kB | Warning — reported in the CI log, not a hard fail yet. |
-| `/compare` | ≤ 400 kB | Warning — matrix + charts are heavy; code-split before raising. |
+| `/products/[slug]` | **≤ 350 kB** | Hard gate — CI fails the build above this. Baseline: 329 kB (Section 15 clean build, 12 Nov 2026). |
+| `/` (homepage) | ≤ 250 kB | Warning — reported in the CI log, not a hard fail yet. Baseline: 320 kB (Section 16 gate clean build, 12 Nov 2026 — above the warning budget). |
+| `/compare` | ≤ 400 kB | Warning — matrix + charts are heavy; code-split before raising. Baseline: 372 kB (Section 16 gate clean build, 12 Nov 2026 — within budget). |
 
 Lighthouse (mobile, throttled 4G — LHCI `lighthouse:recommended` preset):
 

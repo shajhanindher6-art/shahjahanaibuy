@@ -173,6 +173,8 @@ export function SmartDealWidget({ title = 'Smart Deals For You', limit = 6, clas
                     <img
                       src={deal.product!.imageUrl}
                       alt={deal.product!.name}
+                      loading="lazy"
+                      decoding="async"
                       className="h-full w-full object-cover"
                       onError={() =>
                         setFailedImages((prev) => new Set(prev).add(deal.product!.id))

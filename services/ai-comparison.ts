@@ -198,6 +198,13 @@ export async function compareProducts(
         recorded,
         globalReadiness,
         dealScore,
+        // Section 16, items 9–10: recorded freshness for the stale
+        // badge, point count for the withheld-score note.
+        dataFreshness: (product.data_freshness as string | null) ?? null,
+        dealScoreDataPoints:
+          prediction && typeof prediction.dataPoints === 'number'
+            ? prediction.dataPoints
+            : null,
       });
     }
 

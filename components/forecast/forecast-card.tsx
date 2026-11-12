@@ -27,6 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
+import { formatForecastBasis } from '@/lib/forecast';
 import { cn } from '@/lib/utils';
 
 interface HorizonForecast {
@@ -196,8 +197,12 @@ export function ForecastCard({ productIdOrSlug, className }: ForecastCardProps) 
               <div className="font-semibold">
                 {money(f.low)} – {money(f.high)}
               </div>
+              {/* Section 16, item 11: the point count and
+                  confidence band behind this range — "based on 4
+                  points, low confidence" — not a bare %. */}
               <div className="text-xs text-muted-foreground">
-                {f.confidencePct}% confidence · centre {money(f.central)}
+                {formatForecastBasis(f.pointsUsed, f.confidencePct)} · centre{' '}
+                {money(f.central)}
               </div>
             </div>
           </div>

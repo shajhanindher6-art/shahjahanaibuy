@@ -190,3 +190,38 @@ export function findCheaperAlternative(
   }
   return best;
 }
+
+/** One CSV cell: quote when the value contains a comma, quote, or newline (RFC 4180). */
+function csvCell(value: string | number | boolean | null): string {
+  if (value === null) return '';
+  const text = String(value);
+  if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
+/**
+ * Section 16, #50 — CSV export of the caller's own recorded
+ * subscriptions (the list the page already loaded). Pure and
+ * deterministic: header row + one row per subscription, in the
+ * order given. monthly_usd is the computed monthly equivalent
+ * (yearly ÷ 12), not a new price. No new data is fetched and
+ * nothing is uploaded — the page downloads this string as a file
+ * in the browser.
+ */
+export function subscriptionsToCsv(subscriptions: ConsumerSubscription[]): string {
+  const header =
+    'name,price_usd,billing_interval,monthly_usd,renewal_date,category,is_active,last_used_at';
+  const rows = subscriptions.map((s) =>
+    [
+      csvCell(s.name),
+      csvCell(roundToCents(s.priceUsd).toFixed(2)),
+      csvCell(s.billingInterval),
+      csvCell(monthlyCost(s.priceUsd, s.billingInterval).toFixed(2)),
+      csvCell(s.renewalDate),
+      csvCell(s.category),
+      csvCell(s.isActive ? 'yes' : 'no'),
+      csvCell(s.lastUsedAt),
+    ].join(',')
+  );
+  return [header, ...rows].join('\n');
+}

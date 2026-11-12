@@ -37,7 +37,7 @@
  * strings written for this feature, not professionally reviewed
  * copy. Short labels may read slightly formally in some languages.
  *
- * KEY PARITY: every language must define all 172 DictKeys, no
+ * KEY PARITY: every language must define all 167 DictKeys, no
  * more and no fewer (scripted check). Section 12 added navTools,
  * navSearch, navDeals, navCompare, navBrands for the header nav;
  * the 12 machine-translated languages carry machine translations
@@ -52,15 +52,21 @@
  * navPricing / footerLinkPlatforms / footerLinkHelpCenter.
  * Section 15 (C3) added 63 keys the same way: 25 tool headings,
  * 6 shared labels, 24 dashboard strings and 8 product-detail
- * section headings.
+ * section headings. Section 16 deleted 6 dead keys (166) and added
+ * 1 (toolHeadingCouponsCashback, for the coupons tool) → 167.
+ * NOTE: the Section 16 task brief said the final count would be
+ * 168, but that is an arithmetic slip in the brief: 172 − 6 dead
+ * keys + 1 new key = 167, not 168. 167 is the verified count.
  * heroSubtitle is the SINGLE source of truth for the hero
  * subtitle (Section 14, I-1): the honest strings that used to
  * live duplicated in components/home/hero-copy.tsx now live here
  * and the component renders tFor(language, 'heroSubtitle').
- * `bannerOfferUrdu` is retained for
- * key parity but is no longer rendered by the banner: the banner
- * now offers the detected language by its native name instead of
- * a Roman-Urdu-specific button (see region-banner.tsx).
+ * Section 16 deleted six dead keys (bannerDetected,
+ * bannerOfferUrdu, languageEnglish, languageRomanUrdu,
+ * dashGettingStarted, dashDropsToWatch): none was rendered
+ * anywhere. The banner sentence is now an English-only template
+ * in bannerText() below — the banner no longer translates into
+ * the other 19 languages (see that function's note).
  *
  * RTL (S5#12, corrected Section 14, I-3): Arabic ('ar') is
  * right-to-left. The root layout (app/layout.tsx) sets dir="rtl"
@@ -105,12 +111,8 @@ export type DictKey =
   | 'inStock'
   | 'outOfStock'
   | 'noListings'
-  | 'bannerDetected'
   | 'bannerChange'
   | 'bannerDismiss'
-  | 'bannerOfferUrdu'
-  | 'languageEnglish'
-  | 'languageRomanUrdu'
   | 'footerProduct'
   | 'footerCompany'
   | 'footerResources'
@@ -190,6 +192,7 @@ export type DictKey =
   | 'toolHeadingBestTime'
   | 'toolHeadingBudgetFinder'
   | 'toolHeadingCurrencyConverter'
+  | 'toolHeadingCouponsCashback'
   | 'toolHeadingDealChecker'
   | 'toolHeadingEcoCoach'
   | 'toolHeadingEmiCalculator'
@@ -232,7 +235,6 @@ export type DictKey =
   | 'dashYourDigest'
   | 'dashWeeklyDigest'
   | 'dashAddFromStore'
-  | 'dashGettingStarted'
   | 'dashNoTrackedProducts'
   | 'dashPushSelfTest'
   | 'dashRecentActivity'
@@ -241,7 +243,6 @@ export type DictKey =
   | 'dashTechBudget'
   | 'dashYourWatchedPrices'
   | 'dashWebhookAlerts'
-  | 'dashDropsToWatch'
   | 'productAiSummary'
   | 'productPros'
   | 'productCons'
@@ -281,12 +282,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'In Stock',
     outOfStock: 'Out of Stock',
     noListings: 'No retailer listings yet for this product.',
-    bannerDetected: "You're browsing from {country} — prices shown in {currency} (≈)",
     bannerChange: 'Change',
     bannerDismiss: 'Dismiss',
-    bannerOfferUrdu: 'Roman Urdu mein dekhein',
-    languageEnglish: 'English',
-    languageRomanUrdu: 'Roman Urdu',
     footerProduct: 'Product',
     footerCompany: 'Company',
     footerResources: 'Resources',
@@ -366,6 +363,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'Best time to buy',
     toolHeadingBudgetFinder: 'Budget Finder',
     toolHeadingCurrencyConverter: 'Currency Converter',
+    toolHeadingCouponsCashback: 'Coupons & Cashback Finder',
     toolHeadingDealChecker: 'Deal Checker',
     toolHeadingEcoCoach: 'AI Eco Shopping Coach',
     toolHeadingEmiCalculator: 'EMI Calculator',
@@ -408,7 +406,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'Your shopping digest',
     dashWeeklyDigest: 'This week’s price-drop digest',
     dashAddFromStore: 'Add from any store',
-    dashGettingStarted: 'Getting started',
     dashNoTrackedProducts: 'No tracked products yet',
     dashPushSelfTest: 'Push self-test',
     dashRecentActivity: 'Recent activity',
@@ -417,7 +414,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'Tech Budget',
     dashYourWatchedPrices: 'Your watched prices',
     dashWebhookAlerts: 'WhatsApp, Telegram & generic webhook alerts',
-    dashDropsToWatch: 'Drops to watch',
     productAiSummary: 'AI Summary',
     productPros: 'Pros',
     productCons: 'Cons',
@@ -456,12 +452,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'Stock Mein Hai',
     outOfStock: 'Stock Mein Nahi',
     noListings: 'Is product ke liye abhi koi retailer listing nahi hai.',
-    bannerDetected: 'Aap {country} se browse kar rahe hain — qeematein {currency} mein dikhayi ja rahi hain (≈)',
     bannerChange: 'Tabdeel Karein',
     bannerDismiss: 'Band Karein',
-    bannerOfferUrdu: 'Roman Urdu mein dekhein',
-    languageEnglish: 'English',
-    languageRomanUrdu: 'Roman Urdu',
     footerProduct: 'Product',
     footerCompany: 'Company',
     footerResources: 'Resources',
@@ -541,6 +533,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'Kharidne ka behtareen waqt',
     toolHeadingBudgetFinder: 'Budget Finder',
     toolHeadingCurrencyConverter: 'Currency Converter',
+    toolHeadingCouponsCashback: 'Coupon aur Cashback Finder',
     toolHeadingDealChecker: 'Deal Checker',
     toolHeadingEcoCoach: 'AI Eco Shopping Coach',
     toolHeadingEmiCalculator: 'EMI Calculator',
@@ -583,7 +576,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'Aap ka shopping digest',
     dashWeeklyDigest: 'Is haftay ka price-drop digest',
     dashAddFromStore: 'Kisi bhi store se add karein',
-    dashGettingStarted: 'Shuru karein',
     dashNoTrackedProducts: 'Abhi tak koi tracked product nahi hai',
     dashPushSelfTest: 'Push self-test',
     dashRecentActivity: 'Recent activity',
@@ -592,7 +584,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'Tech Budget',
     dashYourWatchedPrices: 'Aap ki watched prices',
     dashWebhookAlerts: 'WhatsApp, Telegram aur generic webhook alerts',
-    dashDropsToWatch: 'Drops to watch',
     productAiSummary: 'AI Summary',
     productPros: 'Pros',
     productCons: 'Cons',
@@ -631,12 +622,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'Auf Lager',
     outOfStock: 'Nicht auf Lager',
     noListings: 'Für dieses Produkt gibt es noch keine Händlerangebote.',
-    bannerDetected: 'Du surfst aus {country} — Preise werden in {currency} angezeigt (≈)',
     bannerChange: 'Ändern',
     bannerDismiss: 'Schließen',
-    bannerOfferUrdu: 'Auf Roman-Urdu ansehen',
-    languageEnglish: 'Englisch',
-    languageRomanUrdu: 'Roman-Urdu',
     footerProduct: 'Produkt',
     footerCompany: 'Unternehmen',
     footerResources: 'Ressourcen',
@@ -716,6 +703,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'Beste Kaufzeit',
     toolHeadingBudgetFinder: 'Budget-Finder',
     toolHeadingCurrencyConverter: 'Währungsrechner',
+    toolHeadingCouponsCashback: 'Coupon- & Cashback-Finder',
     toolHeadingDealChecker: 'Deal-Prüfer',
     toolHeadingEcoCoach: 'KI-Eco-Shopping-Coach',
     toolHeadingEmiCalculator: 'EMI-Rechner',
@@ -758,7 +746,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'Deine Einkaufsübersicht',
     dashWeeklyDigest: 'Preissenkungs-Übersicht dieser Woche',
     dashAddFromStore: 'Aus einem beliebigen Shop hinzufügen',
-    dashGettingStarted: 'Erste Schritte',
     dashNoTrackedProducts: 'Noch keine beobachteten Produkte',
     dashPushSelfTest: 'Push-Selbsttest',
     dashRecentActivity: 'Letzte Aktivitäten',
@@ -767,7 +754,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'Technik-Budget',
     dashYourWatchedPrices: 'Deine beobachteten Preise',
     dashWebhookAlerts: 'WhatsApp-, Telegram- & allgemeine Webhook-Benachrichtigungen',
-    dashDropsToWatch: 'Zu beobachtende Senkungen',
     productAiSummary: 'KI-Zusammenfassung',
     productPros: 'Vorteile',
     productCons: 'Nachteile',
@@ -806,12 +792,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'En stock',
     outOfStock: 'Rupture de stock',
     noListings: 'Aucune offre de commerçant pour ce produit pour le moment.',
-    bannerDetected: 'Vous naviguez depuis {country} — les prix sont affichés en {currency} (≈)',
     bannerChange: 'Modifier',
     bannerDismiss: 'Fermer',
-    bannerOfferUrdu: 'Voir en ourdou roman',
-    languageEnglish: 'Anglais',
-    languageRomanUrdu: 'Ourdou roman',
     footerProduct: 'Produit',
     footerCompany: 'Entreprise',
     footerResources: 'Ressources',
@@ -891,6 +873,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'Meilleur moment pour acheter',
     toolHeadingBudgetFinder: 'Trouveur de budget',
     toolHeadingCurrencyConverter: 'Convertisseur de devises',
+    toolHeadingCouponsCashback: 'Trouveur de coupons et de cashback',
     toolHeadingDealChecker: 'Vérificateur d’offres',
     toolHeadingEcoCoach: 'Coach éco-shopping IA',
     toolHeadingEmiCalculator: 'Calculateur EMI',
@@ -933,7 +916,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'Votre récapitulatif d’achats',
     dashWeeklyDigest: 'Récapitulatif des baisses de prix de cette semaine',
     dashAddFromStore: 'Ajouter depuis n’importe quel magasin',
-    dashGettingStarted: 'Pour commencer',
     dashNoTrackedProducts: 'Aucun produit suivi pour le moment',
     dashPushSelfTest: 'Autotest push',
     dashRecentActivity: 'Activité récente',
@@ -942,7 +924,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'Budget tech',
     dashYourWatchedPrices: 'Vos prix suivis',
     dashWebhookAlerts: 'Alertes WhatsApp, Telegram et webhook générique',
-    dashDropsToWatch: 'Baisses à surveiller',
     productAiSummary: 'Résumé IA',
     productPros: 'Avantages',
     productCons: 'Inconvénients',
@@ -981,12 +962,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'En stock',
     outOfStock: 'Agotado',
     noListings: 'Todavía no hay ofertas de tiendas para este producto.',
-    bannerDetected: 'Estás navegando desde {country} — los precios se muestran en {currency} (≈)',
     bannerChange: 'Cambiar',
     bannerDismiss: 'Cerrar',
-    bannerOfferUrdu: 'Ver en urdu romano',
-    languageEnglish: 'Inglés',
-    languageRomanUrdu: 'Urdú romano',
     footerProduct: 'Producto',
     footerCompany: 'Empresa',
     footerResources: 'Recursos',
@@ -1066,6 +1043,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'Mejor momento para comprar',
     toolHeadingBudgetFinder: 'Buscador de presupuesto',
     toolHeadingCurrencyConverter: 'Conversor de divisas',
+    toolHeadingCouponsCashback: 'Buscador de cupones y cashback',
     toolHeadingDealChecker: 'Verificador de ofertas',
     toolHeadingEcoCoach: 'Coach de compras ecológicas con IA',
     toolHeadingEmiCalculator: 'Calculadora EMI',
@@ -1108,7 +1086,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'Tu resumen de compras',
     dashWeeklyDigest: 'Resumen de bajadas de precio de esta semana',
     dashAddFromStore: 'Añadir desde cualquier tienda',
-    dashGettingStarted: 'Primeros pasos',
     dashNoTrackedProducts: 'Aún no hay productos seguidos',
     dashPushSelfTest: 'Autoprueba push',
     dashRecentActivity: 'Actividad reciente',
@@ -1117,7 +1094,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'Presupuesto de tecnología',
     dashYourWatchedPrices: 'Tus precios seguidos',
     dashWebhookAlerts: 'Alertas de WhatsApp, Telegram y webhook genérico',
-    dashDropsToWatch: 'Bajadas a vigilar',
     productAiSummary: 'Resumen de IA',
     productPros: 'Ventajas',
     productCons: 'Desventajas',
@@ -1156,12 +1132,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'Disponibile',
     outOfStock: 'Non disponibile',
     noListings: 'Ancora nessuna offerta dei rivenditori per questo prodotto.',
-    bannerDetected: 'Stai navigando da {country} — i prezzi sono mostrati in {currency} (≈)',
     bannerChange: 'Modifica',
     bannerDismiss: 'Chiudi',
-    bannerOfferUrdu: 'Visualizza in urdu romano',
-    languageEnglish: 'Inglese',
-    languageRomanUrdu: 'Urdu romano',
     footerProduct: 'Prodotto',
     footerCompany: 'Azienda',
     footerResources: 'Risorse',
@@ -1241,6 +1213,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'Momento migliore per acquistare',
     toolHeadingBudgetFinder: 'Trova budget',
     toolHeadingCurrencyConverter: 'Convertitore di valuta',
+    toolHeadingCouponsCashback: 'Trova coupon e cashback',
     toolHeadingDealChecker: 'Verifica offerte',
     toolHeadingEcoCoach: 'Coach eco-shopping AI',
     toolHeadingEmiCalculator: 'Calcolatore EMI',
@@ -1283,7 +1256,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'Il tuo riepilogo acquisti',
     dashWeeklyDigest: 'Riepilogo dei cali di prezzo di questa settimana',
     dashAddFromStore: 'Aggiungi da qualsiasi negozio',
-    dashGettingStarted: 'Per iniziare',
     dashNoTrackedProducts: 'Ancora nessun prodotto monitorato',
     dashPushSelfTest: 'Autotest push',
     dashRecentActivity: 'Attività recente',
@@ -1292,7 +1264,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'Budget tech',
     dashYourWatchedPrices: 'I tuoi prezzi monitorati',
     dashWebhookAlerts: 'Avvisi WhatsApp, Telegram e webhook generico',
-    dashDropsToWatch: 'Cali da tenere d’occhio',
     productAiSummary: 'Riepilogo AI',
     productPros: 'Pro',
     productCons: 'Contro',
@@ -1331,12 +1302,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'Em estoque',
     outOfStock: 'Fora de estoque',
     noListings: 'Ainda não há ofertas de lojas para este produto.',
-    bannerDetected: 'Você está navegando de {country} — os preços são mostrados em {currency} (≈)',
     bannerChange: 'Alterar',
     bannerDismiss: 'Fechar',
-    bannerOfferUrdu: 'Ver em urdu romano',
-    languageEnglish: 'Inglês',
-    languageRomanUrdu: 'Urdu romano',
     footerProduct: 'Produto',
     footerCompany: 'Empresa',
     footerResources: 'Recursos',
@@ -1416,6 +1383,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'Melhor época para comprar',
     toolHeadingBudgetFinder: 'Buscador de orçamento',
     toolHeadingCurrencyConverter: 'Conversor de moedas',
+    toolHeadingCouponsCashback: 'Buscador de cupons e cashback',
     toolHeadingDealChecker: 'Verificador de ofertas',
     toolHeadingEcoCoach: 'Coach de compras ecológicas com IA',
     toolHeadingEmiCalculator: 'Calculadora EMI',
@@ -1458,7 +1426,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'Seu resumo de compras',
     dashWeeklyDigest: 'Resumo de quedas de preço desta semana',
     dashAddFromStore: 'Adicionar de qualquer loja',
-    dashGettingStarted: 'Primeiros passos',
     dashNoTrackedProducts: 'Nenhum produto acompanhado ainda',
     dashPushSelfTest: 'Autoteste push',
     dashRecentActivity: 'Atividade recente',
@@ -1467,7 +1434,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'Orçamento de tecnologia',
     dashYourWatchedPrices: 'Seus preços acompanhados',
     dashWebhookAlerts: 'Alertas de WhatsApp, Telegram e webhook genérico',
-    dashDropsToWatch: 'Quedas para acompanhar',
     productAiSummary: 'Resumo de IA',
     productPros: 'Prós',
     productCons: 'Contras',
@@ -1506,12 +1472,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'Stokta Var',
     outOfStock: 'Stokta Yok',
     noListings: 'Bu ürün için henüz mağaza listelemesi yok.',
-    bannerDetected: '{country} üzerinden geziniyorsunuz — fiyatlar {currency} cinsinden gösteriliyor (≈)',
     bannerChange: 'Değiştir',
     bannerDismiss: 'Kapat',
-    bannerOfferUrdu: 'Roma Urduca görüntüle',
-    languageEnglish: 'İngilizce',
-    languageRomanUrdu: 'Roma Urduca',
     footerProduct: 'Ürün',
     footerCompany: 'Şirket',
     footerResources: 'Kaynaklar',
@@ -1591,6 +1553,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'Satın almak için en iyi zaman',
     toolHeadingBudgetFinder: 'Bütçe Bulucu',
     toolHeadingCurrencyConverter: 'Para Birimi Dönüştürücü',
+    toolHeadingCouponsCashback: 'Kupon ve Cashback Bulucu',
     toolHeadingDealChecker: 'Fırsat Denetleyici',
     toolHeadingEcoCoach: 'YZ Eko Alışveriş Koçu',
     toolHeadingEmiCalculator: 'EMI Hesaplayıcı',
@@ -1633,7 +1596,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'Alışveriş özetiniz',
     dashWeeklyDigest: 'Bu haftanın fiyat düşüşü özeti',
     dashAddFromStore: 'Herhangi bir mağazadan ekle',
-    dashGettingStarted: 'Başlangıç',
     dashNoTrackedProducts: 'Henüz takip edilen ürün yok',
     dashPushSelfTest: 'Push öz testi',
     dashRecentActivity: 'Son etkinlikler',
@@ -1642,7 +1604,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'Teknoloji Bütçesi',
     dashYourWatchedPrices: 'İzlediğiniz fiyatlar',
     dashWebhookAlerts: 'WhatsApp, Telegram ve genel webhook uyarıları',
-    dashDropsToWatch: 'İzlenecek düşüşler',
     productAiSummary: 'YZ Özeti',
     productPros: 'Artılar',
     productCons: 'Eksiler',
@@ -1686,12 +1647,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'متوفر',
     outOfStock: 'غير متوفر',
     noListings: 'لا توجد عروض تجار لهذا المنتج بعد.',
-    bannerDetected: 'أنت تتصفح من {country} — الأسعار معروضة بعملة {currency} (≈)',
     bannerChange: 'تغيير',
     bannerDismiss: 'إغلاق',
-    bannerOfferUrdu: 'عرض باللغة الأردية الرومانية',
-    languageEnglish: 'الإنجليزية',
-    languageRomanUrdu: 'الأردية الرومانية',
     footerProduct: 'المنتج',
     footerCompany: 'الشركة',
     footerResources: 'الموارد',
@@ -1771,6 +1728,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'أفضل وقت للشراء',
     toolHeadingBudgetFinder: 'الباحث عن الميزانية',
     toolHeadingCurrencyConverter: 'محوّل العملات',
+    toolHeadingCouponsCashback: 'الباحث عن القسائم والاسترداد النقدي',
     toolHeadingDealChecker: 'مدقق العروض',
     toolHeadingEcoCoach: 'مدرب التسوق البيئي بالذكاء الاصطناعي',
     toolHeadingEmiCalculator: 'حاسبة الأقساط الشهرية',
@@ -1813,7 +1771,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'ملخص تسوقك',
     dashWeeklyDigest: 'ملخص انخفاض الأسعار لهذا الأسبوع',
     dashAddFromStore: 'أضف من أي متجر',
-    dashGettingStarted: 'البدء',
     dashNoTrackedProducts: 'لا توجد منتجات متتبعة بعد',
     dashPushSelfTest: 'اختبار الإشعارات الذاتي',
     dashRecentActivity: 'النشاط الأخير',
@@ -1822,7 +1779,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'ميزانية التقنية',
     dashYourWatchedPrices: 'أسعارك المتتبعة',
     dashWebhookAlerts: 'تنبيهات واتساب وتيليغرام وويبهوك عام',
-    dashDropsToWatch: 'انخفاضات للمراقبة',
     productAiSummary: 'ملخص الذكاء الاصطناعي',
     productPros: 'الإيجابيات',
     productCons: 'السلبيات',
@@ -1861,12 +1817,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: '有货',
     outOfStock: '缺货',
     noListings: '该产品暂无商家报价。',
-    bannerDetected: '您正在从 {country} 浏览 — 价格以 {currency} 显示 (≈)',
     bannerChange: '更改',
     bannerDismiss: '关闭',
-    bannerOfferUrdu: '以罗马乌尔都语查看',
-    languageEnglish: '英语',
-    languageRomanUrdu: '罗马乌尔都语',
     footerProduct: '产品',
     footerCompany: '公司',
     footerResources: '资源',
@@ -1946,6 +1898,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: '最佳购买时间',
     toolHeadingBudgetFinder: '预算查找器',
     toolHeadingCurrencyConverter: '货币换算器',
+    toolHeadingCouponsCashback: '优惠券与返现查找器',
     toolHeadingDealChecker: '优惠核查器',
     toolHeadingEcoCoach: 'AI 环保购物教练',
     toolHeadingEmiCalculator: 'EMI 计算器',
@@ -1988,7 +1941,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: '您的购物摘要',
     dashWeeklyDigest: '本周降价摘要',
     dashAddFromStore: '从任意商店添加',
-    dashGettingStarted: '开始使用',
     dashNoTrackedProducts: '暂无跟踪的商品',
     dashPushSelfTest: '推送自测',
     dashRecentActivity: '最近活动',
@@ -1997,7 +1949,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: '科技预算',
     dashYourWatchedPrices: '您关注的价格',
     dashWebhookAlerts: 'WhatsApp、Telegram 和通用 Webhook 提醒',
-    dashDropsToWatch: '值得关注的降价',
     productAiSummary: 'AI 摘要',
     productPros: '优点',
     productCons: '缺点',
@@ -2036,12 +1987,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: '在庫あり',
     outOfStock: '在庫切れ',
     noListings: 'この製品の販売店の出品はまだありません。',
-    bannerDetected: '{country}から閲覧中です — 価格は{currency}で表示されます (≈)',
     bannerChange: '変更',
     bannerDismiss: '閉じる',
-    bannerOfferUrdu: 'ローマ字ウルドゥー語で見る',
-    languageEnglish: '英語',
-    languageRomanUrdu: 'ローマ字ウルドゥー語',
     footerProduct: '製品',
     footerCompany: '会社',
     footerResources: 'リソース',
@@ -2121,6 +2068,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: '買うのに最適な時期',
     toolHeadingBudgetFinder: '予算ファインダー',
     toolHeadingCurrencyConverter: '通貨コンバーター',
+    toolHeadingCouponsCashback: 'クーポン＆キャッシュバック検索',
     toolHeadingDealChecker: 'ディールチェッカー',
     toolHeadingEcoCoach: 'AIエコショッピングコーチ',
     toolHeadingEmiCalculator: 'EMI計算機',
@@ -2163,7 +2111,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'ショッピングダイジェスト',
     dashWeeklyDigest: '今週の値下げダイジェスト',
     dashAddFromStore: '任意のストアから追加',
-    dashGettingStarted: 'はじめに',
     dashNoTrackedProducts: '追跡中の商品はまだありません',
     dashPushSelfTest: 'プッシュセルフテスト',
     dashRecentActivity: '最近のアクティビティ',
@@ -2172,7 +2119,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'テック予算',
     dashYourWatchedPrices: 'ウォッチ中の価格',
     dashWebhookAlerts: 'WhatsApp、Telegram、汎用Webhookアラート',
-    dashDropsToWatch: '注目する値下げ',
     productAiSummary: 'AI要約',
     productPros: 'メリット',
     productCons: 'デメリット',
@@ -2211,12 +2157,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: '재고 있음',
     outOfStock: '품절',
     noListings: '이 제품에 대한 판매자 목록이 아직 없습니다.',
-    bannerDetected: '{country}에서 탐색 중입니다 — 가격은 {currency}로 표시됩니다 (≈)',
     bannerChange: '변경',
     bannerDismiss: '닫기',
-    bannerOfferUrdu: '로마 우르두어로 보기',
-    languageEnglish: '영어',
-    languageRomanUrdu: '로마 우르두어',
     footerProduct: '제품',
     footerCompany: '회사',
     footerResources: '리소스',
@@ -2296,6 +2238,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: '구매하기 가장 좋은 시기',
     toolHeadingBudgetFinder: '예산 찾기',
     toolHeadingCurrencyConverter: '통화 변환기',
+    toolHeadingCouponsCashback: '쿠폰 및 캐시백 찾기',
     toolHeadingDealChecker: '특가 확인기',
     toolHeadingEcoCoach: 'AI 친환경 쇼핑 코치',
     toolHeadingEmiCalculator: 'EMI 계산기',
@@ -2338,7 +2281,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: '쇼핑 요약',
     dashWeeklyDigest: '이번 주 가격 인하 요약',
     dashAddFromStore: '어느 매장에서든 추가',
-    dashGettingStarted: '시작하기',
     dashNoTrackedProducts: '추적 중인 상품이 아직 없습니다',
     dashPushSelfTest: '푸시 자가 테스트',
     dashRecentActivity: '최근 활동',
@@ -2347,7 +2289,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: '기술 예산',
     dashYourWatchedPrices: '주시 중인 가격',
     dashWebhookAlerts: 'WhatsApp, Telegram 및 일반 웹훅 알림',
-    dashDropsToWatch: '주시할 가격 인하',
     productAiSummary: 'AI 요약',
     productPros: '장점',
     productCons: '단점',
@@ -2386,12 +2327,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'स्टॉक में है',
     outOfStock: 'स्टॉक में नहीं है',
     noListings: 'इस उत्पाद के लिए अभी कोई विक्रेता सूची नहीं है।',
-    bannerDetected: 'आप {country} से ब्राउज़ कर रहे हैं — कीमतें {currency} में दिखाई जा रही हैं (≈)',
     bannerChange: 'बदलें',
     bannerDismiss: 'बंद करें',
-    bannerOfferUrdu: 'रोमन उर्दू में देखें',
-    languageEnglish: 'अंग्रेज़ी',
-    languageRomanUrdu: 'रोमन उर्दू',
     footerProduct: 'उत्पाद',
     footerCompany: 'कंपनी',
     footerResources: 'संसाधन',
@@ -2471,6 +2408,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'खरीदने का सबसे अच्छा समय',
     toolHeadingBudgetFinder: 'बजट फ़ाइंडर',
     toolHeadingCurrencyConverter: 'मुद्रा परिवर्तक',
+    toolHeadingCouponsCashback: 'कूपन और कैशबैक खोजक',
     toolHeadingDealChecker: 'डील चेकर',
     toolHeadingEcoCoach: 'AI ईको शॉपिंग कोच',
     toolHeadingEmiCalculator: 'EMI कैलकुलेटर',
@@ -2513,7 +2451,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'आपका शॉपिंग डाइजेस्ट',
     dashWeeklyDigest: 'इस सप्ताह का मूल्य गिरावट डाइजेस्ट',
     dashAddFromStore: 'किसी भी स्टोर से जोड़ें',
-    dashGettingStarted: 'शुरुआत करें',
     dashNoTrackedProducts: 'अभी तक कोई ट्रैक किया गया उत्पाद नहीं है',
     dashPushSelfTest: 'पुश स्व-परीक्षण',
     dashRecentActivity: 'हाल की गतिविधि',
@@ -2522,7 +2459,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'टेक बजट',
     dashYourWatchedPrices: 'आपके देखे गए मूल्य',
     dashWebhookAlerts: 'WhatsApp, Telegram और सामान्य वेबहुक अलर्ट',
-    dashDropsToWatch: 'देखने लायक गिरावट',
     productAiSummary: 'AI सारांश',
     productPros: 'फ़ायदे',
     productCons: 'नुकसान',
@@ -2561,12 +2497,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'স্টকে আছে',
     outOfStock: 'স্টকে নেই',
     noListings: 'এই পণ্যের জন্য এখনও কোনো বিক্রেতার তালিকা নেই।',
-    bannerDetected: 'আপনি {country} থেকে ব্রাউজ করছেন — দাম {currency}-এ দেখানো হচ্ছে (≈)',
     bannerChange: 'পরিবর্তন করুন',
     bannerDismiss: 'বন্ধ করুন',
-    bannerOfferUrdu: 'রোমান উর্দুতে দেখুন',
-    languageEnglish: 'ইংরেজি',
-    languageRomanUrdu: 'রোমান উর্দু',
     footerProduct: 'পণ্য',
     footerCompany: 'কোম্পানি',
     footerResources: 'রিসোর্স',
@@ -2646,6 +2578,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'কেনার সেরা সময়',
     toolHeadingBudgetFinder: 'বাজেট ফাইন্ডার',
     toolHeadingCurrencyConverter: 'মুদ্রা রূপান্তরকারী',
+    toolHeadingCouponsCashback: 'কুপন ও ক্যাশব্যাক ফাইন্ডার',
     toolHeadingDealChecker: 'ডিল চেকার',
     toolHeadingEcoCoach: 'AI ইকো শপিং কোচ',
     toolHeadingEmiCalculator: 'EMI ক্যালকুলেটর',
@@ -2688,7 +2621,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'আপনার শপিং ডাইজেস্ট',
     dashWeeklyDigest: 'এই সপ্তাহের মূল্য হ্রাস ডাইজেস্ট',
     dashAddFromStore: 'যেকোনো স্টোর থেকে যোগ করুন',
-    dashGettingStarted: 'শুরু করুন',
     dashNoTrackedProducts: 'এখনও কোনো ট্র্যাক করা পণ্য নেই',
     dashPushSelfTest: 'পুশ স্ব-পরীক্ষা',
     dashRecentActivity: 'সাম্প্রতিক কার্যকলাপ',
@@ -2697,7 +2629,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'টেক বাজেট',
     dashYourWatchedPrices: 'আপনার দেখা মূল্য',
     dashWebhookAlerts: 'WhatsApp, Telegram ও সাধারণ ওয়েবহুক সতর্কতা',
-    dashDropsToWatch: 'দেখার মতো হ্রাস',
     productAiSummary: 'AI সারাংশ',
     productPros: 'সুবিধা',
     productCons: 'অসুবিধা',
@@ -2736,12 +2667,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'Op voorraad',
     outOfStock: 'Niet op voorraad',
     noListings: 'Nog geen winkelaanbod voor dit product.',
-    bannerDetected: 'Je bladert vanuit {country} — prijzen worden weergegeven in {currency} (≈)',
     bannerChange: 'Wijzigen',
     bannerDismiss: 'Sluiten',
-    bannerOfferUrdu: 'Bekijk in Romeins Urdu',
-    languageEnglish: 'Engels',
-    languageRomanUrdu: 'Romeins Urdu',
     footerProduct: 'Product',
     footerCompany: 'Bedrijf',
     footerResources: 'Bronnen',
@@ -2821,6 +2748,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'Beste moment om te kopen',
     toolHeadingBudgetFinder: 'Budgetzoeker',
     toolHeadingCurrencyConverter: 'Valutaconverter',
+    toolHeadingCouponsCashback: 'Coupon- & cashbackzoeker',
     toolHeadingDealChecker: 'Dealchecker',
     toolHeadingEcoCoach: 'AI Eco Shopping Coach',
     toolHeadingEmiCalculator: 'EMI-calculator',
@@ -2863,7 +2791,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'Je shoppingoverzicht',
     dashWeeklyDigest: 'Prijsdalingenoverzicht van deze week',
     dashAddFromStore: 'Voeg toe vanuit elke winkel',
-    dashGettingStarted: 'Aan de slag',
     dashNoTrackedProducts: 'Nog geen gevolgde producten',
     dashPushSelfTest: 'Push-zelftest',
     dashRecentActivity: 'Recente activiteit',
@@ -2872,7 +2799,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'Techbudget',
     dashYourWatchedPrices: 'Je gevolgde prijzen',
     dashWebhookAlerts: 'WhatsApp-, Telegram- en algemene webhookmeldingen',
-    dashDropsToWatch: 'Dalingen om in de gaten te houden',
     productAiSummary: 'AI-samenvatting',
     productPros: 'Voordelen',
     productCons: 'Nadelen',
@@ -2911,12 +2837,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'I lager',
     outOfStock: 'Slut i lager',
     noListings: 'Inga återförsäljarerbjudanden för den här produkten ännu.',
-    bannerDetected: 'Du surfar från {country} — priser visas i {currency} (≈)',
     bannerChange: 'Ändra',
     bannerDismiss: 'Stäng',
-    bannerOfferUrdu: 'Visa på romersk urdu',
-    languageEnglish: 'Engelska',
-    languageRomanUrdu: 'Romersk urdu',
     footerProduct: 'Produkt',
     footerCompany: 'Företag',
     footerResources: 'Resurser',
@@ -2996,6 +2918,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'Bästa tid att köpa',
     toolHeadingBudgetFinder: 'Budgetsökare',
     toolHeadingCurrencyConverter: 'Valutaomvandlare',
+    toolHeadingCouponsCashback: 'Kupong- & cashback-sökare',
     toolHeadingDealChecker: 'Erbjudandekontroll',
     toolHeadingEcoCoach: 'AI Eco Shopping Coach',
     toolHeadingEmiCalculator: 'EMI-kalkylator',
@@ -3038,7 +2961,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'Din shoppingöversikt',
     dashWeeklyDigest: 'Denna veckas prissänkningssammanfattning',
     dashAddFromStore: 'Lägg till från valfri butik',
-    dashGettingStarted: 'Kom igång',
     dashNoTrackedProducts: 'Inga bevakade produkter ännu',
     dashPushSelfTest: 'Push-självtest',
     dashRecentActivity: 'Senaste aktivitet',
@@ -3047,7 +2969,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'Teknikbudget',
     dashYourWatchedPrices: 'Dina bevakade priser',
     dashWebhookAlerts: 'WhatsApp-, Telegram- och allmänna webhook-aviseringar',
-    dashDropsToWatch: 'Sänkningar att bevaka',
     productAiSummary: 'AI-sammanfattning',
     productPros: 'Fördelar',
     productCons: 'Nackdelar',
@@ -3086,12 +3007,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'W magazynie',
     outOfStock: 'Brak w magazynie',
     noListings: 'Brak jeszcze ofert sprzedawców dla tego produktu.',
-    bannerDetected: 'Przeglądasz z {country} — ceny są wyświetlane w {currency} (≈)',
     bannerChange: 'Zmień',
     bannerDismiss: 'Zamknij',
-    bannerOfferUrdu: 'Zobacz w urdu zapisanym alfabetem łacińskim',
-    languageEnglish: 'Angielski',
-    languageRomanUrdu: 'Urdu zapisane alfabetem łacińskim',
     footerProduct: 'Produkt',
     footerCompany: 'Firma',
     footerResources: 'Zasoby',
@@ -3171,6 +3088,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'Najlepszy czas na zakup',
     toolHeadingBudgetFinder: 'Wyszukiwarka budżetu',
     toolHeadingCurrencyConverter: 'Konwerter walut',
+    toolHeadingCouponsCashback: 'Wyszukiwarka kuponów i cashback',
     toolHeadingDealChecker: 'Sprawdzanie ofert',
     toolHeadingEcoCoach: 'AI Eco Shopping Coach',
     toolHeadingEmiCalculator: 'Kalkulator EMI',
@@ -3213,7 +3131,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'Twoje podsumowanie zakupów',
     dashWeeklyDigest: 'Podsumowanie obniżek cen w tym tygodniu',
     dashAddFromStore: 'Dodaj z dowolnego sklepu',
-    dashGettingStarted: 'Pierwsze kroki',
     dashNoTrackedProducts: 'Brak śledzonych produktów',
     dashPushSelfTest: 'Autotest push',
     dashRecentActivity: 'Ostatnia aktywność',
@@ -3222,7 +3139,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'Budżet technologiczny',
     dashYourWatchedPrices: 'Twoje obserwowane ceny',
     dashWebhookAlerts: 'Alerty WhatsApp, Telegram i ogólne webhook',
-    dashDropsToWatch: 'Obniżki do obserwowania',
     productAiSummary: 'Podsumowanie AI',
     productPros: 'Zalety',
     productCons: 'Wady',
@@ -3261,12 +3177,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'В наличии',
     outOfStock: 'Нет в наличии',
     noListings: 'Для этого товара пока нет предложений продавцов.',
-    bannerDetected: 'Вы просматриваете сайт из {country} — цены показаны в {currency} (≈)',
     bannerChange: 'Изменить',
     bannerDismiss: 'Закрыть',
-    bannerOfferUrdu: 'Смотреть на урду латиницей',
-    languageEnglish: 'Английский',
-    languageRomanUrdu: 'Урду латиницей',
     footerProduct: 'Продукт',
     footerCompany: 'Компания',
     footerResources: 'Ресурсы',
@@ -3346,6 +3258,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'Лучшее время для покупки',
     toolHeadingBudgetFinder: 'Поиск по бюджету',
     toolHeadingCurrencyConverter: 'Конвертер валют',
+    toolHeadingCouponsCashback: 'Поиск купонов и кэшбэка',
     toolHeadingDealChecker: 'Проверка сделок',
     toolHeadingEcoCoach: 'AI-коуч экологичных покупок',
     toolHeadingEmiCalculator: 'Калькулятор EMI',
@@ -3388,7 +3301,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'Ваш дайджест покупок',
     dashWeeklyDigest: 'Дайджест снижений цен на этой неделе',
     dashAddFromStore: 'Добавить из любого магазина',
-    dashGettingStarted: 'Начало работы',
     dashNoTrackedProducts: 'Пока нет отслеживаемых товаров',
     dashPushSelfTest: 'Самопроверка push',
     dashRecentActivity: 'Недавняя активность',
@@ -3397,7 +3309,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'Технобюджет',
     dashYourWatchedPrices: 'Ваши отслеживаемые цены',
     dashWebhookAlerts: 'Оповещения WhatsApp, Telegram и общего вебхука',
-    dashDropsToWatch: 'Снижения для наблюдения',
     productAiSummary: 'Резюме ИИ',
     productPros: 'Плюсы',
     productCons: 'Минусы',
@@ -3436,12 +3347,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'Tersedia',
     outOfStock: 'Habis',
     noListings: 'Belum ada listing penjual untuk produk ini.',
-    bannerDetected: 'Anda menjelajah dari {country} — harga ditampilkan dalam {currency} (≈)',
     bannerChange: 'Ubah',
     bannerDismiss: 'Tutup',
-    bannerOfferUrdu: 'Lihat dalam bahasa Urdu Romawi',
-    languageEnglish: 'Inggris',
-    languageRomanUrdu: 'Urdu Romawi',
     footerProduct: 'Produk',
     footerCompany: 'Perusahaan',
     footerResources: 'Sumber Daya',
@@ -3521,6 +3428,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'Waktu terbaik untuk membeli',
     toolHeadingBudgetFinder: 'Pencari Anggaran',
     toolHeadingCurrencyConverter: 'Pengonversi Mata Uang',
+    toolHeadingCouponsCashback: 'Pencari Kupon & Cashback',
     toolHeadingDealChecker: 'Pemeriksa Penawaran',
     toolHeadingEcoCoach: 'Pelatih Belanja Ramah Lingkungan AI',
     toolHeadingEmiCalculator: 'Kalkulator EMI',
@@ -3563,7 +3471,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'Ringkasan belanja Anda',
     dashWeeklyDigest: 'Ringkasan penurunan harga minggu ini',
     dashAddFromStore: 'Tambah dari toko mana pun',
-    dashGettingStarted: 'Memulai',
     dashNoTrackedProducts: 'Belum ada produk yang dilacak',
     dashPushSelfTest: 'Uji mandiri push',
     dashRecentActivity: 'Aktivitas terbaru',
@@ -3572,7 +3479,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'Anggaran Teknologi',
     dashYourWatchedPrices: 'Harga yang Anda pantau',
     dashWebhookAlerts: 'Peringatan WhatsApp, Telegram & webhook umum',
-    dashDropsToWatch: 'Penurunan yang perlu dipantau',
     productAiSummary: 'Ringkasan AI',
     productPros: 'Kelebihan',
     productCons: 'Kekurangan',
@@ -3611,12 +3517,8 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     inStock: 'Còn hàng',
     outOfStock: 'Hết hàng',
     noListings: 'Chưa có listing của nhà bán cho sản phẩm này.',
-    bannerDetected: 'Bạn đang duyệt từ {country} — giá hiển thị bằng {currency} (≈)',
     bannerChange: 'Thay đổi',
     bannerDismiss: 'Đóng',
-    bannerOfferUrdu: 'Xem bằng tiếng Urdu Latinh',
-    languageEnglish: 'Tiếng Anh',
-    languageRomanUrdu: 'Tiếng Urdu Latinh',
     footerProduct: 'Sản phẩm',
     footerCompany: 'Công ty',
     footerResources: 'Tài nguyên',
@@ -3696,6 +3598,7 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     toolHeadingBestTime: 'Thời điểm tốt nhất để mua',
     toolHeadingBudgetFinder: 'Công cụ tìm ngân sách',
     toolHeadingCurrencyConverter: 'Công cụ chuyển đổi tiền tệ',
+    toolHeadingCouponsCashback: 'Công cụ tìm phiếu giảm giá và hoàn tiền',
     toolHeadingDealChecker: 'Công cụ kiểm tra ưu đãi',
     toolHeadingEcoCoach: 'Huấn luyện viên mua sắm xanh AI',
     toolHeadingEmiCalculator: 'Máy tính EMI',
@@ -3738,7 +3641,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashYourDigest: 'Tóm tắt mua sắm của bạn',
     dashWeeklyDigest: 'Tóm tắt giảm giá trong tuần này',
     dashAddFromStore: 'Thêm từ bất kỳ cửa hàng nào',
-    dashGettingStarted: 'Bắt đầu',
     dashNoTrackedProducts: 'Chưa có sản phẩm nào được theo dõi',
     dashPushSelfTest: 'Tự kiểm tra push',
     dashRecentActivity: 'Hoạt động gần đây',
@@ -3747,7 +3649,6 @@ export const DICTIONARIES: Record<Language, Record<DictKey, string>> = {
     dashTechBudget: 'Ngân sách công nghệ',
     dashYourWatchedPrices: 'Giá bạn đang theo dõi',
     dashWebhookAlerts: 'Cảnh báo WhatsApp, Telegram và webhook chung',
-    dashDropsToWatch: 'Các đợt giảm giá cần theo dõi',
     productAiSummary: 'Tóm tắt AI',
     productPros: 'Ưu điểm',
     productCons: 'Nhược điểm',
@@ -3778,11 +3679,16 @@ export function tFor(language: Language, key: DictKey): string {
 
 /** Fill {country} / {currency} placeholders in a banner string. */
 export function bannerText(
-  language: Language,
+  _language: Language,
   countryName: string,
   currency: string
 ): string {
-  return tFor(language, 'bannerDetected')
-    .replace('{country}', countryName)
-    .replace('{currency}', currency);
+  // Section 16: the bannerDetected dictionary key was deleted as a
+  // dead key (it was rendered only through this function), so the
+  // banner sentence is now an English-only template. That is a real
+  // regression for the other 19 languages: the banner shows English
+  // regardless of the UI language until a banner key is re-added
+  // (which would take the key count from 167 to 168). The
+  // placeholders are still filled from the detected region.
+  return `You're browsing from ${countryName} — prices shown in ${currency} (≈)`;
 }

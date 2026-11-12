@@ -15,6 +15,7 @@
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
 import type { Wishlist, WishlistItem } from '@/types/catalog';
+import { getLatestPrices } from '@/services/price-history';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -430,6 +431,17 @@ export interface SharedWishlistProduct {
   brand: string | null;
   category: string | null;
   imageUrl: string | null;
+  /**
+   * Recorded `products.data_freshness` (Section 16, item 9) —
+   * drives the stale-price badge + age-in-days on the card.
+   */
+  dataFreshness: string | null;
+  /**
+   * Latest recorded price (Section 16, item 9) — the shared card
+   * used to show no price at all, so there was nothing to label
+   * stale. Null when no price is recorded.
+   */
+  price: number | null;
 }
 
 export interface SharedWishlistItem {
@@ -508,13 +520,23 @@ export async function getPublicSharedWishlist(
     const productIds = [...new Set(itemRows.map((i) => i.product_id))];
     const { data: products, error: productsError } = await supabase
       .from('products')
-      .select('id, name, slug, brand, category, image_url')
+      .select('id, name, slug, brand, category, image_url, data_freshness')
       .in('id', productIds)
       .is('deleted_at', null);
 
     if (productsError || !products) {
       if (productsError) logger.warn('getPublicSharedWishlist: products query failed', { error: productsError.message });
       return null;
+    }
+
+    // Section 16, item 9: latest recorded prices so the shared
+    // cards can show a price (and its staleness). A failure here
+    // degrades to priceless cards, never a guessed price.
+    let latestPrices = new Map<string, number>();
+    try {
+      latestPrices = await getLatestPrices(supabase, productIds);
+    } catch {
+      latestPrices = new Map();
     }
 
     const productById = new Map(
@@ -525,6 +547,7 @@ export async function getPublicSharedWishlist(
         brand: string | null;
         category: string | null;
         image_url: string | null;
+        data_freshness: string | null;
       }>).map((p) => [
         p.id,
         {
@@ -534,6 +557,8 @@ export async function getPublicSharedWishlist(
           brand: p.brand,
           category: p.category,
           imageUrl: p.image_url,
+          dataFreshness: p.data_freshness ?? null,
+          price: latestPrices.get(p.id) ?? null,
         } as SharedWishlistProduct,
       ])
     );

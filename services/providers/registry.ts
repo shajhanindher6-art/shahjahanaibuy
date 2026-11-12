@@ -152,6 +152,18 @@ export function getProviderRegistry(): ProviderRegistry {
   if (process.env.NODE_ENV !== 'production') {
     registrySingleton.register(new MockProvider());
   }
+  // GUARD (Section 16, #49): ApifyProvider is registered here so
+  // the registry knows about it, but it FAILS CLOSED without env
+  // vars — ApifyProvider.isAvailable() is false unless BOTH
+  // APIFY_API_TOKEN and APIFY_ACTOR_ID are set, and search()/fetch()
+  // return empty/null in that case (see services/providers/
+  // apify-provider.ts). The vars MUST stay unset: scraping is a
+  // hard standing rule (blocked category 10), .env.example lists
+  // them as empty placeholders only, and no code anywhere sets
+  // them. Registering the provider does not enable scraping; it
+  // only keeps the fail-closed path testable. If the vars are ever
+  // set, that is an owner decision outside this codebase — do not
+  // set them here, in tests, in fixtures, or in .env.example.
   registrySingleton.register(new ApifyProvider());
 
   logger.info('ProviderRegistry initialized', {
