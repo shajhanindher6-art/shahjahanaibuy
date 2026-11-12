@@ -35,6 +35,7 @@ const TOOL_HEADINGS: Array<[string, string, string]> = [
   ['best-time-calendar', 'toolHeadingBestTime', ' /> Best time to buy'],
   ['budget-finder', 'toolHeadingBudgetFinder', ' /> Budget Finder'],
   ['currency-converter', 'toolHeadingCurrencyConverter', ' /> Currency Converter'],
+  ['coupons-cashback', 'toolHeadingCouponsCashback', 'Coupons &amp; Cashback\n            Finder'],
   ['deal-checker', 'toolHeadingDealChecker', ' /> Deal Checker'],
   ['eco-coach', 'toolHeadingEcoCoach', 'AI Eco Shopping Coach</h1>'],
   ['emi-calculator', 'toolHeadingEmiCalculator', ' /> EMI Calculator'],
@@ -71,6 +72,7 @@ const SERVER_TOOLS = [
   'price-alert-simulator',
   'price-history',
   'price-protection',
+  'coupons-cashback',
 ];
 
 /** Dashboard component -> DictKey wired into it. */
@@ -114,8 +116,8 @@ const PRODUCT_KEYS = [
 ];
 
 describe('C3 — every tool page renders its heading through tFor', () => {
-  it('covers all 25 pre-Section-15 tools (coupons-cashback is C1 scope)', () => {
-    expect(TOOL_HEADINGS).toHaveLength(25);
+  it('covers all 26 tools (coupons-cashback added in Section 16, #44)', () => {
+    expect(TOOL_HEADINGS).toHaveLength(26);
     for (const [slug, key, oldH1] of TOOL_HEADINGS) {
       const src = readSource(`app/tools/${slug}/page.tsx`);
       expect(src, `${slug} heading`).toContain(`tFor(language, '${key}')`);
@@ -180,7 +182,7 @@ describe('C3 — product detail renders section headings through tFor', () => {
   });
 });
 
-describe('C4 — per-tool metadata is present for all 25 tools', () => {
+describe('C4 — per-tool metadata is present for all 26 tools', () => {
   function metadataSource(slug: string): string {
     // Client pages carry metadata in layout.tsx; server pages export
     // it from page.tsx. Either location counts; both is duplication.

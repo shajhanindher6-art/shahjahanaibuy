@@ -8,10 +8,10 @@
  * network.
  *
  * Deliberately NOT asserted here: exact vitest counts as a fixed
- * number. The press page carries the final Section 14 full-run
- * totals (180 files / 2,197 tests); one test below asserts that
- * exact string, so it must be updated together with the press page
- * whenever the suite grows.
+ * number. The press page renders the full-run totals from
+ * lib/generated/press-counts.json (Section 16, item 7); one test
+ * below asserts that rendering instead of a hardcoded string, so
+ * the totals move with the JSON and never go stale on this page.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -118,9 +118,14 @@ describe('billing — honest tier names, history span, alerts, test mode', () =>
 describe('press — refreshed counts, relative dates, qualified languages', () => {
   const text = readSource('app/press/page.tsx');
 
-  it('carries the final Section 12 full-run counts (marker removed after finalizing)', () => {
+  it('renders the test counts from the generated JSON, never hardcoded (Section 16, item 7)', () => {
     expect(text).not.toContain('SECTION12-FINAL-COUNTS');
-    expect(text).toContain('2,197 passing (180 test files, full run 12 November 2026)');
+    // The counts come from the committed JSON — no literal totals here.
+    expect(text).toContain("import pressCounts from '@/lib/generated/press-counts.json'");
+    expect(text).toContain('pressCounts.tests');
+    expect(text).toContain('pressCounts.files');
+    expect(text).toContain('pressCounts.date');
+    expect(text).not.toMatch(/\d[\d,]* passing \(\d+ test files,/);
   });
 
   it('has no hardcoded price-history calendar span', () => {
@@ -130,7 +135,7 @@ describe('press — refreshed counts, relative dates, qualified languages', () =
   });
 
   it('qualifies "20 languages" honestly', () => {
-    expect(text).toMatch(/only 28 interface strings translated/);
+    expect(text).toMatch(/167 interface strings translated/);
     expect(text).toMatch(/machine-translated/);
     expect(text).toMatch(/stays English/);
     expect(text).not.toContain('20 (English, Urdu, German');

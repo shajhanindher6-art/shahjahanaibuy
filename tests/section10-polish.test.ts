@@ -10,6 +10,8 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import pressCounts from '@/lib/generated/press-counts.json';
+import { formatPressCountsDate } from '../scripts/press-counts-run.mjs';
 
 const read = (rel: string) => readFileSync(join(process.cwd(), rel), 'utf8');
 const exists = (rel: string) => existsSync(join(process.cwd(), rel));
@@ -87,10 +89,23 @@ describe('Section 10 — trust facts stay fresh', () => {
 
   it('press page: test-count line is dated and formatted, never a bare number', () => {
     const press = read('app/press/page.tsx');
-    // The date moves with every re-lock (Section 15: 12 November
-    // 2026) — assert the shape + a real calendar date, not one
-    // frozen day, or the next re-lock breaks this test again.
-    expect(press).toMatch(/\d{1,3}(,\d{3})* passing \(\d+ test files, full run \d{1,2} [A-Z][a-z]+ \d{4}\)/);
+    // Section 16, item 7: the counts live in
+    // lib/generated/press-counts.json and the page renders them — the
+    // source holds a template, never a hardcoded literal line, so
+    // assert the mechanism + the rendered line (the old regex matched
+    // a literal that no longer exists in the source).
+    expect(press).toContain("import pressCounts from '@/lib/generated/press-counts.json'");
+    expect(press).toContain('pressCounts.tests');
+    expect(press).toContain('pressCounts.files');
+    expect(press).toContain('pressCounts.date');
+    expect(press).not.toMatch(/\d[\d,]* passing \(\d+ test files,/);
+    // Render the line exactly the way the page does and assert the
+    // shape + a real calendar date, not one frozen day, or the next
+    // re-lock breaks this test again.
+    const line = `${pressCounts.tests.toLocaleString('en-US')} passing (${pressCounts.files} test files, full run ${formatPressCountsDate(pressCounts.date)})`;
+    expect(line).toMatch(/\d{1,3}(,\d{3})* passing \(\d+ test files, full run \d{1,2} [A-Z][a-z]+ \d{4}\)/);
+    expect(pressCounts.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(pressCounts.date <= new Date().toISOString().slice(0, 10)).toBe(true);
   });
 
   it('about + editorial policy say 20 languages; llms.txt lists 20 languages and 61 regions', () => {

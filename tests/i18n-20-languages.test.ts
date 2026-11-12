@@ -2,7 +2,7 @@
  * Tests for the 20-language i18n expansion (S5#12, lib/i18n.ts +
  * lib/region.ts).
  *
- * Key parity (172 DictKeys × 20 languages), detection (country →
+ * Key parity (167 DictKeys × 20 languages), detection (country →
  * language, browser tag → language), the auto-translated label set,
  * and the RTL flag. Translations themselves are machine
  * translations — these tests check coverage and plumbing, not
@@ -55,12 +55,8 @@ const EXPECTED_KEYS: DictKey[] = [
   'inStock',
   'outOfStock',
   'noListings',
-  'bannerDetected',
   'bannerChange',
   'bannerDismiss',
-  'bannerOfferUrdu',
-  'languageEnglish',
-  'languageRomanUrdu',
   'footerProduct',
   'footerCompany',
   'footerResources',
@@ -147,6 +143,7 @@ const EXPECTED_KEYS: DictKey[] = [
   'toolHeadingBestTime',
   'toolHeadingBudgetFinder',
   'toolHeadingCurrencyConverter',
+  'toolHeadingCouponsCashback',
   'toolHeadingDealChecker',
   'toolHeadingEcoCoach',
   'toolHeadingEmiCalculator',
@@ -189,7 +186,6 @@ const EXPECTED_KEYS: DictKey[] = [
   'dashYourDigest',
   'dashWeeklyDigest',
   'dashAddFromStore',
-  'dashGettingStarted',
   'dashNoTrackedProducts',
   'dashPushSelfTest',
   'dashRecentActivity',
@@ -198,7 +194,6 @@ const EXPECTED_KEYS: DictKey[] = [
   'dashTechBudget',
   'dashYourWatchedPrices',
   'dashWebhookAlerts',
-  'dashDropsToWatch',
   'productAiSummary',
   'productPros',
   'productCons',
@@ -218,7 +213,7 @@ describe('20-language registry', () => {
     expect(new Set(SUPPORTED_LANGUAGES).size).toBe(20);
   });
 
-  it('has one dictionary per language with all 172 keys, no more and no fewer', () => {
+  it('has one dictionary per language with all 167 keys, no more and no fewer', () => {
     expect(Object.keys(DICTIONARIES).sort()).toEqual([...SUPPORTED_LANGUAGES].sort());
     for (const lang of SUPPORTED_LANGUAGES) {
       const keys = Object.keys(DICTIONARIES[lang]).sort();

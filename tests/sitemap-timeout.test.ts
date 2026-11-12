@@ -182,7 +182,10 @@ describe('sitemap generation fails open (B3, live behaviour)', () => {
       // posts + store pages + find pages, all from the sources.
       const staticCount =
         readSource('app/sitemap.ts').match(/^\s*\{ path: '/gm)?.length ?? 0;
-      expect(staticCount).toBe(82);
+      // Section 16 added 10 tool pages (4 P1 + 6 P2 tools), so the
+      // static count moved 82 -> 92; the value is asserted here so
+      // a future page addition fails loudly instead of drifting.
+      expect(staticCount).toBe(92);
       expect(urls.length).toBe(staticCount + 1 + 21 + 84 + 500);
     },
     60_000

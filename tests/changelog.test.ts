@@ -2,8 +2,49 @@ import { describe, expect, it } from 'vitest';
 import { RELEASES, PENDING_SYNC_RELEASES } from '../app/changelog/releases';
 
 describe('changelog releases', () => {
-  it('lists all 69 releases from the sync record plus Sections 13 and 14', () => {
-    expect(RELEASES.length).toBe(69);
+  it('lists all 75 releases from the sync record plus Sections 13, 14 and 15 and both soft-404 fixes', () => {
+    expect(RELEASES.length).toBe(75);
+  });
+
+  it('records Section 15: four batches plus the soft-404 fix', () => {
+    const batches: Array<[string, number]> = [
+      ['a026129ba888fa9271cc5377abbb75c07cb450b2', 56],
+      ['59643bb2062cdfbb4f2aa03d03439e568c3c04e5', 60],
+      ['3eef2bc0d394186b34920ad08053ceb14e4f20b2', 60],
+      ['7ca4870a5faece8ab3c3223bdeb6ed3205bd99ef', 44],
+    ];
+    for (const [sha, count] of batches) {
+      const batch = RELEASES.find((r) => r.sha === sha);
+      expect(batch?.date).toBe('2026-11-12');
+      expect(batch?.paths.length).toBe(count);
+    }
+    const foundations = RELEASES.find(
+      (r) => r.sha === 'a026129ba888fa9271cc5377abbb75c07cb450b2'
+    );
+    expect(foundations?.paths).toContain('services/ebay-intake.ts');
+    expect(foundations?.paths).toContain(
+      'supabase/migrations/20261112094000_041_ebay_ingestion.sql'
+    );
+    const appPart1 = RELEASES.find(
+      (r) => r.sha === '59643bb2062cdfbb4f2aa03d03439e568c3c04e5'
+    );
+    expect(appPart1?.paths).toContain('app/find/page.tsx');
+    expect(appPart1?.paths).toContain('app/go/route.ts');
+    expect(appPart1?.paths).toContain('app/tools/coupons-cashback/page.tsx');
+    const tests = RELEASES.find(
+      (r) => r.sha === '7ca4870a5faece8ab3c3223bdeb6ed3205bd99ef'
+    );
+    expect(tests?.paths).toContain('tests/press-status.test.ts');
+    expect(tests?.paths).toContain('tests/changelog.test.ts');
+    const soft404 = RELEASES.find(
+      (r) => r.sha === 'ca6dd621121704dba23107b147e0d901aeec65a3'
+    );
+    expect(soft404?.date).toBe('2026-11-12');
+    expect(soft404?.paths.length).toBe(9);
+    expect(soft404?.paths).toContain('app/products/[slug]/layout.tsx');
+    expect(soft404?.paths).toContain('app/brands/[slug]/layout.tsx');
+    expect(soft404?.paths).toContain('app/categories/[slug]/layout.tsx');
+    expect(soft404?.paths).toContain('tests/section15-soft404-layout.test.ts');
   });
 
   it('records Section 14: four batches plus the two follow-ups', () => {

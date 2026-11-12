@@ -52,6 +52,16 @@ export interface AISearchResult {
    */
   currentPrice: number | null;
   /**
+   * Best recorded merchant discount for this product, in percent
+   * (Section 16, #30): the largest discountPercent(price,
+   * compare_at_price) across its in-stock merchant_products rows,
+   * or null when no row carries a compare-at price above its
+   * price. Computed from recorded rows only — the live-DB
+   * compare-at values were not re-verified (the seed sets them
+   * for all 20 merchant rows). Drives the 'discount-desc' sort.
+   */
+  discountPercent?: number | null;
+  /**
    * Merchant/store names listing this product (from
    * merchant_products + merchants). Empty when no listing exists
    * or the query is denied — the store filter simply cannot match
@@ -166,6 +176,19 @@ export interface ComparisonProduct {
    * Null when the product has no usable prediction.
    */
   dealScore?: number | null;
+  /**
+   * Recorded price-history points behind dealScore (Section 16,
+   * item 10). When dealScore is null and this is known and below
+   * 5, the table says why the score is withheld instead of a bare
+   * "Not enough history".
+   */
+  dealScoreDataPoints?: number | null;
+  /**
+   * Recorded `products.data_freshness` (Section 16, item 9) —
+   * drives the stale-price badge + age-in-days next to the best
+   * price. Null when the row carries no freshness timestamp.
+   */
+  dataFreshness?: string | null;
 }
 
 export interface ComparisonRetailer {

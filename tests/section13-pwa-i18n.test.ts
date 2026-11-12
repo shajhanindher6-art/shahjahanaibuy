@@ -97,12 +97,12 @@ describe('PWA — update notice (service-worker-register.tsx)', () => {
   });
 });
 
-describe('i18n Phase 1 — 172-key parity (109 + 63 Section 15 C3 keys)', () => {
-  it('every language defines all 172 keys, no more and no fewer', () => {
+describe('i18n Phase 1 — 167-key parity (109 + 63 Section 15 C3 keys − 6 dead keys + 1 coupons key, Section 16)', () => {
+  it('every language defines all 167 keys, no more and no fewer', () => {
     expect(Object.keys(DICTIONARIES).sort()).toEqual([...SUPPORTED_LANGUAGES].sort());
     for (const lang of SUPPORTED_LANGUAGES) {
       const keys = Object.keys(DICTIONARIES[lang]).sort();
-      expect(keys).toHaveLength(172);
+      expect(keys).toHaveLength(167);
       for (const key of PHASE_1_KEYS) {
         expect(typeof DICTIONARIES[lang][key]).toBe('string');
         expect(DICTIONARIES[lang][key].length).toBeGreaterThan(0);

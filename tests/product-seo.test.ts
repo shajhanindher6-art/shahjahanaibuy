@@ -27,8 +27,15 @@ const macbook: ProductSeoData = {
   inStock: true,
   averageRating: 0,
   reviewCount: 0,
-  // Section 15 P1-11: recorded freshness travels with the SEO facts.
-  dataFreshness: '2026-11-02T07:13:52.000Z',
+  // No recorded freshness here on purpose (Section 16, item 12):
+  // buildProductJsonLd suppresses the offers block when the
+  // recorded price is stale (>7 days, lib/price-freshness.ts), and
+  // the real recorded date 2026-11-02 is now past that window, so
+  // a fixture carrying it would render no offers at all. A missing
+  // freshness timestamp is NOT stale (isPriceStale(null) is false)
+  // and derives no priceValidUntil, so these tests exercise the
+  // offer structure itself rather than the freshness policy.
+  dataFreshness: null,
 };
 
 /** The Product node inside the @graph document buildProductJsonLd emits. */

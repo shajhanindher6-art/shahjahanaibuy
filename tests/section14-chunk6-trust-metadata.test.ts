@@ -245,7 +245,7 @@ describe('llms.txt refresh', () => {
 
   it('keeps the languages qualifier honest', () => {
     const text = readSource('public/llms.txt');
-    expect(text).toContain('only 28 chrome strings are translated');
+    expect(text).toContain('only 167 chrome strings are translated');
     expect(text).toContain('12 of the 20 languages are machine-translated');
   });
 });

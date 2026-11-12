@@ -297,7 +297,7 @@ describe('llms.txt refresh (item 39)', () => {
 
   it('qualifies the 20-languages claim honestly', () => {
     expect(llms).toMatch(/20 languages/i);
-    expect(llms).toContain('28 chrome strings');
+    expect(llms).toContain('167 chrome strings');
     expect(llms).toContain('12 of the 20 languages are machine-translated');
     expect(llms).toContain('all other content');
     expect(llms).toMatch(/61 regions/i);

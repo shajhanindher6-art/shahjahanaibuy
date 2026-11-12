@@ -285,8 +285,21 @@ describe('getLowestMerchantPrices', () => {
       ],
     });
     const prices = await getLowestMerchantPrices(client, ['1', '2', '3']);
-    expect(prices.get('1')).toEqual({ price: 999, merchantCount: 2 });
-    expect(prices.get('2')).toEqual({ price: 1199, merchantCount: 1 });
+    // Section 16, #30: the result also carries the cheapest row's
+    // compare-at price and its discount — these fixture rows carry
+    // no compare_at_price, so both are null (not omitted).
+    expect(prices.get('1')).toEqual({
+      price: 999,
+      merchantCount: 2,
+      compareAtPrice: null,
+      discountPercent: null,
+    });
+    expect(prices.get('2')).toEqual({
+      price: 1199,
+      merchantCount: 1,
+      compareAtPrice: null,
+      discountPercent: null,
+    });
     expect(prices.has('3')).toBe(false);
   });
 });

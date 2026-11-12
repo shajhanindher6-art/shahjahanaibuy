@@ -11,9 +11,11 @@
  * side.
  *
  * The test count is NOT asserted here: it is the result of a full
- * `npx vitest run` (2,197 passing, 180 test files, 12 November 2026) and
+ * `npx vitest run` (2,370 passing, 195 test files, 12 November 2026) and
  * any new test file — including this one — moves that total. The
- * press page dates it instead of presenting it as permanent.
+ * press page renders it from lib/generated/press-counts.json
+ * (Section 16, item 7) instead of hardcoding it; see
+ * tests/press-counts-json.test.ts and scripts/check-press-counts.mjs.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
