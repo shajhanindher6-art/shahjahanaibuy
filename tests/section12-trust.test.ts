@@ -14,9 +14,10 @@
  * whenever the suite grows.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { getConfiguredAmazonLocales } from '@/services/affiliate-geo';
 import { RELEASES } from '@/app/changelog/releases';
 import {
   deriveTaxonomySlugs,
@@ -38,7 +39,7 @@ const NEW_NAV_KEYS: DictKey[] = [
   'navBrands',
 ];
 
-describe('methodology — no false live affiliate-tag claim', () => {
+describe('methodology — affiliate disclosure follows the live configuration', () => {
   const text = readSource('app/methodology/page.tsx');
 
   it('never names a live affiliate tag', () => {
@@ -46,9 +47,42 @@ describe('methodology — no false live affiliate-tag claim', () => {
     expect(text).not.toMatch(/live affiliate tag/i);
   });
 
-  it('states honestly that no affiliate tag is configured', () => {
+  it('reads the configured locales from services/affiliate-geo, not a hardcoded claim', () => {
+    expect(text).toContain('getConfiguredAmazonLocales');
+    expect(text).toContain("from '@/services/affiliate-geo'");
+    // Both branches exist: the configured-state sentence and the
+    // unset fallback. The old single hardcoded claim ("no tag is
+    // configured", full stop) is gone — it contradicted /status
+    // once a tag was set in the hosting dashboard.
+    expect(text).toMatch(/An affiliate tag is configured for:/);
     expect(text).toMatch(/No affiliate tag is currently configured/);
     expect(text).not.toMatch(/invent a different tag|another tag/i);
+  });
+
+  it('renders per request so the disclosure matches the live env, not the build snapshot', () => {
+    expect(text).toMatch(/export const dynamic = 'force-dynamic'/);
+  });
+});
+
+describe('affiliate-geo — configured locales follow the env (methodology source of truth)', () => {
+  const TAG_KEYS = Object.keys(process.env).filter((k) =>
+    k.startsWith('AMAZON_ASSOC_TAG')
+  );
+  const saved: Record<string, string | undefined> = {};
+  for (const key of TAG_KEYS) saved[key] = process.env[key];
+
+  afterEach(() => {
+    for (const key of TAG_KEYS) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  });
+
+  it('tag set → US configured; tag unset → empty', () => {
+    for (const key of TAG_KEYS) delete process.env[key];
+    expect(getConfiguredAmazonLocales()).toEqual([]);
+    process.env.AMAZON_ASSOC_TAG = 'test-only-tag';
+    expect(getConfiguredAmazonLocales()).toEqual(['US']);
   });
 });
 

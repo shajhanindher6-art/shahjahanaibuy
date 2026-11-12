@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { appConfig } from '@/lib/config/app';
+import { getConfiguredAmazonLocales } from '@/services/affiliate-geo';
 
 export const metadata: Metadata = {
   title: 'How SmartBuy AI works — SmartBuy AI',
@@ -13,7 +14,17 @@ export const metadata: Metadata = {
   },
 };
 
+/**
+ * The affiliate disclosure reads the live configuration at request
+ * time, not a build-time snapshot: a static prerender would bake in
+ * whichever env the build ran with, so the page would keep saying
+ * "no tag configured" after the owner sets one (or the reverse).
+ * Same source of truth as /status (services/platform-status.ts).
+ */
+export const dynamic = 'force-dynamic';
+
 export default function MethodologyPage() {
+  const configuredLocales = getConfiguredAmazonLocales();
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
@@ -107,14 +118,29 @@ export default function MethodologyPage() {
           <h2 id="affiliate-disclosure" className="mt-8 text-xl font-semibold">Affiliate disclosure</h2>
           <p className="mt-3 text-muted-foreground">
             SmartBuy earns a commission when you buy through some of the retailer links on
-            the site, at no extra cost to you. Affiliate tags are only ever real tags set
-            in the site&apos;s own configuration — no dummy or placeholder tags are used.
-            No affiliate tag is currently configured, so the site earns no affiliate
-            commission today and the retailer links are plain links until a tag is set
-            in configuration. Clicks are counted for reporting, but SmartBuy does not track
-            your browsing, and it never sells or shares personal data with retailers.
-            Affiliate links never change which products are recommended or how a Deal Score
-            is calculated.
+            the site, at no extra cost to you. Affiliate tags come only from the site&apos;s
+            own configuration — they are never hardcoded in the code, and no tag is ever
+            invented here.
+            {configuredLocales.length > 0 ? (
+              <>
+                {' '}
+                An affiliate tag is configured for: {configuredLocales.join(', ')}. Retailer
+                links for those locales carry the configured tag, so a purchase through
+                them may earn the site a commission. This page states only that a tag is
+                configured — whether it belongs to an approved Associates account is a
+                fact of the account dashboard, not of this page.
+              </>
+            ) : (
+              <>
+                {' '}
+                No affiliate tag is currently configured, so the site earns no affiliate
+                commission today and the retailer links are plain links until a tag is set
+                in configuration.
+              </>
+            )}{' '}
+            Clicks are counted for reporting, but SmartBuy does not track your browsing,
+            and it never sells or shares personal data with retailers. Affiliate links
+            never change which products are recommended or how a Deal Score is calculated.
           </p>
           <p className="mt-4 text-muted-foreground">
             SmartBuy does not accept payment from retailers to rank their products higher,
