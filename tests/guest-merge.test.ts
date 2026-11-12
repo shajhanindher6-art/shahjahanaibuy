@@ -107,7 +107,61 @@ describe('mergeGuestAlerts', () => {
     expect(mergeGuestAlerts([], [{ productId: 'p1', alertType: 'price_drop' }])).toEqual({
       toAdd: [],
       alreadyHad: [],
+      skippedDueToCap: 0,
     });
+  });
+
+  it('caps the merged set at maxAlerts, keeping the most recent guest alerts', () => {
+    // Guest storage is oldest-first; with a Free cap of 5 and 4
+    // alerts already on the account, only the newest 1 fits.
+    const { toAdd, alreadyHad, skippedDueToCap } = mergeGuestAlerts(
+      guest,
+      [
+        { productId: 'x1', alertType: 'price_drop' },
+        { productId: 'x2', alertType: 'price_drop' },
+        { productId: 'x3', alertType: 'price_drop' },
+        { productId: 'x4', alertType: 'price_drop' },
+      ],
+      { maxAlerts: 5 }
+    );
+    expect(toAdd).toEqual([guest[2]]);
+    expect(alreadyHad).toEqual([]);
+    expect(skippedDueToCap).toBe(2);
+  });
+
+  it('drops everything when the account is already at the cap', () => {
+    const existing = Array.from({ length: 5 }, (_, i) => ({
+      productId: `x${i}`,
+      alertType: 'price_drop',
+    }));
+    const { toAdd, skippedDueToCap } = mergeGuestAlerts(guest, existing, {
+      maxAlerts: 5,
+    });
+    expect(toAdd).toEqual([]);
+    expect(skippedDueToCap).toBe(3);
+  });
+
+  it('does not cap when maxAlerts is null (unlimited tier)', () => {
+    const { toAdd, skippedDueToCap } = mergeGuestAlerts(guest, [], {
+      maxAlerts: null,
+    });
+    expect(toAdd).toEqual(guest);
+    expect(skippedDueToCap).toBe(0);
+  });
+
+  it('counts existing alerts against the cap, not just the new ones', () => {
+    // 4 existing + 3 guest, cap 5 → only 1 new alert fits.
+    const { toAdd } = mergeGuestAlerts(
+      guest,
+      [
+        { productId: 'x1', alertType: 'price_drop' },
+        { productId: 'x2', alertType: 'price_drop' },
+        { productId: 'x3', alertType: 'price_drop' },
+        { productId: 'x4', alertType: 'price_drop' },
+      ],
+      { maxAlerts: 5 }
+    );
+    expect(toAdd).toHaveLength(1);
   });
 
   it('is idempotent: merging twice changes nothing', () => {
@@ -220,6 +274,27 @@ describe('formatGuestMergeSummary', () => {
         result({ wishlistAlreadyHad: 2, alertsAlreadyHad: 1 })
       )
     ).toBeNull();
+  });
+
+  it('names alerts dropped for the tier cap — never silently lost', () => {
+    expect(
+      formatGuestMergeSummary(
+        result({ alertsAdded: 1, alertsSkippedDueToCap: 2, alertsCapLimit: 5 })
+      )
+    ).toBe(
+      'Welcome back — we carried over from this device: 1 price alert. ' +
+        '2 price alerts from this device could not be carried over — ' +
+        'Your plan allows up to 5 price alerts. ' +
+        'Upgrade to Premium for unlimited price alerts: /pricing.'
+    );
+  });
+
+  it('still reports the cap drop when nothing else was carried over', () => {
+    expect(
+      formatGuestMergeSummary(
+        result({ alertsSkippedDueToCap: 3, alertsCapLimit: 5 })
+      )
+    ).toContain('3 price alerts from this device could not be carried over');
   });
 
   it('hasGuestMergeResult matches the summary', () => {

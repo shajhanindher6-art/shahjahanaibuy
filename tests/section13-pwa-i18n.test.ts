@@ -38,8 +38,8 @@ const PHASE_1_KEYS = [
 describe('PWA — service worker (public/sw.js)', () => {
   const sw = read('public/sw.js');
 
-  it('is versioned smartbuy-v3', () => {
-    expect(sw).toContain("CACHE_VERSION = 'smartbuy-v3'");
+  it('is versioned smartbuy-v4', () => {
+    expect(sw).toContain("CACHE_VERSION = 'smartbuy-v4'");
   });
 
   it('precaches per-asset with a catch, not all-or-nothing addAll', () => {
@@ -51,6 +51,14 @@ describe('PWA — service worker (public/sw.js)', () => {
     for (const route of ['/tools', '/pricing', '/faq', '/help']) {
       expect(sw).toContain(`'${route}'`);
     }
+  });
+
+  // Section 15, C12 — precache widened to the four browse hubs.
+  it('precaches /products, /brands, /categories, /blog (smartbuy-v4)', () => {
+    for (const route of ['/products', '/brands', '/categories', '/blog']) {
+      expect(sw).toContain(`'${route}'`);
+    }
+    expect(sw).toContain("CACHE_VERSION = 'smartbuy-v4'");
   });
 
   it('caps the image and runtime caches', () => {
@@ -89,12 +97,12 @@ describe('PWA — update notice (service-worker-register.tsx)', () => {
   });
 });
 
-describe('i18n Phase 1 — 109-key parity (48 base + 59 Section 14 keys + 2 footer keys)', () => {
-  it('every language defines all 109 keys, no more and no fewer', () => {
+describe('i18n Phase 1 — 172-key parity (109 + 63 Section 15 C3 keys)', () => {
+  it('every language defines all 172 keys, no more and no fewer', () => {
     expect(Object.keys(DICTIONARIES).sort()).toEqual([...SUPPORTED_LANGUAGES].sort());
     for (const lang of SUPPORTED_LANGUAGES) {
       const keys = Object.keys(DICTIONARIES[lang]).sort();
-      expect(keys).toHaveLength(109);
+      expect(keys).toHaveLength(172);
       for (const key of PHASE_1_KEYS) {
         expect(typeof DICTIONARIES[lang][key]).toBe('string');
         expect(DICTIONARIES[lang][key].length).toBeGreaterThan(0);

@@ -87,7 +87,10 @@ describe('Section 10 — trust facts stay fresh', () => {
 
   it('press page: test-count line is dated and formatted, never a bare number', () => {
     const press = read('app/press/page.tsx');
-    expect(press).toMatch(/\d{1,3}(,\d{3})* passing \(\d+ test files, full run 11 November 2026\)/);
+    // The date moves with every re-lock (Section 15: 12 November
+    // 2026) — assert the shape + a real calendar date, not one
+    // frozen day, or the next re-lock breaks this test again.
+    expect(press).toMatch(/\d{1,3}(,\d{3})* passing \(\d+ test files, full run \d{1,2} [A-Z][a-z]+ \d{4}\)/);
   });
 
   it('about + editorial policy say 20 languages; llms.txt lists 20 languages and 61 regions', () => {

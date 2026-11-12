@@ -2,8 +2,41 @@ import { describe, expect, it } from 'vitest';
 import { RELEASES, PENDING_SYNC_RELEASES } from '../app/changelog/releases';
 
 describe('changelog releases', () => {
-  it('lists all 63 releases from the sync record plus Section 13', () => {
-    expect(RELEASES.length).toBe(63);
+  it('lists all 69 releases from the sync record plus Sections 13 and 14', () => {
+    expect(RELEASES.length).toBe(69);
+  });
+
+  it('records Section 14: four batches plus the two follow-ups', () => {
+    const batches: Array<[string, number]> = [
+      ['51ad559904f67d01b294c4da9553b91c0d6be595', 63],
+      ['74b5dd845cee2eda50d0f4c99ed600e740409dbc', 43],
+      ['be97a7bb048622f0b50f8adada749a6aa55ca74f', 38],
+      ['9b19e782fc7c255d7e1898a2f1fbc5b378790273', 39],
+    ];
+    for (const [sha, count] of batches) {
+      const batch = RELEASES.find((r) => r.sha === sha);
+      expect(batch?.date).toBe('2026-11-11');
+      expect(batch?.paths.length).toBe(count);
+    }
+    const main = RELEASES.find(
+      (r) => r.sha === '9b19e782fc7c255d7e1898a2f1fbc5b378790273'
+    );
+    expect(main?.paths).toContain('app/products/page.tsx');
+    expect(main?.paths).toContain('app/partners/page.tsx');
+    expect(main?.paths).toContain('app/referrals/page.tsx');
+    const chartDelete = RELEASES.find(
+      (r) => r.sha === '2f70e1fd7ac9a1b5d818ab1ca2f4083214e321fd'
+    );
+    expect(chartDelete?.date).toBe('2026-11-11');
+    expect(chartDelete?.paths).toEqual(['components/products/price-chart.tsx']);
+    const methodFix = RELEASES.find(
+      (r) => r.sha === 'b7a562e0b8e01f46273b5b783c451c207b3737f3'
+    );
+    expect(methodFix?.date).toBe('2026-11-12');
+    expect(methodFix?.paths).toEqual([
+      'app/methodology/page.tsx',
+      'tests/section12-trust.test.ts',
+    ]);
   });
 
   it('records Section 13: main push plus the two web follow-ups', () => {

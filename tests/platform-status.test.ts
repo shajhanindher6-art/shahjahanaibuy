@@ -57,7 +57,7 @@ describe('describePlatformStatus', () => {
     ]);
     expect(byId('amazon').status).toBe('search-links-only');
     expect(byId('ebay').status).toBe('not-configured');
-    expect(byId('skimlinks').status).toBe('pending-approval');
+    expect(byId('skimlinks').status).toBe('not-configured');
     expect(byId('best-buy').status).toBe('live');
     expect(byId('local-stores').status).toBe('live');
   });

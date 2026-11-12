@@ -5,6 +5,7 @@ import {
   API_QUOTAS,
   BILLING_URL,
   checkQuotaDecision,
+  createDurableQuotaStore,
   createMemoryQuotaStore,
   enforceApiQuota,
   getQuotaForTier,
@@ -93,37 +94,37 @@ describe('quotaDayStart', () => {
 });
 
 describe('createMemoryQuotaStore', () => {
-  it('counts per bucket and enforces the limit', () => {
+  it('counts per bucket and enforces the limit', async () => {
     const store = createMemoryQuotaStore();
     const now = new Date('2026-11-10T10:00:00.000Z');
-    let last = store.checkAndIncrement('key:sbk_live_abcdefgh', 3, 'free', now);
-    last = store.checkAndIncrement('key:sbk_live_abcdefgh', 3, 'free', now);
-    last = store.checkAndIncrement('key:sbk_live_abcdefgh', 3, 'free', now);
+    let last = await store.checkAndIncrement('key:sbk_live_abcdefgh', 3, 'free', now);
+    last = await store.checkAndIncrement('key:sbk_live_abcdefgh', 3, 'free', now);
+    last = await store.checkAndIncrement('key:sbk_live_abcdefgh', 3, 'free', now);
     expect(last.allowed).toBe(true);
     expect(last.used).toBe(3);
     expect(last.remaining).toBe(0);
-    last = store.checkAndIncrement('key:sbk_live_abcdefgh', 3, 'free', now);
+    last = await store.checkAndIncrement('key:sbk_live_abcdefgh', 3, 'free', now);
     expect(last.allowed).toBe(false);
     expect(last.used).toBe(4);
   });
 
-  it('keeps buckets independent per key', () => {
+  it('keeps buckets independent per key', async () => {
     const store = createMemoryQuotaStore();
     const now = new Date('2026-11-10T10:00:00.000Z');
-    store.checkAndIncrement('key:aaaa', 1, 'free', now);
-    const other = store.checkAndIncrement('key:bbbb', 1, 'free', now);
+    await store.checkAndIncrement('key:aaaa', 1, 'free', now);
+    const other = await store.checkAndIncrement('key:bbbb', 1, 'free', now);
     expect(other.allowed).toBe(true);
     expect(other.used).toBe(1);
-    expect(store.checkAndIncrement('key:aaaa', 1, 'free', now).allowed).toBe(false);
+    expect((await store.checkAndIncrement('key:aaaa', 1, 'free', now)).allowed).toBe(false);
   });
 
-  it('resets when the UTC day rolls over', () => {
+  it('resets when the UTC day rolls over', async () => {
     const store = createMemoryQuotaStore();
     const dayOne = new Date('2026-11-10T23:59:00.000Z');
     const dayTwo = new Date('2026-11-11T00:01:00.000Z');
-    store.checkAndIncrement('key:aaaa', 1, 'free', dayOne);
-    expect(store.checkAndIncrement('key:aaaa', 1, 'free', dayOne).allowed).toBe(false);
-    const next = store.checkAndIncrement('key:aaaa', 1, 'free', dayTwo);
+    await store.checkAndIncrement('key:aaaa', 1, 'free', dayOne);
+    expect((await store.checkAndIncrement('key:aaaa', 1, 'free', dayOne)).allowed).toBe(false);
+    const next = await store.checkAndIncrement('key:aaaa', 1, 'free', dayTwo);
     expect(next.allowed).toBe(true);
     expect(next.used).toBe(1);
     expect(next.resetAt.toISOString()).toBe('2026-11-12T00:00:00.000Z');
@@ -270,5 +271,129 @@ describe('enforceApiQuota', () => {
     expect(result).toBeNull();
     result = await enforceApiQuota(fakeRequest(), { store, keyInfo: key, resolveTier });
     expect(result!.status).toBe(429);
+  });
+});
+
+/**
+ * Minimal in-memory stand-in for the Supabase client surface the
+ * durable store uses: from().select().eq().eq().maybeSingle(),
+ * from().insert(), from().update().eq().eq(). Only the shapes the
+ * store actually calls are implemented — nothing else.
+ */
+class FakeLedger {
+  readonly rows = new Map<string, number>();
+
+  from() {
+    const rows = this.rows;
+    const filters: Record<string, string> = {};
+    const query = {
+      select() {
+        return query;
+      },
+      eq(column: string, value: string) {
+        filters[column] = value;
+        return query;
+      },
+      async maybeSingle() {
+        const count = rows.get(`${filters.key_hash}:${filters.window_date}`);
+        return { data: count === undefined ? null : { request_count: count }, error: null };
+      },
+      async insert(row: { key_hash: string; window_date: string; request_count: number }) {
+        const key = `${row.key_hash}:${row.window_date}`;
+        if (rows.has(key)) {
+          return { error: { code: '23505', message: 'duplicate key' } };
+        }
+        rows.set(key, row.request_count);
+        return { error: null };
+      },
+      update(patch: { request_count: number }) {
+        return {
+          eq(column: string, value: string) {
+            filters[column] = value;
+            return {
+              eq(column2: string, value2: string) {
+                filters[column2] = value2;
+                rows.set(`${filters.key_hash}:${filters.window_date}`, patch.request_count);
+                return Promise.resolve({ error: null });
+              },
+            };
+          },
+        };
+      },
+    };
+    return query;
+  }
+}
+
+/** Fake client whose every call fails — simulates 035 not applied. */
+const failingClient = {
+  from() {
+    const boom = async () => {
+      throw new Error('relation "api_key_usage" does not exist');
+    };
+    return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: boom }) }) }), insert: boom, update: boom };
+  },
+};
+
+describe('createDurableQuotaStore (Section 15 P2-6)', () => {
+  it('counts durably in the ledger and enforces the limit', async () => {
+    const ledger = new FakeLedger();
+    const store = createDurableQuotaStore({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      serviceClient: ledger as any,
+    });
+    const now = new Date('2026-11-10T10:00:00.000Z');
+    expect((await store.checkAndIncrement('key:aaaa', 2, 'free', now)).used).toBe(1);
+    const second = await store.checkAndIncrement('key:aaaa', 2, 'free', now);
+    expect(second.used).toBe(2);
+    expect(second.allowed).toBe(true);
+    const third = await store.checkAndIncrement('key:aaaa', 2, 'free', now);
+    expect(third.used).toBe(3);
+    expect(third.allowed).toBe(false);
+    // One ledger row, keyed by hash — never the raw bucket key.
+    expect(ledger.rows.size).toBe(1);
+    for (const key of ledger.rows.keys()) {
+      expect(key).not.toContain('key:aaaa');
+      expect(key).toMatch(/^[0-9a-f]{64}:/);
+    }
+  });
+
+  it('keeps buckets independent per day in the ledger', async () => {
+    const ledger = new FakeLedger();
+    const store = createDurableQuotaStore({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      serviceClient: ledger as any,
+    });
+    const dayOne = new Date('2026-11-10T23:59:00.000Z');
+    const dayTwo = new Date('2026-11-11T00:01:00.000Z');
+    await store.checkAndIncrement('key:aaaa', 1, 'free', dayOne);
+    expect((await store.checkAndIncrement('key:aaaa', 1, 'free', dayTwo)).used).toBe(1);
+    expect(ledger.rows.size).toBe(2);
+  });
+
+  it('fails open to the in-memory store when the database errors (035 not applied)', async () => {
+    const fallback = createMemoryQuotaStore();
+    const store = createDurableQuotaStore({
+      fallback,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      serviceClient: failingClient as any,
+    });
+    const now = new Date('2026-11-10T10:00:00.000Z');
+    // Still allowed and counted (in memory) — a missing table must
+    // never block legitimate traffic.
+    const first = await store.checkAndIncrement('key:aaaa', 2, 'free', now);
+    expect(first.allowed).toBe(true);
+    expect(first.used).toBe(1);
+    const third = await store.checkAndIncrement('key:aaaa', 2, 'free', now);
+    expect(third.used).toBe(2);
+    expect((await store.checkAndIncrement('key:aaaa', 2, 'free', now)).allowed).toBe(false);
+  });
+
+  it('fails open to the in-memory store when no service client exists', async () => {
+    const store = createDurableQuotaStore({ serviceClient: null });
+    const now = new Date('2026-11-10T10:00:00.000Z');
+    const decision = await store.checkAndIncrement('key:aaaa', 1, 'free', now);
+    expect(decision.allowed).toBe(true);
+    expect(decision.used).toBe(1);
   });
 });

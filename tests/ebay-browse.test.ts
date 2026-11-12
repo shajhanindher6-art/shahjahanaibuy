@@ -26,9 +26,10 @@ function setEnv(values: Record<string, string | undefined>) {
   }
 }
 
-function jsonResponse(ok: boolean, body: unknown) {
+function jsonResponse(ok: boolean, body: unknown, status = ok ? 200 : 500) {
   return {
     ok,
+    status,
     json: async () => body,
   };
 }
@@ -181,5 +182,168 @@ describe('searchEbayListings', () => {
       fetchFn: fetchFn as unknown as typeof fetch,
     });
     expect(result).toEqual({ ok: false, reason: 'api-error', listings: [] });
+  });
+
+  // Section 15, P3-6 — new adapter cases.
+  it('refetches the token when the cached token is expired', async () => {
+    setEnv({ [CLIENT_ID]: 'test-id', [CLIENT_SECRET]: 'test-secret' });
+    let tokenCalls = 0;
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.includes('oauth2/token')) {
+        tokenCalls += 1;
+        // expires_in 30s minus the 60s early-refresh margin means
+        // the token is already expired when cached.
+        return jsonResponse(true, { access_token: `tok-${tokenCalls}`, expires_in: 30 });
+      }
+      return jsonResponse(true, { itemSummaries: [] });
+    });
+    const fetchArg = fetchFn as unknown as typeof fetch;
+    expect(await searchEbayListings('phone', { fetchFn: fetchArg })).toEqual({
+      ok: true,
+      source: 'ebay-browse-api',
+      listings: [],
+    });
+    expect(await searchEbayListings('phone', { fetchFn: fetchArg })).toEqual({
+      ok: true,
+      source: 'ebay-browse-api',
+      listings: [],
+    });
+    // Two searches, two token fetches: the expired token is never reused.
+    expect(tokenCalls).toBe(2);
+  });
+
+  it('returns rate-limited (not api-error) on HTTP 429', async () => {
+    setEnv({ [CLIENT_ID]: 'test-id', [CLIENT_SECRET]: 'test-secret' });
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.includes('oauth2/token')) {
+        return jsonResponse(true, { access_token: 'tok-1', expires_in: 3600 });
+      }
+      return jsonResponse(false, { errors: [{ message: 'rate limited' }] }, 429);
+    });
+    const result = await searchEbayListings('phone', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    expect(result).toEqual({ ok: false, reason: 'rate-limited', listings: [] });
+  });
+
+  it('returns api-error on malformed JSON', async () => {
+    setEnv({ [CLIENT_ID]: 'test-id', [CLIENT_SECRET]: 'test-secret' });
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.includes('oauth2/token')) {
+        return jsonResponse(true, { access_token: 'tok-1', expires_in: 3600 });
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new Error('not json');
+        },
+      };
+    });
+    const result = await searchEbayListings('phone', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    expect(result).toEqual({ ok: false, reason: 'api-error', listings: [] });
+  });
+
+  it('returns an empty list when itemSummaries is missing', async () => {
+    setEnv({ [CLIENT_ID]: 'test-id', [CLIENT_SECRET]: 'test-secret' });
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.includes('oauth2/token')) {
+        return jsonResponse(true, { access_token: 'tok-1', expires_in: 3600 });
+      }
+      return jsonResponse(true, { total: 0 });
+    });
+    const result = await searchEbayListings('phone', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    expect(result).toEqual({ ok: true, source: 'ebay-browse-api', listings: [] });
+  });
+
+  it('passes non-USD currencies through and nulls negative prices', async () => {
+    setEnv({ [CLIENT_ID]: 'test-id', [CLIENT_SECRET]: 'test-secret' });
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.includes('oauth2/token')) {
+        return jsonResponse(true, { access_token: 'tok-1', expires_in: 3600 });
+      }
+      return jsonResponse(true, {
+        itemSummaries: [
+          {
+            itemId: 'eur-1',
+            title: 'Sony WH-1000XM5',
+            price: { value: '299.00', currency: 'EUR' },
+            condition: 'New',
+            itemWebUrl: 'https://www.ebay.com/itm/eur-1',
+          },
+          {
+            itemId: 'neg-1',
+            title: 'Broken price row',
+            price: { value: '-5', currency: 'USD' },
+            condition: 'Used',
+            itemWebUrl: 'https://www.ebay.com/itm/neg-1',
+          },
+        ],
+      });
+    });
+    const result = await searchEbayListings('headphones', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.listings).toHaveLength(2);
+    // Non-USD passes through unchanged — conversion is a caller
+    // concern, never silently applied here.
+    expect(result.listings[0].currency).toBe('EUR');
+    expect(result.listings[0].price).toBe(299);
+    // A negative price is unparseable as an asking price → null.
+    expect(result.listings[1].price).toBeNull();
+    expect(result.listings[1].currency).toBe('USD');
+  });
+
+  it('uses the marketplace override header when EBAY_MARKETPLACE_ID is set', async () => {
+    setEnv({
+      [CLIENT_ID]: 'test-id',
+      [CLIENT_SECRET]: 'test-secret',
+      [MARKETPLACE]: 'EBAY_GB',
+    });
+    const fetchFn = vi.fn(async (url: string, init?: unknown) => {
+      if (url.includes('oauth2/token')) {
+        return jsonResponse(true, { access_token: 'tok-1', expires_in: 3600 });
+      }
+      return jsonResponse(true, { itemSummaries: [] });
+    });
+    const result = await searchEbayListings('phone', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    expect(result.ok).toBe(true);
+    const searchCall = fetchFn.mock.calls.find(([url]) =>
+      (url as string).includes('item_summary/search')
+    );
+    expect(searchCall).toBeDefined();
+    const init = searchCall![1] as { headers: Record<string, string> };
+    expect(init.headers['X-EBAY-C-MARKETPLACE-ID']).toBe('EBAY_GB');
+  });
+
+  it('sends the condition filter when a valid condition is given, and ignores an invalid one', async () => {
+    setEnv({ [CLIENT_ID]: 'test-id', [CLIENT_SECRET]: 'test-secret' });
+    const urls: string[] = [];
+    const fetchFn = vi.fn(async (url: string) => {
+      urls.push(url);
+      if (url.includes('oauth2/token')) {
+        return jsonResponse(true, { access_token: 'tok-1', expires_in: 3600 });
+      }
+      return jsonResponse(true, { itemSummaries: [] });
+    });
+    const fetchArg = fetchFn as unknown as typeof fetch;
+    await searchEbayListings('phone', { fetchFn: fetchArg, condition: 'NEW' });
+    const searchUrl = urls.find((u) => u.includes('item_summary/search')) ?? '';
+    expect(searchUrl).toContain('filter=');
+    expect(decodeURIComponent(searchUrl)).toContain('conditions:{NEW}');
+
+    urls.length = 0;
+    resetEbayTokenCacheForTests();
+    await searchEbayListings('phone', { fetchFn: fetchArg, condition: 'NOT_A_CONDITION' });
+    const searchUrl2 = urls.find((u) => u.includes('item_summary/search')) ?? '';
+    expect(searchUrl2).not.toContain('filter=');
   });
 });

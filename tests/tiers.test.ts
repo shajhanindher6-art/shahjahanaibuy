@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   TIERS,
   availabilityLabel,
+  getMaxAlerts,
   getTier,
+  isAlertCapReached,
   isConciergeIncluded,
   isPriceLockIncluded,
+  normalizeTierId,
 } from '@/lib/tiers';
 import {
   PRICE_LOCK_GUARANTEE_DAYS,
@@ -18,11 +21,12 @@ describe('TIERS', () => {
     expect(TIERS.map((t) => t.id)).toEqual(['free', 'premium', 'family', 'team']);
   });
 
-  it('keeps Premium at the live $9.99/month price', () => {
+  it('keeps Premium at the planned $9.99/month price — NOT live (Section 15 P2-5)', () => {
     const premium = getTier('premium');
     expect(premium?.priceLabel).toBe('$9.99');
-    expect(premium?.priceStatus).toBe('live');
-    expect(premium?.availability).toBe('available');
+    expect(premium?.priceStatus).toBe('planned');
+    expect(premium?.availability).toBe('planned');
+    expect(availabilityLabel(premium!)).toContain('Planned');
   });
 
   it('does not invent a Family price — it is to be announced', () => {
@@ -39,6 +43,29 @@ describe('TIERS', () => {
 
   it('returns null for an unknown tier', () => {
     expect(getTier('business' as never)).toBeNull();
+  });
+
+  it('caps Free at 5 price alerts — canonical per Section 12', () => {
+    expect(getTier('free')?.maxAlerts).toBe(5);
+    expect(getMaxAlerts('free')).toBe(5);
+    expect(isAlertCapReached('free', 4)).toBe(false);
+    expect(isAlertCapReached('free', 5)).toBe(true);
+    expect(isAlertCapReached('free', 6)).toBe(true);
+  });
+
+  it('gives Premium / Family / Team unlimited alerts', () => {
+    // Premium advertises "Unlimited price alerts"; Family and Team
+    // advertise "Everything in Premium".
+    expect(getMaxAlerts('premium')).toBeNull();
+    expect(getMaxAlerts('family')).toBeNull();
+    expect(getMaxAlerts('team')).toBeNull();
+    expect(isAlertCapReached('premium', 100)).toBe(false);
+    expect(isAlertCapReached('team', 100)).toBe(false);
+  });
+
+  it('fails closed to the Free cap for an unknown tier', () => {
+    expect(getMaxAlerts('business' as never)).toBe(5);
+    expect(isAlertCapReached('business' as never, 5)).toBe(true);
   });
 
   it('includes price-lock on Premium/Family/Team only', () => {
@@ -81,5 +108,25 @@ describe('price-lock (env-gated, dormant without Stripe)', () => {
     const result = requestPriceLock({ tierId: 'free', priceCents: 99900 });
     expect(result.status).toBe('dormant');
     expect(result.eligible).toBe(false);
+  });
+});
+
+describe('normalizeTierId (Section 15 P2-2 legacy plan-key compat)', () => {
+  it("maps the legacy 'pro' key onto 'premium'", () => {
+    expect(normalizeTierId('pro')).toBe('premium');
+  });
+
+  it('passes canonical TierIds through unchanged', () => {
+    expect(normalizeTierId('free')).toBe('free');
+    expect(normalizeTierId('premium')).toBe('premium');
+    expect(normalizeTierId('family')).toBe('family');
+    expect(normalizeTierId('team')).toBe('team');
+  });
+
+  it('fails closed to free (or the given fallback) for unknown values', () => {
+    expect(normalizeTierId('enterprise')).toBe('free');
+    expect(normalizeTierId(null)).toBe('free');
+    expect(normalizeTierId(undefined)).toBe('free');
+    expect(normalizeTierId('enterprise', 'premium')).toBe('premium');
   });
 });

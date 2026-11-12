@@ -27,6 +27,8 @@ const macbook: ProductSeoData = {
   inStock: true,
   averageRating: 0,
   reviewCount: 0,
+  // Section 15 P1-11: recorded freshness travels with the SEO facts.
+  dataFreshness: '2026-11-02T07:13:52.000Z',
 };
 
 /** The Product node inside the @graph document buildProductJsonLd emits. */

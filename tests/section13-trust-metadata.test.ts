@@ -257,8 +257,12 @@ describe('sitemap completion (item 38)', () => {
     expect(text).toContain('async function creatorSitemap');
     expect(text).toContain('getTopCreators(supabase, 50)');
     expect(text).toContain('/creators/${creator.slug}');
-    expect(text).toContain('...live,');
-    expect(text).toContain('...creators,');
+    // Section 15 (B3): the four DB sections run under
+    // Promise.allSettled and spread via the settled() unwrapper —
+    // the old `...live,` / `...creators,` spread no longer exists,
+    // but the entries are still in the returned sitemap.
+    expect(text).toContain('...settled(live),');
+    expect(text).toContain('...settled(creators),');
   });
 
   it('still lists the 4 Wave 1 tool paths (those lines untouched)', () => {

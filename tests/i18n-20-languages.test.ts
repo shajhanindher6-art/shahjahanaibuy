@@ -2,7 +2,7 @@
  * Tests for the 20-language i18n expansion (S5#12, lib/i18n.ts +
  * lib/region.ts).
  *
- * Key parity (109 DictKeys × 20 languages), detection (country →
+ * Key parity (172 DictKeys × 20 languages), detection (country →
  * language, browser tag → language), the auto-translated label set,
  * and the RTL flag. Translations themselves are machine
  * translations — these tests check coverage and plumbing, not
@@ -142,6 +142,71 @@ const EXPECTED_KEYS: DictKey[] = [
   'pageHeadingFaq',
   'pageHeadingAbout',
   'pageHeadingContact',
+  // Section 15, C3: 25 tool headings, 6 shared labels,
+  // 24 dashboard strings, 8 product-detail headings.
+  'toolHeadingBestTime',
+  'toolHeadingBudgetFinder',
+  'toolHeadingCurrencyConverter',
+  'toolHeadingDealChecker',
+  'toolHeadingEcoCoach',
+  'toolHeadingEmiCalculator',
+  'toolHeadingExpenseTracker',
+  'toolHeadingForecastExplainer',
+  'toolHeadingFutureYou',
+  'toolHeadingGiftSplitter',
+  'toolHeadingHelpMeChoose',
+  'toolHeadingLandedCost',
+  'toolHeadingListOptimizer',
+  'toolHeadingMonthlyPlanner',
+  'toolHeadingPriceAlertSimulator',
+  'toolHeadingPriceDropDigest',
+  'toolHeadingPriceHistory',
+  'toolHeadingPriceProtection',
+  'toolHeadingProductQa',
+  'toolHeadingSavingsDashboard',
+  'toolHeadingSmartHomeAgent',
+  'toolHeadingStoreFinder',
+  'toolHeadingSubscriptionManager',
+  'toolHeadingTradeInFinder',
+  'toolHeadingWarrantyHelper',
+  'commonCancel',
+  'commonSave',
+  'commonSeeAll',
+  'commonTryAgain',
+  'commonRemove',
+  'commonPriceNotListed',
+  'dashAlertHealth',
+  'dashBuyListEmpty',
+  'dashNoSavings',
+  'dashNoPriceDrops',
+  'dashNoUpcomingDeals',
+  'dashNoDropsSimulated',
+  'dashListsAtAGlance',
+  'dashNoProtectionWatches',
+  'dashAiAssistant',
+  'dashDownloadData',
+  'dashDeleteAccount',
+  'dashYourDigest',
+  'dashWeeklyDigest',
+  'dashAddFromStore',
+  'dashGettingStarted',
+  'dashNoTrackedProducts',
+  'dashPushSelfTest',
+  'dashRecentActivity',
+  'dashReferralLink',
+  'dashSavingsHistory',
+  'dashTechBudget',
+  'dashYourWatchedPrices',
+  'dashWebhookAlerts',
+  'dashDropsToWatch',
+  'productAiSummary',
+  'productPros',
+  'productCons',
+  'productAlternatives',
+  'productPriceHistory',
+  'productPriceDropPrediction',
+  'productReviews',
+  'productSpecifications',
 ];
 
 const NEW_12 = ['ar', 'zh', 'ja', 'ko', 'hi', 'bn', 'nl', 'sv', 'pl', 'ru', 'id', 'vi'] as const;
@@ -153,7 +218,7 @@ describe('20-language registry', () => {
     expect(new Set(SUPPORTED_LANGUAGES).size).toBe(20);
   });
 
-  it('has one dictionary per language with all 109 keys, no more and no fewer', () => {
+  it('has one dictionary per language with all 172 keys, no more and no fewer', () => {
     expect(Object.keys(DICTIONARIES).sort()).toEqual([...SUPPORTED_LANGUAGES].sort());
     for (const lang of SUPPORTED_LANGUAGES) {
       const keys = Object.keys(DICTIONARIES[lang]).sort();
@@ -325,6 +390,37 @@ describe('tFor fallback', () => {
       expect(tFor('ja', 'buy')).toBe(DICTIONARIES.en.buy);
     } finally {
       if (saved !== undefined) dict.buy = saved;
+    }
+  });
+});
+
+describe('Section 15, C3 — tool / dashboard / product-detail keys', () => {
+  it('renders the Section 15 English strings', () => {
+    expect(tFor('en', 'toolHeadingBestTime')).toBe('Best time to buy');
+    expect(tFor('en', 'toolHeadingPriceHistory')).toBe('Price History Explorer');
+    expect(tFor('en', 'toolHeadingProductQa')).toBe('AI Product Q&A');
+    expect(tFor('en', 'commonSave')).toBe('Save');
+    expect(tFor('en', 'commonCancel')).toBe('Cancel');
+    expect(tFor('en', 'commonSeeAll')).toBe('See all');
+    expect(tFor('en', 'commonTryAgain')).toBe('Try again');
+    expect(tFor('en', 'commonRemove')).toBe('Remove');
+    expect(tFor('en', 'commonPriceNotListed')).toBe('Price not listed');
+    expect(tFor('en', 'dashAlertHealth')).toBe('Alert health');
+    expect(tFor('en', 'dashBuyListEmpty')).toBe('Your buy list is empty');
+    expect(tFor('en', 'dashNoSavings')).toBe('No savings recorded yet');
+    expect(tFor('en', 'productAiSummary')).toBe('AI Summary');
+    expect(tFor('en', 'productPros')).toBe('Pros');
+    expect(tFor('en', 'productReviews')).toBe('Reviews');
+    expect(tFor('en', 'productSpecifications')).toBe('Specifications');
+  });
+
+  it('gives the Section 15 keys real translations, not English, in the machine-translated languages', () => {
+    for (const lang of NEW_12) {
+      expect(tFor(lang, 'commonSave')).not.toBe(tFor('en', 'commonSave'));
+      expect(tFor(lang, 'commonCancel')).not.toBe(tFor('en', 'commonCancel'));
+      expect(tFor(lang, 'dashNoSavings')).not.toBe(tFor('en', 'dashNoSavings'));
+      expect(tFor(lang, 'productAiSummary')).not.toBe(tFor('en', 'productAiSummary'));
+      expect(tFor(lang, 'toolHeadingBestTime')).not.toBe(tFor('en', 'toolHeadingBestTime'));
     }
   });
 });

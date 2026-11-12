@@ -11,7 +11,7 @@
  * side.
  *
  * The test count is NOT asserted here: it is the result of a full
- * `npx vitest run` (1,752 passing, 151 test files, 11 November 2026) and
+ * `npx vitest run` (2,197 passing, 180 test files, 12 November 2026) and
  * any new test file — including this one — moves that total. The
  * press page dates it instead of presenting it as permanent.
  */
@@ -149,8 +149,8 @@ describe('status page — integrations report honestly when unconfigured', () =>
     clearIntegrationEnv();
     expect(getSkimlinksPublisherId()).toBeNull();
     const skimlinks = describePlatformStatus().find((p) => p.id === 'skimlinks');
-    // "Pending approval" means no account yet — never "configured".
-    expect(skimlinks!.status).toBe('pending-approval');
+    // "Not configured" means no account yet — never "configured".
+    expect(skimlinks!.status).toBe('not-configured');
     expect(skimlinks!.whatYouGet).toContain('No Skimlinks account yet');
   });
 
