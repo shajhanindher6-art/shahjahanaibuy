@@ -22,6 +22,7 @@ import {
   internalError,
   serviceUnavailable,
 } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import {
   logApiRequest,
   requireAdmin,
@@ -61,7 +62,7 @@ export async function GET(request: NextRequest) {
     const plans = await getWarrantyPlansByCategory(supabase, category);
     return apiSuccess(plans, 200, { warrantyEnabled: true });
   } catch (err) {
-    console.error('[warranty-plans] unexpected error', err);
+    logger.error('[warranty-plans] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch warranty plans');
   }
 }

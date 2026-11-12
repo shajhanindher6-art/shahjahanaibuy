@@ -20,7 +20,9 @@ import {
   internalError,
   serviceUnavailable,
 } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import {
   budgetStatus,
   currentMonth,
@@ -68,7 +70,7 @@ export async function GET(request: NextRequest) {
       budgetEnabled,
     });
   } catch (err) {
-    console.error('[tools.eco-coach] unexpected error', err);
+    logger.error('[tools.eco-coach] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch the eco coach');
   }
 }
@@ -97,11 +99,20 @@ export async function POST(request: NextRequest) {
     const result = await saveEcoBudget(supabase, auth.userId, month, budgetKg);
     if ('error' in result) {
       if (result.missingTable) return serviceUnavailable(MISSING_TABLE_MESSAGE);
-      return internalError(result.error.message);
+      // Section 18, Phase 2 — item 55 (audit §1 #75): the lib
+      // error text is logged server-side only; the client gets
+      // the generic envelope, never a backend message.
+      logApiError(new Error(result.error.message), {
+        request,
+        route: 'tools.eco-coach',
+        status: 500,
+        context: { code: result.error.code ?? null },
+      });
+      return internalError('Failed to save the carbon budget');
     }
     return apiSuccess({ budget: result.budget, deduped: result.deduped });
   } catch (err) {
-    console.error('[tools.eco-coach] unexpected error', err);
+    logger.error('[tools.eco-coach] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to save the carbon budget');
   }
 }

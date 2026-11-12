@@ -19,6 +19,13 @@ import {
   getClientIp,
 } from '@/lib/api/middleware';
 import { isValidReferralCode } from '@/lib/referral';
+import {
+  REFERRAL_CLICK_DEDUPE_WINDOW_MS,
+  hasReferralClickCookie,
+  isDuplicateReferralClick,
+  recordReferralClickDedupe,
+  referralClickCookieName,
+} from '@/lib/referral-dedupe';
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'referrals.click' });
@@ -49,6 +56,19 @@ export async function POST(request: NextRequest) {
     if (!link) return badRequest('Unknown referral code');
     const linkRow = link as { id: string; click_count: number };
 
+    // Section 18, Phase 2 — item 12 (audit §1 #59): dedupe.
+    // A repeat click from the same browser (cookie for this
+    // code) or the same code+IP inside the window does not
+    // increment again. The route stays public and the 60/min/IP
+    // limit above is unchanged.
+    const cookieName = referralClickCookieName(code);
+    const hasCookie = hasReferralClickCookie(
+      request.cookies.get(cookieName)?.value
+    );
+    if (isDuplicateReferralClick(code, getClientIp(request), hasCookie)) {
+      return apiSuccess({ tracked: false });
+    }
+
     const { error: insertError } = await service
       .from('referral_clicks')
       .insert({
@@ -67,7 +87,14 @@ export async function POST(request: NextRequest) {
       .update({ click_count: (linkRow.click_count ?? 0) + 1 })
       .eq('id', linkRow.id);
 
-    return apiSuccess({ tracked: true });
+    recordReferralClickDedupe(code, getClientIp(request));
+    const response = apiSuccess({ tracked: true });
+    response.cookies.set(cookieName, '1', {
+      maxAge: REFERRAL_CLICK_DEDUPE_WINDOW_MS / 1000,
+      path: '/',
+      sameSite: 'lax',
+    });
+    return response;
   } catch {
     return internalError('Failed to track referral click');
   }

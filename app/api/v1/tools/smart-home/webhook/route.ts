@@ -32,6 +32,7 @@ import {
   unauthorized,
   conflict,
 } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import {
   GENERIC_WEBHOOK_SIGNATURE_HEADER,
@@ -150,7 +151,7 @@ export async function POST(request: NextRequest) {
         'Trigger accepted. A reorder was prepared as a pending confirmation — no order was placed and nothing was charged. The user must confirm explicitly on the product page.',
     });
   } catch (err) {
-    console.error('[tools.smart-home.webhook] unexpected error', err);
+    logger.error('[tools.smart-home.webhook] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to handle the smart-home trigger');
   }
 }

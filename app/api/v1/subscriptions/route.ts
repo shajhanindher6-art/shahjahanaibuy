@@ -12,9 +12,19 @@ import { z } from 'zod';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { checkCsrfOrigin } from '@/lib/api/csrf';
+import { logApiError } from '@/lib/api/error-logging';
 import { validateBody } from '@/lib/api/validation';
 import { isStripeConfigured } from '@/services/stripe';
 import { isStripeLiveLaunchApproved, isStripeLiveMode } from '@/lib/stripe';
+
+// Section 18, item 30 — explicit column list (was select('*') ×4).
+// Every column of the subscriptions table (migration 009): the
+// GET/POST responses return the row verbatim, so the list must
+// cover all of them — dropping one would silently drop a field
+// the billing page reads.
+const SUBSCRIPTION_COLUMNS =
+  'id, user_id, plan, status, stripe_customer_id, stripe_subscription_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end, trial_end, created_at, updated_at';
 
 /**
  * Subscriptions upsert body (Section 17, Stage G, audit §4 #15 —
@@ -31,6 +41,7 @@ const subscriptionUpsertSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
+  const startedAt = Date.now();
   logApiRequest(request, { endpoint: 'subscriptions' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
   const limited = await rateLimitResponse(`subscriptions:${getClientIp(request)}`, 120);
@@ -43,7 +54,7 @@ export async function GET(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase
       .from('subscriptions')
-      .select('*')
+      .select(SUBSCRIPTION_COLUMNS)
       .eq('user_id', auth.userId)
       .maybeSingle();
 
@@ -61,16 +72,24 @@ export async function GET(request: NextRequest) {
       paymentsLive: isStripeLiveMode() && isStripeLiveLaunchApproved(),
       stripeConfigured: isStripeConfigured(),
     });
-  } catch {
+  } catch (err) {
+    // Section 18, Phase 0: previously silent — log + Sentry-capture.
+    logApiError(err, { request, route: 'subscriptions', status: 500, startedAt });
     return internalError('Failed to fetch subscription');
   }
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   logApiRequest(request, { endpoint: 'subscriptions.upsert' });
   // Rate limit: 10 requests/min per IP (see docs/rate-limits.md).
   const limited = await rateLimitResponse(`subscriptions:${getClientIp(request)}`, 10);
   if (limited) return limited;
+
+  // Section 18, Phase 2, item 8 — CSRF Origin check (cookie-authed
+  // mutation; absent Origin fails open for non-browser clients).
+  const csrf = checkCsrfOrigin(request);
+  if (csrf) return csrf;
 
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;
@@ -105,7 +124,7 @@ export async function POST(request: NextRequest) {
     // (plan is 'free' from here on — see the whitelist above).
     const existing = await supabase
       .from('subscriptions')
-      .select('*')
+      .select(SUBSCRIPTION_COLUMNS)
       .eq('user_id', auth.userId)
       .maybeSingle();
 
@@ -127,7 +146,7 @@ export async function POST(request: NextRequest) {
         .from('subscriptions')
         .update(updates)
         .eq('user_id', auth.userId)
-        .select('*')
+        .select(SUBSCRIPTION_COLUMNS)
         .maybeSingle();
 
       if (error || !data) {
@@ -142,7 +161,7 @@ export async function POST(request: NextRequest) {
           current_period_start: new Date().toISOString(),
           current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
         })
-        .select('*')
+        .select(SUBSCRIPTION_COLUMNS)
         .maybeSingle();
 
       if (error || !data) {
@@ -150,7 +169,9 @@ export async function POST(request: NextRequest) {
       }
       return apiSuccess(data);
     }
-  } catch {
+  } catch (err) {
+    // Section 18, Phase 0: previously silent — log + Sentry-capture.
+    logApiError(err, { request, route: 'subscriptions.upsert', status: 500, startedAt });
     return internalError('Failed to update subscription');
   }
 }

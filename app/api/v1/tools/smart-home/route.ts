@@ -21,7 +21,9 @@ import {
   internalError,
   serviceUnavailable,
 } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import {
   createSmartHomeRule,
   getPendingConfirmations,
@@ -52,7 +54,7 @@ export async function GET(request: NextRequest) {
     ]);
     return apiSuccess({ rules, pendingConfirmations }, 200, { rulesEnabled });
   } catch (err) {
-    console.error('[tools.smart-home] unexpected error', err);
+    logger.error('[tools.smart-home] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch smart-home rules');
   }
 }
@@ -86,11 +88,20 @@ export async function POST(request: NextRequest) {
     });
     if ('error' in result) {
       if (result.missingTable) return serviceUnavailable(MISSING_TABLE_MESSAGE);
-      return internalError(result.error.message);
+      // Section 18, Phase 2 — item 55 (audit §1 #75): the lib
+      // error text is logged server-side only; the client gets
+      // the generic envelope, never a backend message.
+      logApiError(new Error(result.error.message), {
+        request,
+        route: 'tools.smart-home',
+        status: 500,
+        context: { code: result.error.code ?? null },
+      });
+      return internalError('Failed to create the smart-home rule');
     }
     return apiSuccess({ rule: result.rule, deduped: result.deduped });
   } catch (err) {
-    console.error('[tools.smart-home] unexpected error', err);
+    logger.error('[tools.smart-home] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to create the smart-home rule');
   }
 }

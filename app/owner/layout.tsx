@@ -7,17 +7,19 @@
  * redirects away, never through. The owner dashboard shows revenue
  * and subscription aggregates, so it is admin-only like /admin.
  *
- * NOTE: the role read below (profiles.role) is the same one the
- * Section 17 audit flagged (§4 #1 — the migration chain has only
- * role_id). Another Stage H worker owns that fix; this layout
- * follows the existing admin pattern deliberately so both surfaces
- * change together when the fix lands.
+ * NOTE (Section 18, Phase 0, audit §1 #1): the role read below used
+ * to select the nonexistent `profiles.role` column (the migration
+ * chain has only `role_id`), which failed closed and redirected
+ * every signed-in admin to /dashboard. It now resolves the role via
+ * `fetchProfileRoleName` (role_id → roles.name), exactly like
+ * app/admin/layout.tsx.
  */
 
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
+import { fetchProfileRoleName } from '@/lib/admin-role';
 
 // Robots noindex — /owner is auth-gated (and disallowed in
 // robots.txt); it is not content to index. No canonical or Open
@@ -40,13 +42,15 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/sign-in');
+  if (!user) redirect('/sign-in?reason=session-expired');
 
+  // Section 18, Phase 0 (audit §1 #1): the role is resolved via
+  // `role_id → roles.name` — `profiles` has NO `role` column in
+  // the migration chain, so selecting `role` errored and the guard
+  // redirected everyone (including the real admin) to /dashboard.
   const service = createSupabaseServiceClient();
-  const { data: profile } = service
-    ? await service.from('profiles').select('role').eq('id', user.id).single()
-    : { data: null };
-  if ((profile as { role?: unknown } | null)?.role !== 'admin') {
+  const roleName = service ? await fetchProfileRoleName(service, user.id) : null;
+  if (roleName !== 'admin') {
     redirect('/dashboard');
   }
 

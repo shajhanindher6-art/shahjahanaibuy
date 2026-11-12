@@ -19,7 +19,9 @@ import {
   internalError,
   serviceUnavailable,
 } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import {
   getVaultItemsForClaims,
   getWarrantyClaims,
@@ -52,7 +54,7 @@ export async function GET(request: NextRequest) {
       vaultEnabled,
     });
   } catch (err) {
-    console.error('[tools.warranty-claims] unexpected error', err);
+    logger.error('[tools.warranty-claims] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch warranty claims');
   }
 }
@@ -95,11 +97,23 @@ export async function POST(request: NextRequest) {
     if ('error' in result) {
       if (result.missingTable) return serviceUnavailable(MISSING_TABLE_MESSAGE);
       if (result.notFound) return badRequest(result.error.message);
-      return internalError(result.error.message);
+      // Section 18, Phase 2 — item 55 (audit §1 #75): the lib
+      // error text is logged server-side only; the client gets
+      // the generic envelope, never a backend message. (The
+      // notFound branch above keeps its designed user-facing
+      // message — 'Vault item not found' — which carries no
+      // backend detail.)
+      logApiError(new Error(result.error.message), {
+        request,
+        route: 'tools.warranty-claims',
+        status: 500,
+        context: { code: result.error.code ?? null },
+      });
+      return internalError('Failed to track the warranty claim');
     }
     return apiSuccess({ claim: result.claim, deduped: result.deduped });
   } catch (err) {
-    console.error('[tools.warranty-claims] unexpected error', err);
+    logger.error('[tools.warranty-claims] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to track the warranty claim');
   }
 }

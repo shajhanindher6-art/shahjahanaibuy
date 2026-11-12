@@ -32,11 +32,16 @@ import { getStripe } from '@/lib/stripe';
 import { env } from '@/lib/config/env';
 import { processWebhookEvent } from '@/services/stripe';
 import { rateLimitResponse, getClientIp } from '@/lib/api/middleware';
-import { logger } from '@/lib/config/logger';
+import { logApiError } from '@/lib/api/error-logging';
 
 export async function POST(request: NextRequest) {
-  // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
-  const limited = await rateLimitResponse(`webhooks.stripe:${getClientIp(request)}`, 120);
+  const startedAt = Date.now();
+  // Rate limit: 30 requests/min per IP (Section 18, Phase 2 —
+  // item 13, audit §1 #60: 120/min was generous for a
+  // signature-verified endpoint; Stripe retries 429s, so a
+  // tighter bucket only blunts floods of invalid-signature
+  // requests). See docs/rate-limits.md.
+  const limited = await rateLimitResponse(`webhooks.stripe:${getClientIp(request)}`, 30);
   if (limited) return limited;
 
   const stripe = getStripe();
@@ -59,7 +64,9 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
     event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
   } catch (err) {
-    logger.error('Stripe webhook signature verification failed', { error: String(err) });
+    // Section 18, Phase 0: was logger.error only — now also
+    // Sentry-captured (when configured) with status/duration/id.
+    logApiError(err, { request, route: 'webhooks.stripe', status: 400, startedAt });
     return badRequest('Invalid signature');
   }
 
@@ -70,7 +77,12 @@ export async function POST(request: NextRequest) {
     // an anon-key client can never write them (see header).
     const supabase = createSupabaseServiceClient();
     if (!supabase) {
-      logger.error('Stripe webhook cannot write: SUPABASE_SERVICE_ROLE_KEY is not configured');
+      logApiError(new Error('SUPABASE_SERVICE_ROLE_KEY is not configured'), {
+        request,
+        route: 'webhooks.stripe',
+        status: 503,
+        startedAt,
+      });
       return serviceUnavailable(
         'Webhook storage is not configured. The event was verified but not recorded.'
       );
@@ -83,7 +95,15 @@ export async function POST(request: NextRequest) {
 
     return apiSuccess({ received: true });
   } catch (err) {
-    logger.error('Stripe webhook processing failed', { error: String(err), eventType: event.type });
+    // Section 18, Phase 0: was logger.error only — now also
+    // Sentry-captured (when configured) with status/duration/id.
+    logApiError(err, {
+      request,
+      route: 'webhooks.stripe',
+      status: 500,
+      startedAt,
+      context: { eventType: event.type },
+    });
     return internalError('Webhook processing failed');
   }
 }

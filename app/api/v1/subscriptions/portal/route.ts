@@ -12,6 +12,7 @@ import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError, serviceUnavailable } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import { isStripeLiveModeBlocked } from '@/lib/stripe';
 import { logger } from '@/lib/config/logger';
 import { createCustomerPortalSession, isStripeConfigured } from '@/services/stripe';
@@ -55,7 +56,15 @@ export async function POST(request: NextRequest) {
     const result = await createCustomerPortalSession(data.stripe_customer_id);
 
     if ('error' in result) {
-      return internalError(result.error);
+      // Section 18, Phase 2 — item 55 (audit §1 #75): the Stripe
+      // service error is logged server-side only; the client gets
+      // the generic envelope, never a backend message.
+      logApiError(new Error(result.error), {
+        request,
+        route: 'subscriptions.portal',
+        status: 500,
+      });
+      return internalError('Failed to create portal session');
     }
 
     return apiSuccess({ url: result.url });

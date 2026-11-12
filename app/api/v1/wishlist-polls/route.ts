@@ -23,6 +23,7 @@ import {
   serviceUnavailable,
   validationError,
 } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import {
   getPollsForWishlist,
@@ -65,7 +66,7 @@ export async function GET(request: NextRequest) {
     const { polls, pollsEnabled } = await getPollsForWishlist(supabase, wishlistId, userId);
     return apiSuccess(polls, 200, { pollsEnabled });
   } catch (err) {
-    console.error('[wishlist-polls] unexpected error', err);
+    logger.error('[wishlist-polls] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch wishlist polls');
   }
 }

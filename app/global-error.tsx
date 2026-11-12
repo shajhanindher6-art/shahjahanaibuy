@@ -19,6 +19,23 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     console.error('Global error:', error);
+
+    // Report to crash reporting service if configured — exactly
+    // like app/error.tsx (Section 18, item 54). DSN-guarded and
+    // never throws when Sentry is unconfigured or uninstalled:
+    // with no NEXT_PUBLIC_SENTRY_DSN this is console-only.
+    const sentryDsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
+    if (sentryDsn && typeof window !== 'undefined') {
+      // Use a string variable to prevent webpack from resolving at build time
+      const sentryModule = '@sentry/nextjs';
+      import(/* webpackIgnore: true */ sentryModule)
+        .then((Sentry) => {
+          Sentry.captureException(error);
+        })
+        .catch(() => {
+          // Sentry not installed — console only
+        });
+    }
   }, [error]);
 
   return (

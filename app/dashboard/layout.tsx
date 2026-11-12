@@ -1,7 +1,12 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import DashboardShell from '@/components/layout/dashboard-shell';
+import {
+  shouldRedirectToVerifyEmail,
+  VERIFY_SKIP_COOKIE,
+} from '@/lib/auth/email-verification';
 
 // Section 14, Chunk 6: robots noindex — /dashboard is auth-gated
 // (and disallowed in robots.txt); it is not content to index. No
@@ -41,7 +46,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/sign-in');
+  if (!user) redirect('/sign-in?reason=session-expired');
+
+  // Section 18, Phase 2, item 6 (audit §1 #56): an unconfirmed
+  // EMAIL/password account is sent to /verify-email instead of the
+  // dashboard. OAuth users are never redirected (their emails are
+  // confirmed by the provider), and an unknown provider fails open
+  // (no redirect) — see lib/auth/email-verification.ts. The
+  // "Skip for now" cookie (set on /verify-email) is honoured so a
+  // user whose confirmation mail never arrives is never locked out.
+  const skipped = cookies().get(VERIFY_SKIP_COOKIE)?.value === '1';
+  if (shouldRedirectToVerifyEmail(user, { skipped })) redirect('/verify-email');
 
   return <DashboardShell>{children}</DashboardShell>;
 }

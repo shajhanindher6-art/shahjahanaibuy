@@ -4,6 +4,11 @@ import { useState, Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/features/auth';
+import { mapOAuthError } from '@/features/auth/auth-errors';
+import {
+  getRecoverySessionState,
+  RECOVERY_LINK_EXPIRED_MESSAGE,
+} from '@/lib/auth/recovery-session';
 import {
   peekPendingReferralCode,
   clearPendingReferralCode,
@@ -19,13 +24,28 @@ import { CheckCircle2 } from 'lucide-react';
 function AuthCallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { updatePassword } = useAuth();
+  const { updatePassword, user, isLoading: authLoading } = useAuth();
 
   const type = searchParams.get('type');
   const errorDescription = searchParams.get('error_description');
   const errorCode = searchParams.get('error_code');
   const isRecovery = type === 'recovery';
   const isOAuthError = Boolean(errorCode || errorDescription);
+  // Section 18, Phase 2, item 4 (audit §1 #54): the reset form is
+  // only shown when a recovery session actually exists. Supabase
+  // exchanges the link's token into a session on load, so a valid
+  // link means `user` is set once auth finishes loading; an
+  // expired/invalid link leaves no session, and the user gets the
+  // expired-link message + a link to /forgot-password instead of a
+  // form that can only fail with "Failed to reset password".
+  const recoveryState = isRecovery
+    ? getRecoverySessionState({ isLoading: authLoading, user })
+    : 'valid';
+  // Section 18, item 59 — the raw provider description is never
+  // rendered; the code maps to plain copy with a next step.
+  const oauthErrorMessage = isOAuthError
+    ? mapOAuthError(errorCode, errorDescription).message
+    : null;
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -95,7 +115,7 @@ function AuthCallbackContent() {
       >
         <div className="space-y-4">
           <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-            {errorDescription || 'Authentication failed. Please try again.'}
+            {oauthErrorMessage || 'Authentication failed. Please try again.'}
           </div>
           <Button asChild className="w-full">
             <Link href="/sign-in">Back to Sign In</Link>
@@ -106,6 +126,38 @@ function AuthCallbackContent() {
   }
 
   if (isRecovery) {
+    if (recoveryState === 'loading') {
+      return (
+        <AuthShell title="Set a new password" description="Checking your reset link">
+          <div className="flex flex-col items-center gap-4 py-8">
+            <LoadingSpinner size="sm" />
+            <p className="text-sm text-muted-foreground">Checking your reset link…</p>
+          </div>
+        </AuthShell>
+      );
+    }
+    if (recoveryState === 'expired') {
+      return (
+        <AuthShell
+          title="Reset link expired"
+          description="This link is no longer valid"
+          footer={
+            <Link href="/sign-in" className="font-medium text-primary hover:underline">
+              Back to sign in
+            </Link>
+          }
+        >
+          <div className="space-y-4">
+            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              {RECOVERY_LINK_EXPIRED_MESSAGE}
+            </div>
+            <Button asChild className="w-full">
+              <Link href="/forgot-password">Request a new reset link</Link>
+            </Button>
+          </div>
+        </AuthShell>
+      );
+    }
     return (
       <AuthShell
         title="Set a new password"

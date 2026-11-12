@@ -56,6 +56,14 @@ export async function GET(request: NextRequest) {
     } = await supabase.auth.getUser();
     if (!user) return unauthorized('Sign in to view webhook settings.');
 
+    // Section 18, item 30 — select('*') is INTENTIONALLY kept
+    // here: the `c in row` migration checks below must see a column
+    // as present exactly when its migration added it, including
+    // PARTIALLY-applied states (only one of the two webhook
+    // migrations run). An explicit list would 42703-fail the whole
+    // select when any listed column is missing and misreport both
+    // migrations as unapplied. This is the one row-returning
+    // select('*') the audit's column-list pass deliberately leaves.
     const { data, error } = await supabase
       .from('user_settings')
       .select('*')

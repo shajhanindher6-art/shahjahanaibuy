@@ -2,32 +2,52 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useAuth } from '@/features/auth';
 import { AuthShell } from '@/components/layout/auth-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { CheckCircle2 } from 'lucide-react';
+import { formatCooldownSeconds, useResendCooldown } from '@/lib/auth/resend-cooldown';
 
 export default function ForgotPasswordPage() {
-  const { resetPassword } = useAuth();
+  // Section 18, Phase 2, item 2 (audit §1 #11): the reset request
+  // goes through the rate-limited proxy route
+  // POST /api/v1/auth/reset-password (5/min per IP) instead of
+  // calling Supabase directly from the browser, and the send button
+  // is disabled for a 60s cooldown after each send with a visible
+  // countdown. The flow itself is unchanged: Supabase still sends
+  // the email and the link still lands on /auth/callback.
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  const { remainingSeconds, canSend, startCooldown } = useResendCooldown();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!canSend) return;
     setError('');
     setLoading(true);
     try {
-      const result = await resetPassword(email);
-      if (result.success) {
-        setSent(true);
-      } else {
-        setError(result.error || 'Failed to send reset email');
+      const res = await fetch('/api/v1/auth/reset-password', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      if (res.status === 429) {
+        setError('Too many reset requests. Please wait a minute and try again.');
+        return;
       }
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        setError(data?.error?.message || 'Failed to send reset email');
+        return;
+      }
+      setSent(true);
+      startCooldown();
     } catch {
       setError('An unexpected error occurred. Please try again.');
     } finally {
@@ -53,6 +73,19 @@ export default function ForgotPasswordPage() {
             We&apos;ve sent a password reset link to <strong>{email}</strong>. Follow the link in
             the email to reset your password.
           </p>
+          <div className="mt-6">
+            <Button
+              variant="outline"
+              onClick={handleSubmit}
+              disabled={loading || !canSend}
+            >
+              {loading
+                ? <LoadingSpinner size="sm" />
+                : canSend
+                  ? 'Resend reset link'
+                  : `Resend reset link in ${formatCooldownSeconds(remainingSeconds)}`}
+            </Button>
+          </div>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -71,8 +104,12 @@ export default function ForgotPasswordPage() {
               autoComplete="email"
             />
           </div>
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? <LoadingSpinner size="sm" /> : 'Send Reset Link'}
+          <Button type="submit" className="w-full" disabled={loading || !canSend}>
+            {loading
+              ? <LoadingSpinner size="sm" />
+              : canSend
+                ? 'Send Reset Link'
+                : `Send Reset Link in ${formatCooldownSeconds(remainingSeconds)}`}
           </Button>
         </form>
       )}
