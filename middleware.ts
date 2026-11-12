@@ -1,7 +1,8 @@
 import { updateSession } from '@/lib/supabase/middleware';
 import { getRegionByCountry, languageForCountry } from '@/lib/region';
 import { buildCsp } from '@/lib/csp';
-import type { NextRequest } from 'next/server';
+import { resolveSlugRequest } from '@/lib/middleware/slug-exists';
+import { NextResponse, type NextRequest } from 'next/server';
 
 /**
  * Root middleware. Existing behaviour is preserved: updateSession
@@ -28,6 +29,34 @@ export async function middleware(request: NextRequest) {
   // builds its NextResponse from this same request object.
   const nonce = crypto.randomUUID();
   request.headers.set('x-nonce', nonce);
+
+  // Soft-404 (2026-11-12): the [slug]/layout.tsx existence checks
+  // cannot produce HTTP 404 live — the root app/loading.tsx streams
+  // its shell with 200 before any async notFound() runs (proven in
+  // a minimal Next 13.5.9 repro). This pre-render check runs before
+  // any rendering or session work: an unknown slug is rewritten to
+  // /__smartbuy_not_found__, a path that matches NO route, so Next
+  // returns its routing-level 404 (the real app/not-found.tsx UI,
+  // HTTP 404) without rendering anything through the loading
+  // boundary — the browser URL stays on the requested slug.
+  // (Two alternatives were PROVEN not to work in the repro while
+  // the root loading.tsx exists: rewriting to a sync route that
+  // calls notFound() still streams the shell with 200, and the
+  // layout check itself is what failed live in the first place.
+  // The nonexistent-path rewrite is the only variant that returned
+  // 404 with the real not-found UI. NEVER create a route at
+  // /__smartbuy_not_found__ — it would silently break this.)
+  // Fail-open: on any check error the request proceeds exactly as
+  // before (the session refresh, CSP and region cookies below are
+  // untouched). A session refresh is skipped for 404s — bots hitting
+  // bad slugs need no auth state — but the CSP header is still set.
+  if ((await resolveSlugRequest(request.nextUrl.pathname)) === 'rewrite') {
+    const gone = NextResponse.rewrite(
+      new URL('/__smartbuy_not_found__', request.url)
+    );
+    gone.headers.set('Content-Security-Policy', buildCsp(nonce));
+    return gone;
+  }
 
   const response = await updateSession(request);
 
