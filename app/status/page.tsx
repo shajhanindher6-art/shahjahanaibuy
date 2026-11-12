@@ -24,6 +24,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { buildStatusSummary, type StatusIncident } from '@/lib/status';
@@ -143,6 +144,13 @@ export default async function StatusPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Status"
+        description="SmartBuy AI service status, uptime and incident history. Uptime is computed from recorded checks only."
+        path="/status"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Status" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="text-3xl font-bold">Service status</h1>

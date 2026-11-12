@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { RELEASES, PENDING_SYNC_RELEASES, type ChangelogRelease } from './releases';
 import { appConfig } from '@/lib/config/app';
 
@@ -58,9 +60,16 @@ export default function ChangelogPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Changelog"
+        description="What changed on SmartBuy AI, and when — built from the real release record, with commit IDs and changed files."
+        path="/changelog"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Changelog" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
-          <h1 className="text-3xl font-bold">Changelog</h1>
+          <LocalizedHeading dictKey="footerLinkChangelog" className="text-3xl font-bold" />
           <p className="mt-2 text-muted-foreground">
             What changed on SmartBuy AI, and when. This page is built from the real release
             record — {RELEASES.length + PENDING_SYNC_RELEASES.length} releases listed in

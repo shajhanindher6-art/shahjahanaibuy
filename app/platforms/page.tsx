@@ -17,7 +17,9 @@
 
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import {
   describePlatformStatus,
   type PlatformKind,
@@ -60,9 +62,16 @@ export default function PlatformsPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Platforms"
+        description="Every platform SmartBuy connects to, with honest status: priced merchants, live eBay search, search-link retailers, and the local stores directory."
+        path="/platforms"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Platforms" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-3xl">
-          <h1 className="text-3xl font-bold">Platforms</h1>
+          <LocalizedHeading dictKey="footerLinkPlatforms" className="text-3xl font-bold" />
           <p className="mt-2 text-muted-foreground">
             Every platform SmartBuy connects to — and what you actually get
             from each one. A platform is only shown as connected when its

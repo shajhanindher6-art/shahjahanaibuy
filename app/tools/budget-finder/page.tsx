@@ -27,9 +27,11 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
 import { ShareButtons } from '@/components/products/share-buttons';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { formatOriginalAmount } from '@/services/currency';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   GUIDED_CATEGORIES,
   loadGuidedCandidates,
@@ -135,6 +137,18 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Budget Finder"
+        description="Best priced products under your budget, ranked by biggest saving first. Recorded prices only."
+        path="/tools/budget-finder"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Budget Finder' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
@@ -228,6 +242,28 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
                 <ShareButtons
                   title={heading}
                   text={`${heading} — SmartBuy AI`}
+                />
+              </div>
+              {/* Section 16, #36 — save this calculation to the
+                  account, or copy its shareable link. The budget
+                  param is the amount as written ("20K PKR"), not
+                  the converted USD figure — re-opening the link
+                  re-parses it exactly as the form did. */}
+              <div className="mt-4">
+                <SaveCalculationButton
+                  tool="budget-finder"
+                  label={heading.slice(0, 100)}
+                  params={{
+                    ...(category ? { category } : {}),
+                    ...(budgetOriginal !== null
+                      ? {
+                          budget:
+                            budgetCurrency && budgetCurrency !== 'USD'
+                              ? `${budgetOriginal} ${budgetCurrency}`
+                              : String(budgetOriginal),
+                        }
+                      : {}),
+                  }}
                 />
               </div>
 

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { appConfig } from '@/lib/config/app';
@@ -30,6 +31,13 @@ export default function ContactPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Contact Us"
+        description="Contact SmartBuy AI: send a message by email about the site, Premium, or a business plan."
+        path="/contact"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Contact Us" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <LocalizedHeading dictKey="pageHeadingContact" className="text-3xl font-bold" />

@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { Price } from '@/components/region/price';
 import { REGIONS } from '@/lib/region';
@@ -140,6 +141,13 @@ export default function GiftsPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Gift Finder"
+        description="Tell us the occasion, budget, recipient’s country and interests, and we’ll match real catalog products with real prices, deals, and stores."
+        path="/gifts"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Gift Finder" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl space-y-6">
           <div>

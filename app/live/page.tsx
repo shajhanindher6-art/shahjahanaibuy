@@ -12,6 +12,7 @@
 import Link from 'next/link';
 import { Radio } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EventCountdown } from '@/components/seasonal/countdown';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
@@ -54,6 +55,14 @@ export default async function LiveSessionsPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList, ItemList). */}
+      <PageJsonLd
+        name="Live shopping"
+        description="Scheduled live shopping sessions — a host walks through real products, and every product shown links to its product page with its real current price."
+        path="/live"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Live shopping" } ]}
+        items={sessions.map((session) => ({ name: session.title, path: `/live/${session.slug}` }))}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">

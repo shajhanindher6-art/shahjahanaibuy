@@ -8,7 +8,9 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { appConfig } from '@/lib/config/app';
 
@@ -52,9 +54,16 @@ export default function SupportPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Support"
+        description="SmartBuy AI support: answers to common questions, links to the help center, FAQ, and documentation — and how to contact us."
+        path="/support"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Support" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
-          <h1 className="text-3xl font-bold">Support</h1>
+          <LocalizedHeading dictKey="footerLinkSupport" className="text-3xl font-bold" />
           <p className="mt-2 text-muted-foreground">
             Answers to common questions. Still stuck?{' '}
             <Link href="/contact" className="underline">

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { appConfig } from '@/lib/config/app';
 import { getConfiguredAmazonLocales } from '@/services/affiliate-geo';
@@ -29,6 +30,13 @@ export default function MethodologyPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="How SmartBuy AI works"
+        description="Methodology in plain language: where prices come from, how the Deal Score is calculated, how reviews are verified, and how SmartBuy AI earns money."
+        path="/methodology"
+        crumbs={[ { name: "Home", path: "/" }, { name: "How SmartBuy AI works" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="text-3xl font-bold">How SmartBuy AI works</h1>
@@ -41,8 +49,12 @@ export default function MethodologyPage() {
           <h2 className="mt-8 text-xl font-semibold">Where prices come from</h2>
           <p className="mt-3 text-muted-foreground">
             Prices on SmartBuy come from the site&apos;s own catalog of merchant listings —
-            currently Amazon and Best Buy for the products listed. Prices are refreshed on a
-            six-hour schedule, and every price shown carries the time it was last recorded.
+            currently Amazon and Best Buy for the products listed. A price refresh is
+            scheduled every six hours, but no live refresh happens today: the scheduled
+            run re-reads the site&apos;s own database and fetches no new retailer prices,
+            so the recorded prices are stale (last recorded 2 November 2026) until the
+            live refresh work lands. Every price shown carries the time it was last
+            recorded.
             The recorded price history for most products currently spans about thirty days
             (about 30 days ending when the catalog was seeded); a ninety-day history is still accumulating, and
             any feature that needs ninety days says so honestly instead of pretending the

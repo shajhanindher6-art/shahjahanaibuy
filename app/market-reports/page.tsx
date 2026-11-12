@@ -21,6 +21,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -283,6 +284,13 @@ export default function MarketReportsPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Market reports"
+        description="Weekly deal reports, monthly category deep-dives, and seasonal buying guides — all computed from recorded price history only."
+        path="/market-reports"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Market reports" } ]}
+      />
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
         <h1 className="text-3xl font-bold">Market reports</h1>
         <p className="mt-2 max-w-3xl text-muted-foreground">

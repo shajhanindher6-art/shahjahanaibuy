@@ -21,6 +21,7 @@ import { ShareButtons } from '@/components/products/share-buttons';
 import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
 import { Price } from '@/components/region/price';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
+import { StalePriceBadge } from '@/components/products/stale-price-badge';
 import { PriceTrendSparkline } from '@/components/products/price-trend-sparkline';
 import { dealScoreForDisplay } from '@/lib/deal-score';
 import {
@@ -50,6 +51,10 @@ interface SearchResult {
     category: string | null;
     imageUrl: string | null;
     confidenceScore: number;
+    /** Recorded `products.data_freshness` (Section 16, item 9) — the
+        API returns the full product row; older cached responses may
+        omit it, so the stale badge renders nothing then. */
+    dataFreshness?: string | null;
   };
   score: number;
   matchedAttributes: string[];
@@ -188,9 +193,9 @@ function SearchPageContent() {
   // slicing the page). The state below still drives the panel and
   // the URL; changing one re-runs the search (see the handlers).
   // 'rating-desc' (B6) sorts by the average rating the API returns.
-  type SearchSortKey = 'relevance' | 'price-asc' | 'price-desc' | 'match-desc' | 'deal-score' | 'rating-desc';
+  type SearchSortKey = 'relevance' | 'price-asc' | 'price-desc' | 'match-desc' | 'deal-score' | 'rating-desc' | 'discount-desc';
   type PriceBand = 'all' | 'under-100' | '100-500' | '500-plus';
-  const SORT_KEYS: SearchSortKey[] = ['relevance', 'price-asc', 'price-desc', 'match-desc', 'deal-score', 'rating-desc'];
+  const SORT_KEYS: SearchSortKey[] = ['relevance', 'price-asc', 'price-desc', 'match-desc', 'deal-score', 'rating-desc', 'discount-desc'];
   const PRICE_BANDS: PriceBand[] = ['all', 'under-100', '100-500', '500-plus'];
   /** Server page size (10) — the request and the pager share it. */
   const SEARCH_PAGE_SIZE = 10;
@@ -323,6 +328,10 @@ function SearchPageContent() {
   // synthesized score. The "% search match" badge stays separate:
   // it is a relevance signal, not a Deal Score.
   const [dealScores, setDealScores] = useState<Record<string, number>>({});
+  // Section 16, item 10: recorded point counts behind each score,
+  // so a withheld score can say why (4 of 5 points) instead of
+  // leaving the card with no badge and no explanation.
+  const [dealScorePoints, setDealScorePoints] = useState<Record<string, number>>({});
   const dealScoreAttemptedRef = useRef<Set<string>>(new Set());
 
   // Section 15, B10: the ai-search API's own did-you-mean (from its
@@ -785,10 +794,12 @@ function SearchPageContent() {
   // 'deal-score' cannot apply to web results (they have no
   // prediction), so they keep their fetched order for that key;
   // 'rating-desc' (B6) sorts by the rating SerpAPI reports, unrated
-  // last. No discount sort: neither list carries an original /
-  // compare-at price, so a discount cannot be computed honestly.
+  // last. 'discount-desc' (Section 16, #30) sorts the catalog
+  // server-side from recorded compare-at prices; web results carry
+  // no compare-at price, so they keep their fetched order for that
+  // key too (a web discount cannot be computed honestly).
   const applySort = useCallback(
-    <T extends { currentPrice?: number | null; price?: number | null; score?: number; rating?: number | null }>(
+    <T extends { currentPrice?: number | null; price?: number | null; score?: number; rating?: number | null; discountPercent?: number | null }>(
       items: T[]
     ): T[] => {
       const sorted = [...items];
@@ -821,6 +832,13 @@ function SearchPageContent() {
           return sorted.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
         case 'rating-desc':
           return sorted.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1));
+        case 'discount-desc':
+          // Web results carry no compare-at price, so a web item
+          // with no discountPercent keeps its fetched order (nulls
+          // last); a web item that does carry one sorts by it.
+          return sorted.sort(
+            (a, b) => (b.discountPercent ?? -1) - (a.discountPercent ?? -1)
+          );
         default:
           return sorted;
       }
@@ -923,6 +941,17 @@ function SearchPageContent() {
           // DEAL_SCORE_MIN_DATA_POINTS (5) price points — the live
           // catalog's 4 points per product all score a meaningless
           // 100/100. The formula itself is unchanged.
+          // Section 16, item 10: keep the point count even when the
+          // score is withheld — the card says "4 of 5 points".
+          if (
+            typeof predData.data.dataPoints === 'number' &&
+            Number.isFinite(predData.data.dataPoints)
+          ) {
+            setDealScorePoints((prev) => ({
+              ...prev,
+              [r.product.id]: predData.data.dataPoints,
+            }));
+          }
           const score = dealScoreForDisplay(predData.data);
           if (score === null) return;
           setDealScores((prev) => ({ ...prev, [r.product.id]: score }));
@@ -1129,6 +1158,7 @@ function SearchPageContent() {
                       <SelectItem value="match-desc">Best Match</SelectItem>
                       <SelectItem value="deal-score">Deal Score: High to Low</SelectItem>
                       <SelectItem value="rating-desc">Top Rated</SelectItem>
+                      <SelectItem value="discount-desc">Biggest Discount</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1569,13 +1599,29 @@ function SearchPageContent() {
                         ) : (
                           <span className="text-xs text-muted-foreground">Price not listed</span>
                         )}
+                        {/* Section 16, item 9: stale-price badge +
+                            age-in-days under the price (nothing when
+                            the freshness is unknown). */}
+                        {result.currentPrice !== null && result.currentPrice !== undefined && (
+                          <StalePriceBadge dataFreshness={result.product.dataFreshness} />
+                        )}
                         {/* S2#10: canonical Deal Score (lib/deal-score.ts),
                             from the product's price-drop prediction.
                             Renders only when a real prediction exists;
                             the "% search match" badge below it is a
-                            relevance signal, not a Deal Score. */}
-                        {dealScores[result.product.id] !== undefined && (
-                          <DealScoreBadge score={dealScores[result.product.id]} size="sm" showLabel />
+                            relevance signal, not a Deal Score.
+                            Section 16, item 10: when the score is
+                            withheld for too few points, the badge
+                            itself says so (4 of 5 points). */}
+                        {(dealScores[result.product.id] !== undefined ||
+                          (dealScorePoints[result.product.id] !== undefined &&
+                            dealScorePoints[result.product.id] < 5)) && (
+                          <DealScoreBadge
+                            score={dealScores[result.product.id] ?? null}
+                            dataPoints={dealScorePoints[result.product.id]}
+                            size="sm"
+                            showLabel
+                          />
                         )}
                         {/* S3#4: real price-history sparkline; renders
                             nothing when the product has fewer than 2

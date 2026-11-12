@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { appConfig } from '@/lib/config/app';
 
 export const metadata: Metadata = {
@@ -30,7 +31,7 @@ export default function TermsPage() {
       <SiteHeader />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-3xl space-y-6 text-muted-foreground">
-          <h1 className="text-3xl font-bold text-foreground">Terms of Service</h1>
+          <LocalizedHeading dictKey="footerLinkTermsOfService" className="text-3xl font-bold text-foreground" />
           <p className="text-sm">Last updated: November 2026</p>
 
           <section className="space-y-3">

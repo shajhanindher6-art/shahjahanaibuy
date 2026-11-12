@@ -364,7 +364,7 @@ export default function EbayIntakePage() {
                               {l.imageUrl && (
                                 // alt="" is deliberate — decorative thumbnail; the listing title beside it names the product.
                                 // eslint-disable-next-line @next/next/no-img-element
-                                <img src={l.imageUrl} alt="" className="h-12 w-12 shrink-0 rounded object-cover" />
+                                <img src={l.imageUrl} alt="" width={48} height={48} loading="lazy" decoding="async" className="h-12 w-12 shrink-0 rounded object-cover" />
                               )}
                               <div>
                                 <p className="font-medium">{l.title}</p>

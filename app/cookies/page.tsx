@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { appConfig } from '@/lib/config/app';
 
 export const metadata: Metadata = {
@@ -65,7 +66,7 @@ export default function CookiesPage() {
       <SiteHeader />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl space-y-4 text-muted-foreground">
-          <h1 className="text-3xl font-bold text-foreground">Cookie Policy</h1>
+          <LocalizedHeading dictKey="footerLinkCookiePolicy" className="text-3xl font-bold text-foreground" />
           <p>
             SmartBuy AI uses cookies and similar storage to keep you signed in, remember
             your theme and preferences, and understand how the site is used so it can be

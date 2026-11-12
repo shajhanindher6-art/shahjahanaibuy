@@ -21,6 +21,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { appConfig } from '@/lib/config/app';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 import {
   ALL_FIND_STORES,
@@ -101,6 +102,14 @@ export default function FindQueryPage({
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList, ItemList). */}
+      <PageJsonLd
+        name={term.query}
+        description={`Search for "${term.query}" across ${ALL_FIND_STORES.length} retailers — links to each store's own search results. SmartBuy shows no price or stock here; each store shows its own results.`}
+        path={`/find/${term.slug}`}
+        crumbs={[{ name: 'Home', path: '/' }, { name: 'Find', path: '/find' }, { name: term.query }]}
+        items={related.map((other) => ({ name: other.query, path: `/find/${other.slug}` }))}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <nav aria-label="Breadcrumb" className="mb-4 text-sm text-muted-foreground">

@@ -1,5 +1,6 @@
 'use client';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
@@ -23,6 +24,7 @@ import { Price } from '@/components/region/price';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
+import { StalePriceBadge } from '@/components/products/stale-price-badge';
 import { PriceTrendSparkline } from '@/components/products/price-trend-sparkline';
 import { DecisionMatrix } from '@/components/comparison/decision-matrix';
 import { SpecMatrix } from '@/components/comparison/spec-matrix';
@@ -142,9 +144,14 @@ interface ComparisonProduct {
    * in services/ai-comparison.ts from the same price-drop prediction
    * the product page uses. Null when the product has no usable
    * prediction — the table then says "Not enough history", never a
-   * synthesized score.
+   * synthesized score. Section 16, item 10: when the count is
+   * known and below 5, the table says why instead ("4 of 5 points").
    */
   dealScore?: number | null;
+  /** Recorded price-history points behind dealScore (Section 16, item 10). */
+  dealScoreDataPoints?: number | null;
+  /** Recorded `products.data_freshness` (Section 16, item 9). */
+  dataFreshness?: string | null;
 }
 
 interface Comparison {
@@ -404,6 +411,13 @@ export default function ComparePage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Product Comparison"
+        description="Compare products across retailers with AI-powered insights — real recorded prices and price history only."
+        path="/compare"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Product Comparison" } ]}
+      />
       <div className="container mx-auto max-w-6xl px-4 py-8">
         <div className="mb-8 text-center">
           <h1 className="flex items-center justify-center gap-2 text-3xl font-bold sm:text-4xl">
@@ -650,6 +664,13 @@ export default function ComparePage() {
                           <span className="text-muted-foreground">No listings</span>
                         )}
                       </p>
+                      {/* Section 16, item 9: stale-price badge +
+                          age-in-days next to the best price. */}
+                      {minPrice !== null && (
+                        <p className="text-sm">
+                          <StalePriceBadge dataFreshness={p.dataFreshness} />
+                        </p>
+                      )}
                       <p className="text-sm">
                         <span className="font-medium">Best discount: </span>
                         {discount !== null ? (
@@ -676,8 +697,14 @@ export default function ComparePage() {
                       </p>
                       <p className="flex items-center gap-2 text-sm">
                         <span className="font-medium">Deal Score: </span>
-                        {p.dealScore != null ? (
-                          <DealScoreBadge score={p.dealScore} size="sm" showLabel />
+                        {p.dealScore != null ||
+                        (p.dealScoreDataPoints != null && p.dealScoreDataPoints < 5) ? (
+                          <DealScoreBadge
+                            score={p.dealScore ?? null}
+                            dataPoints={p.dealScoreDataPoints}
+                            size="sm"
+                            showLabel
+                          />
                         ) : (
                           <span className="text-muted-foreground">Not enough history</span>
                         )}
@@ -933,8 +960,14 @@ export default function ComparePage() {
                     <td scope="row" className="p-3 text-sm font-medium">Deal Score</td>
                     {comparison.products.map((p) => (
                       <td key={p.productId} className="p-3">
-                        {p.dealScore != null ? (
-                          <DealScoreBadge score={p.dealScore} size="sm" showLabel />
+                        {p.dealScore != null ||
+                        (p.dealScoreDataPoints != null && p.dealScoreDataPoints < 5) ? (
+                          <DealScoreBadge
+                            score={p.dealScore ?? null}
+                            dataPoints={p.dealScoreDataPoints}
+                            size="sm"
+                            showLabel
+                          />
                         ) : (
                           <span className="text-sm text-muted-foreground">Not enough history</span>
                         )}

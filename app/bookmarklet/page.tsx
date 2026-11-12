@@ -20,6 +20,7 @@ import { Bookmark, MousePointerClick, Search, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 
 export default function BookmarkletPage() {
@@ -39,6 +40,13 @@ export default function BookmarkletPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Track from any store"
+        description="No extension install needed. Add the SmartBuy bookmarklet once, then track products from Amazon, Walmart, Best Buy, eBay, or any other shopping site."
+        path="/bookmarklet"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Track from any store" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl space-y-6">
           <div>

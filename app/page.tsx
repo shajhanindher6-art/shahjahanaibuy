@@ -8,6 +8,7 @@ import { isSupportedLanguage, type Language } from '@/lib/region';
 import { tFor } from '@/lib/i18n';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Price } from '@/components/region/price';
+import { StalePriceBadge } from '@/components/products/stale-price-badge';
 import {
   Brain,
   TrendingDown,
@@ -349,6 +350,8 @@ async function FeaturedProductsStrip({ language }: { language: Language }) {
     category: string | null;
     imageUrl: string | null;
     price: number | null;
+    /** Recorded `products.data_freshness` (Section 16, item 9). */
+    dataFreshness: string | null;
   }> = [];
   try {
     const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey, {
@@ -382,6 +385,10 @@ async function FeaturedProductsStrip({ language }: { language: Language }) {
           category: product.category,
           imageUrl: product.imageUrl,
           price,
+          // Section 16, item 9: recorded freshness rides with the
+          // card so the stale-price badge + age can render under
+          // the price.
+          dataFreshness: product.dataFreshness ?? null,
         };
       })
     );
@@ -438,6 +445,13 @@ async function FeaturedProductsStrip({ language }: { language: Language }) {
                         <Price usd={product.price} className="text-lg font-bold text-blue-600" />
                       ) : (
                         <span className="text-xs text-muted-foreground">Price not listed</span>
+                      )}
+                      {/* Section 16, item 9: stale-price badge +
+                          age-in-days under the price. */}
+                      {product.price !== null && (
+                        <div className="mt-1">
+                          <StalePriceBadge dataFreshness={product.dataFreshness} />
+                        </div>
                       )}
                     </div>
                   </CardContent>

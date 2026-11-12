@@ -36,7 +36,21 @@ import { SpeedInsights } from '@vercel/speed-insights/next';
 import CookieConsentBanner from '@/components/privacy/cookie-consent';
 import PostHogProvider from '@/components/analytics/posthog-provider';
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
+const inter = Inter({
+  // Section 16, #48: latin alone covered only the Latin-script
+  // languages. latin-ext (pl, tr, vi diacritics), cyrillic +
+  // cyrillic-ext (ru) and vietnamese (vi) now cover 14 of the 20
+  // supported languages with real Inter glyphs. TRADEOFF: each
+  // subset adds font payload (larger first-paint download), and
+  // Inter ships NO glyphs for ar, zh, ja, ko, hi, bn — those six
+  // still fall back to system fonts (the browser renders them, just
+  // not in Inter). Adding subsets for scripts Inter does not ship
+  // would change nothing; a different font family would be needed
+  // for those scripts, which is a bigger design decision, not this
+  // item.
+  subsets: ['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext', 'vietnamese'],
+  variable: '--font-inter',
+});
 
 // hreflang (Section 2 item 13, S2#13 part): x-default + one
 // alternate per supported UI language (lib/i18n.ts dictionaries /
@@ -197,6 +211,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link rel="manifest" href="/manifest.json" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
+        {/* Section 16, #41: iOS startup image. This reuses the
+            existing 512px app icon rather than a new binary:
+            a true device-size splash (e.g. 1170x2532) would need a
+            new PNG via the GitHub web UI. The icon is a valid
+            startup image, just not a full-bleed splash. The iOS
+            "Add to Home Screen" hint itself already exists — the
+            InstallPrompt component shows the manual Share → Add to
+            Home Screen steps on iPhone/iPad (Section 14, P-1) and
+            is mounted in this layout — so no second prompt was
+            built here. */}
+        <link rel="apple-touch-startup-image" href="/icon-512.png" />
         <meta name="theme-color" content="#1e40af" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />

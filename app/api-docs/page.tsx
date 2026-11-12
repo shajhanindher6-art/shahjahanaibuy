@@ -9,6 +9,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { ANONYMOUS_DAILY_QUOTA, API_QUOTAS } from '@/lib/api-quota';
 
@@ -66,6 +67,13 @@ export default function ApiDocsPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="API Docs"
+        description="SmartBuy AI public read-only API: products, recorded prices and deals. Free, key-optional, rate-limited."
+        path="/api-docs"
+        crumbs={[ { name: "Home", path: "/" }, { name: "API Docs" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="text-3xl font-bold">Public API</h1>

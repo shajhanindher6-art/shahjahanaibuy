@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Clock, Home, RefreshCw, Search, Wrench, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { tFor } from '@/lib/i18n';
+import { useRegion } from '@/components/region/region-provider';
 import {
   getRecentlyViewed,
   type RecentlyViewedItem,
@@ -39,6 +41,9 @@ import {
  * section at all, never placeholder products.
  */
 export default function OfflinePage() {
+  // Section 16, #42: the static labels below render through tFor
+  // (existing keys only) like the deals page.
+  const { language } = useRegion();
   const [online, setOnline] = useState(false);
   const [recent, setRecent] = useState<RecentlyViewedItem[]>([]);
 
@@ -81,7 +86,7 @@ export default function OfflinePage() {
         </div>
         <div className="flex gap-3">
           <Button onClick={() => window.location.reload()} variant="outline">
-            <RefreshCw className="mr-2 h-4 w-4" /> Try Again
+            <RefreshCw className="mr-2 h-4 w-4" /> {tFor(language, 'commonTryAgain')}
           </Button>
           <Button asChild>
             <Link href="/">
@@ -132,13 +137,13 @@ export default function OfflinePage() {
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm">
-            <Link href="/">Home</Link>
+            <Link href="/">{tFor(language, 'navHome')}</Link>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link href="/deals">Deals</Link>
+            <Link href="/deals">{tFor(language, 'navDeals')}</Link>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link href="/tools">AI tools</Link>
+            <Link href="/tools">{tFor(language, 'toolsHubTitle')}</Link>
           </Button>
         </div>
         <p className="mt-4 flex items-start gap-2 text-sm text-muted-foreground">

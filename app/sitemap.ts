@@ -130,6 +130,21 @@ const STATIC_PAGES: Array<{
   { path: '/tools/landed-cost', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools/price-protection', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/tools/emi-calculator', priority: 0.6, changeFrequency: 'weekly' },
+  // Section 16: the 4 new P1 tools (E1–E4) — nothing else in this
+  // file changes in this chunk (another chunk adds more pages later).
+  { path: '/tools/volatility-ranking', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/catalog-freshness', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/api-quota-calculator', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/deal-score-breakdown', priority: 0.6, changeFrequency: 'weekly' },
+  // Section 16: the 6 new P2 tools (E5–E9 + E11) — another chunk
+  // owns E1–E4 above. E10 adds no route (export links live on
+  // /tools/price-history).
+  { path: '/tools/store-trust-checker', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/real-price-converter', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/emi-vs-saving', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/target-price-picker', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/gift-occasions', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/tools/cheapest-store-by-category', priority: 0.6, changeFrequency: 'weekly' },
   { path: '/products', priority: 0.7, changeFrequency: 'weekly' },
   { path: '/partners', priority: 0.5, changeFrequency: 'monthly' },
   { path: '/referrals', priority: 0.5, changeFrequency: 'monthly' },

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { appConfig } from '@/lib/config/app';
@@ -18,6 +19,13 @@ export default function AboutPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="About"
+        description="What SmartBuy AI is, what it does, and how it works — honest price tracking, deal scores, and reviews from real people only."
+        path="/about"
+        crumbs={[ { name: "Home", path: "/" }, { name: "About" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <LocalizedHeading dictKey="pageHeadingAbout" className="text-3xl font-bold" />
@@ -58,17 +66,19 @@ export default function AboutPage() {
 
           <h2 className="mt-8 text-xl font-semibold">How we work</h2>
           <p className="mt-3 text-muted-foreground">
-            SmartBuy AI is built and run as an independent project. Prices are tracked on a
-            six-hour refresh schedule, deal scores are computed from recorded price history
-            with a published method, and reviews are only ever shown when real people have
-            written them. How each of those works is explained in plain language on the{' '}
+            SmartBuy AI is built and run as an independent project. Prices are recorded in
+            the catalog (a six-hour refresh is scheduled, but no live refresh happens
+            today — see the methodology page for why), deal scores are computed from recorded
+            price history with a published method, and reviews are only ever shown when real
+            people have written them. How each of those works is explained in plain language
+            on the{' '}
             <Link href="/methodology" className="underline">
               methodology page
             </Link>
             .
           </p>
           <p className="mt-4 text-muted-foreground">
-            The site works in 20 languages — only 28 interface strings are
+            The site works in 20 languages — 167 interface strings are
             translated, and 12 of the 20 languages are machine-translated, so all
             other content, including product pages and guides, stays English —
             and across 61 regions, with local stores

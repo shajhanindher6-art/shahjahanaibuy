@@ -29,9 +29,12 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { Price } from '@/components/region/price';
 import { validateScanImage } from '@/services/visual-search';
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 
 interface CatalogHit {
   product?: { name?: string; slug?: string };
@@ -50,6 +53,9 @@ interface VisualHit {
 type ScanResult = { mode: string; note: string; catalog: CatalogHit[]; visual: VisualHit[] };
 
 export default function ScanPage() {
+  // Section 16, #42: the scan h1 renders through tFor like the
+  // other tool pages (footerLinkScanProduct matches the old text).
+  const { language } = useRegion();
   const [preview, setPreview] = useState<string | null>(null);
   const [photoNote, setPhotoNote] = useState<string | null>(null);
   const [keywords, setKeywords] = useState('');
@@ -169,11 +175,18 @@ export default function ScanPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Scan a Product"
+        description="Take or upload a photo, confirm what it shows, and find it in SmartBuy’s catalog with real store prices. Your photo never leaves this browser."
+        path="/scan"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Scan a Product" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl space-y-6">
           <div>
             <h1 className="flex items-center gap-2 text-3xl font-bold">
-              <ScanLine className="h-7 w-7 text-blue-600" /> Scan a Product
+              <ScanLine className="h-7 w-7 text-blue-600" /> {tFor(language, 'footerLinkScanProduct')}
             </h1>
             <p className="mt-2 text-muted-foreground">
               Take or upload a photo, confirm what it shows, and find it in SmartBuy&apos;s catalog

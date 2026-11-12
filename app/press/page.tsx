@@ -5,11 +5,13 @@
  * tests/press-status.test.ts, which locks the derived counts
  * (stores, regions, languages, currencies, blog articles) to their
  * source modules so a future change fails loudly instead of leaving
- * this page stale. The test count is the one figure that cannot be
- * derived at build time: it is the result of a full `npx vitest run`
- * (2,197 passing, 180 test files, 12 November 2026) and moves whenever
- * tests are added, so it is dated, not presented as permanent. The
- * product count is 10: the catalog holds 11 rows, but the
+ * this page stale. The test count is rendered from
+ * lib/generated/press-counts.json (Section 16, item 7): that JSON is
+ * written by `npm run generate:press-counts` from a real `npx
+ * vitest run` and committed, so the page never hardcodes the totals
+ * again — hardcoding drifted twice (1,752 -> 1,754 -> 2,197 ->
+ * 2,206). `npm run check:press-counts` (CI) fails while the JSON is
+ * stale. The product count is 10: the catalog holds 11 rows, but the
  * `sample-laptop` row is a database health-check row excluded from
  * every public surface (services/products.ts, Section 10 fix), so
  * the public catalog — and this page — counts 10.
@@ -19,6 +21,7 @@ import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { appConfig } from '@/lib/config/app';
+import pressCounts from '@/lib/generated/press-counts.json';
 
 export const metadata: Metadata = {
   title: 'Press — SmartBuy AI',
@@ -29,6 +32,27 @@ export const metadata: Metadata = {
   },
 };
 
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+/** "2026-11-12" -> "12 November 2026", the label the fact sheet renders. */
+function formatPressCountsDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  return `${day} ${MONTHS[month - 1]} ${year}`;
+}
+
 const FACTS: Array<[string, string]> = [
   ['Live site', 'https://shahjahanaibuy-b1zp.vercel.app'],
   ['Products in the catalog', '10'],
@@ -37,21 +61,23 @@ const FACTS: Array<[string, string]> = [
   ['Deals listed', '6'],
   ['Stores in the directory', '80 local stores (plus 4 global fallback stores — Amazon, eBay, AliExpress, Google Shopping — search links only)'],
   ['Regions covered', '61 (60 with a local store; South Africa uses the global fallback)'],
-  ['Languages', '20 UI languages (only 28 interface strings translated; 12 of the 20 are machine-translated — all other content, including product pages and guides, stays English)'],
+  ['Languages', '20 UI languages (167 interface strings translated; 12 of the 20 are machine-translated — all other content, including product pages and guides, stays English)'],
   ['Currencies', '51 (approximate static rates; live FX in the landed-cost calculator)'],
-  ['Price refresh schedule', 'Every 6 hours'],
+  ['Price refresh schedule', 'Every 6 hours (scheduled — but no live refresh happens today: the scheduled run re-reads the site\u2019s own database and fetches no new retailer prices, so recorded prices stay stale until the live refresh work lands; last recorded 2 November 2026)'],
   // Section 12: the seed writes price history relative to the seed
   // run (now() - 30 days to now()), so no fixed calendar range is
   // published — a hardcoded date range goes stale the moment the
   // catalog is re-seeded.
   ['Recorded price history span', 'About 30 days (the 30 days before the catalog was seeded)'],
-  ['Coupons listed', '2 — SAVE10 and BESTBUY15, both valid until January 29, 2027'],
+  ['Coupons listed', '2 — SAVE10 and BESTBUY15, both valid until January 29, 2027 (demo / seed data — sample offers from the SmartBuy demo catalog, not live merchant offers)'],
   ['Blog articles', '21 original English guides'],
   ['Database access policies (RLS)', 'RLS enabled on all tables'],
   ['Security headers', 'Nonce-based Content Security Policy'],
-  // Section 15 final full-run totals (180 files / 2,197 tests,
-  // 12 November 2026) — updated by the coordinator after vitest.
-  ['Automated tests passing', '2,197 passing (180 test files, full run 12 November 2026)'],
+  // Section 16, item 7: rendered from lib/generated/press-counts.json
+  // (written by `npm run generate:press-counts` from a real vitest
+  // run) — never hardcode the totals here again; the check script
+  // fails while the JSON is stale.
+  ['Automated tests passing', `${pressCounts.tests.toLocaleString('en-US')} passing (${pressCounts.files} test files, full run ${formatPressCountsDate(pressCounts.date)})`],
   ['Founder', 'Independent developer, GitHub: shajhanindher6-art'],
   ['Public repository', 'https://github.com/shajhanindher6-art/shahjahanaibuy'],
 ];

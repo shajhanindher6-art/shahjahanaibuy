@@ -29,6 +29,7 @@ import Link from 'next/link';
 import { headers } from 'next/headers';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { appConfig } from '@/lib/config/app';
 import { TIERS, availabilityLabel, isConciergeIncluded, isPriceLockIncluded, type TierId } from '@/lib/tiers';
 import { API_QUOTAS } from '@/lib/api-quota';
@@ -198,7 +199,7 @@ export default function PricingPage() {
       />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-5xl">
-          <h1 className="text-3xl font-bold">Pricing</h1>
+          <LocalizedHeading dictKey="navPricing" className="text-3xl font-bold" />
           <p className="mt-4 max-w-2xl text-muted-foreground">
             Free to start, Premium when you want the full AI toolkit — and Family and Team plans
             for households and businesses.

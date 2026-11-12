@@ -39,7 +39,7 @@ export async function GET(
 
     let query = supabase
       .from('products')
-      .select('id, name, slug, description, brand, category, image_url, confidence_score')
+      .select('id, name, slug, description, brand, category, image_url, confidence_score, data_freshness')
       .neq('id', product.id)
       // The 'sample-laptop' health-check row is not a real product
       // and must never surface as a "similar product" (Section 14,
@@ -89,6 +89,9 @@ export async function GET(
       description: row.description,
       price: lowest.get(row.id)?.price ?? null,
       merchantCount: lowest.get(row.id)?.merchantCount ?? 0,
+      // Section 16, item 9: recorded freshness rides with the card
+      // so the stale-price badge + age can render under the price.
+      dataFreshness: (row.data_freshness as string | null) ?? null,
       // Deterministic: the old term added Math.random() * 20, so the same
       // product's "match" value jittered on every request. confidence_score
       // alone is the stated similarity signal (50 when unrecorded).

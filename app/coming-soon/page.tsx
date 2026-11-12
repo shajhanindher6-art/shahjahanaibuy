@@ -24,6 +24,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Clock } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { appConfig } from '@/lib/config/app';
 
@@ -125,6 +126,13 @@ export default function ComingSoonPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Coming soon"
+        description="What SmartBuy AI has planned next, and what is blocking each item. No launch dates are promised."
+        path="/coming-soon"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Coming soon" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">

@@ -21,7 +21,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Share2 } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { appConfig } from '@/lib/config/app';
 import { ReferralLinkCard } from '@/components/referrals/referral-link-card';
 
@@ -52,12 +54,21 @@ export default function ReferralsPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Referrals"
+        description="How SmartBuy referrals work: one shareable link per account, clicks counted only, no signup tracking, no cash rewards — points and badges come from verified deals, not referrals."
+        path="/referrals"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Referrals" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl space-y-6">
           <div>
-            <h1 className="flex items-center gap-2 text-3xl font-bold">
-              <Share2 className="h-7 w-7 text-blue-600" /> Referrals
-            </h1>
+            <LocalizedHeading
+              dictKey="footerLinkReferrals"
+              className="flex items-center gap-2 text-3xl font-bold"
+              icon={<Share2 className="h-7 w-7 text-blue-600" />}
+            />
             <p className="mt-2 text-muted-foreground">
               Share SmartBuy with a link, and see how many people clicked it. That is the whole
               program: clicks counted, nothing else claimed.

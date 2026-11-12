@@ -12,6 +12,7 @@
 import Link from 'next/link';
 import { Store, Award } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import type { Metadata } from 'next';
@@ -69,6 +70,14 @@ export default async function CreatorsPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList, ItemList). */}
+      <PageJsonLd
+        name="Creators"
+        description="Community members who share verified deals. A creator appears here once they have a public storefront and at least one verified deal."
+        path="/creators"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Creators" } ]}
+        items={creators.map((creator) => ({ name: creator.displayName ?? 'Creator', path: `/creators/${creator.slug}` }))}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">

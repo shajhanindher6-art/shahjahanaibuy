@@ -12,6 +12,8 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useToast } from '@/hooks/use-toast';
 import { warrantyStatus } from '@/services/vault';
 import { nextReorderDate } from '@/lib/vault-reorder';
+import { tFor } from '@/lib/i18n';
+import { useRegion } from '@/components/region/region-provider';
 
 interface VaultItem {
   id: string;
@@ -42,6 +44,9 @@ interface VaultItem {
  * badges are computed on view; no background/email warranty alerts exist.
  */
 export default function VaultPage() {
+  // Section 16, #42: the form Cancel renders through tFor
+  // (existing key only) like the deals page.
+  const { language } = useRegion();
   const { toast } = useToast();
   const [items, setItems] = useState<VaultItem[] | null>(null);
   const [vaultEnabled, setVaultEnabled] = useState(true);
@@ -267,7 +272,7 @@ export default function VaultPage() {
               </div>
               <div className="flex gap-2">
                 <Button type="submit" disabled={saving}>{saving ? <LoadingSpinner size="sm" /> : 'Save item'}</Button>
-                <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
+                <Button type="button" variant="outline" onClick={() => setShowForm(false)}>{tFor(language, 'commonCancel')}</Button>
               </div>
             </form>
           </CardContent>
@@ -375,6 +380,9 @@ export default function VaultPage() {
  * only drive the derived next-reorder date above.
  */
 function VaultReorderEditor({ item, onSaved }: { item: VaultItem; onSaved: () => void }) {
+  // Section 16, #42: Save/Cancel render through tFor (existing keys
+  // only) — same component file, separate component, own hook call.
+  const { language } = useRegion();
   const [open, setOpen] = useState(false);
   const [isConsumable, setIsConsumable] = useState(item.is_consumable ?? false);
   const [intervalDays, setIntervalDays] = useState(
@@ -451,10 +459,10 @@ function VaultReorderEditor({ item, onSaved }: { item: VaultItem; onSaved: () =>
       {error && <p className="text-xs text-red-600">{error}</p>}
       <div className="flex gap-2">
         <Button size="sm" onClick={save} disabled={saving}>
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? 'Saving…' : tFor(language, 'commonSave')}
         </Button>
         <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
-          Cancel
+          {tFor(language, 'commonCancel')}
         </Button>
       </div>
     </div>

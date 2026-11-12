@@ -18,6 +18,7 @@
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import { createClient } from '@supabase/supabase-js';
 import { env } from '@/lib/config/env';
 import { appConfig } from '@/lib/config/app';
@@ -27,6 +28,8 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { deriveTaxonomySlugs, slugify } from '@/lib/brand-category-seo';
 import { buildItemListJsonLd, toJsonLd } from '@/lib/json-ld';
+import { tFor } from '@/lib/i18n';
+import { isSupportedLanguage, type Language } from '@/lib/region';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,7 +74,20 @@ async function getBrands(): Promise<Array<{ name: string; slug: string; count: n
   }
 }
 
+/**
+ * Section 16, #42: server-page language from the same sb-language
+ * cookie the root layout uses for dir/lang (see app/page.tsx
+ * homepageLanguage). No new dict keys — existing keys only. The H1
+ * already translates via LocalizedHeading; this covers the
+ * breadcrumb.
+ */
+function pageLanguage(): Language {
+  const saved = cookies().get('sb-language')?.value ?? null;
+  return saved && isSupportedLanguage(saved) ? saved : 'en';
+}
+
 export default async function BrandsIndexPage() {
+  const language = pageLanguage();
   const brands = await getBrands();
 
   return (
@@ -81,10 +97,10 @@ export default async function BrandsIndexPage() {
         <div className="mx-auto max-w-2xl">
           <nav aria-label="Breadcrumb" className="mb-4 text-sm text-muted-foreground">
             <Link href="/" className="underline">
-              Home
+              {tFor(language, 'navHome')}
             </Link>
             {' / '}
-            <span>Brands</span>
+            <span>{tFor(language, 'navBrands')}</span>
           </nav>
           <LocalizedHeading dictKey="pageHeadingBrands" className="text-3xl font-bold" />
           <p className="mt-2 text-muted-foreground">

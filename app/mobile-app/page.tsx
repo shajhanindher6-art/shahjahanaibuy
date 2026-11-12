@@ -17,6 +17,7 @@
 import Link from 'next/link';
 import { Smartphone } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 import type { Metadata } from 'next';
 import { appConfig } from '@/lib/config/app';
@@ -52,6 +53,13 @@ export default function MobileAppPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Mobile app"
+        description="There is no native SmartBuy AI app in the App Store or Google Play yet, and no launch date is promised. Until there is, the website itself installs as an app on your phone."
+        path="/mobile-app"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Mobile app" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">

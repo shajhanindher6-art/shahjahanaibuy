@@ -48,7 +48,7 @@ export default function EditorialPolicyPage() {
           </p>
           <p className="mt-4 text-muted-foreground">
             Articles are written in English. The rest of the site works in 20 languages
-            (only 28 interface strings are translated, and 12 of the 20 languages are
+            (167 interface strings are translated, and 12 of the 20 languages are
             machine-translated, so all other content stays English), but blog content is
             English only, and it is not machine-translated and presented as native copy.
           </p>

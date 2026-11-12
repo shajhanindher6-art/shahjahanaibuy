@@ -107,6 +107,10 @@ import {
 } from '@/services/ebay-refresh';
 import { checkPriceAlerts, type AlertCheckResult } from '@/services/alert-checker';
 import {
+  notifySavedSearchMatches,
+  type SavedSearchNotifyResult,
+} from '@/services/saved-searches';
+import {
   generateWeeklyDigestsForPremiumUsers,
   type WeeklyDigestRunResult,
 } from '@/services/notifications';
@@ -831,6 +835,7 @@ export async function POST(request: NextRequest) {
       'stock',
       'guestAlerts',
       'guestEmail',
+      'savedSearches',
     ] as const;
     const steps: Record<string, RefreshStepSummary> = {};
     for (const name of stepNames) {
@@ -920,6 +925,11 @@ export async function POST(request: NextRequest) {
     failed: 0,
     pendingNoProvider: 0,
   };
+  const zeroSavedSearches: SavedSearchNotifyResult = {
+    ok: true,
+    searchesChecked: 0,
+    notified: 0,
+  };
 
   const ebay = await runRefreshStep(
     'refreshEbayPrices',
@@ -984,6 +994,20 @@ export async function POST(request: NextRequest) {
     zeroGuestEmail
   );
 
+  // Section 16, #32 — saved-search match notifications, inside
+  // THIS refresh chain only (no second scheduler). The step never
+  // throws and a missing table (042 unapplied) is a clean skip,
+  // not a failure — the chain reports it and continues.
+  const savedSearches = await runRefreshStep(
+    'notifySavedSearchMatches',
+    () => notifySavedSearchMatches(supabase),
+    zeroSavedSearches,
+    // 'table-missing' (042 unapplied) is a clean skip, not a
+    // failure — otherwise every refresh would report
+    // completed_with_failures until the owner applies 042.
+    (r) => (r.ok || r.reason === 'table-missing' ? null : (r.reason ?? 'saved-search match notifications failed'))
+  );
+
   const steps: Record<string, RefreshStepSummary> = {
     ebay: summarizeStep(ebay),
     refresh: summarizeStep(refresh),
@@ -994,6 +1018,7 @@ export async function POST(request: NextRequest) {
     stock: summarizeStep(stock),
     guestAlerts: summarizeStep(guestAlerts),
     guestEmail: summarizeStep(guestEmail),
+    savedSearches: summarizeStep(savedSearches),
   };
   const failedSteps = Object.entries(steps).filter(
     ([, s]) => s.status === 'failed'
@@ -1028,6 +1053,7 @@ export async function POST(request: NextRequest) {
     stock: stock.result,
     guestAlerts: guestAlerts.result,
     guestEmail: guestEmail.result,
+    savedSearches: savedSearches.result,
     steps,
   });
 }

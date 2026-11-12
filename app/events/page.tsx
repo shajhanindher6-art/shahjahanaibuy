@@ -13,6 +13,7 @@
 import Link from 'next/link';
 import { CalendarDays } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { SiteFooter } from '@/components/layout/site-footer';
 import type { Metadata } from 'next';
@@ -49,6 +50,14 @@ export default function EventsIndexPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList, ItemList). */}
+      <PageJsonLd
+        name="Seasonal events"
+        description="The year’s big sale events, and how to shop each one without trusting the badge — check the price history, set an alert at the price you would actually pay, and let the alert decide."
+        path="/events"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Seasonal events" } ]}
+        items={SEASONAL_EVENTS.map((event) => ({ name: event.name, path: `/events/${event.slug}` }))}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <LocalizedHeading

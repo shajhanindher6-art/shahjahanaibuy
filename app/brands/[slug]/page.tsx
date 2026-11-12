@@ -78,6 +78,9 @@ export default async function BrandPage({
     .filter(Boolean);
   let latestPrices = new Map<string, number>();
   let dealScores = new Map<string, number>();
+  // Section 16, item 10: recorded point counts behind each score,
+  // so cards whose score is withheld can say why (4 of 5 points).
+  let dealScorePoints = new Map<string, number>();
   if (productIds.length > 0) {
     try {
       const supabase = await createSupabaseServerClient();
@@ -88,6 +91,13 @@ export default async function BrandPage({
       predictions.forEach((prediction, i) => {
         const score = dealScoreForDisplay(prediction);
         if (score !== null) dealScores.set(productIds[i], score);
+        if (
+          prediction &&
+          typeof prediction.dataPoints === 'number' &&
+          Number.isFinite(prediction.dataPoints)
+        ) {
+          dealScorePoints.set(productIds[i], prediction.dataPoints);
+        }
       });
     } catch {
       // Prices / scores stay empty — cards render without them.
@@ -232,6 +242,12 @@ export default async function BrandPage({
                         description: product.description,
                         price: latestPrices.get(productId) ?? null,
                         dealScore: dealScores.get(productId) ?? null,
+                        // Section 16, items 9–10: recorded freshness
+                        // for the stale badge, point count for the
+                        // withheld-score note.
+                        dataFreshness: full.dataFreshness ?? null,
+                        dealScoreDataPoints:
+                          dealScorePoints.get(productId) ?? null,
                       }}
                     />
                   );

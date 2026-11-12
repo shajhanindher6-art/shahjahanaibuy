@@ -2,6 +2,8 @@
  * API v1 saved searches endpoint (Section 15, C2).
  * GET    /api/v1/saved-searches — list the caller's saved searches, newest first.
  * POST   /api/v1/saved-searches — save the current search (name + query string).
+ * PATCH  /api/v1/saved-searches?id=<id> — turn match notifications on/off
+ *          for one saved search (Section 16, #32; migration 042).
  * DELETE /api/v1/saved-searches?id=<id> — delete one of the caller's saved searches.
  *
  * Auth required on all three. A user can only ever see, save, or
@@ -35,6 +37,7 @@ import {
   createSavedSearch,
   deleteSavedSearch,
   listSavedSearches,
+  setSavedSearchNotify,
   validateSavedSearchInput,
 } from '@/services/saved-searches';
 
@@ -105,6 +108,43 @@ export async function POST(request: NextRequest) {
     return apiSuccess(result.savedSearch, 201);
   } catch {
     return internalError('Failed to save search');
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  logApiRequest(request, { endpoint: 'saved-searches.notify' });
+  // Rate limit: 30 requests/min per IP.
+  const limited = await rateLimitResponse(`saved-searches:${getClientIp(request)}`, 30);
+  if (limited) return limited;
+
+  const auth = await requireAuth(request);
+  if ('error' in auth) return auth.error;
+
+  const id = request.nextUrl.searchParams.get('id');
+  if (!id) return badRequest('id is required');
+
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body.notifyOnMatch !== 'boolean') {
+    return badRequest('notifyOnMatch (boolean) is required');
+  }
+
+  try {
+    const supabase = await createSupabaseServerClient();
+    const result = await setSavedSearchNotify(supabase, auth.userId, id, body.notifyOnMatch);
+    if ('error' in result) {
+      if (result.error === 'missing-table') {
+        return serviceUnavailable(
+          'Saved-search notifications are not available yet — migration 042 has not been applied.'
+        );
+      }
+      if (result.error === 'not-found') {
+        return notFound('Saved search not found or not owned by user');
+      }
+      return internalError('Failed to update saved search notifications');
+    }
+    return apiSuccess(result.savedSearch, 200);
+  } catch {
+    return internalError('Failed to update saved search notifications');
   }
 }
 

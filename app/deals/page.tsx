@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { appConfig } from '@/lib/config/app';
 import { buildItemListJsonLd, toJsonLd } from '@/lib/json-ld';
 import { Price } from '@/components/region/price';
+import { StalePriceBadge } from '@/components/products/stale-price-badge';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import { CommunityDeals } from '@/components/deals/community-deals';
@@ -65,6 +66,10 @@ interface RankedDeal {
     brand: string | null;
     category: string | null;
     imageUrl: string | null;
+    /** Recorded `products.data_freshness` (Section 16, item 9) —
+        the ranked-deals API returns the full product row; older
+        cached responses may omit it, so the badge renders nothing. */
+    dataFreshness?: string | null;
   } | null;
 }
 
@@ -975,6 +980,15 @@ function DealCard({ deal, featured, onClick }: { deal: RankedDeal; featured?: bo
             </span>
           )}
         </div>
+
+        {/* Section 16, item 9: stale-price badge + age-in-days
+            under the deal price (nothing when the freshness is
+            unknown — e.g. an older cached response). */}
+        {deal.currentPrice !== null && deal.currentPrice !== undefined && (
+          <div className="mt-1">
+            <StalePriceBadge dataFreshness={deal.product?.dataFreshness} />
+          </div>
+        )}
 
         {deal.deal?.couponCode && (
           <div className="mt-2 rounded-md border border-dashed border-slate-300 p-2 text-center dark:border-slate-600">

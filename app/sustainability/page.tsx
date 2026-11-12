@@ -14,7 +14,9 @@
  */
 
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { Leaf } from 'lucide-react';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getProducts } from '@/services/products';
@@ -92,12 +94,20 @@ export default async function SustainabilityPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Sustainability"
+        description="Carbon labels, repairability, and refurbished options — every claim sourced, every estimate labeled. No greenwashing."
+        path="/sustainability"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Sustainability" } ]}
+      />
       <div className="container mx-auto max-w-4xl px-4 py-8">
         <div className="mb-8 text-center">
-          <h1 className="flex items-center justify-center gap-2 text-3xl font-bold sm:text-4xl">
-            <Leaf className="h-8 w-8 text-emerald-600" />
-            Sustainability
-          </h1>
+          <LocalizedHeading
+            dictKey="footerLinkSustainability"
+            className="flex items-center justify-center gap-2 text-3xl font-bold sm:text-4xl"
+            icon={<Leaf className="h-8 w-8 text-emerald-600" />}
+          />
           <p className="mt-2 text-muted-foreground">
             Carbon labels, repairability, and refurbished options — every claim sourced, every
             estimate labeled. No greenwashing.

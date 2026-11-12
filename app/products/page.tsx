@@ -26,8 +26,10 @@
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { headers } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { appConfig } from '@/lib/config/app';
+import { tFor } from '@/lib/i18n';
+import { isSupportedLanguage, type Language } from '@/lib/region';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -90,11 +92,22 @@ function withParams(
   return query ? `/products?${query}` : '/products';
 }
 
+/**
+ * Section 16, #42: server-page language from the same sb-language
+ * cookie the root layout uses for dir/lang (see app/page.tsx
+ * homepageLanguage). No new dict keys — existing keys only.
+ */
+function pageLanguage(): Language {
+  const saved = cookies().get('sb-language')?.value ?? null;
+  return saved && isSupportedLanguage(saved) ? saved : 'en';
+}
+
 export default async function ProductsIndexPage({
   searchParams,
 }: {
   searchParams?: { [key: string]: string | string[] | undefined };
 }) {
+  const language = pageLanguage();
   const q = first(searchParams?.q);
   const brand = first(searchParams?.brand);
   const category = first(searchParams?.category);
@@ -199,7 +212,7 @@ export default async function ProductsIndexPage({
             className="mt-6 flex flex-wrap items-end gap-3 rounded-lg border p-4"
           >
             <label className="flex flex-col gap-1 text-sm">
-              <span className="font-medium">Search</span>
+              <span className="font-medium">{tFor(language, 'navSearch')}</span>
               <input
                 type="search"
                 name="q"
@@ -318,6 +331,10 @@ export default async function ProductsIndexPage({
                       description: product.description,
                       price: lowest.get(product.id)?.price ?? null,
                       merchantCount: lowest.get(product.id)?.merchantCount ?? 0,
+                      // Section 16, item 9: recorded freshness rides
+                      // with the card so the stale-price badge + age
+                      // can render under the price.
+                      dataFreshness: product.dataFreshness ?? null,
                     }}
                   />
                 ))}

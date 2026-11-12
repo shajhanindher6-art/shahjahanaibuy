@@ -14,7 +14,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Handshake } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { appConfig } from '@/lib/config/app';
 
 export const metadata: Metadata = {
@@ -44,11 +46,20 @@ export default function PartnersPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Partners"
+        description="SmartBuy AI has no partnership program today and no partners to list. How to enquire about a store listing or a business partnership, and what SmartBuy will not offer."
+        path="/partners"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Partners" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
-          <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <Handshake className="h-7 w-7 text-blue-600" /> Partners
-          </h1>
+          <LocalizedHeading
+            dictKey="footerLinkPartners"
+            className="flex items-center gap-2 text-3xl font-bold"
+            icon={<Handshake className="h-7 w-7 text-blue-600" />}
+          />
           <p className="mt-2 text-muted-foreground">
             SmartBuy AI has no partnership program today — and no partners to list. This page
             says that plainly instead of showing logos or testimonials that do not exist.

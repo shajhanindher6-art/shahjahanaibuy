@@ -11,8 +11,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { tFor } from '@/lib/i18n';
+import { useRegion } from '@/components/region/region-provider';
 
 function SignInContent() {
+  // Section 16, #42: the submit label renders through tFor
+  // (existing key only) like the deals page.
+  const { language } = useRegion();
   const router = useRouter();
   const searchParams = useSearchParams();
   // Only same-origin paths are honoured (see lib/utils/safe-redirect.ts):
@@ -143,7 +148,7 @@ function SignInContent() {
           </div>
         </div>
         <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? <LoadingSpinner size="sm" /> : 'Sign In'}
+          {loading ? <LoadingSpinner size="sm" /> : tFor(language, 'navSignIn')}
         </Button>
       </form>
 

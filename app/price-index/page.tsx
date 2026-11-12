@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { PriceIndexTable } from '@/components/price-index/price-index-table';
 import { CategoryInflation } from '@/components/category-inflation';
@@ -82,6 +83,13 @@ export default function PriceIndexPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="SmartBuy Price Index"
+        description="A monthly price index per category and region, computed only from recorded price history. The base month is 100."
+        path="/price-index"
+        crumbs={[ { name: "Home", path: "/" }, { name: "SmartBuy Price Index" } ]}
+      />
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
         <h1 className="text-3xl font-bold">SmartBuy Price Index</h1>
         <p className="mt-2 max-w-3xl text-muted-foreground">

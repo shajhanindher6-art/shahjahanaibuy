@@ -1,12 +1,15 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { headers } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { LocalizedHeading } from '@/components/i18n/localized-heading';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { appConfig } from '@/lib/config/app';
 import { buildFaqJsonLd, toJsonLd } from '@/lib/json-ld';
 import { FAQS } from './faqs';
+import { tFor } from '@/lib/i18n';
+import { isSupportedLanguage, type Language } from '@/lib/region';
 
 export const metadata: Metadata = {
   title: 'Help Center — SmartBuy AI',
@@ -60,7 +63,22 @@ const GUIDES = [
   },
 ];
 
+/**
+ * Section 16, #42: server-page language from the same sb-language
+ * cookie the root layout uses for dir/lang (see app/page.tsx
+ * homepageLanguage). No new dict keys — existing keys only.
+ */
+function pageLanguage(): Language {
+  const saved = cookies().get('sb-language')?.value ?? null;
+  return saved && isSupportedLanguage(saved) ? saved : 'en';
+}
+
 export default function HelpPage() {
+  // Section 16, #42: the FAQ section heading renders through tFor
+  // (existing key only) — same sb-language cookie pattern as the
+  // homepage/server tools. The H1 already translates via
+  // LocalizedHeading; this covers the H2.
+  const language = pageLanguage();
   // FAQ JSON-LD (S4#15 builder, imported only) from the FAQ content
   // already on this page — no invented Q&A. Same CSP nonce source
   // as the blog/product pages (middleware sets x-nonce per request).
@@ -76,7 +94,7 @@ export default function HelpPage() {
       />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
-          <h1 className="text-3xl font-bold">Help Center</h1>
+          <LocalizedHeading dictKey="footerLinkHelpCenter" className="text-3xl font-bold" />
           <p className="mt-2 text-muted-foreground">
             Answers to common questions, and guides to the features that save you money.
             Still stuck?{' '}
@@ -125,7 +143,7 @@ export default function HelpPage() {
             ))}
           </div>
 
-          <h2 className="mt-10 text-xl font-semibold">Frequently asked questions</h2>
+          <h2 className="mt-10 text-xl font-semibold">{tFor(language, 'pageHeadingFaq')}</h2>
           <div className="mt-4 space-y-4">
             {FAQS.map((faq) => (
               <Card key={faq.question}>

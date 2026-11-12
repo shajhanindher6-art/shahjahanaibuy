@@ -12,6 +12,8 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useToast } from '@/hooks/use-toast';
 import { ExternalItemsManager } from '@/components/dashboard/external-items-manager';
+import { tFor } from '@/lib/i18n';
+import { useRegion } from '@/components/region/region-provider';
 
 interface Wishlist {
   id: string;
@@ -26,6 +28,9 @@ interface Wishlist {
 }
 
 export default function WishlistsPage() {
+  // Section 16, #42: Save/Cancel render through tFor (existing keys
+  // only) like the deals page.
+  const { language } = useRegion();
   const router = useRouter();
   const { toast } = useToast();
   const [wishlists, setWishlists] = useState<Wishlist[]>([]);
@@ -195,7 +200,7 @@ export default function WishlistsPage() {
                 <Button type="submit" disabled={creating}>
                   {creating ? <LoadingSpinner size="sm" /> : 'Create'}
                 </Button>
-                <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
+                <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>{tFor(language, 'commonCancel')}</Button>
               </div>
             </form>
           </CardContent>
@@ -226,10 +231,10 @@ export default function WishlistsPage() {
                           aria-label="Wishlist name"
                         />
                         <Button size="sm" onClick={() => void saveRename(wl.id)} disabled={renaming}>
-                          Save
+                          {tFor(language, 'commonSave')}
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => setRenamingId(null)}>
-                          Cancel
+                          {tFor(language, 'commonCancel')}
                         </Button>
                       </div>
                     ) : (
