@@ -33,6 +33,7 @@
 import type { NextRequest } from 'next/server';
 import { apiSuccess } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import {
   isTrackableClickHost,
@@ -129,9 +130,15 @@ export async function POST(request: NextRequest) {
           country_code: country,
         });
         if (error) {
-          console.error('[affiliate-geo-click] insert error', {
-            code: (error as { code?: unknown }).code ?? null,
-            message: error.message,
+          // Section 18, Phase 2 — item 55 (audit §1 #75): the DB
+          // detail (table/column names) is logged server-side
+          // only via logApiError. The beacon response stays the
+          // generic success envelope — it never carries the detail.
+          logApiError(new Error(error.message), {
+            request,
+            route: 'affiliate.geo-click',
+            status: 500,
+            context: { code: error.code ?? null },
           });
         } else {
           tracked = true;

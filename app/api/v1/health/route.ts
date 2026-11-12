@@ -22,5 +22,5 @@ export async function GET(request: NextRequest) {
     return serviceUnavailable('Service is unhealthy');
   }
 
-  return apiSuccess(health, health.status === 'healthy' ? 200 : 200);
+  return apiSuccess(health, health.status === 'healthy' ? 200 : 503);
 }

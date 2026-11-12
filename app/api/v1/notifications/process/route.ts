@@ -19,6 +19,20 @@ import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middlew
 import { isCronAuthorized } from '@/lib/api/cron-auth';
 import { processNotificationQueue } from '@/services/notification-dispatch';
 
+/**
+ * Section 18, item 36 — `maxDuration` for the long-running cron
+ * routes (refresh, alerts/check, data/refresh, notifications
+ * process + digest). Vercel's free (Hobby) plan caps serverless
+ * execution at 60 seconds, so 60 is the safe ceiling — DO NOT
+ * raise it without a paid plan (Pro: 300s, Enterprise: 900s).
+ * Without this, the platform kills the 11-step synchronous chain
+ * mid-run and the run row stays `running` until the next trigger
+ * marks it `failed` after the 30-minute staleness window. The
+ * value does NOT make a 60s+ chain finish — the refresh chain
+ * must still be kept under the cap by bounded work (items 31/37).
+ */
+export const maxDuration = 60;
+
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {

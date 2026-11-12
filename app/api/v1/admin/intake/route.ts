@@ -45,6 +45,7 @@
 import type { NextRequest } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
+import { logger } from '@/lib/config/logger';
 import {
   apiSuccess,
   badRequest,
@@ -57,6 +58,11 @@ import {
   rateLimitResponse,
   getClientIp,
 } from '@/lib/api/middleware';
+import { checkCsrfOrigin } from '@/lib/api/csrf';
+import { validateBody } from '@/lib/api/validation';
+import { z } from 'zod';
+import { logApiError } from '@/lib/api/error-logging';
+import { invalidateProductCaches } from '@/lib/cache';
 import {
   INTAKE_SOURCE,
   parseIntakeCsv,
@@ -75,6 +81,28 @@ export const dynamic = 'force-dynamic';
 
 const MAX_CSV_BYTES = 2 * 1024 * 1024; // 2 MB — intake files are small by design
 const MAX_ROWS = 1000;
+
+/**
+ * Section 18, Phase 2, item 10 (audit §1 #13) — intake JSON body
+ * validated with the shared `validateBody` helper (Zod). Only the
+ * envelope is validated here: `action` must be preview/approve,
+ * `source` (when present) one of the two known sources, `csv` a
+ * string within the size cap, `includeRowNumbers` an array of
+ * numbers, and `rows` an array of row objects. The rows themselves
+ * are deliberately NOT strictly typed: the approve step re-validates
+ * each raw row against the live catalog and reports per-row errors
+ * (`reviewIntakeRows`) — a malformed row must be a review error,
+ * not a whole-batch 400. The multipart preview path has no JSON
+ * body and is untouched.
+ */
+const intakeRowSchema = z.record(z.string(), z.unknown());
+const intakeJsonBodySchema = z.object({
+  action: z.enum(['preview', 'approve']),
+  csv: z.string().max(MAX_CSV_BYTES).optional(),
+  source: z.enum([INTAKE_SOURCE, EBAY_INTAKE_SOURCE]).optional(),
+  rows: z.array(intakeRowSchema).max(MAX_ROWS).optional(),
+  includeRowNumbers: z.array(z.number()).optional(),
+});
 
 /**
  * Loads the live catalog context used for validation: existing product
@@ -138,12 +166,18 @@ function isUndefinedColumnError(error: { code?: string } | null | undefined): bo
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   logApiRequest(request, { endpoint: 'admin.intake' });
   const limited = await rateLimitResponse(
     `admin.intake:${getClientIp(request)}`,
     30,
   );
   if (limited) return limited;
+
+  // Section 18, Phase 2, item 8 — CSRF Origin check (cookie-authed
+  // mutation; absent Origin fails open for non-browser clients).
+  const csrf = checkCsrfOrigin(request);
+  if (csrf) return csrf;
 
   const auth = await requireAdmin(request);
   if ('error' in auth) return auth.error;
@@ -180,29 +214,38 @@ export async function POST(request: NextRequest) {
       if (!isRecord(body)) {
         return badRequest('Expected a JSON body with an "action" field');
       }
-      action = typeof body.action === 'string' ? body.action : undefined;
-      if (typeof body.csv === 'string') csv = body.csv;
-      if (typeof body.source === 'string') {
-        if (
-          body.source !== INTAKE_SOURCE &&
-          body.source !== EBAY_INTAKE_SOURCE
-        ) {
-          return badRequest(
-            `Unknown intake source "${body.source}" — expected "${INTAKE_SOURCE}" or "${EBAY_INTAKE_SOURCE}"`
-          );
-        }
-        source = body.source;
+      // Section 18, Phase 2, item 10 — Zod envelope validation.
+      // Per-row validation still happens in reviewIntakeRows
+      // below; this only rejects a malformed envelope (bad
+      // action/source, non-array rows) with a 400.
+      const validation = validateBody(intakeJsonBodySchema, body);
+      if (!validation.success) {
+        const firstError = Object.values(validation.errors).flat()[0];
+        return badRequest(firstError ?? 'Invalid request body');
       }
-      if (Array.isArray(body.rows)) {
-        rows = body.rows as IntakeRowInput[];
+      action = validation.data.action;
+      if (typeof validation.data.csv === 'string') csv = validation.data.csv;
+      if (validation.data.source) {
+        source = validation.data.source;
       }
-      if (Array.isArray(body.includeRowNumbers)) {
-        includeRowNumbers = (body.includeRowNumbers as unknown[]).filter(
+      if (validation.data.rows) {
+        rows = validation.data.rows as unknown as IntakeRowInput[];
+      }
+      if (validation.data.includeRowNumbers) {
+        includeRowNumbers = validation.data.includeRowNumbers.filter(
           (n): n is number => typeof n === 'number',
         );
       }
     }
-  } catch {
+  } catch (err) {
+    // Section 18, Phase 0: previously silent — log + Sentry-capture.
+    logApiError(err, {
+      request,
+      route: 'admin.intake',
+      status: 400,
+      startedAt,
+      context: { stage: 'parse-body' },
+    });
     return badRequest('Could not read the request body');
   }
 
@@ -229,7 +272,15 @@ export async function POST(request: NextRequest) {
     let context: IntakeCatalogContext;
     try {
       context = await loadCatalogContext(service);
-    } catch {
+    } catch (err) {
+      // Section 18, Phase 0: previously silent — log + Sentry-capture.
+      logApiError(err, {
+        request,
+        route: 'admin.intake',
+        status: 500,
+        startedAt,
+        context: { stage: 'load-catalog-context', action: 'preview' },
+      });
       return internalError('Failed to load catalog data for validation');
     }
 
@@ -256,7 +307,15 @@ export async function POST(request: NextRequest) {
     let context: IntakeCatalogContext;
     try {
       context = await loadCatalogContext(service);
-    } catch {
+    } catch (err) {
+      // Section 18, Phase 0: previously silent — log + Sentry-capture.
+      logApiError(err, {
+        request,
+        route: 'admin.intake',
+        status: 500,
+        startedAt,
+        context: { stage: 'load-catalog-context', action: 'approve' },
+      });
       return internalError('Failed to load catalog data for validation');
     }
 
@@ -270,6 +329,10 @@ export async function POST(request: NextRequest) {
     const plans = planIntakeInsert(toInsert);
 
     const inserted: string[] = [];
+    // Section 18, item 33 — product ids parallel to `inserted`,
+    // for cache invalidation below (slug alone cannot build the
+    // price-history / merchant-listing cache keys).
+    const insertedIds: string[] = [];
     const skipped: Array<{ row: number; reason: string }> = [];
     // Section 17, Stage C items 14–15: true when any row in this
     // batch fell back to the pre-045 columns (migration unapplied)
@@ -400,6 +463,23 @@ export async function POST(request: NextRequest) {
       }
 
       inserted.push(plan.product.slug);
+      insertedIds.push(productId);
+    }
+
+    // Section 18, item 33 — invalidate the product/price cache
+    // keys for every approved product on THIS instance, so the new
+    // product is visible immediately instead of serving a stale
+    // (or absent) cached copy for up to 5 minutes. Other Vercel
+    // instances keep their own copies until TTL expiry — the
+    // per-instance staleness window is documented on
+    // invalidateProductCaches (lib/cache/index.ts). Invalidation is
+    // best-effort and never fails the approve.
+    for (let i = 0; i < inserted.length; i++) {
+      try {
+        invalidateProductCaches(insertedIds[i], inserted[i]);
+      } catch {
+        // A cache failure must never fail an approved batch.
+      }
     }
 
     // Provenance for the batch: products/merchant_products have no
@@ -423,8 +503,16 @@ export async function POST(request: NextRequest) {
     });
     if (auditError) {
       // Best-effort: the inserts already happened; do not fail the
-      // request over the audit row, but do not hide the failure either.
-      console.error('catalog intake: audit log insert failed', auditError.message);
+      // request over the audit row, but do not hide the failure
+      // either. Section 18, item 14: audit loss must be visible in
+      // the structured logger (with the batch context), not buried
+      // in a bare console.error.
+      logger.error('catalog intake: audit log insert failed', {
+        error: auditError.message,
+        source,
+        insertedCount: inserted.length,
+        skippedCount: skipped.length,
+      });
     }
 
     return apiSuccess({

@@ -25,6 +25,7 @@ import {
   internalError,
   serviceUnavailable,
 } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { normalizeQuantity, poolQuantityProgressText } from '@/lib/pool-quantities';
 
@@ -94,7 +95,7 @@ export async function GET(request: NextRequest) {
     if (error && isMissingColumn(error)) {
       // 033 columns missing: retry without them (target/bulk-note
       // stay null — honest unknown, never fake data).
-      console.error('[pools] v3 columns missing, retrying without them', error);
+      logger.error('[pools] v3 columns missing, retrying without them', { error: error instanceof Error ? error.message : error });
       const retry = await runQuery(POOL_SELECT_WITH_V2);
       pools = (retry.data ?? null) as Array<Record<string, unknown>> | null;
       error = (retry.error ?? null) as { code?: string } | null;
@@ -102,7 +103,7 @@ export async function GET(request: NextRequest) {
     if (error && isMissingColumn(error)) {
       // 018 migration not run yet: retry without the v2 columns and
       // report null for both (honest unknown, never fake data).
-      console.error('[pools] v2 columns missing, retrying without them', error);
+      logger.error('[pools] v2 columns missing, retrying without them', { error: error instanceof Error ? error.message : error });
       const retry = await runQuery(POOL_SELECT_BASE);
       pools = (retry.data ?? null) as Array<Record<string, unknown>> | null;
       error = (retry.error ?? null) as { code?: string } | null;
@@ -111,7 +112,7 @@ export async function GET(request: NextRequest) {
       // Logged server-side only (never exposed to visitors): without
       // this, a query failure is invisible in Vercel Runtime Logs —
       // the route just returns a generic 500 with no error detail.
-      console.error('[pools] fetch error', error);
+      logger.error('[pools] fetch error', { error: error instanceof Error ? error.message : error });
       if (isMissingTable(error)) return apiSuccess([], 200, { poolsEnabled: false });
       return internalError('Failed to fetch pools');
     }
@@ -167,7 +168,7 @@ export async function GET(request: NextRequest) {
       { poolsEnabled: true }
     );
   } catch (err) {
-    console.error('[pools] unexpected error', err);
+    logger.error('[pools] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch pools');
   }
 }
@@ -234,7 +235,7 @@ export async function POST(request: NextRequest) {
       .single();
     if (error && isMissingColumn(error)) {
       // 033 columns missing on create: retry without them.
-      console.error('[pools] v3 columns missing on create, retrying without them', error);
+      logger.error('[pools] v3 columns missing on create, retrying without them', { error: error instanceof Error ? error.message : error });
       ({ data: pool, error } = await supabase
         .from('pools')
         .insert({ ...insertBase, city, shipping_estimate_usd: shippingEstimateUsd })
@@ -244,7 +245,7 @@ export async function POST(request: NextRequest) {
     if (error && isMissingColumn(error)) {
       // 018 migration not run yet: create the pool without the v2
       // columns. The pool still works; city/shipping stay unknown.
-      console.error('[pools] v2 columns missing on create, retrying without them', error);
+      logger.error('[pools] v2 columns missing on create, retrying without them', { error: error instanceof Error ? error.message : error });
       ({ data: pool, error } = await supabase
         .from('pools')
         .insert(insertBase)

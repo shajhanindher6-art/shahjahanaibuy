@@ -108,9 +108,15 @@
 import type { NextRequest } from 'next/server';
 import { apiSuccess, unauthorized, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import { isCronAuthorized } from '@/lib/api/cron-auth';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
-import { refreshTrackedPrices, type PriceRefreshResult } from '@/services/price-refresh';
+import {
+  refreshTrackedPrices,
+  buildRefreshSharedReads,
+  type PriceRefreshResult,
+  type RefreshSharedReads,
+} from '@/services/price-refresh';
 import {
   refreshEbayPrices,
   type EbayRefreshResult,
@@ -133,8 +139,10 @@ import { processNotificationQueue } from '@/services/notification-dispatch';
 import { sendEmail } from '@/services/email';
 import { PUSH_SEND_TIMEOUT_MS } from '@/services/push';
 import { withTimeout } from '@/lib/with-timeout';
+import { mapWithConcurrencyLimit } from '@/lib/with-concurrency';
 import {
   runRefreshStep,
+  sanitizeRefreshStepLoadError,
   summarizeStep,
   tryStartRefreshRun,
   finishRefreshRun,
@@ -150,6 +158,14 @@ import {
   type AvailabilitySnapshot,
 } from '@/lib/local-alerts';
 import type { AnySupabaseClient } from '@/lib/supabase/types';
+
+/**
+ * Section 18, item 36 — `maxDuration` (see
+ * app/api/v1/notifications/process/route.ts for the plan
+ * constraint): Vercel Hobby caps serverless execution at 60s —
+ * DO NOT raise without a paid plan.
+ */
+export const maxDuration = 60;
 
 // ---------------------------------------------------------------------------
 // S3#3 — availability snapshots (recorded like price history)
@@ -181,7 +197,13 @@ interface MerchantStockRow {
 }
 
 async function recordAvailabilitySnapshots(
-  supabase: AnySupabaseClient
+  supabase: AnySupabaseClient,
+  /** Section 18, item 31 — the run's shared reads. When provided,
+   *  the tracked-set and merchant_products reads below are skipped
+   *  (the builder already failed the share on any read error, so
+   *  no load failure can hide here). When null/omitted the step
+   *  reads everything itself, exactly as before. */
+  shared?: RefreshSharedReads | null
 ): Promise<StockRefreshResult> {
   const result: StockRefreshResult = {
     tracked: 0,
@@ -193,7 +215,10 @@ async function recordAvailabilitySnapshots(
   };
 
   const productIds = new Set<string>();
-  for (const table of ['alerts', 'wishlist_items', 'guest_email_alerts'] as const) {
+  if (shared) {
+    for (const id of shared.stockIds) productIds.add(id);
+  } else {
+    for (const table of ['alerts', 'wishlist_items', 'guest_email_alerts'] as const) {
     try {
       const query =
         table === 'alerts' || table === 'guest_email_alerts'
@@ -211,12 +236,11 @@ async function recordAvailabilitySnapshots(
         // failed (P1-8), including a missing core table.
         const missingTable = error.code === '42P01' || error.code === 'PGRST205';
         if (missingTable && table === 'guest_email_alerts') continue;
-        logger.warn('recordAvailabilitySnapshots: tracked-set query failed', {
-          table,
-          error: error.message,
-        });
+        // Section 18, item 11 — the helper logs the full detail
+        // server-side and returns only the generic string, so the
+        // response never leaks a table/column name or PostgREST code.
         result.loadFailed = true;
-        result.loadError = result.loadError ?? `${table}: ${error.message}`;
+        result.loadError = result.loadError ?? sanitizeRefreshStepLoadError(table, error);
         continue;
       }
       for (const row of (data ?? []) as Array<{ product_id: string }>) {
@@ -226,12 +250,10 @@ async function recordAvailabilitySnapshots(
       // A missing table (migration 026 not run) just means no guest
       // products to track — the signed-in tables above still work.
       // A throw here is a load failure, not an empty set.
-      logger.warn('recordAvailabilitySnapshots: tracked-set query threw', {
-        table,
-        error: String(err),
-      });
+      // (Section 18, item 11 — helper logs server-side, generic in response.)
       result.loadFailed = true;
-      result.loadError = result.loadError ?? `${table}: ${String(err)}`;
+      result.loadError = result.loadError ?? sanitizeRefreshStepLoadError(table, err);
+    }
     }
   }
 
@@ -241,26 +263,32 @@ async function recordAvailabilitySnapshots(
 
   // Current stock per product, from the merchant listings' own
   // in_stock/availability values — never invented.
-  const { data: merchantRows, error: merchantError } = await supabase
-    .from('merchant_products')
-    .select('product_id, price, availability, in_stock')
-    .in('product_id', ids)
-    .is('deleted_at', null);
-  if (merchantError || !merchantRows) {
-    logger.warn('recordAvailabilitySnapshots: merchant_products query failed', {
-      error: merchantError?.message,
-    });
-    result.failed = ids.length;
-    // P1-8: no stock was read, so nothing was recorded.
-    result.loadFailed = true;
-    result.loadError =
-      result.loadError ??
-      `merchant_products: ${merchantError?.message ?? 'no rows returned'}`;
-    return result;
+  // Section 18, item 31 — with shared reads the merchant rows are
+  // the builder's (same rows, price-ordered; the merge below is
+  // order-independent, so the result is identical).
+  let merchantRows: MerchantStockRow[] | null = null;
+  if (shared) {
+    merchantRows = shared.merchantRows.filter((r) => ids.includes(r.product_id));
+  } else {
+    const { data: merchantData, error: merchantError } = await supabase
+      .from('merchant_products')
+      .select('product_id, price, availability, in_stock')
+      .in('product_id', ids)
+      .is('deleted_at', null);
+    if (merchantError || !merchantData) {
+      result.failed = ids.length;
+      // P1-8: no stock was read, so nothing was recorded.
+      // (Section 18, item 11 — helper logs server-side, generic in response.)
+      result.loadFailed = true;
+      result.loadError =
+        result.loadError ?? sanitizeRefreshStepLoadError('merchant_products', merchantError);
+      return result;
+    }
+    merchantRows = merchantData as MerchantStockRow[];
   }
 
   const currentByProduct = new Map<string, AvailabilitySnapshot>();
-  for (const row of merchantRows as MerchantStockRow[]) {
+  for (const row of merchantRows) {
     const price =
       row.price !== null && row.price !== undefined
         ? parseFloat(String(row.price))
@@ -314,12 +342,10 @@ async function recordAvailabilitySnapshots(
       const missingTable =
         historyError.code === '42P01' || historyError.code === 'PGRST205';
       if (!missingTable) {
-        logger.warn('recordAvailabilitySnapshots: availability_history query failed', {
-          error: historyError.message,
-        });
+        // (Section 18, item 11 — helper logs server-side, generic in response.)
         result.loadFailed = true;
         result.loadError =
-          result.loadError ?? `availability_history: ${historyError.message}`;
+          result.loadError ?? sanitizeRefreshStepLoadError('availability_history', historyError);
         return result;
       }
     }
@@ -351,7 +377,13 @@ async function recordAvailabilitySnapshots(
     // counted — the run still reports honestly instead of crashing.
   }
 
-  for (const productId of ids) {
+  // Section 18, item 37 — the per-product snapshot writes run
+  // with a bounded concurrency pool (cap 5), not one-by-one and
+  // not unbounded. Each product's outcome is returned (never
+  // thrown) so one product's failure cannot fail the others, and
+  // the counts below aggregate exactly as the sequential loop did.
+  const outcomes = await mapWithConcurrencyLimit(ids, 5, async (productId) => {
+    const outcome = { recorded: 0, unchanged: 0, failed: 0, backInStock: false };
     try {
       const next = currentByProduct.get(productId);
       if (!next) {
@@ -364,8 +396,8 @@ async function recordAvailabilitySnapshots(
         };
         const prev = previousByProduct.get(productId) ?? null;
         if (!shouldRecordAvailabilitySnapshot(prev, unknown)) {
-          result.unchanged++;
-          continue;
+          outcome.unchanged++;
+          return outcome;
         }
         const { error } = await supabase.from('availability_history').insert({
           product_id: productId,
@@ -374,17 +406,17 @@ async function recordAvailabilitySnapshots(
           in_stock: false,
           price: null,
         });
-        if (error) result.failed++;
-        else result.recorded++;
-        continue;
+        if (error) outcome.failed++;
+        else outcome.recorded++;
+        return outcome;
       }
       const prev = previousByProduct.get(productId) ?? null;
       if (isBackInStockTransition(prev, next)) {
-        result.backInStock.push(productId);
+        outcome.backInStock = true;
       }
       if (!shouldRecordAvailabilitySnapshot(prev, next)) {
-        result.unchanged++;
-        continue;
+        outcome.unchanged++;
+        return outcome;
       }
       const { error } = await supabase.from('availability_history').insert({
         product_id: productId,
@@ -398,17 +430,24 @@ async function recordAvailabilitySnapshots(
           productId,
           error: error.message,
         });
-        result.failed++;
+        outcome.failed++;
       } else {
-        result.recorded++;
+        outcome.recorded++;
       }
     } catch (err) {
       logger.warn('recordAvailabilitySnapshots: product failed', {
         productId,
         error: String(err),
       });
-      result.failed++;
+      outcome.failed++;
     }
+    return outcome;
+  });
+  for (const [i, outcome] of outcomes.entries()) {
+    result.recorded += outcome.recorded;
+    result.unchanged += outcome.unchanged;
+    result.failed += outcome.failed;
+    if (outcome.backInStock) result.backInStock.push(ids[i]);
   }
 
   return result;
@@ -506,7 +545,14 @@ async function sendGuestPush(
 
 async function checkGuestEmailAlerts(
   supabase: AnySupabaseClient,
-  backInStockProductIds: Set<string>
+  backInStockProductIds: Set<string>,
+  /** Section 18, item 31 — the run's shared reads. When provided,
+   *  the price_history read below is skipped (the builder's rows
+   *  are a superset of this step's columns, same newest-first
+   *  order, so first-wins per product is identical). The guest
+   *  alert rows themselves are still read here — their full
+   *  columns are not in the shared set. */
+  shared?: RefreshSharedReads | null
 ): Promise<GuestAlertsResult> {
   const result: GuestAlertsResult = {
     checked: 0,
@@ -564,24 +610,38 @@ async function checkGuestEmailAlerts(
   }
 
   const priceByProduct = new Map<string, number>();
-  try {
-    const { data: latest } = await supabase
-      .from('price_history')
-      .select('product_id, price, recorded_at')
-      .in('product_id', productIds)
-      .order('recorded_at', { ascending: false })
-      .limit(1000);
-    for (const row of (latest ?? []) as Array<{
-      product_id: string;
-      price: number | string;
-    }>) {
+  // Section 18, item 31 — with shared reads the history rows are
+  // the builder's, filtered to this step's alert products.
+  const historyRowsForGuests = shared
+    ? shared.historyRows.filter((r) => productIds.includes(r.product_id))
+    : null;
+  if (historyRowsForGuests) {
+    for (const row of historyRowsForGuests) {
       if (!priceByProduct.has(row.product_id)) {
         const price = parseFloat(String(row.price));
         if (Number.isFinite(price)) priceByProduct.set(row.product_id, price);
       }
     }
-  } catch {
-    // No prices yet — price_drop alerts simply cannot trigger.
+  } else {
+    try {
+      const { data: latest } = await supabase
+        .from('price_history')
+        .select('product_id, price, recorded_at')
+        .in('product_id', productIds)
+        .order('recorded_at', { ascending: false })
+        .limit(1000);
+      for (const row of (latest ?? []) as Array<{
+        product_id: string;
+        price: number | string;
+      }>) {
+        if (!priceByProduct.has(row.product_id)) {
+          const price = parseFloat(String(row.price));
+          if (Number.isFinite(price)) priceByProduct.set(row.product_id, price);
+        }
+      }
+    } catch {
+      // No prices yet — price_drop alerts simply cannot trigger.
+    }
   }
 
   const dealProductIds = new Set<string>();
@@ -698,9 +758,15 @@ async function checkGuestEmailAlerts(
 
       result.triggered++;
     } catch (err) {
-      logger.error('checkGuestEmailAlerts: alert failed', {
-        alertId: row.id,
-        error: String(err),
+      // Section 18, Phase 0: was logger.error only — now also
+      // Sentry-captured (when configured) with status/duration/id.
+      // The other step-helper catches stay logger.warn: they are
+      // expected degradations (missing table, load failure), not
+      // errors, and must not become Sentry noise.
+      logApiError(err, {
+        route: 'prices.refresh',
+        status: 500,
+        context: { step: 'checkGuestEmailAlerts', alertId: row.id },
       });
       result.failed++;
     }
@@ -835,8 +901,12 @@ export async function POST(request: NextRequest) {
 
   // Section 15, P1-7 — one run at a time, across all triggers.
   // When another run is in progress this call skips (200 +
-  // skipped: true) instead of duplicating the chain. The guard
-  // fails open while migration 040 is unapplied.
+  // skipped: true) instead of duplicating the chain. Section 18,
+  // item 35 — the guard fails open ONLY while migration 040 is
+  // unapplied (missing table); a guard READ/insert error fails
+  // safe instead: the run is NOT started (skipped: true, reason
+  // 'guard-error'), the cron call is NOT 500'd — the always-200
+  // contract holds — and nothing runs unguarded.
   const guard = await tryStartRefreshRun(supabase, 'prices-refresh');
   if (!guard.started) {
     const stepNames = [
@@ -852,13 +922,18 @@ export async function POST(request: NextRequest) {
       'guestEmail',
       'savedSearches',
     ] as const;
+    const skipMessage =
+      guard.reason === 'guard-error'
+        ? 'The refresh guard could not be read — the run was not started.'
+        : 'Another refresh run is in progress.';
     const steps: Record<string, RefreshStepSummary> = {};
     for (const name of stepNames) {
-      steps[name] = { status: 'skipped', error: 'Another refresh run is in progress.' };
+      steps[name] = { status: 'skipped', error: skipMessage };
     }
     return apiSuccess({
       skipped: true,
-      reason: 'run-in-progress',
+      reason: guard.reason ?? 'run-in-progress',
+      error: guard.error,
       existingRunId: guard.existingRunId,
       steps,
     });
@@ -957,6 +1032,25 @@ export async function POST(request: NextRequest) {
     notified: 0,
   };
 
+  // Section 18, item 37 — the chain runs in WAVES. Steps that
+  // depend on earlier steps stay sequential; independent steps run
+  // concurrently (Promise.all). Per-step isolation is unchanged —
+  // every step is still a runRefreshStep with its zero fallback —
+  // and the handler still always returns 200 with per-step status.
+  //
+  //   Wave A (sequential): ebay → pipeline (live-fetch legs).
+  //   Shared reads (item 31): built after A, so they see the
+  //     prices A just wrote.
+  //   Wave B (parallel): refresh + stock — both read the shared
+  //     rows; neither depends on the other.
+  //   Wave C (parallel): alerts + hunts + digest + savedSearches —
+  //     all run AFTER refresh (they read the price_history rows it
+  //     just wrote); digest runs before the notification drain.
+  //   Wave D (parallel): notifications + guestAlerts — guestAlerts
+  //     needs stock's backInStock (wave B) and refresh's history
+  //     (wave B); notifications drains what C queued.
+  //   Wave E (sequential): guestEmail — drains the guest queue
+  //     that guestAlerts (wave D) just queued.
   const ebay = await runRefreshStep(
     'refreshEbayPrices',
     () => refreshEbayPrices(supabase),
@@ -975,90 +1069,157 @@ export async function POST(request: NextRequest) {
     () => refreshPricesViaPipeline(supabase),
     zeroPipeline
   );
-  const refresh = await runRefreshStep(
-    'refreshTrackedPrices',
-    () => refreshTrackedPrices(supabase),
-    zeroRefresh,
-    (r) => (r.loadFailed ? (r.loadError ?? 'price load failed') : null)
-  );
-  const alerts = await runRefreshStep(
-    'checkPriceAlerts',
-    () => checkPriceAlerts(supabase),
-    zeroAlerts
-  );
-
-  // S6#2: autonomous deal hunting, inside THIS refresh chain only
-  // (no second scheduler). Fail-safe by design: the runner never
-  // throws, and runRefreshStep is the second layer — a hunt
-  // failure must never break the refresh chain.
-  const hunts = await runRefreshStep(
-    'runHuntsForConsentedUsers',
-    () => runHuntsForConsentedUsers(supabase),
-    zeroHunts
-  );
-
-  // Section 15, P4-2 — weekly digest, inside THIS chain only (no
-  // second scheduler). Runs before the notification drain so a
-  // digest generated on this run is queued in time to be sent by
-  // the notifications step below. Usually a no-op (`due: false`).
-  const digest = await runRefreshStep(
-    'generateWeeklyDigestsForPremiumUsers',
-    () => generateWeeklyDigestsForPremiumUsers(supabase),
-    zeroDigest,
-    (r) => r.error ?? null
-  );
-
-  const notifications = await runRefreshStep(
-    'processNotificationQueue',
-    () => processNotificationQueue(supabase),
-    zeroNotifications
-  );
-
-  // S3#3 + S3#7: fail-safe — these steps report their own counts
-  // and can never fail the refresh above.
-  const stock = await runRefreshStep(
-    'recordAvailabilitySnapshots',
-    () => recordAvailabilitySnapshots(supabase),
-    zeroStock,
-    (r) => (r.loadFailed ? (r.loadError ?? 'availability load failed') : null)
-  );
-  const guestAlerts = await runRefreshStep(
-    'checkGuestEmailAlerts',
-    () => checkGuestEmailAlerts(supabase, new Set(stock.result.backInStock)),
-    zeroGuestAlerts
-  );
+  // Section 18, item 31 — ONE merchant_products + ONE price_history
+  // read for the three steps below (refresh / stock / guestAlerts),
+  // built after the live-fetch legs above so the shared rows see
+  // the prices they just wrote. null → each step reads itself,
+  // exactly as before (see buildRefreshSharedReads).
+  const sharedReads = await buildRefreshSharedReads(supabase);
+  const [refresh, stock] = await Promise.all([
+    runRefreshStep(
+      'refreshTrackedPrices',
+      () => refreshTrackedPrices(supabase, sharedReads),
+      zeroRefresh,
+      (r) => (r.loadFailed ? (r.loadError ?? 'price load failed') : null)
+    ),
+    // S3#3 + S3#7: fail-safe — these steps report their own counts
+    // and can never fail the refresh above.
+    runRefreshStep(
+      'recordAvailabilitySnapshots',
+      () => recordAvailabilitySnapshots(supabase, sharedReads),
+      zeroStock,
+      (r) => (r.loadFailed ? (r.loadError ?? 'availability load failed') : null)
+    ),
+  ]);
+  const [alerts, hunts, digest, savedSearches] = await Promise.all([
+    runRefreshStep(
+      'checkPriceAlerts',
+      () => checkPriceAlerts(supabase),
+      zeroAlerts
+    ),
+    // S6#2: autonomous deal hunting, inside THIS refresh chain only
+    // (no second scheduler). Fail-safe by design: the runner never
+    // throws, and runRefreshStep is the second layer — a hunt
+    // failure must never break the refresh chain.
+    runRefreshStep(
+      'runHuntsForConsentedUsers',
+      () => runHuntsForConsentedUsers(supabase),
+      zeroHunts
+    ),
+    // Section 15, P4-2 — weekly digest, inside THIS chain only (no
+    // second scheduler). Runs before the notification drain so a
+    // digest generated on this run is queued in time to be sent by
+    // the notifications step below. Usually a no-op (`due: false`).
+    runRefreshStep(
+      'generateWeeklyDigestsForPremiumUsers',
+      () => generateWeeklyDigestsForPremiumUsers(supabase),
+      zeroDigest,
+      (r) => r.error ?? null
+    ),
+    // Section 16, #32 — saved-search match notifications, inside
+    // THIS refresh chain only (no second scheduler). The step never
+    // throws and a missing table (042 unapplied) is a clean skip,
+    // not a failure — the chain reports it and continues.
+    runRefreshStep(
+      'notifySavedSearchMatches',
+      () => notifySavedSearchMatches(supabase),
+      zeroSavedSearches,
+      // 'table-missing' (042 unapplied) is a clean skip, not a
+      // failure — otherwise every refresh would report
+      // completed_with_failures until the owner applies 042.
+      (r) => (r.ok || r.reason === 'table-missing' ? null : (r.reason ?? 'saved-search match notifications failed'))
+    ),
+  ]);
+  const [notifications, guestAlerts] = await Promise.all([
+    runRefreshStep(
+      'processNotificationQueue',
+      () => processNotificationQueue(supabase),
+      zeroNotifications
+    ),
+    runRefreshStep(
+      'checkGuestEmailAlerts',
+      () => checkGuestEmailAlerts(supabase, new Set(stock.result.backInStock), sharedReads),
+      zeroGuestAlerts
+    ),
+  ]);
   const guestEmail = await runRefreshStep(
     'drainGuestNotificationQueue',
     () => drainGuestNotificationQueue(supabase),
     zeroGuestEmail
   );
 
-  // Section 16, #32 — saved-search match notifications, inside
-  // THIS refresh chain only (no second scheduler). The step never
-  // throws and a missing table (042 unapplied) is a clean skip,
-  // not a failure — the chain reports it and continues.
-  const savedSearches = await runRefreshStep(
-    'notifySavedSearchMatches',
-    () => notifySavedSearchMatches(supabase),
-    zeroSavedSearches,
-    // 'table-missing' (042 unapplied) is a clean skip, not a
-    // failure — otherwise every refresh would report
-    // completed_with_failures until the owner applies 042.
-    (r) => (r.ok || r.reason === 'table-missing' ? null : (r.reason ?? 'saved-search match notifications failed'))
-  );
-
+  // Section 18, item 38 — per-step counts in the stored steps
+  // JSONB, so /admin/refresh-runs and /status can show HOW MANY
+  // prices a past run refreshed, not just that a step failed.
+  // Every count below comes from a number the step already
+  // computed — nothing is invented. hunts computes no failure
+  // count, so it stores NO counts rather than a fabricated zero.
+  // savedSearches stores counts only when ok (failed: 0 is only
+  // honest then); otherwise the counts are omitted.
   const steps: Record<string, RefreshStepSummary> = {
-    ebay: summarizeStep(ebay),
-    pipeline: summarizeStep(pipeline),
-    refresh: summarizeStep(refresh),
-    alerts: summarizeStep(alerts),
+    ebay: summarizeStep(ebay, {
+      processed: ebay.result.checked,
+      succeeded: ebay.result.updated + ebay.result.inserted,
+      failed: ebay.result.failed,
+      skipped:
+        ebay.result.skippedMismatch +
+        ebay.result.skippedNoListing +
+        ebay.result.skippedUnknownCurrency,
+    }),
+    pipeline: summarizeStep(pipeline, {
+      processed: pipeline.result.checked,
+      succeeded: pipeline.result.refreshed,
+      failed: pipeline.result.failed,
+    }),
+    refresh: summarizeStep(refresh, {
+      processed: refresh.result.tracked,
+      succeeded: refresh.result.inserted + refresh.result.unchanged,
+      failed: refresh.result.failed,
+      skipped: refresh.result.skippedNoRetailer + refresh.result.skippedNoPrice,
+    }),
+    alerts: summarizeStep(alerts, {
+      processed: alerts.result.checked,
+      succeeded: alerts.result.triggered,
+      failed: alerts.result.failed,
+      skipped: alerts.result.skippedDuplicate,
+    }),
     hunts: summarizeStep(hunts),
-    digest: summarizeStep(digest),
-    notifications: summarizeStep(notifications),
-    stock: summarizeStep(stock),
-    guestAlerts: summarizeStep(guestAlerts),
-    guestEmail: summarizeStep(guestEmail),
-    savedSearches: summarizeStep(savedSearches),
+    digest: summarizeStep(digest, {
+      processed: digest.result.total,
+      succeeded: digest.result.generated,
+      failed: digest.result.failed,
+    }),
+    notifications: summarizeStep(notifications, {
+      processed: notifications.result.processed,
+      succeeded: notifications.result.sent,
+      failed: notifications.result.failed,
+    }),
+    stock: summarizeStep(stock, {
+      processed: stock.result.tracked,
+      succeeded: stock.result.recorded + stock.result.unchanged,
+      failed: stock.result.failed,
+    }),
+    guestAlerts: summarizeStep(guestAlerts, {
+      processed: guestAlerts.result.checked,
+      succeeded: guestAlerts.result.triggered,
+      failed: guestAlerts.result.failed,
+    }),
+    guestEmail: summarizeStep(guestEmail, {
+      processed: guestEmail.result.processed,
+      succeeded: guestEmail.result.sent,
+      failed: guestEmail.result.failed,
+      skipped: guestEmail.result.pendingNoProvider,
+    }),
+    savedSearches: summarizeStep(
+      savedSearches,
+      savedSearches.result.ok
+        ? {
+            processed: savedSearches.result.searchesChecked,
+            succeeded: savedSearches.result.notified,
+            failed: 0,
+          }
+        : undefined
+    ),
   };
   const failedSteps = Object.entries(steps).filter(
     ([, s]) => s.status === 'failed'

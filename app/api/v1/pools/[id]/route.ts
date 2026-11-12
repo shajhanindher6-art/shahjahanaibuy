@@ -16,6 +16,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, internalError, notFound } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { normalizeQuantity, poolQuantityProgress, poolQuantityProgressText } from '@/lib/pool-quantities';
 import { splitShippingEstimate, POOL_NO_GUARANTEE_NOTE } from '@/services/smartpool';
@@ -57,7 +58,7 @@ export async function GET(
       ({ data: pool, error } = await runQuery(POOL_SELECT_BASE));
     }
     if (error) {
-      console.error('[pools.id] fetch error', error);
+      logger.error('[pools.id] fetch error', { error: error instanceof Error ? error.message : error });
       if (isMissingTable(error)) return apiSuccess(null, 200, { poolsEnabled: false });
       return internalError('Failed to fetch pool');
     }
@@ -121,7 +122,7 @@ export async function GET(
       { poolsEnabled: true }
     );
   } catch (err) {
-    console.error('[pools.id] unexpected error', err);
+    logger.error('[pools.id] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch pool');
   }
 }

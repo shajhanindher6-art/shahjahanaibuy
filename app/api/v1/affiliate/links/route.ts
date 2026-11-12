@@ -25,9 +25,12 @@ export async function GET(request: NextRequest) {
     }
 
     const supabase = await createSupabaseServerClient();
+    // Section 18, item 30 — explicit columns (was select('*')):
+    // the rows are returned verbatim, so the list must cover every
+    // column of affiliate_links (migration 009).
     const { data, error } = await supabase
       .from('affiliate_links')
-      .select('*')
+      .select('id, product_id, retailer_id, merchant_id, retailer_name, original_url, affiliate_url, affiliate_id, commission_rate, clicks_count, conversions_count, revenue_generated, active, created_at, updated_at')
       .eq('product_id', productId)
       .eq('active', true)
       .order('created_at', { ascending: false });

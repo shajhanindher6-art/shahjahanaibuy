@@ -14,6 +14,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, internalError } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import {
   badgeForVerifiedDeals,
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
           revenueShareConfigured: getCreatorRevenueShareConfig().configured,
         });
       }
-      console.error('[creator-rewards.leaderboard] fetch error', error);
+      logger.error('[creator-rewards.leaderboard] fetch error', { error: error instanceof Error ? error.message : error });
       return internalError('Failed to fetch leaderboard');
     }
     const entries: LeaderboardEntry[] = ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({

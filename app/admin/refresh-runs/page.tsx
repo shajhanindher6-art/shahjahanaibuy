@@ -20,6 +20,17 @@
  * - Table exists but no runs yet → "No refresh runs recorded yet."
  * - A run with no failed steps says "All steps ok" — never a
  *   claim about steps that were not recorded.
+ * - Failed products (Section 18, item 47): per-product failures
+ *   are stored with their reason in `error_log`
+ *   (`route='prices.refresh'`, migration 048) by
+ *   `markProductRefreshFailed` and listed below the runs. Until
+ *   048 is applied the reason is not stored anywhere — the section
+ *   says so instead of showing an empty list as if no product ever
+ *   failed.
+ * - Dead-lettered jobs (Section 18, item 42): the in-memory DLQ
+ *   from `lib/workers/queue` is listed at the bottom with the
+ *   queue metrics. It is per-instance state — "No dead-lettered
+ *   jobs on this instance" says nothing about other instances.
  *
  * Monitor contract (documented here, NOT in the refresh route —
  * another worker owns that file): POST /api/v1/prices/refresh
@@ -31,11 +42,13 @@
 
 import type { Metadata } from 'next';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
+import { getDeadLetterQueue, getQueueMetrics } from '@/lib/workers/queue';
 import {
   listRefreshRuns,
   failedStepsOf,
   refreshStepLabel,
 } from '@/services/refresh-runs-admin';
+import { listRefreshFailures } from '@/services/error-log-admin';
 import type { RefreshRunRow } from '@/services/refresh-run';
 
 export const dynamic = 'force-dynamic';
@@ -84,8 +97,17 @@ export default async function AdminRefreshRunsPage() {
   }
 
   const { runs, tableMissing, error } = await listRefreshRuns(service, 50);
+  const failures = await listRefreshFailures(service, 20);
   const lastRun: RefreshRunRow | null = runs[0] ?? null;
   const totalFailedSteps = runs.reduce((n, run) => n + failedStepsOf(run).length, 0);
+  // Section 18, item 42 — the in-memory dead-letter queue, surfaced
+  // here because it had no callers and failed jobs surfaced nowhere.
+  // Module state only: getQueue() is NOT called at import, and
+  // importing this page never starts a worker. The numbers are for
+  // THIS server instance only — Vercel runs several, and a DLQ entry
+  // on another instance does not appear here.
+  const deadLettered = getDeadLetterQueue();
+  const queueMetrics = getQueueMetrics();
 
   return (
     <main className="container mx-auto max-w-4xl px-4 py-12">
@@ -169,6 +191,12 @@ export default async function AdminRefreshRunsPage() {
                             Failed step: {refreshStepLabel(step.name)}
                           </span>
                           {step.error ? <span className="block text-muted-foreground">{step.error}</span> : null}
+                          {step.counts ? (
+                            <span className="block text-muted-foreground">
+                              Processed {step.counts.processed} · succeeded {step.counts.succeeded} · failed {step.counts.failed}
+                              {step.counts.skipped !== undefined ? ` · skipped ${step.counts.skipped}` : ''}
+                            </span>
+                          ) : null}
                         </li>
                       ))}
                     </ul>
@@ -178,6 +206,87 @@ export default async function AdminRefreshRunsPage() {
             })}
           </div>
         </>
+      )}
+
+      {/* Failed products with reasons (Section 18, item 47) — read
+          from error_log, independent of the runs table above, so it
+          renders even when migration 040 is unapplied. */}
+      <h2 className="mt-10 text-xl font-semibold">Failed products</h2>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Products whose last refresh failed, newest first, with the reason
+        the refresh recorded. A failed product is re-queued after 15 minutes.
+      </p>
+      {failures.error ? (
+        <p className="mt-4 rounded-lg border border-red-300 bg-red-50 p-4 text-sm dark:border-red-800 dark:bg-red-950">
+          Failed products could not be read: {failures.error}
+        </p>
+      ) : failures.tableMissing ? (
+        <div className="mt-4 rounded-lg border p-6">
+          <p className="font-medium">Failure reasons are not stored yet — migration 048 not applied.</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            The error_log table does not exist yet. Until the owner applies
+            migration 048 (supabase/migrations/20261112210000_048_error_log.sql)
+            in the Supabase SQL Editor, a failed product is only marked
+            failed and re-queued — the reason it failed is not stored
+            anywhere. No failure has been lost — none was ever stored.
+          </p>
+        </div>
+      ) : failures.failures.length === 0 ? (
+        <div className="mt-4 rounded-lg border p-6">
+          <p className="font-medium">No failed products recorded.</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            The table exists, but no product refresh has failed since it was
+            applied.
+          </p>
+        </div>
+      ) : (
+        <ul className="mt-4 space-y-2">
+          {failures.failures.map((failure) => (
+            <li key={failure.id} className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm dark:border-red-800 dark:bg-red-950">
+              <p className="font-medium">
+                {failure.productName ?? failure.productSlug ?? failure.productId}
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                {failure.reason ?? failure.message} · {formatDateTime(failure.created_at)}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Dead-letter queue (Section 18, item 42) — jobs that
+          exhausted their retries on THIS server instance. The
+          queue_metrics / sync_history tables are always empty (the
+          metrics snapshot only runs from process(), which has no
+          callers), so this in-memory list is the only place a
+          failed job surfaces. Empty is the honest state when there
+          is nothing dead-lettered on this instance — it says
+          nothing about other instances. */}
+      <h2 className="mt-10 text-xl font-semibold">Dead-lettered jobs</h2>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Queue on this instance: {queueMetrics.enqueued} enqueued · {queueMetrics.completed} completed · {queueMetrics.failed} failed · {queueMetrics.deadLetterCount} dead-lettered.
+      </p>
+      {deadLettered.length === 0 ? (
+        <div className="mt-4 rounded-lg border p-6">
+          <p className="font-medium">No dead-lettered jobs on this instance.</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            No job has exhausted its retries on this server instance since it
+            started. Jobs that failed on another instance do not appear here.
+          </p>
+        </div>
+      ) : (
+        <ul className="mt-4 space-y-2">
+          {deadLettered.map((entry) => (
+            <li key={entry.id} className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm dark:border-red-800 dark:bg-red-950">
+              <p className="font-medium">
+                {entry.type} · {entry.attempts} attempt{entry.attempts === 1 ? '' : 's'}
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                {entry.error} · {formatDateTime(entry.failedAt)}
+              </p>
+            </li>
+          ))}
+        </ul>
       )}
     </main>
   );

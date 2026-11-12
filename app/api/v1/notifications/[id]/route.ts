@@ -10,7 +10,8 @@
  * and adding one would need a migration. The delivery `status`
  * (pending/sent/…) is deliberately untouched: read/unread is about
  * the user having seen the row, not about delivery. The GET list
- * route returns select('*'), so the flag round-trips to the page,
+ * route returns the explicit column list (Section 18, item 30 —
+ * was select('*')), so the flag round-trips to the page,
  * which dims read rows.
  */
 
@@ -66,7 +67,10 @@ export async function PATCH(
       .update({ data: { ...prevData, read } })
       .eq('id', params.id)
       .eq('user_id', auth.userId)
-      .select('*')
+      // Section 18, item 30 — explicit columns (was select('*')):
+      // the updated row is returned verbatim; the page maps it with
+      // mapNotificationRow, so the list covers exactly its fields.
+      .select('id, user_id, type, channel, subject, body, data, status, scheduled_for, sent_at, created_at')
       .maybeSingle();
     if (updateError) {
       return internalError('Failed to mark notification');

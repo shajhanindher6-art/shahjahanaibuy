@@ -28,6 +28,14 @@ import { isCronAuthorized } from '@/lib/api/cron-auth';
 import { generateWeeklyDigest, DIGEST_PLANS } from '@/services/notifications';
 import { logger } from '@/lib/config/logger';
 
+/**
+ * Section 18, item 36 — `maxDuration` (see
+ * app/api/v1/notifications/process/route.ts for the plan
+ * constraint): Vercel Hobby caps serverless execution at 60s —
+ * DO NOT raise without a paid plan.
+ */
+export const maxDuration = 60;
+
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {

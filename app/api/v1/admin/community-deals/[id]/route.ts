@@ -28,7 +28,8 @@ import {
   notFound,
   serviceUnavailable,
 } from '@/lib/api/responses';
-import { logApiRequest, requireAdmin, rateLimitResponse } from '@/lib/api/middleware';
+import { logApiRequest, requireAdmin, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { recordAdminAction } from '@/services/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -93,6 +94,10 @@ export async function PATCH(
       return internalError('Failed to moderate community deal');
     }
     if (!data) return notFound('Community deal not found');
+    // Section 18, item 14 — audit the mutation. recordAdminAction
+    // never throws: a logging failure is recorded by the logger and
+    // never fails the admin action itself.
+    await recordAdminAction(service, admin.userId, 'community_deal_moderate', 'community_deal', params.id, { action, ...patchFor(action as ModerationAction) }, getClientIp(request));
     return apiSuccess(data);
   } catch {
     return internalError('Failed to moderate community deal');

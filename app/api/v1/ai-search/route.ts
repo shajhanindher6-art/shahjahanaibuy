@@ -69,6 +69,13 @@ export async function POST(request: NextRequest) {
     // in searchWebProducts means repeat queries cost nothing.
     let webResults: WebSearchResult[] = [];
     let webSource: 'catalog' | 'web' | 'web-disabled' = 'catalog';
+    // Section 18, item 34 — pass `fromCache` through: the old code
+    // discarded it, so up-to-7-day-old cached prices were shown
+    // under a "Live web results" heading. `webFetchedAt` is the
+    // cache entry's timestamp (or the live fetch time), never
+    // invented — null when the age is unknown.
+    let webFromCache = false;
+    let webFetchedAt: string | null = null;
     const catalogEmpty = result.results.length === 0 && result.total === 0;
     if (catalogEmpty || includeWeb === true) {
       // Effective budget for the web filter: an explicit filter
@@ -83,6 +90,8 @@ export async function POST(request: NextRequest) {
         { maxPriceUsd: effectiveBudget }
       );
       webResults = web.results;
+      webFromCache = web.fromCache;
+      webFetchedAt = web.fetchedAt;
       webSource = web.disabled ? 'web-disabled' : web.results.length > 0 ? 'web' : 'catalog';
     }
 
@@ -108,6 +117,10 @@ export async function POST(request: NextRequest) {
       parsedIntent: result.parsedIntent,
       source: webSource,
       webResults,
+      // Section 18, item 34 — whether the web results came from
+      // cache, and when they were fetched (see above).
+      webFromCache,
+      webFetchedAt,
       // B10: the resolved "X vs Y" pair for the search page's
       // "Compare these two" CTA — [] when the query had no `vs`
       // or a side could not be resolved.

@@ -38,6 +38,7 @@ import {
   getClientIp,
 } from '@/lib/api/middleware';
 import { sendNewsletterToSubscribers } from '@/services/newsletter-send';
+import { recordAdminAction } from '@/services/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -77,6 +78,29 @@ export async function POST(request: NextRequest) {
   if (!result.ok && result.reason === 'table-missing') {
     return serviceUnavailable(
       'Newsletter list is not available yet — migration 036 (newsletter_subscribers) has not been applied.'
+    );
+  }
+
+  // Section 18, item 14 — audit the send run (full or partial).
+  // 'load-failed' attempted no send, so it is not logged as one.
+  // recordAdminAction never throws: a logging failure is recorded
+  // by the logger and never fails the response itself.
+  if (result.reason !== 'load-failed') {
+    await recordAdminAction(
+      service,
+      auth.userId,
+      'newsletter_send',
+      'newsletter',
+      null,
+      {
+        sent: result.sent,
+        failed: result.failed,
+        total: result.total,
+        skippedUnsubscribed: result.skippedUnsubscribed,
+        ok: result.ok,
+        ...(result.reason ? { reason: result.reason } : {}),
+      },
+      getClientIp(request)
     );
   }
 

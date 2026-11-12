@@ -44,9 +44,11 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = await createSupabaseServerClient();
+    // Section 18, item 30 — explicit columns (was select('*')):
+    // exactly the fields mapNotificationRow reads.
     const { data, error } = await supabase
       .from('notification_queue')
-      .select('*')
+      .select('id, user_id, type, channel, subject, body, data, status, scheduled_for, sent_at, created_at')
       .eq('user_id', auth.userId)
       .order('scheduled_for', { ascending: false })
       .limit(NOTIFICATIONS_FETCH_CAP);

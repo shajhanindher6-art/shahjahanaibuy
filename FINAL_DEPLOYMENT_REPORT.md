@@ -1,6 +1,6 @@
 # FINAL DEPLOYMENT REPORT — SmartBuy AI
 
-> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. It claims PRODUCTION READY with 59 pages / 57 API routes; the repo now has **118 page routes / 181 API routes (244 handlers)** and a clean build of 796 pages, and several features are honestly not live (newsletter 503 until migration 036, `/live` empty until 033, `/creators` 404s until 044, prices stale since 2026-11-02, Stripe TEST mode, revenue $0). Do not use it as a deployment verdict. Superseded by: `project-summary.md` (Verification status) and `docs/DEPLOYMENT.md`.
+> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. It claims PRODUCTION READY with 59 pages / 57 API routes; the repo now has **121 page routes / 181 API routes (244 handlers)** and a clean build of 799 pages, and several features are honestly not live (newsletter 503 until migration 036, `/live` empty until 033, `/creators` 404s until 044, prices stale since 2026-11-02, Stripe TEST mode, revenue $0). Do not use it as a deployment verdict. Superseded by: `project-summary.md` (Verification status) and `docs/DEPLOYMENT.md`.
 
 **Date:** 2026-07-12  
 **Phase:** 6 — Final Go Live & Deployment  

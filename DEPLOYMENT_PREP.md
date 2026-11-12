@@ -1,6 +1,6 @@
 # Live Deploy Preparation — SmartBuy AI
 
-> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from 31 Oct 2026 and is kept for history only. Its hosting plan (Netlify Free, avoiding Vercel Hobby) is overtaken: the live site deploys on **Vercel** (deploy on push to `main`, live domain `https://shahjahanaibuy-b1zp.vercel.app`), and it predates the 6-cron-job model, the `STRIPE_LIVE_LAUNCHED` gate, and the 43-migration inventory. Do not use it for deployment decisions. Superseded by: `docs/DEPLOYMENT.md` and `project-summary.md`.
+> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from 31 Oct 2026 and is kept for history only. Its hosting plan (Netlify Free, avoiding Vercel Hobby) is overtaken: the live site deploys on **Vercel** (deploy on push to `main`, live domain `https://shahjahanaibuy-b1zp.vercel.app`), and it predates the 6-cron-job model, the `STRIPE_LIVE_LAUNCHED` gate, and the 48-migration inventory. Do not use it for deployment decisions. Superseded by: `docs/DEPLOYMENT.md` and `project-summary.md`.
 Prepared: 2026-10-31 | Code state: main after commit 41b5202 (75 pages, build passing)
 
 ## Free-tier plan (user decision, 2026-10-31: no budget, $0 only)

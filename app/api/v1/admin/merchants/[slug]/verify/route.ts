@@ -37,7 +37,10 @@ import {
   logApiRequest,
   requireAdmin,
   rateLimitResponse,
+  getClientIp,
 } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
+import { recordAdminAction } from '@/services/admin';
 import {
   VERIFIED_MERCHANT_RECHECK_DAYS,
   meetsVerifiedMerchantStandards,
@@ -93,6 +96,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { slug: string } }
 ) {
+  const startedAt = Date.now();
   logApiRequest(request, { endpoint: 'admin.merchants.verify', slug: params.slug });
 
   const admin = await requireAdmin(request);
@@ -162,6 +166,10 @@ export async function POST(
         .select(POLICY_COLUMNS)
         .single();
       if (error || !data) return internalError('Failed to revoke Verified Merchant status');
+      // Section 18, item 14 — audit the mutation. recordAdminAction
+      // never throws: a logging failure is recorded by the logger and
+      // never fails the admin action itself.
+      await recordAdminAction(service, admin.userId, 'merchant_verify_revoke', 'merchant', row.id as string, { slug: params.slug, action: 'revoke' }, getClientIp(request));
       return apiSuccess({ merchant: data, verified: false, unmet: [] });
     }
 
@@ -186,6 +194,7 @@ export async function POST(
     const savedRow = saved as Record<string, unknown>;
 
     if (action === 'record') {
+      await recordAdminAction(service, admin.userId, 'merchant_verify_record', 'merchant', row.id as string, { slug: params.slug, action: 'record', fields: Object.keys(patch) }, getClientIp(request));
       return apiSuccess({ merchant: saved, verified: false, unmet: [], note: 'Policy facts recorded. No badge was granted — use Verify to check the standards.' });
     }
 
@@ -211,6 +220,7 @@ export async function POST(
 
     if (!eligibility.eligible) {
       // Facts saved, badge NOT granted — the response says exactly why.
+      await recordAdminAction(service, admin.userId, 'merchant_verify_attempt', 'merchant', row.id as string, { slug: params.slug, action: 'verify', verified: false, unmet: eligibility.unmet }, getClientIp(request));
       return apiSuccess({
         merchant: saved,
         verified: false,
@@ -233,13 +243,22 @@ export async function POST(
       .select(POLICY_COLUMNS)
       .single();
     if (verifyError || !verified) return internalError('Failed to grant Verified Merchant status');
+    await recordAdminAction(service, admin.userId, 'merchant_verify_grant', 'merchant', row.id as string, { slug: params.slug, action: 'verify', verified: true, verifiedUntil }, getClientIp(request));
     return apiSuccess({
       merchant: verified,
       verified: true,
       unmet: [],
       note: `Verified Merchant granted for ${VERIFIED_MERCHANT_RECHECK_DAYS} days — re-check is due by ${verifiedUntil.slice(0, 10)}.`,
     });
-  } catch {
+  } catch (err) {
+    // Section 18, Phase 0: previously silent — log + Sentry-capture.
+    logApiError(err, {
+      request,
+      route: 'admin.merchants.verify',
+      status: 500,
+      startedAt,
+      context: { slug: params.slug },
+    });
     return internalError('Failed to verify merchant');
   }
 }

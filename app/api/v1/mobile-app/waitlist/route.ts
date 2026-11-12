@@ -14,6 +14,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { apiSuccess, internalError, serviceUnavailable, validationError } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { joinAppWaitlist, validateWaitlistInput } from '@/lib/app-waitlist';
 
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
     }
     return apiSuccess({ joined: true, alreadyJoined: false }, 201);
   } catch (err) {
-    console.error('[mobile-app.waitlist] unexpected error', err);
+    logger.error('[mobile-app.waitlist] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to join the waitlist');
   }
 }

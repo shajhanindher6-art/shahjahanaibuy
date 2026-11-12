@@ -30,11 +30,11 @@ Three auth models exist side by side:
 | Premium / Family | 10,000 / day |
 | Team | 100,000 / day |
 
-Quota is enforced server-side via `lib/api-quota.ts`. Known gap (Section 17 audit §4 #4): `GET /api/v1/public/products/[slug]` validates the key but does **not** count quota, unlike the other three public routes. Also note: until migration 035 is applied, quotas live in per-instance memory on serverless (restartable, bypassable across instances) and any DB error fails open to the in-memory store.
+Quota is enforced server-side via `lib/api-quota.ts`. The `[slug]` quota gap is closed: `GET /api/v1/public/products/[slug]` now counts quota via `enforceApiQuota` (Section 17, Stage D), like the other three public routes. Also note: until migration 035 is applied, quotas live in per-instance memory on serverless (restartable, bypassable across instances) and any DB error fails open to the in-memory store.
 
 ### Admin
 
-Admin routes under `/api/v1/admin/*` require a signed-in admin (`requireAdmin`, fail-closed). Known live risk (Section 17 audit §4 #1): the server-side admin check reads a `profiles.role` column that does not exist in the migration chain (only `role_id` FK) — if the live database matches the migration chain, every admin route returns 403. Live status is unknown to the repo; only the owner can verify it.
+Admin routes under `/api/v1/admin/*` require a signed-in admin (`requireAdmin`, fail-closed). The admin check resolves the role via `role_id → roles.name` (`lib/admin-role.ts`, `fetchProfileRoleName`) — it no longer reads a `profiles.role` column, which does not exist in the migration chain. Live verification is owner-gated (one admin login attempt).
 
 ---
 
@@ -136,7 +136,7 @@ Whether the cron-job.org jobs exist or fire is unknown from the repo — only th
 
 #### `POST /api/webhooks/stripe`
 
-Signature-verified. Events handled: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`. Idempotency via the `webhook_events` table. No handler exists yet for `invoice.payment_failed` (falls into the log-only default branch).
+Signature-verified. Events handled: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed` (handler `handleInvoicePaymentFailed` in `services/stripe.ts` — marks the subscription past-due, logs the retry context, records a zero-amount history row; Stripe's automatic retries keep running). Idempotency via the `webhook_events` table.
 
 **Stripe is in TEST mode. Revenue is $0.** Live charges need BOTH a live secret key (`sk_live_`) AND `STRIPE_LIVE_LAUNCHED=true` — see `docs/DEPLOYMENT.md`. `POST /api/v1/subscriptions` accepts only `plan: 'free'`; any other plan returns 400 (paid plans only via the Stripe webhook).
 

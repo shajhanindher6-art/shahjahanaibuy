@@ -26,6 +26,7 @@ import { parseBudgetFromQuery } from '@/services/currency';
 import { resolveRegion, convertUsd } from '@/lib/region';
 import { getStoresForCountry, buildStoreSearchUrl } from '@/lib/stores';
 import { getCoupons } from '@/services/commerce';
+import { listPublicProducts } from '@/lib/public-products';
 import { buildGeoAffiliateUrl, isGeoAffiliateEnabled } from '@/services/affiliate-geo';
 import { bestCoupon, couponValueLabel, type DealCoupon } from '@/lib/deal-math';
 import { findGiftPicks, SHIPPING_NOTE, type GiftCandidate } from '@/services/gift-finder';
@@ -59,19 +60,11 @@ export async function POST(request: NextRequest) {
     const region = resolveRegion(country || null);
     const supabase = await createSupabaseServerClient();
 
-    const { data: products } = await supabase
-      .from('products')
-      .select('id, name, slug, brand, category, description')
-      .neq('slug', 'sample-laptop')
-      .limit(100);
-    const productRows = (products ?? []) as Array<{
-      id: string;
-      name: string;
-      slug: string;
-      brand: string | null;
-      category: string | null;
-      description: string | null;
-    }>;
+    // Section 18, item 16: the shared public-product helper
+    // filters deleted_at IS NULL + status = 'published' (42703
+    // retry when migration 045 is unapplied), so soft-deleted or
+    // pending rows can never leak into public gift picks.
+    const productRows = await listPublicProducts(supabase, 100);
     if (productRows.length === 0) {
       return apiSuccess([], 200, { region, budgetUsd, shippingNote: SHIPPING_NOTE, stores: [] });
     }

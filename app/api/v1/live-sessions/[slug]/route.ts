@@ -10,6 +10,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, internalError, notFound } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getLiveSessionDetail } from '@/lib/live-sessions';
 
@@ -35,7 +36,7 @@ export async function GET(
     }
     return apiSuccess({ session, products }, 200, { liveEnabled: true });
   } catch (err) {
-    console.error('[live-sessions] unexpected error', err);
+    logger.error('[live-sessions] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch live shopping session');
   }
 }

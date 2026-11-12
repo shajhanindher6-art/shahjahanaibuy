@@ -17,6 +17,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { apiSuccess, internalError, serviceUnavailable, validationError, conflict } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import { logApiRequest, rateLimitResponse, requireAdmin, getClientIp } from '@/lib/api/middleware';
 import { isDealVerified, type MerchantPriceRow } from '@/services/community-deals';
 import {
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
       if (isMissingTable(dealError)) {
         return serviceUnavailable('Creator rewards are not set up yet — the owner still needs to run migration 031 once.');
       }
-      console.error('[creator-rewards.award] deal fetch error', dealError);
+      logger.error('[creator-rewards.award] deal fetch error', { error: dealError instanceof Error ? dealError.message : dealError });
       return internalError('Failed to award points');
     }
     if (!deal) return validationError('Deal not found');
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
       if (isMissingTable(eventError)) {
         return serviceUnavailable('Creator rewards are not set up yet — the owner still needs to run migration 031 once.');
       }
-      console.error('[creator-rewards.award] event insert error', eventError);
+      logger.error('[creator-rewards.award] event insert error', { error: eventError instanceof Error ? eventError.message : eventError });
       return internalError('Failed to award points');
     }
 
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     });
     if (upsertError) {
-      console.error('[creator-rewards.award] upsert error', upsertError);
+      logger.error('[creator-rewards.award] upsert error', { error: upsertError instanceof Error ? upsertError.message : upsertError });
       return internalError('Points were recorded but the leaderboard row could not be updated');
     }
 

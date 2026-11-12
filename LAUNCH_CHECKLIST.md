@@ -1,6 +1,6 @@
 # LAUNCH CHECKLIST — SmartBuy AI
 
-> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. It predates the current deployment model (Vercel deploy-on-push, 43 migrations, 6 cron jobs, the `STRIPE_LIVE_LAUNCHED` live-money gate) and names env vars the code never reads (`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_PRO_PRICE_ID` — deprecated). Do not use it as a launch checklist. Superseded by: `docs/DEPLOYMENT.md` (Deployment checklist + Launch checklist).
+> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. It predates the current deployment model (Vercel deploy-on-push, 48 migrations, 6 cron jobs, the `STRIPE_LIVE_LAUNCHED` live-money gate) and names env vars the code never reads (`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_PRO_PRICE_ID` — deprecated). Do not use it as a launch checklist. Superseded by: `docs/DEPLOYMENT.md` (Deployment checklist + Launch checklist).
 
 **Date:** 2026-07-12
 

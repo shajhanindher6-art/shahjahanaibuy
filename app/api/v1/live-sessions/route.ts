@@ -18,6 +18,7 @@ import {
   serviceUnavailable,
   validationError,
 } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import {
   logApiRequest,
   requireAdmin,
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
     const { sessions, liveEnabled } = await getLiveSessions(supabase);
     return apiSuccess(sessions, 200, { liveEnabled });
   } catch (err) {
-    console.error('[live-sessions] unexpected error', err);
+    logger.error('[live-sessions] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch live shopping sessions');
   }
 }
@@ -111,7 +112,7 @@ export async function POST(request: NextRequest) {
         );
       }
       if (error.code === '23505') return conflict('A session with this slug already exists.');
-      console.error('[live-sessions] insert error', error);
+      logger.error('[live-sessions] insert error', { error: error instanceof Error ? error.message : error });
       return internalError('Failed to create live shopping session');
     }
 
@@ -125,13 +126,13 @@ export async function POST(request: NextRequest) {
         productIds.map((productId) => ({ session_id: data.id, product_id: productId }))
       );
       if (linkError) {
-        console.error('[live-sessions] product link error', linkError);
+        logger.error('[live-sessions] product link error', { error: linkError instanceof Error ? linkError.message : linkError });
       }
     }
 
     return apiSuccess(data, 201, { liveEnabled: true });
   } catch (err) {
-    console.error('[live-sessions] unexpected error', err);
+    logger.error('[live-sessions] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to create live shopping session');
   }
 }

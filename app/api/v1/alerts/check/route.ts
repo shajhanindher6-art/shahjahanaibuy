@@ -63,6 +63,14 @@ import {
   type RefreshStepSummary,
 } from '@/services/refresh-run';
 
+/**
+ * Section 18, item 36 — `maxDuration` (see
+ * app/api/v1/notifications/process/route.ts for the plan
+ * constraint): Vercel Hobby caps serverless execution at 60s —
+ * DO NOT raise without a paid plan.
+ */
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'alerts.check' });
   // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
@@ -89,18 +97,25 @@ export async function POST(request: NextRequest) {
 
   // Section 15, P1-7 — one run at a time, across all triggers.
   // When another run is in progress this call skips (200 +
-  // skipped: true) instead of duplicating the chain. The guard
-  // fails open while migration 040 is unapplied.
+  // skipped: true) instead of duplicating the chain. Section 18,
+  // item 35 — the guard fails open ONLY while migration 040 is
+  // unapplied (missing table); a guard error fails safe (run not
+  // started, reason 'guard-error'), never unguarded.
   const guard = await tryStartRefreshRun(supabase, 'alerts-check');
   if (!guard.started) {
+    const skipMessage =
+      guard.reason === 'guard-error'
+        ? 'The refresh guard could not be read — the run was not started.'
+        : 'Another refresh run is in progress.';
     const steps: Record<string, RefreshStepSummary> = {
-      refresh: { status: 'skipped', error: 'Another refresh run is in progress.' },
-      alerts: { status: 'skipped', error: 'Another refresh run is in progress.' },
-      notifications: { status: 'skipped', error: 'Another refresh run is in progress.' },
+      refresh: { status: 'skipped', error: skipMessage },
+      alerts: { status: 'skipped', error: skipMessage },
+      notifications: { status: 'skipped', error: skipMessage },
     };
     return apiSuccess({
       skipped: true,
-      reason: 'run-in-progress',
+      reason: guard.reason ?? 'run-in-progress',
+      error: guard.error,
       existingRunId: guard.existingRunId,
       steps,
     });
@@ -145,10 +160,27 @@ export async function POST(request: NextRequest) {
     zeroNotifications
   );
 
+  // Section 18, item 38 — per-step counts in the stored steps
+  // JSONB (same mapping as the prices/refresh route; nothing
+  // invented — every count comes from the step's own result).
   const steps: Record<string, RefreshStepSummary> = {
-    refresh: summarizeStep(refresh),
-    alerts: summarizeStep(alerts),
-    notifications: summarizeStep(notifications),
+    refresh: summarizeStep(refresh, {
+      processed: refresh.result.tracked,
+      succeeded: refresh.result.inserted + refresh.result.unchanged,
+      failed: refresh.result.failed,
+      skipped: refresh.result.skippedNoRetailer + refresh.result.skippedNoPrice,
+    }),
+    alerts: summarizeStep(alerts, {
+      processed: alerts.result.checked,
+      succeeded: alerts.result.triggered,
+      failed: alerts.result.failed,
+      skipped: alerts.result.skippedDuplicate,
+    }),
+    notifications: summarizeStep(notifications, {
+      processed: notifications.result.processed,
+      succeeded: notifications.result.sent,
+      failed: notifications.result.failed,
+    }),
   };
   const failedSteps = Object.entries(steps).filter(
     ([, s]) => s.status === 'failed'

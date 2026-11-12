@@ -23,6 +23,7 @@ import {
   serviceUnavailable,
   validationError,
 } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import {
   addBuyListItem,
@@ -46,12 +47,12 @@ export async function GET(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     const { items, enabled, error } = await getBuyList(supabase, auth.userId);
     if (error) {
-      console.error('[buy-list] fetch error', error);
+      logger.error('[buy-list] fetch error', { error: error instanceof Error ? error.message : error });
       return internalError('Failed to fetch buy list');
     }
     return apiSuccess(items, 200, { buyListEnabled: enabled });
   } catch (err) {
-    console.error('[buy-list] unexpected error', err);
+    logger.error('[buy-list] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch buy list');
   }
 }
@@ -89,12 +90,12 @@ export async function POST(request: NextRequest) {
           'The buy list is not set up yet — the owner still needs to run migration 033 (supabase/migrations/20261110130000_033_section6_nextgen.sql) once.'
         );
       }
-      console.error('[buy-list] create error', result.error);
+      logger.error('[buy-list] create error', { error: result.error instanceof Error ? result.error.message : result.error });
       return internalError('Failed to add buy list item');
     }
     return apiSuccess(result.item, result.deduped ? 200 : 201, { buyListEnabled: true });
   } catch (err) {
-    console.error('[buy-list] unexpected error', err);
+    logger.error('[buy-list] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to add buy list item');
   }
 }

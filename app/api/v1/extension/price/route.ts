@@ -30,6 +30,10 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { buildExtensionStoreLinks } from '@/lib/extension-store-links';
+import {
+  findPublicProductByName,
+  findPublicProductBySlug,
+} from '@/lib/public-products';
 
 interface MerchantProductRow {
   price: number;
@@ -61,35 +65,20 @@ export async function GET(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
 
     // Resolve the product first (by slug, or by name match for q).
+    // Section 18, item 16: the shared public-product helper
+    // filters deleted_at IS NULL + status = 'published' (42703
+    // retry when migration 045 is unapplied), so a soft-deleted
+    // or pending row can never leak through this public route.
     let productId: string | null = null;
     let productName: string | null = null;
     let productSlug: string | null = null;
-    if (slug) {
-      const { data } = await supabase
-        .from('products')
-        .select('id, name, slug')
-        .eq('slug', slug)
-        .neq('slug', 'sample-laptop')
-        .limit(1)
-        .maybeSingle();
-      if (data) {
-        productId = data.id;
-        productName = data.name;
-        productSlug = data.slug;
-      }
-    } else {
-      const { data } = await supabase
-        .from('products')
-        .select('id, name, slug')
-        .ilike('name', `%${q}%`)
-        .neq('slug', 'sample-laptop')
-        .limit(1)
-        .maybeSingle();
-      if (data) {
-        productId = data.id;
-        productName = data.name;
-        productSlug = data.slug;
-      }
+    const resolved = slug
+      ? await findPublicProductBySlug(supabase, slug)
+      : await findPublicProductByName(supabase, q);
+    if (resolved) {
+      productId = resolved.id;
+      productName = resolved.name;
+      productSlug = resolved.slug;
     }
     if (!productId) return apiSuccess([], 200, { product: null, note: 'No catalog product matches.', storeLinks: [] });
 

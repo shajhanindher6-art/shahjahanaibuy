@@ -12,7 +12,15 @@ import {
   badRequest,
   internalError,
 } from '@/lib/api/responses';
-import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import {
+  logApiRequest,
+  requireAuth,
+  rateLimitResponse,
+  getClientIp,
+} from '@/lib/api/middleware';
+import { checkCsrfOrigin } from '@/lib/api/csrf';
+import { validateBody } from '@/lib/api/validation';
+import { z } from 'zod';
 import {
   checkAlertCap,
   countAlerts,
@@ -20,6 +28,24 @@ import {
   createAlert,
   type CreateAlertInput,
 } from '@/services/alerts';
+
+/**
+ * Section 18, Phase 2, item 10 (audit §1 #13) — create-alert body
+ * validated with the shared `validateBody` helper (Zod), matching
+ * the subscriptions route. `alertType`/`channel` are enums (a bad
+ * value is now a 400, as before); `conditionValue` must be a real
+ * number when present (a string used to be silently dropped);
+ * `productSlug`/`productId` must be non-empty strings when
+ * present. The "productId or productSlug is required" 400 below
+ * is unchanged.
+ */
+const createAlertSchema = z.object({
+  productSlug: z.string().min(1).optional(),
+  productId: z.string().min(1).optional(),
+  alertType: z.enum(['price_drop', 'back_in_stock', 'deal']),
+  conditionValue: z.number().optional(),
+  channel: z.enum(['email', 'push', 'both']).optional(),
+});
 import { BILLING_URL, getTierForUserId, getUpgradeTier } from '@/lib/api-quota';
 import { getMaxAlerts, getTier } from '@/lib/tiers';
 import { getCachedProductBySlug } from '@/services/products';
@@ -55,24 +81,28 @@ export async function POST(request: NextRequest) {
   const limited = await rateLimitResponse(`alerts:${getClientIp(request)}`, 30);
   if (limited) return limited;
 
+  // Section 18, Phase 2, item 8 — CSRF Origin check (cookie-authed
+  // mutation; absent Origin fails open for non-browser clients).
+  const csrf = checkCsrfOrigin(request);
+  if (csrf) return csrf;
+
   const auth = await requireAuth(request);
   if ('error' in auth) return auth.error;
 
   try {
-    const body = await request.json();
-    const { productSlug, productId, alertType, conditionValue, channel } = body ?? {};
-
-    const validTypes = ['price_drop', 'back_in_stock', 'deal'];
-    if (!validTypes.includes(alertType)) {
-      return badRequest('alertType must be one of: price_drop, back_in_stock, deal');
+    const body = await request.json().catch(() => null);
+    const validation = validateBody(createAlertSchema, body ?? {});
+    if (!validation.success) {
+      const firstError = Object.values(validation.errors).flat()[0];
+      return badRequest(firstError ?? 'Invalid request body');
     }
+    const { productSlug, productId, alertType, conditionValue, channel } = validation.data;
 
     // Accept either a product slug or a product ID.
     const supabase = await createSupabaseServerClient();
-    let resolvedProductId: string | undefined =
-      typeof productId === 'string' ? productId : undefined;
+    let resolvedProductId: string | undefined = productId;
 
-    if (!resolvedProductId && typeof productSlug === 'string') {
+    if (!resolvedProductId && productSlug) {
       const product = await getCachedProductBySlug(supabase, productSlug);
       resolvedProductId = product?.id;
     }
@@ -108,11 +138,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Section 18, Phase 2, item 10: conditionValue/channel are
+    // already validated by createAlertSchema above — no re-check.
     const input: CreateAlertInput = {
       productId: resolvedProductId,
       alertType,
-      conditionValue: typeof conditionValue === 'number' ? conditionValue : undefined,
-      channel: channel === 'email' || channel === 'push' || channel === 'both' ? channel : undefined,
+      conditionValue,
+      channel,
     };
 
     const alert = await createAlert(supabase, auth.userId, input);

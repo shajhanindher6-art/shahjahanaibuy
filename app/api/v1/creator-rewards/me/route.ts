@@ -11,6 +11,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, internalError } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import { logApiRequest, rateLimitResponse, requireAuth, getClientIp } from '@/lib/api/middleware';
 import {
   badgeForVerifiedDeals,
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
           { rewardsEnabled: false, revenueShareConfigured: getCreatorRevenueShareConfig().configured }
         );
       }
-      console.error('[creator-rewards.me] fetch error', error);
+      logger.error('[creator-rewards.me] fetch error', { error: error instanceof Error ? error.message : error });
       return internalError('Failed to fetch rewards');
     }
     const verifiedDeals = (data as { verified_deals?: number } | null)?.verified_deals ?? 0;

@@ -14,6 +14,7 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, internalError, notFound } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getCreatorBySlug } from '@/lib/creator-storefront';
 
@@ -33,7 +34,7 @@ export async function GET(
     if (!creator) return notFound('Creator not found');
     return apiSuccess(creator, 200, { storefrontsEnabled: true });
   } catch (err) {
-    console.error('[creators.slug] unexpected error', err);
+    logger.error('[creators.slug] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch creator storefront');
   }
 }

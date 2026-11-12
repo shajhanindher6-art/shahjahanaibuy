@@ -26,6 +26,7 @@ import {
   notFound,
   serviceUnavailable,
 } from '@/lib/api/responses';
+import { logger } from '@/lib/config/logger';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import {
   PRICE_PROTECTION_DEFAULT_WINDOW_DAYS,
@@ -53,12 +54,12 @@ export async function GET(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     const { watches, enabled, error } = await getPriceProtectionWatches(supabase, auth.userId);
     if (error) {
-      console.error('[price-protection] fetch error', error);
+      logger.error('[price-protection] fetch error', { error: error instanceof Error ? error.message : error });
       return internalError('Failed to fetch protection watches');
     }
     return apiSuccess(watches, 200, { priceProtectionEnabled: enabled });
   } catch (err) {
-    console.error('[price-protection] unexpected error', err);
+    logger.error('[price-protection] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch protection watches');
   }
 }
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
     if (vaultError) {
       if (isMissingTableError(vaultError)) return serviceUnavailable(MISSING_TABLE_MESSAGE);
-      console.error('[price-protection] vault fetch error', vaultError);
+      logger.error('[price-protection] vault fetch error', { error: vaultError instanceof Error ? vaultError.message : vaultError });
       return internalError('Failed to read vault item');
     }
     if (!vaultItem) return notFound('Vault item not found or not owned by user');
@@ -109,14 +110,14 @@ export async function POST(request: NextRequest) {
         return serviceUnavailable(MISSING_TABLE_MESSAGE);
       }
       if (result.noAmount) return badRequest(result.error.message);
-      console.error('[price-protection] create error', result.error);
+      logger.error('[price-protection] create error', { error: result.error instanceof Error ? result.error.message : result.error });
       return internalError('Failed to create protection watch');
     }
     return apiSuccess(result.watch, result.deduped ? 200 : 201, {
       priceProtectionEnabled: true,
     });
   } catch (err) {
-    console.error('[price-protection] unexpected error', err);
+    logger.error('[price-protection] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to create protection watch');
   }
 }

@@ -39,7 +39,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/sign-in');
+  if (!user) redirect('/sign-in?reason=session-expired');
 
   // Section 17, Stage H, item 7 (audit §4 #1): the role is resolved
   // via `role_id → roles.name` — `profiles` has NO `role` column in

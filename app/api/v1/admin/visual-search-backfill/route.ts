@@ -22,7 +22,8 @@ import type { NextRequest } from 'next/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { logger } from '@/lib/config/logger';
 import { apiSuccess, internalError, serviceUnavailable } from '@/lib/api/responses';
-import { logApiRequest, rateLimitResponse, requireAdmin } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, requireAdmin, getClientIp } from '@/lib/api/middleware';
+import { recordAdminAction } from '@/services/admin';
 import {
   embedText,
   isVectorSearchConfigured,
@@ -131,6 +132,26 @@ export async function POST(request: NextRequest) {
     }
     embedded++;
   }
+
+  // Section 18, item 14 — audit the backfill run. recordAdminAction
+  // never throws: a logging failure is recorded by the logger and
+  // never fails the admin action itself.
+  await recordAdminAction(
+    service,
+    auth.userId,
+    'visual_search_backfill',
+    'product_embeddings',
+    null,
+    {
+      total: catalog.length,
+      alreadyEmbedded,
+      embedded,
+      failed: failed.length,
+      failedSlugs: failed.map((f) => f.slug),
+      force,
+    },
+    getClientIp(request)
+  );
 
   return apiSuccess(
     {
