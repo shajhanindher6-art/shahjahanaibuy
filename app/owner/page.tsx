@@ -11,8 +11,14 @@
  *   price by a subscriber count.
  * - A missing table (migration not applied yet) renders "not
  *   recorded yet", never a zero presented as a measurement.
- * - Error logs: there is no error-log table or service in the repo,
- *   so the section says so and points at the Vercel logs.
+ * - Error logs: the most recent rows from `error_log`
+ *   (migration 048, services/error-log-admin.ts). A missing table
+ *   (migration not applied yet) renders "not applied yet", never a
+ *   zero presented as a measurement — and an empty table renders
+ *   "no errors recorded yet", which is the truth until a writer
+ *   lands: no caller records errors into the table today
+ *   (audit §1 #10), so an empty log is a missing writer, not a
+ *   proven-clean app.
  *
  * Server component; the layout already enforces the admin-only
  * guard. When the service-role key is unset the service client is
@@ -24,6 +30,7 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { getOwnerOverview } from '@/services/owner';
+import { listRecentErrors } from '@/services/error-log-admin';
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-GB', {
@@ -53,6 +60,7 @@ const REFRESH_RUN_STATUS_LABELS: Record<string, string> = {
 export default async function OwnerPage() {
   const service = createSupabaseServiceClient();
   const overview = service ? await getOwnerOverview(service) : null;
+  const errorLog = service ? await listRecentErrors(service, 20) : null;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -227,13 +235,51 @@ export default async function OwnerPage() {
               )}
 
               <h2 className="mt-10 text-xl font-semibold">Error logs</h2>
-              <p className="mt-4 rounded-lg border border-dashed p-6 text-muted-foreground">
-                There is no error-log store in the app — no table, no
-                service — so this dashboard cannot show application errors.
-                Errors surface in the Vercel deployment logs and in Sentry
-                (when a DSN is configured). An in-app error log is a future
-                build, not a silent empty table.
-              </p>
+              {!errorLog ? (
+                <p className="mt-4 rounded-lg border border-dashed p-6 text-muted-foreground">
+                  Error logs are unavailable — the service-role key is not
+                  configured, so the dashboard cannot read the error log.
+                </p>
+              ) : errorLog.error ? (
+                <p className="mt-4 rounded-lg border border-red-300 bg-red-50 p-4 text-sm dark:border-red-800 dark:bg-red-950">
+                  Error logs could not be read: {errorLog.error}
+                </p>
+              ) : errorLog.tableMissing ? (
+                <p className="mt-4 rounded-lg border border-dashed p-6 text-muted-foreground">
+                  No error-log records yet — the error_log table
+                  (migration 048) has not been applied. Until the owner
+                  applies migration 048
+                  (supabase/migrations/20261112210000_048_error_log.sql)
+                  in the Supabase SQL Editor, errors surface in the
+                  Vercel deployment logs and in Sentry (when a DSN is
+                  configured). No error has been lost — none was ever
+                  stored in-app.
+                </p>
+              ) : errorLog.errors.length === 0 ? (
+                <p className="mt-4 rounded-lg border border-dashed p-6 text-muted-foreground">
+                  No errors recorded yet. The table exists and API
+                  errors are written to it — an empty log means no
+                  error has been recorded since it was applied.
+                </p>
+              ) : (
+                <ul className="mt-4 space-y-2">
+                  {errorLog.errors.map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="rounded-lg border p-4 text-sm"
+                    >
+                      <p>
+                        <span className="font-medium">{entry.level}</span>
+                        {entry.route ? ` · ${entry.route}` : ''} ·{' '}
+                        {formatDateTime(entry.created_at)}
+                      </p>
+                      <p className="mt-1 text-muted-foreground">
+                        {entry.message}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </>
           )}
         </div>

@@ -5,8 +5,10 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/features/auth';
+import type { AuthErrorCode } from '@/features/auth/auth-errors';
 import { isSafeRedirectPath } from '@/lib/utils/safe-redirect';
 import { AuthShell } from '@/components/layout/auth-shell';
+import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,18 +27,25 @@ function SignInContent() {
   // freshly signed-in user to an attacker's page (open redirect).
   const redirectParam = searchParams.get('redirect');
   const redirect = isSafeRedirectPath(redirectParam) ? (redirectParam as string) : '/dashboard';
+  // Section 18, item 58 — a layout guard redirects here with
+  // ?reason=session-expired when the session ends mid-use.
+  const sessionExpired = searchParams.get('reason') === 'session-expired';
   const { signIn, signInWithGoogle } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  // Section 18, item 57 — the mapped error code from the provider,
+  // so the resend link keys off the code, not the message text.
+  const [errorCode, setErrorCode] = useState<AuthErrorCode | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    setErrorCode(null);
     setLoading(true);
     try {
       const result = await signIn(email, password);
@@ -44,6 +53,7 @@ function SignInContent() {
         router.push(redirect);
       } else {
         setError(result.error || 'Failed to sign in');
+        setErrorCode(result.errorCode ?? null);
       }
     } catch {
       setError('An unexpected error occurred. Please try again.');
@@ -81,15 +91,22 @@ function SignInContent() {
       }
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {sessionExpired && (
+          <div
+            role="status"
+            className="rounded-md bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400"
+          >
+            Your session expired — please sign in again.
+          </div>
+        )}
         {error && (
           <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
             {error}
-            {/* Confirm email is ON in Supabase now: an unconfirmed
-                account gets "Email not confirmed" here. Without this
-                link the user has no in-flow way to resend the
-                verification email (the /verify-email page exists but
-                nothing linked to it). */}
-            {error.toLowerCase().includes('not confirmed') && (
+            {/* Section 18, item 57 — the resend link keys off the
+                mapped error code, not the raw message text (the old
+                `'not confirmed'` string-match broke if Supabase
+                ever reworded the message). */}
+            {errorCode === 'email-not-confirmed' && (
               <div className="mt-2">
                 <Link href="/verify-email" className="font-medium underline">
                   Resend verification email
@@ -129,15 +146,15 @@ function SignInContent() {
               onChange={(e) => setPassword(e.target.value)}
               required
               autoComplete="current-password"
-              className="pr-10"
+              className="pr-14"
             />
             <Button
               type="button"
               variant="ghost"
               size="icon"
               onClick={() => setShowPassword((s) => !s)}
-              className="absolute right-3 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              tabIndex={-1}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              className="absolute right-3 top-1/2 h-11 w-11 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4" />
@@ -161,31 +178,7 @@ function SignInContent() {
         </div>
       </div>
 
-      <Button variant="outline" className="w-full" onClick={handleGoogle} disabled={googleLoading}>
-        {googleLoading ? (
-          <LoadingSpinner size="sm" />
-        ) : (
-          <svg className="h-5 w-5" viewBox="0 0 24 24">
-            <path
-              fill="currentColor"
-              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-            />
-            <path
-              fill="currentColor"
-              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-            />
-            <path
-              fill="currentColor"
-              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-            />
-            <path
-              fill="currentColor"
-              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-            />
-          </svg>
-        )}
-        <span className="ml-2">Continue with Google</span>
-      </Button>
+      <GoogleSignInButton onClick={handleGoogle} loading={googleLoading} />
     </AuthShell>
   );
 }

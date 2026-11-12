@@ -32,7 +32,7 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { Price } from '@/components/region/price';
-import { validateScanImage } from '@/services/visual-search';
+import { validateScanImage } from '@/services/visual-search-client';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 

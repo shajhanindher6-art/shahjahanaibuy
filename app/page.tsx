@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { createClient } from '@supabase/supabase-js';
 import { env } from '@/lib/config/env';
 import { getProducts } from '@/services/products';
+import { getLatestPrices } from '@/services/price-history';
 import { isSupportedLanguage, type Language } from '@/lib/region';
 import { tFor } from '@/lib/i18n';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -364,40 +365,28 @@ async function FeaturedProductsStrip({ language }: { language: Language }) {
       auth: { persistSession: false },
     });
     const { products: rows } = await getProducts(supabase, { pageSize: 6 });
-    products = await Promise.all(
-      rows.map(async (product) => {
-        let price: number | null = null;
-        try {
-          const { data: priceData } = await supabase
-            .from('price_history')
-            .select('price')
-            .eq('product_id', product.id)
-            .order('recorded_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          const parsed =
-            priceData && typeof (priceData as { price: number | string }).price !== 'undefined'
-              ? parseFloat(String((priceData as { price: number | string }).price))
-              : null;
-          price = Number.isFinite(parsed) ? (parsed as number) : null;
-        } catch {
-          // No price for this card — "Price not listed", no error.
-        }
-        return {
-          id: product.id,
-          name: product.name,
-          slug: product.slug,
-          brand: product.brand,
-          category: product.category,
-          imageUrl: product.imageUrl,
-          price,
-          // Section 16, item 9: recorded freshness rides with the
-          // card so the stale-price badge + age can render under
-          // the price.
-          dataFreshness: product.dataFreshness ?? null,
-        };
-      })
+    // Section 18, item 28 — was N+1: one `price_history` query per
+    // product (6 sequential selects). Now a single `.in()` query
+    // for the whole strip (services/price-history getLatestPrices);
+    // a product with no recorded price still shows "Price not
+    // listed", never a guessed price.
+    const latestPrices = await getLatestPrices(
+      supabase,
+      rows.map((product) => product.id)
     );
+    products = rows.map((product) => ({
+      id: product.id,
+      name: product.name,
+      slug: product.slug,
+      brand: product.brand,
+      category: product.category,
+      imageUrl: product.imageUrl,
+      price: latestPrices.get(product.id) ?? null,
+      // Section 16, item 9: recorded freshness rides with the
+      // card so the stale-price badge + age can render under
+      // the price.
+      dataFreshness: product.dataFreshness ?? null,
+    }));
   } catch {
     products = [];
   }

@@ -127,6 +127,11 @@ function SearchPageContent() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [webResults, setWebResults] = useState<WebSearchResult[]>([]);
   const [webSource, setWebSource] = useState<'catalog' | 'web' | 'web-disabled' | null>(null);
+  // Section 18, item 34 — whether the shown web results came from
+  // the SerpAPI cache, and when they were fetched. The heading must
+  // not say "Live" when the results came from cache.
+  const [webFromCache, setWebFromCache] = useState(false);
+  const [webFetchedAt, setWebFetchedAt] = useState<string | null>(null);
   const [parsedIntent, setParsedIntent] = useState<ParsedIntent | null>(null);
   // B10: the resolved "X vs Y" pair from the ai-search API, for
   // the "Compare these two" CTA above the results. Empty when the
@@ -465,6 +470,9 @@ function SearchPageContent() {
         // as "Web result" cards with a retailer link below.
         setWebResults(Array.isArray(data.meta?.webResults) ? data.meta.webResults : []);
         setWebSource(data.meta?.source ?? null);
+        // Section 18, item 34 — cached web results carry their age.
+        setWebFromCache(data.meta?.webFromCache === true);
+        setWebFetchedAt(typeof data.meta?.webFetchedAt === 'string' ? data.meta.webFetchedAt : null);
         setParsedIntent(data.meta?.parsedIntent ?? null);
         setCompareProducts(
           Array.isArray(data.meta?.compareProducts) ? data.meta.compareProducts : []
@@ -513,6 +521,9 @@ function SearchPageContent() {
         // as "Web result" cards with a retailer link below.
         setWebResults(Array.isArray(data.meta?.webResults) ? data.meta.webResults : []);
         setWebSource(data.meta?.source ?? null);
+        // Section 18, item 34 — cached web results carry their age.
+        setWebFromCache(data.meta?.webFromCache === true);
+        setWebFetchedAt(typeof data.meta?.webFetchedAt === 'string' ? data.meta.webFetchedAt : null);
         setParsedIntent(data.meta?.parsedIntent ?? null);
         setCompareProducts(
           Array.isArray(data.meta?.compareProducts) ? data.meta.compareProducts : []
@@ -553,6 +564,8 @@ function SearchPageContent() {
         setDealByProduct({});
         setWebResults([]);
         setWebSource(null);
+        setWebFromCache(false);
+        setWebFetchedAt(null);
         setParsedIntent(null);
         setCompareProducts([]);
         setLocalFirst(null);
@@ -567,6 +580,8 @@ function SearchPageContent() {
       setDealByProduct({});
       setWebResults([]);
       setWebSource(null);
+      setWebFromCache(false);
+      setWebFetchedAt(null);
       setParsedIntent(null);
       setCompareProducts([]);
       setLocalFirst(null);
@@ -1752,11 +1767,21 @@ function SearchPageContent() {
         {!loading && displayedWebResults.length > 0 && (
           <div className="mt-8 grid gap-4">
             <div>
-              <h2 className="text-lg font-semibold">{liveWeb ? 'Live web results' : 'Web results'}</h2>
+              {/* Section 18, item 34 — the heading must not say
+                  "Live" when the results came from the SerpAPI
+                  cache (up to 7 days old). Cached results show
+                  their fetch date; when the age is unknown (a cache
+                  row written before fetched_at existed) the heading
+                  says "cached" with no date — never a guessed one. */}
+              <h2 className="text-lg font-semibold">{webFromCache ? 'Web results (cached)' : liveWeb ? 'Live web results' : 'Web results'}</h2>
               <p className="text-sm text-muted-foreground">
-                {liveWeb
-                  ? 'Live Google Shopping results alongside our catalog — prices may change at the retailer; full specs are on the retailer page.'
-                  : 'Not in our catalog yet — live shopping results from the web. Prices may change at the retailer; full specs are on the retailer page.'}
+                {webFromCache
+                  ? webFetchedAt
+                    ? `Cached Google Shopping results — prices fetched ${new Date(webFetchedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}; they may have changed since at the retailer. Full specs are on the retailer page.`
+                    : 'Cached Google Shopping results — prices may have changed since they were fetched. Full specs are on the retailer page.'
+                  : liveWeb
+                    ? 'Live Google Shopping results alongside our catalog — prices may change at the retailer; full specs are on the retailer page.'
+                    : 'Not in our catalog yet — live shopping results from the web. Prices may change at the retailer; full specs are on the retailer page.'}
                 {displayedWebResults.length !== webResults.length && ` Showing ${displayedWebResults.length} of ${webResults.length} after filters.`}
               </p>
             </div>

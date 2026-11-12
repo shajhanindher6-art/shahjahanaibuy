@@ -30,8 +30,8 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { buildStatusSummary, type StatusIncident } from '@/lib/status';
-import type { UptimeCheckRow } from '@/lib/uptime';
+import { buildStatusSummary, buildStatusSummaryFromUptime, fetchStatusUptime, type StatusIncident } from '@/lib/status';
+import type { UptimeSummary } from '@/lib/uptime';
 import { describePlatformStatus, type PlatformStatus } from '@/services/platform-status';
 import { getLatestRefreshRun, type RefreshRunRow } from '@/services/refresh-run';
 import { appConfig } from '@/lib/config/app';
@@ -103,7 +103,6 @@ const REFRESH_RUN_STATUS_LABELS: Record<string, string> = {
 };
 
 export default async function StatusPage() {
-  let checks: UptimeCheckRow[] = [];
   let incidents: StatusIncident[] = [];
   // Section 15, P1-5: the latest recorded refresh run, or null when
   // no run has been recorded yet (migration 040 not applied, or no
@@ -111,33 +110,37 @@ export default async function StatusPage() {
   // table renders the "no refresh recorded yet" state below, never
   // a 500.
   let lastRefresh: RefreshRunRow | null = null;
+  // Section 18, item 29 — DB-side uptime summary (two head:true
+  // counts + first/last check rows), or null when the read failed.
+  let uptimeSummary: UptimeSummary | null = null;
 
   try {
     const supabase = await createSupabaseServerClient();
-    const [checksRes, incidentsRes] = await Promise.all([
-      supabase
-        .from('uptime_checks')
-        .select('checked_at, target_url, status_code, ok, response_ms, error, source')
-        .order('checked_at', { ascending: false })
-        .limit(2000),
+    // The old code pulled up to 2,000 uptime_checks rows per visit
+    // and summarized them in JS; fetchStatusUptime returns the
+    // identical numbers with a fraction of the transfer.
+    const [uptime, incidentsRes] = await Promise.all([
+      fetchStatusUptime(supabase, 90),
       supabase
         .from('uptime_incidents')
         .select('id, started_at, resolved_at, title, status, description')
         .order('started_at', { ascending: false })
         .limit(50),
     ]);
-    if (!checksRes.error && checksRes.data) {
-      checks = checksRes.data as unknown as UptimeCheckRow[];
-    }
     if (!incidentsRes.error && incidentsRes.data) {
       incidents = incidentsRes.data as unknown as StatusIncident[];
     }
     lastRefresh = await getLatestRefreshRun(supabase);
+    uptimeSummary = uptime;
   } catch {
     // Fail-safe: render the honest "no data yet" state below.
   }
 
-  const summary = buildStatusSummary(checks, incidents, 90);
+  // A null uptime (read failure) falls back to the empty summary —
+  // the same "no data yet" state the page rendered before.
+  const summary = uptimeSummary
+    ? buildStatusSummaryFromUptime(uptimeSummary, incidents)
+    : buildStatusSummary([], incidents, 90);
   const uptime = summary.uptime;
   // Real, request-time configuration state (env-derived booleans and
   // counts). A platform with no configured account reports
@@ -199,12 +202,15 @@ export default async function StatusPage() {
           </ul>
 
           <h2 className="mt-10 text-xl font-semibold">Last verified</h2>
-          {checks.length > 0 && checks[0] ? (
+          {/* Section 18, item 29 — the last check comes from the
+              counts-based summary (lastCheckAt/lastOk/...), not a
+              2,000-row pull; the values are identical. */}
+          {uptime.lastCheckAt ? (
             <p className="mt-4 rounded-lg border p-6 text-muted-foreground">
-              Last recorded check: {formatDateTime(checks[0].checked_at)} —{' '}
-              {checks[0].ok ? 'passed' : 'failed'}
-              {checks[0].status_code ? ` (HTTP ${checks[0].status_code})` : ''}
-              {checks[0].target_url ? ` on ${checks[0].target_url}` : ''}. This
+              Last recorded check: {formatDateTime(uptime.lastCheckAt)} —{' '}
+              {uptime.lastOk ? 'passed' : 'failed'}
+              {uptime.lastStatusCode ? ` (HTTP ${uptime.lastStatusCode})` : ''}
+              {uptime.lastTargetUrl ? ` on ${uptime.lastTargetUrl}` : ''}. This
               is the most recent row the in-app check runner recorded, not
               a manual verification claim. Check the live site yourself:{' '}
               <a

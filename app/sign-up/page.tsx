@@ -13,14 +13,16 @@ import {
   submitReferralAttribution,
 } from '@/lib/referral';
 import { AuthShell } from '@/components/layout/auth-shell';
+import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { formatCooldownSeconds, useResendCooldown } from '@/lib/auth/resend-cooldown';
 
 export default function SignUpPage() {
   const router = useRouter();
-  const { signUp } = useAuth();
+  const { signUp, signInWithGoogle, resendVerification } = useAuth();
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -29,6 +31,24 @@ export default function SignUpPage() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  // Section 18, Phase 2, item 2 (audit §1 #11): the confirmation
+  // email can be re-sent from here, but only once per 60s —
+  // the button is disabled during the cooldown with a visible
+  // countdown. The sign-up submit itself is untouched.
+  const { remainingSeconds, canSend, startCooldown } = useResendCooldown();
+
+  async function handleResendConfirmation() {
+    if (!canSend) return;
+    setError('');
+    const result = await resendVerification(email);
+    if (result.success) {
+      setMessage('Confirmation email sent! Check your inbox to confirm your account.');
+      startCooldown();
+    } else {
+      setError(result.error || 'Failed to resend confirmation email');
+    }
+  }
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   // Section 15, B13 — remember a referral code from `?ref=` so
   // the signup can be attributed to its owner. An invalid code is
@@ -81,6 +101,21 @@ export default function SignUpPage() {
     }
   }
 
+  async function handleGoogle() {
+    setError('');
+    setGoogleLoading(true);
+    try {
+      const result = await signInWithGoogle();
+      if (!result.success) {
+        setError(result.error || 'Google Sign-In is not available');
+        setGoogleLoading(false);
+      }
+    } catch {
+      setError('Google Sign-In is not available. Please use email/password.');
+      setGoogleLoading(false);
+    }
+  }
+
   return (
     <AuthShell
       title="Create your account"
@@ -101,6 +136,20 @@ export default function SignUpPage() {
         {message && (
           <div className="rounded-md bg-emerald-500/10 p-3 text-sm text-emerald-600 dark:text-emerald-400">
             {message}
+          </div>
+        )}
+        {message && (
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={handleResendConfirmation}
+              disabled={!canSend}
+              className="text-sm text-muted-foreground hover:text-primary disabled:opacity-50"
+            >
+              {canSend
+                ? "Didn't get the email? Resend confirmation email"
+                : `Resend confirmation email in ${formatCooldownSeconds(remainingSeconds)}`}
+            </button>
           </div>
         )}
         <div className="space-y-2">
@@ -137,15 +186,15 @@ export default function SignUpPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
               autoComplete="new-password"
-              className="pr-10"
+              className="pr-14"
             />
             <Button
               type="button"
               variant="ghost"
               size="icon"
               onClick={() => setShowPassword((s) => !s)}
-              className="absolute right-3 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              tabIndex={-1}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              className="absolute right-3 top-1/2 h-11 w-11 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4" />
@@ -159,6 +208,20 @@ export default function SignUpPage() {
           {loading ? <LoadingSpinner size="sm" /> : 'Create Account'}
         </Button>
       </form>
+
+      <div className="relative my-6">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+        </div>
+      </div>
+
+      {/* Section 18, item 62 — the same Google button + flow as
+          sign-in; a new user no longer has to discover Google after
+          creating an account. */}
+      <GoogleSignInButton onClick={handleGoogle} loading={googleLoading} />
 
       <p className="mt-6 text-center text-xs text-muted-foreground">
         By creating an account, you agree to our{' '}
