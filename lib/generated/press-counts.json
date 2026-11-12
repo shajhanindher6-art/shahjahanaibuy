@@ -1,6 +1,6 @@
 {
-  "tests": 2685,
-  "files": 216,
+  "tests": 3066,
+  "files": 254,
   "date": "2026-11-12",
   "generatedBy": "scripts/generate-press-counts.mjs — do not edit by hand; run `npm run generate:press-counts` after the suite changes"
 }

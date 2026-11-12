@@ -6,6 +6,7 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { logger } from '@/lib/config/logger';
+import { getRequestId } from './request-id';
 import { isAdminRoleRow, PROFILE_ROLE_SELECT } from '@/lib/admin-role';
 import { unauthorized, forbidden, internalError, rateLimited } from './responses';
 import { checkRateLimitDistributed } from './rate-limit';
@@ -96,6 +97,7 @@ export function logApiRequest(request: NextRequest, metadata?: Record<string, un
   logger.info('API request', {
     method: request.method,
     path: request.nextUrl.pathname,
+    requestId: getRequestId(request),
     ...metadata,
   });
 }

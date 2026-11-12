@@ -98,13 +98,43 @@ UNMEASURED — no build ran, so no size claim follows):
   badge, and /compare merchant links add small client code only;
   likewise unmeasured.
 
+Section 17 gate — recorded First Load numbers (12 Nov 2026)
+
+Section 17's verification gate ran a clean production build
+(exit 0, 799 static pages) that printed a route table. The five
+numbers below are recorded here — before this section they existed
+nowhere in the repo (grep for `330 kB|321 kB|302 kB|144 kB|165 kB`
+returned 0 hits), and the two tracked baselines below were stale
+by 1 kB each (329 vs 330, 320 vs 321):
+
+- **`/products/[slug]` First Load JS: 330 kB** — Section 17 gate
+  clean build, within the ≤350 kB budget. Supersedes the 329 kB
+  Section 15/16 figure above (same route, one build later).
+- **`/` (homepage) First Load JS: 321 kB** — Section 17 gate
+  clean build, within the re-locked ≤350 kB warning budget.
+  Supersedes the 320 kB Section 16 / Stage H figure above.
+- **`/owner` First Load JS: 302 kB** — Section 17 gate clean
+  build. Recorded only; no budget set for this route yet.
+- **`/admin/refresh-runs` First Load JS: 144 kB** — Section 17
+  gate clean build. Recorded only; no budget set for this route
+  yet.
+- **`/dashboard/saved-searches` First Load JS: 165 kB** — Section
+  17 gate clean build. Recorded only; no budget set for this
+  route yet.
+
+No other route has a recorded number — the remaining ~115 routes
+are unmeasured, and no number is claimed for them here.
+
 ## Budgets
 
 | Route | First Load JS | Notes |
 |---|---|---|
-| `/products/[slug]` | **≤ 350 kB** | Hard gate — CI fails the build above this. Baseline: 329 kB (Section 15 clean build, 12 Nov 2026). |
-| `/` (homepage) | ≤ 350 kB | Warning — reported in the CI log, not a hard fail yet. Baseline: 320 kB (Section 17 Stage H item 4 clean build, 12 Nov 2026 — re-locked from ≤250 kB, see the measurement note above; the below-hero code-split attempt measured 0 kB and was reverted). |
+| `/products/[slug]` | **≤ 350 kB** | Hard gate — CI fails the build above this. Baseline: 330 kB (Section 17 gate clean build, 12 Nov 2026). |
+| `/` (homepage) | ≤ 350 kB | Warning — reported in the CI log, not a hard fail yet. Baseline: 321 kB (Section 17 gate clean build, 12 Nov 2026 — re-locked from ≤250 kB, see the measurement note above; the below-hero code-split attempt measured 0 kB and was reverted). |
 | `/compare` | ≤ 400 kB | Warning — matrix + charts are heavy; code-split before raising. Baseline: 372 kB (Section 16 gate clean build, 12 Nov 2026 — within budget). |
+| `/owner` | recorded 302 kB | No budget set — Section 17 gate measurement only (12 Nov 2026). |
+| `/admin/refresh-runs` | recorded 144 kB | No budget set — Section 17 gate measurement only (12 Nov 2026). |
+| `/dashboard/saved-searches` | recorded 165 kB | No budget set — Section 17 gate measurement only (12 Nov 2026). |
 
 Lighthouse (mobile, throttled 4G — LHCI `lighthouse:recommended` preset):
 

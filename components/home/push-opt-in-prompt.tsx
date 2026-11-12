@@ -66,7 +66,9 @@ export function pushSubscribeFailureMessage(
       return 'Could not save the push subscription — please try again later.';
     case 'unknown':
     default:
-      return 'Something went wrong — please try again.';
+      // Section 18, item 65 — never the bare generic fallback:
+      // what happened + what to do next.
+      return "We couldn't turn on push alerts — check your connection and try again. If it keeps failing, contact support.";
   }
 }
 

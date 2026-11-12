@@ -69,20 +69,12 @@ export function WishlistButton({ productId, productName, productSlug, variant = 
     });
   };
 
-  // P0 fix (2026-11-09 audit): guests used to hit a sign-in wall with
-  // no way to save anything. A guest tap now toggles the device-local
-  // wishlist directly; the dialog (server wishlists) is signed-in only.
-  if (!user) {
-    return (
-      <Button variant={variant} size={size} onClick={handleGuestToggle}>
-        <Heart
-          className={cn('mr-2 h-4 w-4', guestSaved && 'fill-red-500 text-red-500')}
-        />
-        {guestSaved ? 'Saved' : 'Wishlist'}
-      </Button>
-    );
-  }
-
+  // Section 18, item 76 (lint): this fetch helper + effect MUST
+  // sit above the `if (!user)` early return below — a hook after
+  // a conditional return is a rules-of-hooks violation (hook order
+  // would change between renders). Behaviour is unchanged: for
+  // guests `open` is never true (the dialog is signed-in only),
+  // so the effect never fetches for them.
   const fetchWishlists = async () => {
     try {
       const res = await fetch('/api/v1/wishlists');
@@ -96,6 +88,20 @@ export function WishlistButton({ productId, productName, productSlug, variant = 
   useEffect(() => {
     if (open) fetchWishlists();
   }, [open]);
+
+  // P0 fix (2026-11-09 audit): guests used to hit a sign-in wall with
+  // no way to save anything. A guest tap now toggles the device-local
+  // wishlist directly; the dialog (server wishlists) is signed-in only.
+  if (!user) {
+    return (
+      <Button variant={variant} size={size} onClick={handleGuestToggle}>
+        <Heart
+          className={cn('mr-2 h-4 w-4', guestSaved && 'fill-red-500 text-red-500')}
+        />
+        {guestSaved ? 'Saved' : 'Wishlist'}
+      </Button>
+    );
+  }
 
   const handleAdd = async (wishlistId: string, wishlistName: string) => {
     setLoading(true);
@@ -163,7 +169,7 @@ export function WishlistButton({ productId, productName, productSlug, variant = 
         <div className="space-y-2">
           {wishlists.length === 0 && !showCreate && (
             <p className="py-4 text-center text-sm text-muted-foreground">
-              You don't have any wishlists yet. Create one to get started.
+              You don&apos;t have any wishlists yet. Create one to get started.
             </p>
           )}
 

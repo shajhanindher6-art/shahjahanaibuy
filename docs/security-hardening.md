@@ -333,3 +333,72 @@ dashboard → Authentication → Policies) after running it.
   nonce-XSS, DoS/cache-poisoning cluster).
 - Leaked-password protection (Pro-only), WAF/bot protection, pen test
   (paid) — these cap the free-tier score at ~88.
+
+## Section 18 — Auth-cookie trade-off (audit §1 #52)
+
+**Current state (verified 2026-11-12, code-read, not assumed):**
+the repo passes NO custom `cookieOptions` anywhere (grep: 0 hits).
+Auth session cookies are set by `@supabase/ssr@0.12.7` with its
+defaults:
+
+- `path: '/'`
+- `sameSite: 'lax'`
+- `httpOnly: false`
+- `maxAge: 400d` (~13 months)
+- NO `Secure` flag set by the library (see below for why that is
+  not the hole it looks like)
+
+The repo's own cookies (`sb-country`, `sb-language`) are different
+and already correct: `sameSite: lax` + `secure: true` in production
+(see Gap 4 above; the client-side rewrite in `region-provider.tsx`
+also appends `; Secure` on HTTPS).
+
+**Why `httpOnly: false` is deliberate, not an oversight:**
+Supabase's browser client (`@supabase/ssr` client-side) reads the
+session from the cookie itself — that is how `getSession()` works
+without a server round-trip on every navigation. Setting
+`httpOnly: true` would hide the cookie from JavaScript and break
+every client-side session read: the app would behave as signed
+out in the browser while the server still saw a valid session.
+This is Supabase's documented default for exactly that reason,
+and the audit's own wording agrees ("`httpOnly: false` is
+Supabase's deliberate default — the browser client reads the
+cookie"). The audit classifies flipping it blindly as REJECTED
+(§12 rejected item 15).
+
+**Why the missing `Secure` flag is low-risk in practice:**
+Vercel serves this site HTTPS-only, and the HSTS header is
+`max-age=63072000; includeSubDomains; preload` on `/(.*)` — a
+browser that has ever visited the site will not send the cookie
+over plain HTTP. The residual exposure is a first-ever visit
+over HTTP before the HSTS preload kicks in, or a non-preloaded
+client. The cookie is also `SameSite=lax`, so it is not sent on
+cross-site POSTs (the CSRF backstop for cookie-authed mutations).
+
+**What would break if `httpOnly` were flipped:**
+- Client-side `getSession()` / `onAuthStateChange` reads fail →
+  the header, dashboard shell, and every `useAuth()` consumer
+  render signed-out state while server routes still see the
+  session (split-brain auth).
+- The `/auth/callback` exchange and the `SIGNED_IN` guest-merge
+  funnel (Section 12, Chunk B) run client-side and would stop
+  seeing the fresh session.
+- Any code that reads the cookie directly (region/language
+  providers are separate cookies and unaffected, but the auth
+  flow is not).
+
+**What proof would be needed BEFORE any change:**
+1. A staging deployment with the flag flipped, proving: sign-in,
+   sign-up, Google OAuth callback, session refresh, sign-out,
+   and the guest → signed-in merge all still work end-to-end in
+   a real browser (not jsdom — the failure mode is a browser
+   cookie read).
+2. Confirmation from Supabase's current `@supabase/ssr` docs that
+   a server-only session pattern is supported for this app's
+   usage (all client reads replaced by server reads or a
+   dedicated session endpoint) — i.e. the app no longer needs
+   the browser client to read the cookie at all.
+3. A live recheck after deploy: an authenticated browser session
+   survives a full navigation + a hard refresh.
+Until all three exist, the correct action is this document, not
+a flag flip. No cookie flag was changed in Section 18.

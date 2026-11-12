@@ -43,8 +43,17 @@ export const PROVIDERS: ProviderConfig[] = [
     key: 'redis',
     name: 'Redis',
     category: 'cache',
-    enabled: Boolean(process.env.REDIS_URL),
-    description: 'Caching and background job queues',
+    // Section 18, item 32 — corrected 12 Nov 2026: REDIS_URL does
+    // NOT enable a Redis cache or queue. No `ioredis` / BullMQ is
+    // installed, the app cache is always in-memory (lib/cache), and
+    // REDIS_URL only switches the Upstash REST rate limiter on
+    // (lib/api/rate-limit.ts). Reporting this provider "enabled"
+    // when the var is set was the misleading signal the audit
+    // flagged — it is always off as a cache/queue provider until a
+    // real Redis client is wired.
+    enabled: false,
+    description:
+      'Not used as a cache or queue — REDIS_URL only enables Upstash REST rate limiting; the app cache is always in-memory',
   },
   {
     key: 'apify',

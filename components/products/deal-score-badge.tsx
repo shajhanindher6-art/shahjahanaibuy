@@ -70,6 +70,16 @@ const sizeConfig = {
 };
 
 export function DealScoreBadge({ score, dataPoints, size = 'md', showLabel = false, className }: DealScoreBadgeProps) {
+  // Section 18, item 76 (lint): this hook MUST sit above the
+  // early return below — a hook after a conditional return is a
+  // rules-of-hooks violation (and a real bug: hook order would
+  // change between renders). The state is only used on the
+  // scored path; on the withheld path it simply sits unused.
+  // Section 13, Chunk C: the badge used to be a bare number with
+  // only a title tooltip — zero explainer copy existed anywhere on
+  // the site. The "How this score works" popover states the
+  // canonical formula from lib/deal-score.ts in plain language.
+  const [explainerOpen, setExplainerOpen] = useState(false);
   // Section 16, item 10: a hidden badge with no explanation read
   // as a broken page. When the score is withheld for too few
   // points, say so — with the real count — instead of rendering
@@ -89,11 +99,6 @@ export function DealScoreBadge({ score, dataPoints, size = 'md', showLabel = fal
   const colors = getScoreColor(score);
   const dims = sizeConfig[size];
   const clampedScore = Math.round(Math.max(0, Math.min(100, score)));
-  // Section 13, Chunk C: the badge used to be a bare number with
-  // only a title tooltip — zero explainer copy existed anywhere on
-  // the site. The "How this score works" popover states the
-  // canonical formula from lib/deal-score.ts in plain language.
-  const [explainerOpen, setExplainerOpen] = useState(false);
 
   return (
     <div className={cn('relative flex items-center', dims.gap, className)}>

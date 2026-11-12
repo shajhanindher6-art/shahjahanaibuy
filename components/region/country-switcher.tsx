@@ -26,7 +26,7 @@ import { useRegion } from './region-provider';
 import { cn } from '@/lib/utils';
 
 const selectClass =
-  'h-8 rounded-md border border-input bg-background text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  'h-11 rounded-md border border-input bg-background text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 export function CountrySwitcher() {
   const { region, setCountry } = useRegion();

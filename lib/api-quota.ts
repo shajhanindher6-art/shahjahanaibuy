@@ -217,10 +217,14 @@ export interface DurableQuotaStoreOptions {
  * Counts one request in the `api_key_usage` ledger (one row per
  * bucket-key hash per UTC day) via the service-role client — the
  * table has no RLS policy for anon/authenticated, so only the
- * service client can write it. Read-then-write with a single
- * conflict retry: a concurrent first-write for the same bucket
- * surfaces as a primary-key conflict (23505) on insert, which
- * retries as an update.
+ * service client can write it. Section 18, item 20: the increment
+ * first tries the atomic RPC `increment_api_key_usage` (migration
+ * 053, single-statement INSERT … ON CONFLICT DO UPDATE); when
+ * the function is not applied yet the code falls back to the
+ * read-then-write path below with a single conflict retry: a
+ * concurrent first-write for the same bucket surfaces as a
+ * primary-key conflict (23505) on insert, which retries as an
+ * update.
  *
  * FAIL-OPEN: any database error — no service key, table missing
  * (035 not applied yet), network error — falls back to the
@@ -258,6 +262,26 @@ export function createDurableQuotaStore(
       const keyHash = createHash('sha256').update(bucketKey).digest('hex');
 
       try {
+        // Section 18, item 20 — atomic increment (migration 053):
+        // one INSERT … ON CONFLICT DO UPDATE inside Postgres, so
+        // concurrent increments serialize instead of lost-updating
+        // (both read N, both write N + 1). The RPC is called only
+        // when the function exists: a missing function (053 not
+        // applied yet — 42883 / PGRST202), a client without .rpc,
+        // or any other RPC error falls through to the legacy
+        // read-modify-write path below, never to the memory
+        // fallback directly. The legacy path is the pre-Section-18
+        // behaviour, preserved exactly.
+        if (typeof service.rpc === 'function') {
+          const { data: rpcCount, error: rpcError } = await service.rpc(
+            'increment_api_key_usage',
+            { p_key_hash: keyHash, p_window_date: dayKey, p_tier: tier }
+          );
+          if (!rpcError && typeof rpcCount === 'number') {
+            return checkQuotaDecision(rpcCount, limit, tier, resetAt);
+          }
+        }
+
         const { data, error: readError } = await service
           .from('api_key_usage')
           .select('request_count')

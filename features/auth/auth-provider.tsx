@@ -10,10 +10,26 @@ import type { Session, User } from '@supabase/supabase-js';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { getProfile } from '@/services/profiles';
 import { runGuestMerge } from '@/lib/guest-merge';
+import { mapSignUpErrorMessage } from '@/lib/auth/error-messages';
+import { mapAuthError } from './auth-errors';
 import type { AuthContextValue, AuthResult } from '@/types/auth';
 import type { Profile, UserRole } from '@/types';
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+/**
+ * Section 18, item 57 — every auth failure goes through the
+ * friendly mapper: no raw Supabase text ever leaves the provider.
+ * `fallback` is the generic message used when nothing matches.
+ */
+function authFailure(error: unknown, fallback: string): AuthResult {
+  const mapped = mapAuthError(
+    error as { code?: string; message?: string } | string | null | undefined,
+    fallback
+  );
+  return { success: false, error: mapped.message, errorCode: mapped.code };
+}
+
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const supabase = getSupabaseBrowserClient();
@@ -99,14 +115,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (email: string, password: string): Promise<AuthResult> => {
       try {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) return { success: false, error: error.message };
+        if (error) return authFailure(error, 'Failed to sign in. Check your connection and try again.');
         if (data.user) {
           setUser(data.user);
           await fetchProfile(data.user.id);
         }
         return { success: true };
       } catch (err) {
-        return { success: false, error: err instanceof Error ? err.message : 'Failed to sign in' };
+        return authFailure(err, 'Failed to sign in. Check your connection and try again.');
       }
     },
     [supabase, fetchProfile]
@@ -122,7 +138,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             data: { full_name: fullName ?? '' },
           },
         });
-        if (error) return { success: false, error: error.message };
+        // Section 18, Phase 2, item 5 (audit §1 #55): Supabase
+        // returns "User already registered" for an existing email,
+        // which would let an attacker enumerate registered emails.
+        // That error is mapped to the same generic "check your
+        // email" wording a fresh sign-up shows, reported as a
+        // success-with-message — indistinguishable from a new
+        // account creation. This runs before the generic
+        // authFailure mapper: the point is not just friendly copy,
+        // but the success shape itself.
+        if (error) {
+          const generic = mapSignUpErrorMessage(error.message);
+          if (generic) return { success: true, error: generic };
+          return authFailure(error, 'Failed to create your account. Check your connection and try again.');
+        }
         if (!data.session) {
           return {
             success: true,
@@ -135,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         return { success: true };
       } catch (err) {
-        return { success: false, error: err instanceof Error ? err.message : 'Failed to sign up' };
+        return authFailure(err, 'Failed to create your account. Check your connection and try again.');
       }
     },
     [supabase, fetchProfile]
@@ -148,16 +177,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         provider: 'google',
         options: { redirectTo },
       });
-      if (error) return { success: false, error: error.message };
+      if (error) return authFailure(error, 'Google Sign-In is not available. Please use email/password.');
       return { success: true };
     } catch (err) {
-      return {
-        success: false,
-        error:
-          err instanceof Error
-            ? err.message
-            : 'Google Sign-In is not available. Please use email/password.',
-      };
+      return authFailure(err, 'Google Sign-In is not available. Please use email/password.');
     }
   }, [supabase]);
 
@@ -173,13 +196,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
         });
-        if (error) return { success: false, error: error.message };
+        if (error) return authFailure(error, 'Failed to send the reset email. Check your connection and try again.');
         return { success: true };
       } catch (err) {
-        return {
-          success: false,
-          error: err instanceof Error ? err.message : 'Failed to send reset email',
-        };
+        return authFailure(err, 'Failed to send the reset email. Check your connection and try again.');
       }
     },
     [supabase]
@@ -189,13 +209,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (password: string): Promise<AuthResult> => {
       try {
         const { error } = await supabase.auth.updateUser({ password });
-        if (error) return { success: false, error: error.message };
+        if (error) return authFailure(error, 'Failed to update your password. Check your connection and try again.');
         return { success: true };
       } catch (err) {
-        return {
-          success: false,
-          error: err instanceof Error ? err.message : 'Failed to update password',
-        };
+        return authFailure(err, 'Failed to update your password. Check your connection and try again.');
       }
     },
     [supabase]
@@ -208,13 +225,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           type: 'signup',
           email,
         });
-        if (error) return { success: false, error: error.message };
+        if (error) return authFailure(error, 'Failed to resend the verification email. Check your connection and try again.');
         return { success: true };
       } catch (err) {
-        return {
-          success: false,
-          error: err instanceof Error ? err.message : 'Failed to resend verification email',
-        };
+        return authFailure(err, 'Failed to resend the verification email. Check your connection and try again.');
       }
     },
     [supabase]

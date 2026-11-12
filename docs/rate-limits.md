@@ -39,7 +39,7 @@
 | Authenticated writes (default) | 30 | alerts, chat, community-deals, pools, reviews, wishlists, vault, tech-budget, preferences, settings/webhooks, push/subscribe, etc. |
 | Unauthenticated writes | 60 | `affiliate/click`, `analytics/events`, `product-views` (click/event inflation protection) |
 | Cron triggers | 30 | `prices/refresh`, `alerts/check`, `notifications/digest`, `notifications/process` (cron-job.org calls every 6h; 30/min leaves ample headroom for manual runs) |
-| Stripe webhook | 120 | `webhooks/stripe` — signature-verified; Stripe retries 429s, so a generous limit only blunts floods of invalid-signature requests |
+| Stripe webhook | 30 | `webhooks/stripe` — signature-verified; Stripe retries 429s, so a generous limit only blunts floods of invalid-signature requests |
 | Public GETs (default) | 120 | catalog reads: products, deals, brands, categories, merchants, coupons, etc. |
 | Search | 60 | `GET /api/search` (DB + AI-search cache behind it) |
 | Admin GETs | 60 | `/api/v1/admin/*` reads |
@@ -209,7 +209,7 @@
 | `/v1/wishlists/[id]/route.ts` | DELETE | `wishlists.id:<ip|user|key>` | 30 |
 | `/v1/wishlists/route.ts` | GET | `wishlists:<ip|user|key>` | 120 |
 | `/v1/wishlists/route.ts` | POST | `wishlists:<ip|user|key>` | 30 |
-| `/webhooks/stripe/route.ts` | POST | `webhooks.stripe:<ip|user|key>` | 120 |
+| `/webhooks/stripe/route.ts` | POST | `webhooks.stripe:<ip|user|key>` | 30 |
 
 Notes on the table:
 

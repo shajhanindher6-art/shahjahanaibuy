@@ -1,16 +1,28 @@
 /**
  * Cache layer with Stale-While-Revalidate (SWR) strategy.
  *
- * Dual-mode client:
- * - **Redis mode**: Uses `ioredis` when `REDIS_URL` is configured (distributed).
- * - **In-memory mode**: LRU cache fallback when Redis is unavailable (development).
+ * In-memory ONLY (Section 18, item 32 — corrected 12 Nov 2026):
+ * there is no Redis mode here. An earlier header claimed this file
+ * used `ioredis` when `REDIS_URL` is configured — that was false:
+ * no `ioredis` import exists anywhere in the repo, the in-memory
+ * `Map` below is always the store, and `REDIS_URL` is read only by
+ * the Upstash REST rate limiter (lib/api/rate-limit.ts) and the
+ * worker-queue fallback log line (lib/workers/queue.ts). `REDIS_URL`
+ * being set changes NOTHING about this cache.
+ *
+ * Consequence: the cache is per-instance. On multi-instance Vercel
+ * each instance holds its own `Map`; `invalidateCache()` clears
+ * only the local instance, so other instances serve stale data
+ * until their TTL expires (5 min stale by default, 1h for review
+ * summaries). That staleness window is by design until a shared
+ * cache exists — see the intake-approve invalidation comment in
+ * app/api/v1/admin/intake/route.ts.
  *
  * Key helpers:
  * - `cacheKey(...parts)` — builds namespaced cache keys.
  * - `swrGet(...)` — serve fresh → stale → fetch-and-revalidate.
  */
 
-import { env } from '@/lib/config/env';
 import { logger } from '@/lib/config/logger';
 
 // ---------------------------------------------------------------------------
@@ -120,7 +132,26 @@ export function invalidateCache(prefix: string): void {
   }
 }
 
-// Note: When REDIS_URL is configured, the in-memory store is still used as a
-// per-instance L1 cache. A future enhancement can wire `ioredis` here for a
-// distributed L2 cache. The SWR contract remains the same.
-void env.redisUrl;
+/**
+ * Invalidate the cached entries for one product (Section 18,
+ * item 33 — called on intake approve so a newly approved product
+ * is visible immediately on THIS instance): the product row, its
+ * merchant listings, its price history and its review summary.
+ *
+ * STALENESS WINDOW (by design, until a shared cache exists): the
+ * cache is per-instance (see the file header), so this clears only
+ * the local instance's `Map`. Other Vercel instances keep serving
+ * their own cached copies until TTL expiry — up to 5 minutes stale
+ * for product/price data, up to 1 hour for review summaries.
+ */
+export function invalidateProductCaches(productId: string, slug: string): void {
+  invalidateCache(cacheKey('product', slug));
+  invalidateCache(cacheKey('merchant-products', productId));
+  invalidateCache(cacheKey('price-history', productId));
+  invalidateCache(cacheKey('review-summary-numbers', productId));
+}
+
+// In-memory only — see the file header. There is no Redis mode:
+// no `ioredis` anywhere, and `REDIS_URL` is rate-limiting-only
+// (lib/api/rate-limit.ts). Do not re-add a Redis claim here without
+// wiring a real distributed store first.

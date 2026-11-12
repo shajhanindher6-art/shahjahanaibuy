@@ -1,8 +1,18 @@
 /**
  * Centralized logging utility.
- * In production, this would integrate with a structured logging service
- * (e.g. Logtail, Datadog). For Phase 1, it provides structured console
- * output with PII masking.
+ *
+ * Structured JSON lines: every record is ONE JSON object per line
+ * (`{ timestamp, level, message, ...meta }`) so Vercel logs (and any
+ * future log pipeline) can parse and filter by field instead of
+ * grepping text. There is NO external log sink — Vercel logs only;
+ * the old header's "a Logtail/Datadog integration would exist in
+ * production" was aspirational, not real, and is not added here
+ * (Section 18, item 56).
+ *
+ * PII masking: meta values under a sensitive key are replaced with
+ * `[REDACTED]` before serialisation (see SENSITIVE_KEYS). Masking
+ * covers keys, not free-text messages — never put a secret, token,
+ * or password inside a log *message* either.
  */
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -30,7 +40,13 @@ const SENSITIVE_KEYS = [
   'apikey',
 ];
 
-function maskSensitive(data: unknown): unknown {
+/**
+ * Recursively replace values under sensitive keys with '[REDACTED]'.
+ * A key matches when it CONTAINS a sensitive token (case-insensitive),
+ * so `userPassword`, `apiKey`, `toEmail`, `authToken` are all masked.
+ * Exported for tests (Section 18, item 56) — call sites use `logger`.
+ */
+export function maskSensitive(data: unknown): unknown {
   if (data === null || typeof data !== 'object') return data;
   if (Array.isArray(data)) return data.map(maskSensitive);
 
@@ -48,11 +64,20 @@ function maskSensitive(data: unknown): unknown {
   return masked;
 }
 
+/**
+ * One JSON object per line: `{ timestamp, level, message, ...meta }`.
+ * The base fields always win on a key collision — a meta field named
+ * `level` or `message` can never rewrite the record's own level or
+ * message. Meta is masked first (see maskSensitive).
+ */
 function formatMessage(level: LogLevel, message: string, meta?: Record<string, unknown>): string {
-  const timestamp = new Date().toISOString();
-  const maskedMeta = meta ? maskSensitive(meta) : undefined;
-  const metaStr = maskedMeta ? ` ${JSON.stringify(maskedMeta)}` : '';
-  return `[${timestamp}] ${level.toUpperCase()}: ${message}${metaStr}`;
+  const maskedMeta = meta ? (maskSensitive(meta) as Record<string, unknown>) : {};
+  return JSON.stringify({
+    ...maskedMeta,
+    timestamp: new Date().toISOString(),
+    level,
+    message,
+  });
 }
 
 export const logger = {

@@ -39,14 +39,21 @@ export function WaitlistForm() {
         return;
       }
       setState('error');
+      // Section 18, item 65 — never the bare generic fallback:
+      // the server's message when it says something useful, else a
+      // specific fallback (what happened + what to do next).
+      const serverMessage =
+        typeof body?.error?.message === 'string' ? body.error.message : '';
       setMessage(
-        typeof body?.error?.message === 'string'
-          ? body.error.message
-          : 'Something went wrong. Please try again.'
+        serverMessage && serverMessage !== 'Something went wrong. Please try again.'
+          ? serverMessage
+          : "We couldn't add you to the waitlist — please try again in a moment. If it keeps failing, contact support."
       );
     } catch {
       setState('error');
-      setMessage('Something went wrong. Please try again.');
+      setMessage(
+        "We couldn't reach the server to join the waitlist — check your connection and try again."
+      );
     }
   };
 

@@ -11,7 +11,7 @@
 - **Hosting: Vercel. Deploy = git push to `main`.** There is no `vercel.json` (no Vercel Cron, no custom headers, no build overrides).
 - **Verification gate before every push:** `npx tsc --noEmit` = 0 errors · full `npx vitest run` = 100% pass · clean `next build` · headless smoke · live recheck after push. **Push only on the user's live approval** (standing rule).
 - **GitHub workflow files** (`.github/workflows/*`) cannot be pushed by the GitHub App (403) — workflow changes go via the GitHub website.
-- **Baseline (12 Nov 2026):** tsc 0 · vitest 204 files / 2,528 tests, 100% PASS · clean build exit 0, 796 pages, `/products/[slug]` First Load 329 kB (budget ≤350 kB).
+- **Baseline (12 Nov 2026, Section 17 gate):** tsc 0 · vitest 216 files / 2,685 tests, 100% PASS · clean build exit 0, 799 pages, `/products/[slug]` First Load 330 kB (budget ≤350 kB).
 
 ## Deployment checklist
 
@@ -94,7 +94,7 @@ A live secret key (`sk_live_...`) alone **never** enables charges. Live mode cou
 1. `STRIPE_SECRET_KEY` starts with `sk_live_`, **and**
 2. `STRIPE_LIVE_LAUNCHED=true` is set in the hosting dashboard.
 
-This is enforced in `lib/stripe.ts` (`isStripeLiveLaunchApproved()`, `isStripeLiveModeBlocked()`): checkout and portal routes refuse with **503 + a loud log** when a live key is configured but the launch flag is not set — never silently taking real money. Before setting the flag, complete the live launch checklist: live keys + webhook secret in Vercel, live Price IDs, test checkout in live mode with a real card flow rehearsed, refund/dunning behaviour confirmed (note: there is currently **no** `invoice.payment_failed` handler — failed payments fall into a log-only branch), and the price decision made. **Stripe stays in TEST mode for Section 17 — no live activation.**
+This is enforced in `lib/stripe.ts` (`isStripeLiveLaunchApproved()`, `isStripeLiveModeBlocked()`): checkout and portal routes refuse with **503 + a loud log** when a live key is configured but the launch flag is not set — never silently taking real money. Before setting the flag, complete the live launch checklist: live keys + webhook secret in Vercel, live Price IDs, test checkout in live mode with a real card flow rehearsed, refund/dunning behaviour confirmed (an `invoice.payment_failed` handler exists — `handleInvoicePaymentFailed` in `services/stripe.ts` marks the subscription past-due and logs the retry context; Stripe's automatic retries keep running), and the price decision made. **Stripe stays in TEST mode for Section 17 — no live activation.**
 
 ### Email (Resend)
 | Variable | Description | Example |
@@ -130,7 +130,16 @@ Wired but dormant without keys. Generate once (`npx web-push generate-vapid-keys
 | `NEXT_PUBLIC_ENABLE_EMAIL_VERIFICATION` | Require email verification | `false` |
 | `NEXT_PUBLIC_ENABLE_GOOGLE_AUTH` | Offer Google sign-in | `true` |
 
-Note: `NEXT_PUBLIC_SITE_URL` is **not read by the code** — use `NEXT_PUBLIC_APP_URL`. The `enableGoogleAuth` / `enableEmailVerification` flags in `lib/config/env.ts` are not read anywhere else in code: Google sign-in is always offered, and email confirmation is governed by the Supabase dashboard, not code.
+Note: `NEXT_PUBLIC_SITE_URL` is **not read by the code** — use `NEXT_PUBLIC_APP_URL`. The `enableGoogleAuth` / `enableEmailVerification` flags in `lib/config/env.ts` ARE read — into flag defaults by `services/feature-flags.ts:15-16,49-50` (`isFeatureEnabled` / `getAllFeatureFlags`) — but no caller in `app/` / `features/` / `components/` consults the resulting flags, so the flags gate nothing in practice: Google sign-in is always offered, and email confirmation is governed by the Supabase dashboard, not code.
+
+### Creators, price lock & translations (all optional)
+
+| Variable | Description | Default / example |
+|----------|-------------|-------------------|
+| `CREATOR_REVENUE_SHARE_PERCENT` | Revenue-share percent used by the creator-rewards wiring (`lib/creator-rewards.ts`). A plain number 0–100 (no `%` sign); unset, non-numeric, or out-of-range → unconfigured (`null`). No payouts happen — this only configures the share math. | Unset = not configured · e.g. `20` |
+| `PRICE_LOCK_ENABLED` | Enables the price-lock config (`lib/price-lock.ts`). Only the exact string `true` enables it; anything else (including unset) = disabled. When enabled, eligible tiers are Premium/Family/Team with a 30-day guarantee window; Stripe must still be configured for it to mean anything. | `false` · e.g. `true` |
+| `TRANSLATION_PROVIDER_ENDPOINT` | External translation provider endpoint (`lib/product-translations.ts`). Read together with `TRANSLATION_PROVIDER_API_KEY` — **both must be set** or the provider is `null` (dormant: no calls, no silent fallback to a hard-coded service). The provider POSTs `{ text, target }` and is expected to return `{ translatedText }`. | Unset = dormant · e.g. `https://your-translation-provider.example/translate` |
+| `TRANSLATION_PROVIDER_API_KEY` | API key for the translation provider above. Same all-or-nothing rule: without the endpoint it does nothing. Set the real key only in the hosting dashboard, never here or in git. | Unset = dormant · e.g. `your-provider-api-key` |
 
 ### Monitoring & analytics (all optional)
 | Variable | Description | Example |
@@ -168,15 +177,15 @@ Dead/phantom references (mentioned in old docs, never read by code): `NEXT_PUBLI
 
 ---
 
-## Migrations (43 files — not 12)
+## Migrations (51 files — not 12)
 
-`supabase/migrations/` holds **43 files** (001–044, gaps 024/025 only — 023 exists). 121 `CREATE TABLE` statements, 120 distinct tables, every table RLS-enabled.
+`supabase/migrations/` holds **51 files** (001–053, gaps 024/025/046 — 023 exists — plus the unnumbered `20260718060823_fix_anonymous_access_policies.sql`). 123 `CREATE TABLE` statements, 122 distinct tables, every table RLS-enabled.
 
 **Applied status of every migration is UNKNOWN from the repo** — only the owner can check `supabase_migrations.schema_migrations` in Supabase. Two are proven NOT applied live: **033** (`live_shopping_sessions` table missing — proven by a PGRST205) and **044** (`creator_slugs` view — applying it activates `/creators` 404s with no redeploy).
 
 ### Rules
 - **Never apply a migration without the owner's explicit approval for that migration.**
-- **9 files carry "DO NOT APPLY YET" (035–043).** In particular, **never apply 035 without a separate explicit review** (standing rule).
+- **17 files carry "DO NOT APPLY YET" (035–043, 045, 047–053).** In particular, **never apply 035 without a separate explicit review** (standing rule).
 - **Never apply the unnumbered `supabase/migrations/20260718060823_fix_anonymous_access_policies.sql` as-is** — it restricts public catalogue reads to authenticated users and would break the public site.
 - Apply in filename order. 022 and 023 share the timestamp prefix `20261109124500_` — order by full filename.
 - Preconditions: **018 needs `add-smartpools.sql` first** (it alters the `pools` table); **031 needs `add-community-deals.sql` first** (hard FK to `community_deals`); 038 needs 026; 042 needs 039; 037 needs the commented cleanup UPDATE + VALIDATE after applying.
@@ -209,7 +218,12 @@ Other `.sql` scripts in `supabase/` (seed/repair/diagnostic) are not part of dep
    ```
 3. Navigate to `/admin`.
 
-**Known live risk (Section 17 audit §4 #1):** the server-side admin check (`requireAdmin`, `app/admin/layout.tsx`, `services/admin.ts`) reads a `profiles.role` column that does **not** exist in the migration chain — if the live DB matches the chain, every admin route 403s and `/admin` redirects everyone to `/dashboard`. Live status is unknown; verify with one admin login attempt before relying on the admin surface. A second, related risk: `profiles_update_own` has no column restriction, so any signed-in user can set their own `role_id` to admin — fix is Stage H code work, not a deployment step.
+**Admin check — fixed in code (Section 17 + Section 18 Phase 0):** the server-side admin check (`requireAdmin`, `app/admin/layout.tsx`, `services/admin.ts`) used to read a `profiles.role` column that does **not** exist in the migration chain. It now resolves the role via `role_id → roles.name` (`lib/admin-role.ts`, `fetchProfileRoleName`), and the `/owner` layout — the last surface still reading `profiles.role` — was fixed the same way in Section 18 Phase 0 (audit §1 #1). Live verification is still owner-gated: confirm with one admin login attempt before relying on the admin/owner surface (an anonymous request is redirected to `/sign-in` by a streaming redirect — HTTP 200 with a `NEXT_REDIRECT` digest — so check the redirect target, not the status alone). A second, related risk: `profiles_update_own` has no column restriction, so any signed-in user can set their own `role_id` to admin — migration 047 guards UPDATE (written, NOT applied); the INSERT path is still open (Section 18 audit §1 #53).
+
+### Owner dashboard (`/owner`) and refresh-runs admin page (`/admin/refresh-runs`)
+
+- **`/owner`** — admin-only owner dashboard (same fail-closed guard as `/admin`: no session → `/sign-in`, signed-in non-admin → `/dashboard`; role resolved via `role_id → roles.name`). It aggregates revenue, subscription/plan counts, API usage, price-source health, failed jobs and error logs. Where the underlying table is not yet applied live it shows an honest empty state instead of erroring (e.g. the error log until migration 048 is applied). Anonymous requests get a streaming redirect to `/sign-in` (HTTP 200 with a `NEXT_REDIRECT` digest) — verify the redirect target, not the status alone.
+- **`/admin/refresh-runs`** — admin page listing price-refresh runs from the `price_refresh_runs` table (migration 040, written NOT applied — until it is applied the page shows the honest "not applied yet" state). Each run shows per-step status and error only; no per-run counts are stored (by design — the full counts live in the run's ephemeral API response).
 
 ### Admin features
 - Analytics dashboard: real DB counts (users, products, alerts, wishlists, searches)
@@ -251,7 +265,7 @@ Exactly **one** scheduler is expected: **cron-job.org**. There is no `vercel.jso
 4. Copy each Price ID to `STRIPE_PREMIUM_PRICE_ID` / `STRIPE_FAMILY_PRICE_ID` / `STRIPE_TEAM_PRICE_ID` / `STRIPE_STARTER_PRICE_ID` (do not use the deprecated `STRIPE_PRO_PRICE_ID`)
 5. Set up a webhook endpoint:
    - URL: `https://shahjahanaibuy-b1zp.vercel.app/api/webhooks/stripe`
-   - Events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`
+   - Events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed`
    - Copy the signing secret to `STRIPE_WEBHOOK_SECRET`
 6. Test mode: use `sk_test_` keys. Live mode: use `sk_live_` keys **plus** `STRIPE_LIVE_LAUNCHED=true` — see the double gate above. **Do not go live in Section 17.**
 
@@ -273,7 +287,7 @@ Exactly **one** scheduler is expected: **cron-job.org**. There is no `vercel.jso
 
 ### Infrastructure
 - [ ] Supabase project provisioned
-- [ ] All 43 migrations verified (see migration section — do not blindly apply; 035–043 are DO NOT APPLY YET)
+- [ ] All 51 migrations verified (see migration section — do not blindly apply; 035–043, 045 and 047–053 are DO NOT APPLY YET)
 - [ ] RLS policies verified (note: migration 010's 66 wide-open write policies are fixed by 017 in code, but 017's live application is unverified — check `pg_policies` live)
 - [ ] Hosting platform configured (Vercel)
 - [ ] Custom domain pointing to hosting
@@ -368,18 +382,46 @@ DELETE FROM notification_queue WHERE status = 'sent' AND sent_at < now() - inter
 
 ---
 
+## Rollback runbook
+
+> **Status: never tested.** No rollback — code or database — has ever been run or exercised for this project. This runbook is a procedure to follow, not a proven recovery path. Do not present it as tested until a rollback has actually been rehearsed.
+
+### Code rollback (a bad deploy)
+
+1. **Vercel dashboard (fastest):** Vercel → Deployments → the last known-good deployment → Promote to Production (or Rollback, depending on the dashboard wording). This re-serves the previous build without touching git.
+2. **Git revert (equivalent, needs approval):** `git revert <bad-commit>` on `main`, then push — only with the user's live approval, as with any push. Vercel deploys the reverted tree automatically. Prefer reverting the single bad commit over resetting history.
+3. Verify after the rollback: `GET /api/v1/health` returns `healthy`, the reported symptom is gone, and the live recheck (unknown slugs → 404, key pages load) passes.
+
+### What a code rollback does NOT do
+
+- **A code rollback never touches the database.** Reverting code or re-deploying an older build changes no rows, no schema, and no Supabase configuration.
+- **Already-applied migrations are NOT rolled back by a code revert.** If a bad deploy shipped alongside an applied migration, rolling back the code leaves the new schema in place. A migration can only be undone by a deliberate, owner-approved reverse migration or manual SQL in the Supabase SQL Editor — there is no automatic "undo migration" step, and no migration rollback has ever been run for this project.
+- **No database rollback exists on the free tier.** The frozen `LAUNCH_CHECKLIST.md` rollback step "restore from Supabase daily backup" is **not available** — the free tier has no automated backups (see "Backup & restore guide" below). The only database recovery path is the most recent manual `pg_dump` export, if one exists — and no restore from such an export has ever been tested.
+
+### Rollback-adjacent mitigations (no deploy needed)
+
+- **Stripe:** disable the webhook endpoint or pause subscriptions in the Stripe Dashboard (test mode first).
+- **Email:** disable the Resend API key (sends fail closed).
+- **Cron:** pause the cron-job.org jobs so a bad refresh chain stops firing.
+- **Feature flags:** flip the row in the `feature_flags` table (see "Managing feature flags" above) to disable a feature without a deploy.
+
+---
+
 ## Backup & restore guide
 
-### What to back up
+> **Status — corrected 12 Nov 2026 (Section 18 audit, verified against Supabase's published pricing/docs): this project is on the Supabase free tier. The free tier has NO automated backups. There is no backup job, no scheduled dump, no verification, and no restore exercise anywhere in this project — no backup has ever been proven to exist. Whether the owner has ever taken a manual export is unknown. Until the owner decides otherwise (see "Owner decision" below), a manual export is the ONLY recovery path.**
+
+### What is (and is not) backed up
 
 **Supabase database**
-- Supabase provides automatic daily backups
-- Manual backup: `pg_dump` via Supabase SQL Editor or MCP tools
-- Point-in-time recovery available for 7 days (free tier) or 30 days (pro)
+- No automated backups on the free tier — the previous claim of "automatic daily backups" was false.
+- Daily backups start on the Pro plan ($25/month, 7-day retention).
+- Point-in-time recovery (PITR) is a Pro+ add-on at $100/month per 7 days of retention — it is NOT included in the free tier (or in Pro's base price). The previous claim of "7 days (free tier) or 30 days (pro)" was false.
+- Manual backup only: `pg_dump` (see below). No scheduled or automated dump exists today.
 
 **Supabase Storage**
-- File uploads (product images, avatars)
-- Supabase provides automatic backup of storage
+- File uploads (product images, avatars).
+- Storage objects are NEVER included in database backups — on any plan. There is no automatic backup of storage. The previous claim of "automatic backup of storage" was false. Storage files must be exported separately if they are to be recoverable.
 
 **Application code**
 - Git repository (primary backup)
@@ -389,24 +431,31 @@ DELETE FROM notification_queue WHERE status = 'sent' AND sent_at < now() - inter
 - Stripe stores all payment data (no need to back up locally)
 - Export customer/subscription data from Stripe Dashboard
 
-### Backup procedure
+### Owner decision — NOT done, nothing here is in place yet
 
-**Database (via Supabase Dashboard)**
-1. Go to Database > Backups
-2. Click "Create Backup"
-3. Download the backup file
+The owner must choose one of these two options. Neither is implemented today, and neither is presented as done:
+1. **Upgrade to Supabase Pro ($25/month)** — enables automatic daily backups (7-day retention). Note: this conflicts with the project's free-tier-only rule, so it needs an explicit owner decision. PITR would still cost extra ($100/month per 7 days) if wanted.
+2. **Manual/CI `pg_dump` routine to owner-held storage** — a scheduled export (manual run or CI job) of the database plus a separate export of Storage objects, stored somewhere the owner controls, with a periodic restore test. No such routine exists today.
+
+Until one of these is chosen and implemented, there is no backup.
+
+### Backup procedure (manual — the only path today)
+
+**Database (manual `pg_dump`)**
+1. Run `pg_dump` against the live database (connection details from the Supabase Dashboard > Project Settings > Database, or the owner's secure vault) and save the output file to owner-held storage.
+2. Separately export Storage objects — there is no combined export.
+3. Record the date of each export. No export has been verified to exist as of 12 Nov 2026.
 
 **Environment variables**
 1. Export all env vars to a secure vault (e.g. AWS Secrets Manager, 1Password)
 2. Document which vars are needed for each environment
 
-### Restore procedure
+### Restore procedure (from a manual export — untested)
 
 **Database restore**
-1. Go to Supabase Dashboard > Database > Backups
-2. Select the backup to restore
-3. Click "Restore"
-4. Verify data integrity by checking key tables
+1. Restore the `pg_dump` file into the target database (via `psql` or the Supabase SQL Editor).
+2. Verify data integrity by checking key tables.
+3. **No restore has ever been run or tested — this procedure is unproven.**
 
 **Application restore**
 1. Deploy the last known good version from Git
@@ -415,9 +464,9 @@ DELETE FROM notification_queue WHERE status = 'sent' AND sent_at < now() - inter
 4. Test critical user flows
 
 ### Disaster recovery plan
-1. **Database failure**: Supabase automatic failover (high availability)
+1. **Database failure**: No automatic failover is configured or verified for this project — do not rely on one. Recovery depends on the most recent manual export, if one exists.
 2. **Hosting failure**: Deploy to alternate platform (Vercel/Netlify)
 3. **Stripe outage**: Stripe provides status page, payments queue and retry
 4. **Email outage**: Notification queue retains pending items, retry logic handles temporary failures
-5. **RTO**: 1 hour (time to restore service)
-6. **RPO**: 24 hours (max data loss from daily backups)
+5. **RTO**: Unproven — no restore exercise has ever been run, so no recovery-time figure can be stated. (The previous "1 hour" was asserted with no evidence.)
+6. **RPO**: Unproven — with no automated backups, data loss on a database failure would be everything since the last manual export, if any. No number can be stated. (The previous "24 hours" assumed daily backups that do not exist.)

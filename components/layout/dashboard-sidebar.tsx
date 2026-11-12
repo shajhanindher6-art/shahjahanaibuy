@@ -20,6 +20,8 @@ import {
   CreditCard,
   KeyRound,
   Mail,
+  Lock,
+  Bookmark,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -42,6 +44,10 @@ const mainNavItems: NavItem[] = [
   { href: '/dashboard/recommendations', label: 'Recommendations', icon: Brain },
   { href: '/dashboard/wishlists', label: 'Wishlists', icon: Heart },
   { href: '/dashboard/tracking', label: 'My Tracking', icon: TrendingDown },
+  // Section 18, item 63 — these two pages existed but had no
+  // sidebar link; they were reachable only from the dashboard home.
+  { href: '/dashboard/vault', label: 'Vault', icon: Lock },
+  { href: '/dashboard/saved-searches', label: 'Saved Searches', icon: Bookmark },
   // Section 13, Chunk F, item 49 — the digest had no sidebar link;
   // it was reachable only by direct URL.
   { href: '/tools/price-drop-digest', label: 'Digest', icon: Mail },
@@ -96,9 +102,29 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void }) {
     };
   }, []);
 
+  // Section 18, item 63 — sign-out asks first, then reports a
+  // failure instead of silently redirecting. The provider's
+  // signOut() never throws today, but a failed sign-out must not
+  // look like a successful one.
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState('');
+
   async function handleSignOut() {
-    await signOut();
-    router.replace('/sign-in');
+    setSignOutError('');
+    setSigningOut(true);
+    try {
+      await signOut();
+      setShowSignOutConfirm(false);
+      router.replace('/sign-in');
+    } catch {
+      setShowSignOutConfirm(false);
+      setSignOutError(
+        "We couldn't sign you out. Check your connection and try again."
+      );
+    } finally {
+      setSigningOut(false);
+    }
   }
 
   return (
@@ -199,15 +225,52 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void }) {
             <p className="truncate text-xs text-muted-foreground">{profile?.email}</p>
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start gap-3 text-muted-foreground"
-          onClick={handleSignOut}
-        >
-          <LogOut className="h-4 w-4" />
-          Sign Out
-        </Button>
+        {signOutError && (
+          <p role="alert" className="mb-2 px-3 text-xs text-destructive">
+            {signOutError}
+          </p>
+        )}
+        {showSignOutConfirm ? (
+          <div
+            role="alertdialog"
+            aria-label="Confirm sign out"
+            className="rounded-lg border p-3"
+          >
+            <p className="text-sm font-medium">Sign out?</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              You will need to sign in again to use your dashboard.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => setShowSignOutConfirm(false)}
+                disabled={signingOut}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1"
+                onClick={() => void handleSignOut()}
+                disabled={signingOut}
+              >
+                {signingOut ? 'Signing out…' : 'Sign out'}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start gap-3 text-muted-foreground"
+            onClick={() => setShowSignOutConfirm(true)}
+          >
+            <LogOut className="h-4 w-4" />
+            Sign Out
+          </Button>
+        )}
       </div>
     </div>
   );
