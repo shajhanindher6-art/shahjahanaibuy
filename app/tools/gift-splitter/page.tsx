@@ -30,10 +30,12 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
 import { ShareButtons } from '@/components/products/share-buttons';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { loadGuidedCandidates } from '@/services/guided-finder';
 import { SHIPPING_NOTE } from '@/services/gift-finder';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   parseGiftSplitParams,
   splitGiftBudget,
@@ -119,6 +121,18 @@ export default async function GiftSplitterPage({ searchParams }: GiftSplitterPro
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Gift Budget Splitter"
+        description="Split one gift budget across several people, with one real priced gift pick per person. Equal shares unless you set your own weights."
+        path="/tools/gift-splitter"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Gift Budget Splitter' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
@@ -246,6 +260,28 @@ export default async function GiftSplitterPage({ searchParams }: GiftSplitterPro
                 <ShareButtons
                   title={`${heading} — SmartBuy AI`}
                   text={`${heading}: $${split.totalUsd.toFixed(2)} across ${split.shares.length} people. — SmartBuy AI`}
+                />
+              </div>
+              {/* Section 16, #36 — save this calculation to the
+                  account, or copy its shareable link. Params are
+                  scalar-only (the share-URL builder takes no
+                  arrays), so only the total + occasion round-trip
+                  in the URL; the label carries the recipient list. */}
+              <div className="mt-4">
+                <SaveCalculationButton
+                  tool="gift-splitter"
+                  label={(() => {
+                    const base = `Gift split $${split.totalUsd.toFixed(2)} across ${split.shares.length} ${split.shares.length === 1 ? 'person' : 'people'}`;
+                    const withOccasion = occasion ? `${base} · ${occasion}` : base;
+                    const withNames = `${withOccasion} (${split.shares.map((s) => s.name).join(', ')})`;
+                    // The API caps labels at 100 chars — never hand
+                    // it one it must reject (long occasion / names).
+                    return (withNames.length <= 100 ? withNames : withOccasion).slice(0, 100);
+                  })()}
+                  params={{
+                    total: split.totalUsd,
+                    ...(occasion ? { occasion } : {}),
+                  }}
                 />
               </div>
 

@@ -1,41 +1,43 @@
 /**
- * Metadata layout for /tools/list-optimizer (Section 13, Chunk E).
+ * Per-tool metadata (Section 16, item 13).
  *
- * The page is a 'use client' component and cannot export
- * metadata itself, so this layout carries it — same pattern as
- * the other metadata wrappers. Brand suffix is "SmartBuy AI".
+ * Shopping list optimizer used to share the generic /tools hub metadata
+ * (app/tools/layout.tsx). Title/description come from the
+ * page's own heading and intro copy. The metadata lives here
+ * — not in page.tsx — because the page is a client component
+ * ('use client'), which cannot export metadata.
  */
 
 import type { Metadata } from 'next';
 import { appConfig } from '@/lib/config/app';
 
 export const metadata: Metadata = {
-  title: 'AI Shopping List Optimizer \u2014 SmartBuy AI',
-  description:
-    'Your whole list, cheapest way: which item to buy from which store, with the total and the saving \u2014 recorded prices only.',
+  title: 'Shopping list optimizer — SmartBuy AI',
+  description: 'Add the products on your list and see the cheapest way to buy them all — which item from which store — from real recorded merchant prices only.',
   alternates: {
     canonical: `${appConfig.url}/tools/list-optimizer`,
   },
   openGraph: {
-    title: 'AI Shopping List Optimizer \u2014 SmartBuy AI',
-    description:
-      'Your whole list, cheapest way: which item to buy from which store, with the total and the saving \u2014 recorded prices only.',
+    title: 'Shopping list optimizer — SmartBuy AI',
+    description: 'Add the products on your list and see the cheapest way to buy them all — which item from which store — from real recorded merchant prices only.',
     url: `${appConfig.url}/tools/list-optimizer`,
     type: 'website',
     locale: 'en_US',
   },
   twitter: {
     card: 'summary',
-    title: 'AI Shopping List Optimizer \u2014 SmartBuy AI',
-    description:
-      'Your whole list, cheapest way: which item to buy from which store, with the total and the saving \u2014 recorded prices only.',
+    title: 'Shopping list optimizer — SmartBuy AI',
+    description: 'Add the products on your list and see the cheapest way to buy them all — which item from which store — from real recorded merchant prices only.',
   },
 };
 
-export default function ListOptimizerLayout({
+export default function ToolLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  // JSX return (same pattern as app/admin/layout.tsx): returning
+  // children bare trips TS1062 under `next build` route-type
+  // checking — the fragment infers Promise<JSX.Element>.
+  return <>{children}</>;
 }

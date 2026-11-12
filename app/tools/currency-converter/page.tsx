@@ -26,7 +26,9 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { Button } from '@/components/ui/button';
 import { ShareButtons } from '@/components/products/share-buttons';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { appConfig } from '@/lib/config/app';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   convertCurrency,
   formatConvertedAmount,
@@ -86,6 +88,18 @@ export default function CurrencyConverterPage({ searchParams }: CurrencyConverte
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Currency Converter"
+        description="Convert any amount between 51 currencies — for example $999 to PKR. Approximate static rates, reviewed 2026-11-01/02, never a live rate."
+        path="/tools/currency-converter"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Currency Converter' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
@@ -187,6 +201,15 @@ export default function CurrencyConverterPage({ searchParams }: CurrencyConverte
                 <ShareButtons
                   title="Currency Converter — SmartBuy AI"
                   text={`${formatConvertedAmount(result.amount, result.from)} ≈ ${formatConvertedAmount(result.converted, result.to)} — SmartBuy AI`}
+                />
+              </div>
+              {/* Section 16, #36 — save this calculation to the
+                  account, or copy its shareable link. */}
+              <div className="mt-4">
+                <SaveCalculationButton
+                  tool="currency-converter"
+                  label={`${formatConvertedAmount(result.amount, result.from)} ≈ ${formatConvertedAmount(result.converted, result.to)}`}
+                  params={{ amount: result.amount, from: result.from, to: result.to }}
                 />
               </div>
             </section>

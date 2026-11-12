@@ -24,8 +24,10 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { Button } from '@/components/ui/button';
 import { ShareButtons } from '@/components/products/share-buttons';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { appConfig } from '@/lib/config/app';
 import { calculateEmi, parseEmiParams } from '@/lib/emi-calculator';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,6 +83,18 @@ export default function EmiCalculatorPage({ searchParams }: EmiCalculatorProps) 
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="EMI Calculator"
+        description="Monthly installment, total payable, and total interest for any price, at the interest rate your lender quoted. No rate is preset — you enter it."
+        path="/tools/emi-calculator"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'EMI Calculator' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
@@ -210,6 +224,19 @@ export default function EmiCalculatorPage({ searchParams }: EmiCalculatorProps) 
                 <ShareButtons
                   title="EMI Calculator — SmartBuy AI"
                   text={`$${result.principal.toFixed(2)} over ${result.tenureMonths} months at ${result.annualRatePercent}%: $${result.monthlyEmi.toFixed(2)}/month — SmartBuy AI`}
+                />
+              </div>
+              {/* Section 16, #36 — save this calculation to the
+                  account, or copy its shareable link. */}
+              <div className="mt-4">
+                <SaveCalculationButton
+                  tool="emi-calculator"
+                  label={`EMI $${result.principal.toFixed(2)} at ${result.annualRatePercent}% / ${result.tenureMonths} mo`}
+                  params={{
+                    price: result.principal,
+                    rate: result.annualRatePercent,
+                    months: result.tenureMonths,
+                  }}
                 />
               </div>
             </section>

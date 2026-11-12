@@ -1,41 +1,43 @@
 /**
- * Metadata layout for /tools/trade-in-finder (Section 13, Chunk E).
+ * Per-tool metadata (Section 16, item 13).
  *
- * The page is a 'use client' component and cannot export
- * metadata itself, so this layout carries it — same pattern as
- * the other metadata wrappers. Brand suffix is "SmartBuy AI".
+ * Trade-in & second-hand finder used to share the generic /tools hub metadata
+ * (app/tools/layout.tsx). Title/description come from the
+ * page's own heading and intro copy. The metadata lives here
+ * — not in page.tsx — because the page is a client component
+ * ('use client'), which cannot export metadata.
  */
 
 import type { Metadata } from 'next';
 import { appConfig } from '@/lib/config/app';
 
 export const metadata: Metadata = {
-  title: 'AI Trade-in & Second-hand Finder \u2014 SmartBuy AI',
-  description:
-    'Sell the old one before buying new: real trade-in programs and certified refurbished listings, linked to your resale value.',
+  title: 'Trade-in & second-hand finder — SmartBuy AI',
+  description: 'Before buying new, see what your old product is worth and where you can trade it in. Trade-in programs are listed only when a real program is confirmed.',
   alternates: {
     canonical: `${appConfig.url}/tools/trade-in-finder`,
   },
   openGraph: {
-    title: 'AI Trade-in & Second-hand Finder \u2014 SmartBuy AI',
-    description:
-      'Sell the old one before buying new: real trade-in programs and certified refurbished listings, linked to your resale value.',
+    title: 'Trade-in & second-hand finder — SmartBuy AI',
+    description: 'Before buying new, see what your old product is worth and where you can trade it in. Trade-in programs are listed only when a real program is confirmed.',
     url: `${appConfig.url}/tools/trade-in-finder`,
     type: 'website',
     locale: 'en_US',
   },
   twitter: {
     card: 'summary',
-    title: 'AI Trade-in & Second-hand Finder \u2014 SmartBuy AI',
-    description:
-      'Sell the old one before buying new: real trade-in programs and certified refurbished listings, linked to your resale value.',
+    title: 'Trade-in & second-hand finder — SmartBuy AI',
+    description: 'Before buying new, see what your old product is worth and where you can trade it in. Trade-in programs are listed only when a real program is confirmed.',
   },
 };
 
-export default function TradeInFinderLayout({
+export default function ToolLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  // JSX return (same pattern as app/admin/layout.tsx): returning
+  // children bare trips TS1062 under `next build` route-type
+  // checking — the fragment infers Promise<JSX.Element>.
+  return <>{children}</>;
 }

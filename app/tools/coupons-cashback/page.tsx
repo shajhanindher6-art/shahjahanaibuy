@@ -22,11 +22,14 @@
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import { Tag, DollarSign } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { Button } from '@/components/ui/button';
 import { appConfig } from '@/lib/config/app';
+import { tFor } from '@/lib/i18n';
+import { isSupportedLanguage, type Language } from '@/lib/region';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
   getCashbackOffers,
@@ -34,6 +37,7 @@ import {
   getMerchants,
 } from '@/services/commerce';
 import { getProducts } from '@/services/products';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   DEMO_DATA_NOTE,
   FINDER_KIND_LABELS,
@@ -80,9 +84,21 @@ interface CouponsCashbackPageProps {
   };
 }
 
+/**
+ * Section 16, #44: the last tool page with zero i18n — its h1 now
+ * renders through tFor like the other 25 tools (toolHeading
+ * key added in lib/i18n.ts). Same sb-language cookie pattern as
+ * the other server tools (see emi-calculator).
+ */
+function toolLanguage(): Language {
+  const saved = cookies().get('sb-language')?.value ?? null;
+  return saved && isSupportedLanguage(saved) ? saved : 'en';
+}
+
 export default async function CouponsCashbackPage({
   searchParams,
 }: CouponsCashbackPageProps) {
+  const language = toolLanguage();
   const params = parseFinderParams(searchParams);
   const supabase = await createSupabaseServerClient();
 
@@ -136,11 +152,22 @@ export default async function CouponsCashbackPage({
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Coupons & Cashback Finder"
+        description="Find coupon codes and cashback offers by store and category. Demo / seed data — sample offers from the demo catalog, not live merchant offers."
+        path="/tools/coupons-cashback"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Coupons & Cashback Finder' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-3xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <Tag className="h-7 w-7 text-blue-600" /> Coupons &amp; Cashback
-            Finder
+            <Tag className="h-7 w-7 text-blue-600" /> {tFor(language, 'toolHeadingCouponsCashback')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             Search coupon codes and cashback offers by store and category —

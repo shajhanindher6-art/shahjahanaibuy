@@ -10,6 +10,7 @@
 
 'use client';
 
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
@@ -106,6 +107,18 @@ export default function TradeInPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Trade-in & second-hand finder"
+        description="Before buying new, see what your old product is worth and where you can trade it in. Trade-in programs are listed only when a real program is confirmed."
+        path="/tools/trade-in-finder"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Trade-in & second-hand finder' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">

@@ -1,41 +1,43 @@
 /**
- * Metadata layout for /tools/savings-dashboard (Section 13, Chunk E).
+ * Per-tool metadata (Section 16, item 13).
  *
- * The page is a 'use client' component and cannot export
- * metadata itself, so this layout carries it — same pattern as
- * the other metadata wrappers. Brand suffix is "SmartBuy AI".
+ * Savings dashboard used to share the generic /tools hub metadata
+ * (app/tools/layout.tsx). Title/description come from the
+ * page's own heading and intro copy. The metadata lives here
+ * — not in page.tsx — because the page is a client component
+ * ('use client'), which cannot export metadata.
  */
 
 import type { Metadata } from 'next';
 import { appConfig } from '@/lib/config/app';
 
 export const metadata: Metadata = {
-  title: 'AI Savings Dashboard \u2014 SmartBuy AI',
-  description:
-    '\u201cHow much have you saved so far\u201d \u2014 total saved, this month, and your biggest saving, from confirmed recorded savings only.',
+  title: 'Savings dashboard — SmartBuy AI',
+  description: 'How much you have actually saved — from confirmed savings only. Every figure is computed from your recorded savings ledger at read time.',
   alternates: {
     canonical: `${appConfig.url}/tools/savings-dashboard`,
   },
   openGraph: {
-    title: 'AI Savings Dashboard \u2014 SmartBuy AI',
-    description:
-      '\u201cHow much have you saved so far\u201d \u2014 total saved, this month, and your biggest saving, from confirmed recorded savings only.',
+    title: 'Savings dashboard — SmartBuy AI',
+    description: 'How much you have actually saved — from confirmed savings only. Every figure is computed from your recorded savings ledger at read time.',
     url: `${appConfig.url}/tools/savings-dashboard`,
     type: 'website',
     locale: 'en_US',
   },
   twitter: {
     card: 'summary',
-    title: 'AI Savings Dashboard \u2014 SmartBuy AI',
-    description:
-      '\u201cHow much have you saved so far\u201d \u2014 total saved, this month, and your biggest saving, from confirmed recorded savings only.',
+    title: 'Savings dashboard — SmartBuy AI',
+    description: 'How much you have actually saved — from confirmed savings only. Every figure is computed from your recorded savings ledger at read time.',
   },
 };
 
-export default function SavingsDashboardLayout({
+export default function ToolLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  // JSX return (same pattern as app/admin/layout.tsx): returning
+  // children bare trips TS1062 under `next build` route-type
+  // checking — the fragment infers Promise<JSX.Element>.
+  return <>{children}</>;
 }

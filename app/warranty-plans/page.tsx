@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { WarrantyPlansTable } from '@/components/products/warranty-plans-table';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
@@ -65,6 +66,13 @@ export default function WarrantyPlansPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Warranty & insurance plans"
+        description="Third-party warranty and insurance plans recorded by an admin from each provider’s own published page. Plans are listed, never recommended."
+        path="/warranty-plans"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Warranty & insurance plans" } ]}
+      />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
         <h1 className="text-2xl font-bold">Warranty &amp; insurance plans</h1>
         <p className="mt-2 text-sm text-muted-foreground">

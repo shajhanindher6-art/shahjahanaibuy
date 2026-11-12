@@ -35,6 +35,7 @@ import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getProducts } from '@/services/products';
 import { getPriceHistory } from '@/services/price-history';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   PROTECTION_VERDICT_LABELS,
   PROTECTION_WINDOWS_DAYS,
@@ -114,6 +115,18 @@ export default async function PriceProtectionPage({
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Price Protection Check"
+        description="Bought something and the price dropped after? Check whether a lower price was recorded inside your protection window. Recorded prices only — retailer policies are not checked."
+        path="/tools/price-protection"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Price Protection Check' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">

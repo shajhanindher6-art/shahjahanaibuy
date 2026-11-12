@@ -1,9 +1,11 @@
 /**
- * Metadata layout for /tools/store-finder (Section 12).
+ * Per-tool metadata (Section 16, item 13).
  *
- * The Store Finder page is a 'use client' component and cannot
- * export metadata itself, so this layout carries it — same pattern
- * as the other metadata wrappers. Brand suffix is "SmartBuy AI".
+ * Store Finder used to share the generic /tools hub metadata
+ * (app/tools/layout.tsx). Title/description come from the
+ * page's own heading and intro copy. The metadata lives here
+ * — not in page.tsx — because the page is a client component
+ * ('use client'), which cannot export metadata.
  */
 
 import type { Metadata } from 'next';
@@ -11,15 +13,13 @@ import { appConfig } from '@/lib/config/app';
 
 export const metadata: Metadata = {
   title: 'Store Finder — SmartBuy AI',
-  description:
-    'Find which stores in your country carry a product, with a search link to each store. Directory and search links only — no invented prices or shipping claims.',
+  description: 'Find the stores in your country, then search a product on their own site. Search links only — SmartBuy does not show their prices or stock.',
   alternates: {
     canonical: `${appConfig.url}/tools/store-finder`,
   },
   openGraph: {
     title: 'Store Finder — SmartBuy AI',
-    description:
-      'Find which stores in your country carry a product, with a search link to each store. Directory and search links only — no invented prices or shipping claims.',
+    description: 'Find the stores in your country, then search a product on their own site. Search links only — SmartBuy does not show their prices or stock.',
     url: `${appConfig.url}/tools/store-finder`,
     type: 'website',
     locale: 'en_US',
@@ -27,15 +27,17 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary',
     title: 'Store Finder — SmartBuy AI',
-    description:
-      'Find which stores in your country carry a product, with a search link to each store. Directory and search links only — no invented prices or shipping claims.',
+    description: 'Find the stores in your country, then search a product on their own site. Search links only — SmartBuy does not show their prices or stock.',
   },
 };
 
-export default function StoreFinderLayout({
+export default function ToolLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  // JSX return (same pattern as app/admin/layout.tsx): returning
+  // children bare trips TS1062 under `next build` route-type
+  // checking — the fragment infers Promise<JSX.Element>.
+  return <>{children}</>;
 }

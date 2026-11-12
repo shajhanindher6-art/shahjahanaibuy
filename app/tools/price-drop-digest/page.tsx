@@ -13,6 +13,7 @@
 
 'use client';
 
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
@@ -273,6 +274,18 @@ export default function PriceDropDigestPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Price-drop digest"
+        description="One summary of the price drops on the products you watch — top deals first, with one line per deal explaining why it is a deal."
+        path="/tools/price-drop-digest"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Price-drop digest' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">

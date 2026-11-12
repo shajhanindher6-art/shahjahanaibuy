@@ -18,12 +18,35 @@
  */
 
 import type { CSSProperties } from 'react';
+import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import Link from 'next/link';
+import { appConfig } from '@/lib/config/app';
 import { EmbedClickTracker } from './embed-tracker';
 import { summarizePriceHistory, validateWidgetConfig, type PricePoint } from '@/lib/widgets';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * Embed metadata (Section 16, item 16).
+ *
+ * This route renders a chromeless `<iframe>` widget for third-party
+ * sites — it is not a page shoppers should land on from search, so
+ * it is noindex. The canonical is the bare embed path (the widget
+ * itself is driven by ?slug=…&type=…&theme=… query params).
+ */
+export const metadata: Metadata = {
+  title: 'SmartBuy AI price widget — embed',
+  description:
+    'Embeddable SmartBuy AI price widget for third-party sites: the latest recorded price and recorded price history for a product, shown chromeless in an iframe.',
+  alternates: {
+    canonical: `${appConfig.url}/widgets/embed`,
+  },
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 interface ExtensionOffer {
   merchant: string | null;

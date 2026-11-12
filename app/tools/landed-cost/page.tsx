@@ -25,8 +25,10 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { Button } from '@/components/ui/button';
 import { ShareButtons } from '@/components/products/share-buttons';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { appConfig } from '@/lib/config/app';
 import { calculateLandedCost, parseLandedCostParams } from '@/lib/landed-cost';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 
 export const dynamic = 'force-dynamic';
 
@@ -80,6 +82,18 @@ export default function LandedCostPage({ searchParams }: LandedCostProps) {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Landed Cost Calculator"
+        description="Estimate the full landed cost of an import — price, shipping, duty and VAT — from rates you enter yourself. An estimate, never an official duty figure."
+        path="/tools/landed-cost"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Landed Cost Calculator' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
@@ -241,6 +255,21 @@ export default function LandedCostPage({ searchParams }: LandedCostProps) {
                 <ShareButtons
                   title="Landed Cost Calculator — SmartBuy AI"
                   text={`Estimated landed cost to ${result.country}: ≈ $${result.total.toFixed(2)} (product $${result.price.toFixed(2)}) — SmartBuy AI`}
+                />
+              </div>
+              {/* Section 16, #36 — save this calculation to the
+                  account, or copy its shareable link. */}
+              <div className="mt-4">
+                <SaveCalculationButton
+                  tool="landed-cost"
+                  label={`Landed cost to ${result.country}: ≈ $${result.total.toFixed(2)}`}
+                  params={{
+                    price: result.price,
+                    country: result.country,
+                    shipping: result.shipping,
+                    duty: result.dutyPercent,
+                    vat: result.vatPercent,
+                  }}
                 />
               </div>
             </section>

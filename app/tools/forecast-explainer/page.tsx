@@ -27,6 +27,7 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ShareButtons } from '@/components/products/share-buttons';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getProducts } from '@/services/products';
@@ -35,7 +36,9 @@ import {
   backtestForecast,
   computeForecast,
   FORECAST_HORIZONS,
+  formatForecastBasis,
 } from '@/lib/forecast';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   accuracySummaryLine,
   summarizeAccuracy,
@@ -98,7 +101,11 @@ function toolLanguage(): Language {
   return saved && isSupportedLanguage(saved) ? saved : 'en';
 }
 
-export default async function ForecastExplainerPage() {
+interface ForecastExplainerProps {
+  searchParams: { product?: string | string[] };
+}
+
+export default async function ForecastExplainerPage({ searchParams }: ForecastExplainerProps) {
   const language = toolLanguage();
   const supabase = await createSupabaseServerClient();
   const { products } = await getProducts(supabase, { page: 1, pageSize: 100 });
@@ -141,9 +148,34 @@ export default async function ForecastExplainerPage() {
     outcomeSummary = summarizeAccuracy([]);
   }
 
+  // Section 16, #36: a saved calculation re-opens as
+  // /tools/forecast-explainer?product=<slug> — the page replays
+  // that product's forecast alone. An unknown slug is an honest
+  // "no forecast for that product" line, never a silent full list.
+  const rawProduct = Array.isArray(searchParams?.product)
+    ? searchParams.product[0]
+    : searchParams?.product;
+  const requestedSlug = (rawProduct ?? '').trim();
+  const visibleItems = requestedSlug
+    ? items.filter((i) => i.product.slug === requestedSlug)
+    : items;
+  const unknownProduct = requestedSlug !== '' && visibleItems.length === 0;
+
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Forecast Explainer"
+        description="What a price forecast range really means, in plain language — and how often past forecasts were right, with the trial count shown honestly."
+        path="/tools/forecast-explainer"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Forecast Explainer' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
@@ -211,7 +243,37 @@ export default async function ForecastExplainerPage() {
             />
           </div>
 
-          {items.length === 0 && (
+          {requestedSlug !== '' && visibleItems.length > 0 && (
+            <p className="mt-6 text-sm text-muted-foreground">
+              Showing the forecast for{' '}
+              <strong className="text-foreground">{visibleItems[0].product.name}</strong>{' '}
+              (from a saved calculation) —{' '}
+              <Link href="/tools/forecast-explainer" className="underline underline-offset-4">
+                view all forecasts
+              </Link>
+              .
+            </p>
+          )}
+
+          {unknownProduct && (
+            <div className="mt-6">
+              <EmptyState
+                eyebrow="No forecast for that product"
+                title={`No forecast found for “${requestedSlug}”`}
+                description="The product may have been removed, or the link is stale — the full forecast list is one click away."
+                action={
+                  <Link
+                    href="/tools/forecast-explainer"
+                    className="inline-flex min-h-[44px] items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+                  >
+                    View all forecasts →
+                  </Link>
+                }
+              />
+            </div>
+          )}
+
+          {!unknownProduct && visibleItems.length === 0 && (
             <div className="mt-6">
               <EmptyState
                 eyebrow="No products yet"
@@ -221,9 +283,9 @@ export default async function ForecastExplainerPage() {
             </div>
           )}
 
-          {items.length > 0 && (
+          {!unknownProduct && visibleItems.length > 0 && (
             <div className="mt-6 space-y-4">
-              {items.map(({ product, pointCount, forecast, backtests }) => (
+              {visibleItems.map(({ product, pointCount, forecast, backtests }) => (
                 <article key={product.id} className="rounded-lg border p-6">
                   <h2 className="text-lg font-semibold">
                     <Link
@@ -271,6 +333,14 @@ export default async function ForecastExplainerPage() {
                                 f.confidencePct
                               )}
                             </p>
+                            {/* Section 16, item 11: the point count
+                                and confidence band behind this range —
+                                "based on 4 points, low confidence" —
+                                so the visitor can see how thin the
+                                history is. */}
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {formatForecastBasis(f.pointsUsed, f.confidencePct)}
+                            </p>
                             <p className="mt-2 text-sm">
                               Backtest:{' '}
                               {backtest && backtest.trials > 0 ? (
@@ -295,6 +365,29 @@ export default async function ForecastExplainerPage() {
                       <p className="text-xs text-muted-foreground">{forecast.method}</p>
                     </div>
                   )}
+
+                  {/* Section 16, #36 — save this product's
+                      forecast to the account, or copy its shareable
+                      link. The label quotes the 30-day range (the
+                      middle horizon); the link re-opens this
+                      product's forecast via ?product=<slug>. No
+                      button when there is no forecast to save. */}
+                  {forecast.status === 'ok' &&
+                    (() => {
+                      const f30 =
+                        forecast.forecasts.find((f) => f.horizonDays === 30) ??
+                        forecast.forecasts[0];
+                      if (!f30) return null;
+                      return (
+                        <div className="mt-4">
+                          <SaveCalculationButton
+                            tool="forecast-explainer"
+                            label={`${product.name} ${f30.horizonDays}-day forecast: $${f30.low.toFixed(2)}–$${f30.high.toFixed(2)}`.slice(0, 100)}
+                            params={{ product: product.slug }}
+                          />
+                        </div>
+                      );
+                    })()}
 
                   <Link
                     href={`/products/${product.slug}`}

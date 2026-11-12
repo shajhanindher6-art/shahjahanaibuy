@@ -28,10 +28,12 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
 import { ShareButtons } from '@/components/products/share-buttons';
+import { SimulatorToAlertButton } from '@/components/tools/simulator-to-alert-button';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getProducts } from '@/services/products';
 import { getPriceHistory } from '@/services/price-history';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   ALERT_VERDICT_LABELS,
   parseAlertSimulatorParams,
@@ -107,6 +109,18 @@ export default async function PriceAlertSimulatorPage({
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Price Alert Simulator"
+        description="Pick a product and a target price — see whether that price was already met, has been recorded before, or has never been recorded. Recorded prices only, no predictions."
+        path="/tools/price-alert-simulator"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Price Alert Simulator' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
@@ -275,6 +289,17 @@ export default async function PriceAlertSimulatorPage({
                 <ShareButtons
                   title="Price Alert Simulator — SmartBuy AI"
                   text={`Alert at $${simulation.target.toFixed(2)} for ${selected.name}: ${ALERT_VERDICT_LABELS[simulation.verdict]} — SmartBuy AI`}
+                />
+              </div>
+              {/* Section 16, #33 — one-click bridge from the
+                  simulation to a REAL alert (same product + target,
+                  via POST /api/v1/alerts). The simulation itself
+                  still creates nothing; only this button does. */}
+              <div className="mt-4 border-t pt-4">
+                <SimulatorToAlertButton
+                  productId={selected.id}
+                  productName={selected.name}
+                  targetPrice={simulation.target}
                 />
               </div>
               <p className="mt-4 text-sm">

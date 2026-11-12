@@ -16,6 +16,7 @@
 
 'use client';
 
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
@@ -25,9 +26,10 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import type { ConsumerSubscription } from '@/lib/subscription-manager';
+import { subscriptionsToCsv, type ConsumerSubscription } from '@/lib/subscription-manager';
 
 interface EnrichedSubscription extends ConsumerSubscription {
   monthlyUsd: number;
@@ -201,9 +203,36 @@ export default function SubscriptionManagerPage() {
     }
   }
 
+  // Section 16, #50: download the already-loaded subscriptions as
+  // a CSV file (browser-side download, nothing uploaded).
+  function downloadCsv() {
+    const csv = subscriptionsToCsv(subscriptions);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'smartbuy-subscriptions.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const activeCount = subscriptions.filter((s) => s.isActive).length;
+
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Subscription manager"
+        description="Your consumer subscriptions — streaming, apps, services — in one place, with renewal reminders and flags for duplicates and subscriptions you rarely use."
+        path="/tools/subscription-manager"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Subscription manager' },
+        ]}
+      />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
         <h1 className="text-2xl font-bold">{tFor(language, 'toolHeadingSubscriptionManager')}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -330,6 +359,31 @@ export default function SubscriptionManagerPage() {
                 {subscriptions.filter((s) => s.isActive).length > 0 &&
                   ` across ${subscriptions.filter((s) => s.isActive).length} active subscription${subscriptions.filter((s) => s.isActive).length === 1 ? '' : 's'}`}
               </h2>
+
+              {/* Section 16, #36 — save this monthly-total summary
+                  to the account, or copy its shareable link. The
+                  params are the computed total + active count. */}
+              {subscriptions.length > 0 && (
+                <div className="mt-4">
+                  <SaveCalculationButton
+                    tool="subscription-manager"
+                    label={`Subscriptions: $${totalMonthlyUsd.toFixed(2)}/month across ${activeCount} active`.slice(0, 100)}
+                    params={{ total: totalMonthlyUsd, subscriptions: activeCount }}
+                  />
+                </div>
+              )}
+
+              {subscriptions.length > 0 && (
+                <div className="mt-3">
+                  <Button type="button" variant="outline" size="sm" onClick={downloadCsv}>
+                    Download subscriptions (CSV)
+                  </Button>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Downloads the subscriptions listed on this page as a CSV
+                    file — your own recorded data, nothing else.
+                  </p>
+                </div>
+              )}
 
               {reminders.length > 0 && (
                 <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">

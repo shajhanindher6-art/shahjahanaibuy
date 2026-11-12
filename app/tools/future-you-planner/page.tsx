@@ -14,6 +14,7 @@
 
 'use client';
 
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
@@ -23,6 +24,7 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
@@ -159,6 +161,18 @@ export default function FutureYouPlannerPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Future You planner"
+        description="Saving for a big purchase? Set the target and the date, and the planner says how much to save each month: (target − saved so far) ÷ months remaining."
+        path="/tools/future-you-planner"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Future You planner' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
@@ -318,6 +332,24 @@ export default function FutureYouPlannerPage() {
                           : 'No monthly amount — see below'}
                       </p>
                       <p className="mt-1 text-sm text-muted-foreground">{goal.plan.message}</p>
+                      {/* Section 16, #36 — save this goal's plan to
+                          the account, or copy its shareable link.
+                          Only when a monthly amount exists — a
+                          reached/passed goal has nothing to save. */}
+                      {goal.plan.monthlySavingUsd !== null && (
+                        <div className="mt-4">
+                          <SaveCalculationButton
+                            tool="future-you-planner"
+                            label={`${goal.name}: save $${goal.plan.monthlySavingUsd.toFixed(2)}/month by ${goal.targetDate}`.slice(0, 100)}
+                            params={{
+                              target: goal.targetUsd,
+                              date: goal.targetDate,
+                              saved: goal.savedSoFarUsd,
+                              ...(goal.productSlug ? { product: goal.productSlug } : {}),
+                            }}
+                          />
+                        </div>
+                      )}
                       {goal.product ? (
                         <p className="mt-2 text-sm text-muted-foreground">
                           <Link href={`/products/${goal.product.slug}`} className="underline-offset-4 hover:underline">

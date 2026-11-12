@@ -1,41 +1,43 @@
 /**
- * Metadata layout for /tools/eco-coach (Section 13, Chunk E).
+ * Per-tool metadata (Section 16, item 13).
  *
- * The page is a 'use client' component and cannot export
- * metadata itself, so this layout carries it — same pattern as
- * the other metadata wrappers. Brand suffix is "SmartBuy AI".
+ * AI Eco Shopping Coach used to share the generic /tools hub metadata
+ * (app/tools/layout.tsx). Title/description come from the
+ * page's own heading and intro copy. The metadata lives here
+ * — not in page.tsx — because the page is a client component
+ * ('use client'), which cannot export metadata.
  */
 
 import type { Metadata } from 'next';
 import { appConfig } from '@/lib/config/app';
 
 export const metadata: Metadata = {
-  title: 'AI Eco Shopping Coach \u2014 SmartBuy AI',
-  description:
-    'A monthly carbon budget, with coach advice on each purchase \u2014 recorded carbon first, estimates always labelled as estimates.',
+  title: 'AI Eco Shopping Coach — SmartBuy AI',
+  description: 'Set a monthly carbon budget and see how your month is going. Recorded carbon counts first; anything estimated is labeled as an estimate.',
   alternates: {
     canonical: `${appConfig.url}/tools/eco-coach`,
   },
   openGraph: {
-    title: 'AI Eco Shopping Coach \u2014 SmartBuy AI',
-    description:
-      'A monthly carbon budget, with coach advice on each purchase \u2014 recorded carbon first, estimates always labelled as estimates.',
+    title: 'AI Eco Shopping Coach — SmartBuy AI',
+    description: 'Set a monthly carbon budget and see how your month is going. Recorded carbon counts first; anything estimated is labeled as an estimate.',
     url: `${appConfig.url}/tools/eco-coach`,
     type: 'website',
     locale: 'en_US',
   },
   twitter: {
     card: 'summary',
-    title: 'AI Eco Shopping Coach \u2014 SmartBuy AI',
-    description:
-      'A monthly carbon budget, with coach advice on each purchase \u2014 recorded carbon first, estimates always labelled as estimates.',
+    title: 'AI Eco Shopping Coach — SmartBuy AI',
+    description: 'Set a monthly carbon budget and see how your month is going. Recorded carbon counts first; anything estimated is labeled as an estimate.',
   },
 };
 
-export default function EcoCoachLayout({
+export default function ToolLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  // JSX return (same pattern as app/admin/layout.tsx): returning
+  // children bare trips TS1062 under `next build` route-type
+  // checking — the fragment infers Promise<JSX.Element>.
+  return <>{children}</>;
 }

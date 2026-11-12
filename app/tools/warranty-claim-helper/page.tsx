@@ -13,6 +13,7 @@
 
 'use client';
 
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
@@ -122,6 +123,18 @@ export default function WarrantyClaimsPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="AI Warranty Claim Helper"
+        description="Your Receipt Vault items, each with a claim checklist — the documents to gather, the retailer or brand contact, and the steps — plus a reminder before the warranty expires."
+        path="/tools/warranty-claim-helper"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'AI Warranty Claim Helper' },
+        ]}
+      />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
         <h1 className="text-2xl font-bold">{tFor(language, 'toolHeadingWarrantyHelper')}</h1>
         <p className="mt-2 text-sm text-muted-foreground">

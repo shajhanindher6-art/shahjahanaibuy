@@ -29,6 +29,7 @@ import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getProducts } from '@/services/products';
 import { getPriceHistory } from '@/services/price-history';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   buildProductHistorySummary,
   EXPLORER_SORT_LABELS,
@@ -109,6 +110,18 @@ export default async function PriceHistoryExplorerPage({
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Price History Explorer"
+        description="Every product’s recorded 30-day price history side by side: biggest price drop, now vs low, high and average. Recorded prices only — never smoothed."
+        path="/tools/price-history"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Price History Explorer' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
@@ -268,6 +281,26 @@ export default async function PriceHistoryExplorerPage({
                   >
                     View product →
                   </Link>
+                  {/* Section 16, E10: per-product history export — the
+                      recorded rows behind this card, as a download.
+                      A product with no recorded history exports
+                      headers only (CSV) / an empty rows array (JSON). */}
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Download this product&apos;s recorded history:{' '}
+                    <Link
+                      href={`/api/v1/price-history/export?product=${summary.slug}&format=csv`}
+                      className="underline-offset-4 hover:underline"
+                    >
+                      CSV
+                    </Link>{' '}
+                    ·{' '}
+                    <Link
+                      href={`/api/v1/price-history/export?product=${summary.slug}&format=json`}
+                      className="underline-offset-4 hover:underline"
+                    >
+                      JSON
+                    </Link>
+                  </p>
                 </article>
               ))}
               <p className="text-xs text-muted-foreground">

@@ -1,41 +1,43 @@
 /**
- * Metadata layout for /tools/future-you-planner (Section 13, Chunk E).
+ * Per-tool metadata (Section 16, item 13).
  *
- * The page is a 'use client' component and cannot export
- * metadata itself, so this layout carries it — same pattern as
- * the other metadata wrappers. Brand suffix is "SmartBuy AI".
+ * Future You planner used to share the generic /tools hub metadata
+ * (app/tools/layout.tsx). Title/description come from the
+ * page's own heading and intro copy. The metadata lives here
+ * — not in page.tsx — because the page is a client component
+ * ('use client'), which cannot export metadata.
  */
 
 import type { Metadata } from 'next';
 import { appConfig } from '@/lib/config/app';
 
 export const metadata: Metadata = {
-  title: 'AI \u201cFuture You\u201d Planner \u2014 SmartBuy AI',
-  description:
-    'A saving plan for big purchases \u2014 set a target and a date, and get a monthly plan, linked to price-drop alerts.',
+  title: 'Future You planner — SmartBuy AI',
+  description: 'Saving for a big purchase? Set the target and the date, and the planner says how much to save each month: (target − saved so far) ÷ months remaining.',
   alternates: {
     canonical: `${appConfig.url}/tools/future-you-planner`,
   },
   openGraph: {
-    title: 'AI \u201cFuture You\u201d Planner \u2014 SmartBuy AI',
-    description:
-      'A saving plan for big purchases \u2014 set a target and a date, and get a monthly plan, linked to price-drop alerts.',
+    title: 'Future You planner — SmartBuy AI',
+    description: 'Saving for a big purchase? Set the target and the date, and the planner says how much to save each month: (target − saved so far) ÷ months remaining.',
     url: `${appConfig.url}/tools/future-you-planner`,
     type: 'website',
     locale: 'en_US',
   },
   twitter: {
     card: 'summary',
-    title: 'AI \u201cFuture You\u201d Planner \u2014 SmartBuy AI',
-    description:
-      'A saving plan for big purchases \u2014 set a target and a date, and get a monthly plan, linked to price-drop alerts.',
+    title: 'Future You planner — SmartBuy AI',
+    description: 'Saving for a big purchase? Set the target and the date, and the planner says how much to save each month: (target − saved so far) ÷ months remaining.',
   },
 };
 
-export default function FutureYouPlannerLayout({
+export default function ToolLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  // JSX return (same pattern as app/admin/layout.tsx): returning
+  // children bare trips TS1062 under `next build` route-type
+  // checking — the fragment infers Promise<JSX.Element>.
+  return <>{children}</>;
 }

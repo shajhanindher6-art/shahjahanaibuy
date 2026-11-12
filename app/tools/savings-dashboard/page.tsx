@@ -10,6 +10,7 @@
 
 'use client';
 
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
@@ -18,6 +19,7 @@ import { PiggyBank } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { saverBadgeLabel, type SavingsEvent } from '@/lib/savings';
@@ -79,6 +81,18 @@ export default function SavingsDashboardPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Savings dashboard"
+        description="How much you have actually saved — from confirmed savings only. Every figure is computed from your recorded savings ledger at read time."
+        path="/tools/savings-dashboard"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Savings dashboard' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
@@ -137,6 +151,18 @@ export default function SavingsDashboardPage() {
                   <p className="text-xs text-muted-foreground">Events</p>
                   <p className="text-lg font-bold">{data.eventCount}</p>
                 </div>
+              </div>
+
+              {/* Section 16, #36 — save this savings summary to the
+                  account, or copy its shareable link. This tool is
+                  view-only (no inputs): the params are the figures
+                  computed at read time from the confirmed ledger. */}
+              <div className="mt-4">
+                <SaveCalculationButton
+                  tool="savings-dashboard"
+                  label={`Savings: $${data.totalSavedUsd.toFixed(2)} saved across ${data.eventCount} events`.slice(0, 100)}
+                  params={{ total: data.totalSavedUsd, events: data.eventCount }}
+                />
               </div>
 
               <p className="mt-4 text-sm text-muted-foreground">

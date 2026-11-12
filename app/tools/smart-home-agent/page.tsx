@@ -12,6 +12,7 @@
 
 'use client';
 
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
@@ -109,6 +110,18 @@ export default function SmartHomePage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="AI Smart Home Reorder Agent"
+        description="When an IoT device reports it is running low, the matching rule prepares a reorder — as a pending confirmation. The agent never places an order by itself."
+        path="/tools/smart-home-agent"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'AI Smart Home Reorder Agent' },
+        ]}
+      />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
         <h1 className="text-2xl font-bold">{tFor(language, 'toolHeadingSmartHomeAgent')}</h1>
         <p className="mt-2 text-sm text-muted-foreground">

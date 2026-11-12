@@ -15,6 +15,7 @@
 
 'use client';
 
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
@@ -25,6 +26,7 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { ListOptimization } from '@/lib/list-optimizer';
@@ -187,6 +189,18 @@ export default function ListOptimizerPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Shopping list optimizer"
+        description="Add the products on your list and see the cheapest way to buy them all — which item from which store — from real recorded merchant prices only."
+        path="/tools/list-optimizer"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Shopping list optimizer' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-3xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
@@ -308,6 +322,29 @@ export default function ListOptimizerPage() {
                   No total yet — no item in this list has a recorded merchant listing.
                 </p>
               )}
+
+              {/* Section 16, #36 — save this optimization to the
+                  account, or copy its shareable link. Items are
+                  arrays, so the params carry the scalar summary
+                  (list name + item count + split total) and the
+                  label carries the list name. */}
+              <div className="mt-4">
+                <SaveCalculationButton
+                  tool="list-optimizer"
+                  label={(
+                    optimization.splitTotal !== null
+                      ? `List "${listName}": cheapest split $${optimization.splitTotal.toFixed(2)} (${optimization.items.length} items)`
+                      : `List "${listName}" (${optimization.items.length} items, no recorded prices yet)`
+                  ).slice(0, 100)}
+                  params={{
+                    list: listName,
+                    items: optimization.items.length,
+                    ...(optimization.splitTotal !== null
+                      ? { total: optimization.splitTotal }
+                      : {}),
+                  }}
+                />
+              </div>
 
               <table className="mt-4 w-full border-collapse text-sm">
                 <thead>

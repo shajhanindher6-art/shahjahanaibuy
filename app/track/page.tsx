@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { SiteHeader } from '@/components/layout/site-header';
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
 
 function TrackContent() {
@@ -96,6 +97,13 @@ export default function TrackPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
+      <PageJsonLd
+        name="Track this product"
+        description="Find the matching product on SmartBuy from any store page, then set a price alert on its page."
+        path="/track"
+        crumbs={[ { name: "Home", path: "/" }, { name: "Track this product" } ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <Suspense
           fallback={

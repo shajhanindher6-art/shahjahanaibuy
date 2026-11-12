@@ -1,41 +1,43 @@
 /**
- * Metadata layout for /tools/help-me-choose (Section 12).
+ * Per-tool metadata (Section 16, item 13).
  *
- * The quiz page is a 'use client' component and cannot export
- * metadata itself, so this layout carries it — same pattern as the
- * other metadata wrappers. Brand suffix is "SmartBuy AI".
+ * Help me choose used to share the generic /tools hub metadata
+ * (app/tools/layout.tsx). Title/description come from the
+ * page's own heading and intro copy. The metadata lives here
+ * — not in page.tsx — because the page is a client component
+ * ('use client'), which cannot export metadata.
  */
 
 import type { Metadata } from 'next';
 import { appConfig } from '@/lib/config/app';
 
 export const metadata: Metadata = {
-  title: 'Help Me Choose — SmartBuy AI',
-  description:
-    'Answer four quick questions and get ranked product picks, each with a short reason why. No account needed, no invented picks.',
+  title: 'Help me choose — SmartBuy AI',
+  description: 'Answer four quick questions and get ranked picks from real priced products — with one line each saying why it fits. No account, no waiting.',
   alternates: {
     canonical: `${appConfig.url}/tools/help-me-choose`,
   },
   openGraph: {
-    title: 'Help Me Choose — SmartBuy AI',
-    description:
-      'Answer four quick questions and get ranked product picks, each with a short reason why. No account needed, no invented picks.',
+    title: 'Help me choose — SmartBuy AI',
+    description: 'Answer four quick questions and get ranked picks from real priced products — with one line each saying why it fits. No account, no waiting.',
     url: `${appConfig.url}/tools/help-me-choose`,
     type: 'website',
     locale: 'en_US',
   },
   twitter: {
     card: 'summary',
-    title: 'Help Me Choose — SmartBuy AI',
-    description:
-      'Answer four quick questions and get ranked product picks, each with a short reason why. No account needed, no invented picks.',
+    title: 'Help me choose — SmartBuy AI',
+    description: 'Answer four quick questions and get ranked picks from real priced products — with one line each saying why it fits. No account, no waiting.',
   },
 };
 
-export default function HelpMeChooseLayout({
+export default function ToolLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  // JSX return (same pattern as app/admin/layout.tsx): returning
+  // children bare trips TS1062 under `next build` route-type
+  // checking — the fragment infers Promise<JSX.Element>.
+  return <>{children}</>;
 }

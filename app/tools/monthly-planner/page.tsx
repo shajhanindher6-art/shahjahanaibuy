@@ -12,6 +12,7 @@
 
 'use client';
 
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
@@ -21,6 +22,7 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
@@ -153,6 +155,18 @@ export default function MonthlyPlannerPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Monthly shopping planner"
+        description="Set a monthly budget and the products you are considering. The planner uses the Buy vs Wait engine on recorded price history — buy now, wait for a drop, or move it to next month."
+        path="/tools/monthly-planner"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Monthly shopping planner' },
+        ]}
+      />
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
@@ -268,6 +282,18 @@ export default function MonthlyPlannerPage() {
                       <p className="text-xs text-muted-foreground">Remaining</p>
                       <p className="text-lg font-bold">${(data.remainingBudgetUsd ?? 0).toLocaleString()}</p>
                     </div>
+                  </div>
+                  {/* Section 16, #36 — save this month's plan to the
+                      account, or copy its shareable link. The slugs
+                      are a list, so the params carry the scalar
+                      inputs (month + budget) and the label carries
+                      the item count. */}
+                  <div className="mt-4">
+                    <SaveCalculationButton
+                      tool="monthly-planner"
+                      label={`Monthly plan ${data.plan.month}: $${data.plan.budget_usd.toLocaleString()} budget, ${data.items.length} items`.slice(0, 100)}
+                      params={{ month: data.plan.month, budget: data.plan.budget_usd }}
+                    />
                   </div>
                   {data.items.map((item) => (
                     <article key={item.id} className="rounded-lg border p-4">

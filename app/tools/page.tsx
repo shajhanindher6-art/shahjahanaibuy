@@ -120,6 +120,77 @@ const TOOL_GROUPS: Array<{
         isNew: true,
       },
       {
+        name: 'Price Volatility Ranking',
+        href: '/tools/volatility-ranking',
+        description:
+          'Which products hold a steady price and which jump around? Ranked by price stability from recorded price history only — standard deviation, range %, and a stability label per product.',
+        isNew: true,
+      },
+      {
+        name: 'Catalog Freshness Dashboard',
+        href: '/tools/catalog-freshness',
+        description:
+          'How fresh is the data behind SmartBuy? A public per-product table: last recorded price date, price age in days, history points, and missing image or GTIN flags.',
+        isNew: true,
+      },
+      {
+        name: 'API Quota & Tier Calculator',
+        href: '/tools/api-quota-calculator',
+        description:
+          'Enter your expected API calls per day — get the tier you need, the headroom on it, and the next tier up. Planned prices labelled honestly, never as purchasable.',
+        isNew: true,
+      },
+      {
+        name: 'Deal Score Breakdown Explorer',
+        href: '/tools/deal-score-breakdown',
+        description:
+          'What is behind a product’s Deal Score? Term-by-term numbers — drop-chance term, price term, confidence term — summing to the displayed score, from the real prediction inputs.',
+        isNew: true,
+      },
+      // Section 16, E5–E9 + E11 (P2 tools) — another chunk owns E1–E4 above.
+      {
+        name: 'Store Trust Checker',
+        href: '/tools/store-trust-checker',
+        description:
+          'Pick any of the 84 stores and see its trust grade (A–D) with recorded evidence — or an honest "Not enough data" listing the policy facts still missing.',
+        isNew: true,
+      },
+      {
+        name: 'Inflation-Adjusted (Real-Price) Converter',
+        href: '/tools/real-price-converter',
+        description:
+          'Enter an amount and a category to see what it is worth in today’s recorded prices, from the category inflation index (trailing 90 days, recorded prices only).',
+        isNew: true,
+      },
+      {
+        name: 'EMI vs Save-Then-Buy Comparator',
+        href: '/tools/emi-vs-saving',
+        description:
+          'One price, both paths side by side: total EMI cost with interest vs saving monthly and buying outright. Same monthly outflow, honest arithmetic only.',
+        isNew: true,
+      },
+      {
+        name: 'Smart Target-Price Picker',
+        href: '/tools/target-price-picker',
+        description:
+          'Pick a product and get target prices suggested from its recorded price history — recorded low, low recorded point, last price — each with how often it was seen.',
+        isNew: true,
+      },
+      {
+        name: 'Gift Occasion Planner',
+        href: '/tools/gift-occasions',
+        description:
+          'Plan upcoming gift occasions with dates and budgets — a dated plan with lead time and one priced catalog pick per occasion. Shown on this page only; no reminders are sent.',
+        isNew: true,
+      },
+      {
+        name: 'Cheapest Store by Category',
+        href: '/tools/cheapest-store-by-category',
+        description:
+          'Which store has the lowest recorded price in each category? An honest two-store comparison from recorded prices only — Amazon vs Best Buy, product named behind every low.',
+        isNew: true,
+      },
+      {
         name: 'Coupons & Cashback Finder',
         href: '/tools/coupons-cashback',
         description:

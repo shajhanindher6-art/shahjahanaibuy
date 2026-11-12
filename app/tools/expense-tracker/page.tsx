@@ -13,6 +13,7 @@
 
 'use client';
 
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
@@ -22,11 +23,13 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   EXPENSE_CATEGORIES,
   compareToBudget,
+  expensesToCsv,
   type Expense,
   type ExpenseCategory,
   type MonthlyCategoryTotals,
@@ -184,9 +187,34 @@ export default function ExpensesPage() {
 
   const budgetRows = totals ? compareToBudget(totals, budgets) : [];
 
+  // Section 16, #50: download the already-loaded month's expenses
+  // as a CSV file (browser-side download, nothing uploaded).
+  function downloadCsv() {
+    const csv = expensesToCsv(expenses);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `smartbuy-expenses-${monthValue}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="Expense tracker"
+        description="Monthly spend by category, from expenses you record yourself. The amount is always entered by you or taken from a recorded price — never guessed."
+        path="/tools/expense-tracker"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'Expense tracker' },
+        ]}
+      />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
         <h1 className="text-2xl font-bold">{tFor(language, 'toolHeadingExpenseTracker')}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -321,6 +349,16 @@ export default function ExpensesPage() {
                 {monthValue} — total ${totals.totalUsd.toFixed(2)} ({totals.expenseCount}{' '}
                 {totals.expenseCount === 1 ? 'expense' : 'expenses'})
               </h2>
+              {/* Section 16, #36 — save this month's spend summary
+                  to the account, or copy its shareable link. The
+                  month is the input; the label carries the total. */}
+              <div className="mt-4">
+                <SaveCalculationButton
+                  tool="expense-tracker"
+                  label={`${monthValue} expenses: $${totals.totalUsd.toFixed(2)} (${totals.expenseCount} ${totals.expenseCount === 1 ? 'expense' : 'expenses'})`.slice(0, 100)}
+                  params={{ month: monthValue }}
+                />
+              </div>
               <table className="mt-3 w-full border-collapse text-sm">
                 <thead>
                   <tr className="border-b text-left">
@@ -386,7 +424,12 @@ export default function ExpensesPage() {
                 </p>
               ) : (
                 <div className="mt-6">
-                  <h3 className="text-base font-semibold">All recorded expenses</h3>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-base font-semibold">All recorded expenses</h3>
+                    <Button type="button" variant="outline" size="sm" onClick={downloadCsv}>
+                      Download CSV
+                    </Button>
+                  </div>
                   <ul className="mt-2 space-y-1 text-sm">
                     {expenses.map((expense) => (
                       <li key={expense.id} className="flex justify-between border-b py-1">

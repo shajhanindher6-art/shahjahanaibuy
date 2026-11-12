@@ -12,6 +12,7 @@
 
 'use client';
 
+import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import { useCallback, useEffect, useState } from 'react';
@@ -127,6 +128,18 @@ export default function EcoCoachPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      {/* Section 16, item 17: WebPage + BreadcrumbList
+          (Home → AI tools → this tool). */}
+      <PageJsonLd
+        name="AI Eco Shopping Coach"
+        description="Set a monthly carbon budget and see how your month is going. Recorded carbon counts first; anything estimated is labeled as an estimate."
+        path="/tools/eco-coach"
+        crumbs={[
+          { name: 'Home', path: '/' },
+          { name: 'AI tools', path: '/tools' },
+          { name: 'AI Eco Shopping Coach' },
+        ]}
+      />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
         <h1 className="text-2xl font-bold">{tFor(language, 'toolHeadingEcoCoach')}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
