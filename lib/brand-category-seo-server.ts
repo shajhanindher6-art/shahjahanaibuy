@@ -16,6 +16,7 @@
  * array so the page renders the honest empty state.
  */
 
+import { cache } from 'react';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getBrandBySlug, getCategoryBySlug } from '@/services/catalog';
 import { getProducts } from '@/services/products';
@@ -27,8 +28,13 @@ import {
 /**
  * Server-side listing data for one brand slug.
  * Returns null when the slug matches no brand row and no product.
+ *
+ * React-cache() memoized per request: the [slug]/layout.tsx
+ * existence check, generateMetadata and the page body all call this
+ * with the same slug, and share one execution instead of tripling
+ * the database work.
  */
-export async function getBrandPageData(
+export const getBrandPageData = cache(async function getBrandPageData(
   slug: string
 ): Promise<TaxonomyPageData | null> {
   try {
@@ -57,13 +63,17 @@ export async function getBrandPageData(
   } catch {
     return null;
   }
-}
+});
 
 /**
  * Server-side listing data for one category slug.
  * Returns null when the slug matches no category row and no product.
+ *
+ * React-cache() memoized per request — same reason as
+ * getBrandPageData above: layout, metadata and page share one
+ * execution per request.
  */
-export async function getCategoryPageData(
+export const getCategoryPageData = cache(async function getCategoryPageData(
   slug: string
 ): Promise<TaxonomyPageData | null> {
   try {
@@ -95,4 +105,4 @@ export async function getCategoryPageData(
   } catch {
     return null;
   }
-}
+});

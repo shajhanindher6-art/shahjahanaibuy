@@ -9,8 +9,16 @@
  *   null-decision each loader delegates to: getProductBySlug (the
  *   product loader's single-product lookup, fake Supabase client,
  *   same pattern as tests/products-sample-exclusion.test.ts) and
- *   resolveTaxonomyPage (the pure brand/category decision). The
- *   HTTP status itself is verified in dev (unknown slug -> 404).
+ *   resolveTaxonomyPage (the pure brand/category decision).
+ *   CORRECTION (2026-11-12): the HTTP 404 status does NOT come from
+ *   these page/metadata checks — a minimal Next 13.5.9 repro proved
+ *   the loading.tsx shell streams first with 200 and the inner
+ *   NotFoundBoundary swallows the error (live-verified: unknown
+ *   slugs returned 200). The status comes from the [slug]/layout.tsx
+ *   existence checks, covered by tests/section15-soft404-layout.test.ts;
+ *   the layout check returning 404 with the skeleton kept was proven
+ *   in the same repro. The live recheck after push re-verifies the
+ *   status on the real site.
  * - A1/A2: buildStoreSearchLinks — one link per directory store
  *   (80 local + 4 global = 84) for a brand or category name, every
  *   URL the store's own verified search pattern.

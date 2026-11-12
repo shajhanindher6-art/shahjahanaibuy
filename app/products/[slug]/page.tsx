@@ -47,16 +47,14 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const seo = await getProductSeo(params.slug);
   if (!seo) {
-    // Section 15 P0-2: notFound() MUST fire here, not only in the
-    // page body. In Next 13.5.9 a notFound() thrown only by the page
-    // is caught by the not-found boundary while streaming and the
-    // response keeps status 200 (soft 404 — the bug this fixes). A
-    // notFound() thrown by generateMetadata is re-thrown by the
-    // MetadataOutlet during the RSC render and reaches the outer
-    // render catch, which sets res.statusCode = 404 (verified
-    // against node_modules/next/dist in 13.5.9: lib/metadata/
-    // metadata.js MetadataOutlet re-throws; server/app-render/
-    // app-render.js sets 404 on isNotFoundError).
+    // Not-found metadata/content for unknown slugs. NOTE (soft-404
+    // fix, 2026-11-12): this call alone does NOT set HTTP 404 — a
+    // minimal Next 13.5.9 repro proved the loading.tsx shell streams
+    // first with status 200 and the inner NotFoundBoundary swallows
+    // the error, and the live site returned 200 for unknown slugs
+    // with exactly this wiring. The real 404 status comes from the
+    // [slug]/layout.tsx existence check, which runs before the
+    // loading Suspense boundary. This stays as the content fallback.
     notFound();
   }
   const meta = buildProductMetadata(seo, appConfig.url);

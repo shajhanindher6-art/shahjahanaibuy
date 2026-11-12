@@ -40,10 +40,11 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const page = await getBrandPageData(params.slug);
   if (!page) {
-    // Section 15 P0-2: notFound() MUST fire here — see the note in
-    // app/products/[slug]/page.tsx. A notFound() thrown only by the
-    // page body is swallowed by the streaming not-found boundary
-    // and the response keeps status 200 (soft 404).
+    // Not-found metadata/content for unknown slugs. NOTE (soft-404
+    // fix, 2026-11-12): this call alone does NOT set HTTP 404 — see
+    // app/products/[slug]/page.tsx. The real 404 status comes from
+    // the [slug]/layout.tsx existence check, which runs before the
+    // loading Suspense boundary. This stays as the content fallback.
     notFound();
   }
   return buildTaxonomyMetadata(page, appConfig.url);
