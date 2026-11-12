@@ -4,6 +4,7 @@
 
 import type { User } from '@supabase/supabase-js';
 import type { UserRole, Profile } from './index';
+import type { AuthErrorCode } from '@/features/auth/auth-errors';
 
 export interface AuthContextValue {
   user: User | null;
@@ -24,4 +25,10 @@ export interface AuthContextValue {
 export interface AuthResult {
   success: boolean;
   error?: string;
+  /**
+   * Section 18, item 57 — machine-readable code for the mapped
+   * error (e.g. 'email-not-confirmed'), so pages can branch on it
+   * instead of string-matching the message. Undefined on success.
+   */
+  errorCode?: AuthErrorCode;
 }

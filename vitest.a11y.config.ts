@@ -16,6 +16,11 @@ import path from 'path';
  * never go through the GitHub push tool (403 on .github/workflows/*);
  * add it via the GitHub website. Until it is added there, this stays
  * a local/pre-push gate: run `npm run test:a11y` before pushing.
+ *
+ * Section 18, item 61: this config also runs
+ * tests/section18-ux-jsdom.test.tsx (component renders +
+ * interactions for the UX items — same jsdom environment, same
+ * mocks as the a11y suite).
  */
 export default defineConfig({
   resolve: {
@@ -29,7 +34,7 @@ export default defineConfig({
   // "React is not defined" — force the automatic runtime here.
   esbuild: { jsx: 'automatic' },
   test: {
-    include: ['tests/a11y-runtime.test.tsx'],
+    include: ['tests/a11y-runtime.test.tsx', 'tests/section18-ux-jsdom.test.tsx'],
     setupFiles: ['./tests/setup.ts'],
     environment: 'jsdom',
   },

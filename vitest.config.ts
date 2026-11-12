@@ -15,6 +15,13 @@ export default defineConfig({
       '@': path.resolve(__dirname, './'),
     },
   },
+  // Section 18, item 68: the repo tsconfig sets jsx: preserve (Next.js
+  // SWC handles JSX in the app). esbuild would otherwise compile JSX
+  // to classic React.createElement calls and any imported component
+  // would throw "React is not defined" — force the automatic runtime
+  // here, exactly as vitest.a11y.config.ts already does. Needed now
+  // that tests/bnpl-line.test.ts imports a .tsx component.
+  esbuild: { jsx: 'automatic' },
   test: {
     include: ['tests/**/*.test.ts'],
     setupFiles: ['./tests/setup.ts'],

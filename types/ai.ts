@@ -90,6 +90,15 @@ export interface WebSearchResult {
   thumbnail: string | null;
   rating: number | null;
   reviews: number | null;
+  /**
+   * Section 18, item 34 — when this result was fetched from
+   * SerpAPI (ISO timestamp). Live results carry the fetch time;
+   * cached results carry the cache entry's timestamp, so the page
+   * can show the age instead of calling up-to-7-day-old prices
+   * "Live". Null only when the age is genuinely unknown (a cache
+   * row written before this field existed) — never invented.
+   */
+  fetched_at?: string | null;
 }
 
 export interface AISearchResponse {
