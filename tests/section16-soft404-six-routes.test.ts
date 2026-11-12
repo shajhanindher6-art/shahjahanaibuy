@@ -15,9 +15,18 @@
  * exactly (same getter the page calls, not a copy):
  * - /find/[query]    — getSearchTermBySlug (500 curated terms)
  * - /events/[slug]   — getEventBySlug (5 SEASONAL_EVENTS)
- * - /live/[slug]     — a row in live_shopping_sessions (one REST fetch)
- * - /creators/[slug] — NOT checkable with the anon key (profiles
- *                       RLS: profiles_select_own only) → always pass
+ * - /live/[slug]     — a row in live_shopping_sessions (one REST fetch).
+ *                       A missing table (migration 033 not run) is a
+ *                       POSITIVE answer: no table, no sessions, no
+ *                       slug — so it rewrites. Any other non-200
+ *                       still fails open.
+ * - /creators/[slug] — a row in the creator_slugs VIEW (migration
+ *                       044, owner-applied). Until 044 runs the view
+ *                       is missing (PGRST205) and the check fails
+ *                       open — the view missing proves nothing about
+ *                       the slug. Checking profiles directly would
+ *                       404 every real storefront (profiles RLS:
+ *                       profiles_select_own only).
  * - /stores/[c]/[s]  — findStorePage (84 store pages, country+slug)
  * - /blog/[slug]     — getPostBySlug (21 posts)
  *
@@ -198,23 +207,48 @@ describe('slugExists — live sessions (one REST fetch)', () => {
     ).toBe(false);
   });
 
-  it('throws on a non-200 — including the missing-table 404 (migration 033 not run)', async () => {
+  it('returns false on the missing-table 404 — no table, no sessions, no slug', async () => {
     // PostgREST reports a table missing from its schema cache as
-    // PGRST205 with HTTP 404. The page renders its honest "not set
-    // up yet" state in that case, so the middleware must fail open
-    // (resolveSlugRequest turns this throw into 'pass').
+    // PGRST205 with HTTP 404. Sessions live ONLY in this table, so
+    // a missing table is a POSITIVE "does not exist" answer — the
+    // old fail-open here left /live/unknown-slug-xyz returning 200
+    // live (verified 2026-11-12: "not set up yet" body). Any other
+    // non-200 still throws -> fail-open.
     const missingTable = mockFetchJson(
       { code: 'PGRST205', message: 'Could not find the table' },
       false,
       404
     );
-    await expect(
-      slugExists('live', 'deal-night-1', TEST_ENV, missingTable)
-    ).rejects.toThrow('HTTP 404');
+    expect(
+      await slugExists('live', 'deal-night-1', TEST_ENV, missingTable)
+    ).toBe(false);
     const serverError = mockFetchJson({ message: 'boom' }, false, 500);
     await expect(
       slugExists('live', 'deal-night-1', TEST_ENV, serverError)
     ).rejects.toThrow('HTTP 500');
+  });
+
+  it('throws on a 404 that is NOT a missing table (PGRST205 code required)', async () => {
+    // A 404 with any other code (or an unparseable body) is a
+    // generic failure, not proof the table is missing — fail open.
+    const other404 = mockFetchJson(
+      { code: 'PGRST116', message: 'no rows' },
+      false,
+      404
+    );
+    await expect(
+      slugExists('live', 'deal-night-1', TEST_ENV, other404)
+    ).rejects.toThrow('HTTP 404');
+    const badBody = vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      json: async () => {
+        throw new Error('not json');
+      },
+    })) as unknown as typeof fetch;
+    await expect(
+      slugExists('live', 'deal-night-1', TEST_ENV, badBody)
+    ).rejects.toThrow('HTTP 404');
   });
 
   it('throws when env is missing, without calling fetch', async () => {
@@ -272,10 +306,10 @@ describe('resolveSlugRequest — the six new routes', () => {
     expect(await resolveSlugRequest('/live/does-not-exist-xyz', TEST_ENV, failing)).toBe('pass');
     const bad = mockFetchJson({ message: 'boom' }, false, 500);
     expect(await resolveSlugRequest('/live/does-not-exist-xyz', TEST_ENV, bad)).toBe('pass');
-    // Missing table (migration 033 not run) -> 404 PGRST205 -> pass,
-    // so the page renders "not set up yet" instead of a 404.
+    // Missing table (migration 033 not run) -> 404 PGRST205 ->
+    // rewrite: no table means no session with any slug exists.
     const missingTable = mockFetchJson({ code: 'PGRST205' }, false, 404);
-    expect(await resolveSlugRequest('/live/does-not-exist-xyz', TEST_ENV, missingTable)).toBe('pass');
+    expect(await resolveSlugRequest('/live/does-not-exist-xyz', TEST_ENV, missingTable)).toBe('rewrite');
     const fetchMock = mockFetchJson([]);
     expect(
       await resolveSlugRequest('/live/does-not-exist-xyz', { supabaseUrl: null, supabaseAnonKey: null }, fetchMock)
@@ -283,18 +317,21 @@ describe('resolveSlugRequest — the six new routes', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('creators ALWAYS pass — the anon key cannot determine creator existence', async () => {
-    // profiles RLS (profiles_select_own, TO authenticated USING
-    // auth.uid() = id) hides every other user's row from the anon
-    // client, so an anon REST check would return [] for REAL
-    // creators too and 404 their storefronts. The page uses the
-    // service-role client instead. Until an owner-gated data change
-    // exposes creator slugs publicly, the middleware must never
-    // rewrite a /creators URL — known-looking or not.
-    const fetchMock = mockFetchJson([]);
-    expect(await resolveSlugRequest('/creators/anyone-at-all', TEST_ENV, fetchMock)).toBe('pass');
-    expect(await resolveSlugRequest('/creators/does-not-exist-xyz', TEST_ENV, fetchMock)).toBe('pass');
-    expect(fetchMock).not.toHaveBeenCalled();
+  it('creators: known passes, unknown rewrites; missing view fails open', async () => {
+    const known = mockFetchJson([{ creator_slug: 'deal-hunter-pk' }]);
+    expect(await resolveSlugRequest('/creators/deal-hunter-pk', TEST_ENV, known)).toBe('pass');
+    expect(known).toHaveBeenCalledTimes(1);
+    const unknown = mockFetchJson([]);
+    expect(await resolveSlugRequest('/creators/does-not-exist-xyz', TEST_ENV, unknown)).toBe('rewrite');
+    expect(unknown).toHaveBeenCalledTimes(1);
+    // View missing (migration 044 not run) -> 404 PGRST205 -> pass:
+    // the view missing proves nothing about the slug.
+    const missingView = mockFetchJson({ code: 'PGRST205' }, false, 404);
+    expect(await resolveSlugRequest('/creators/does-not-exist-xyz', TEST_ENV, missingView)).toBe('pass');
+    const failing = vi.fn(async () => {
+      throw new Error('fetch failed');
+    }) as unknown as typeof fetch;
+    expect(await resolveSlugRequest('/creators/does-not-exist-xyz', TEST_ENV, failing)).toBe('pass');
   });
 
   it('passes non-slug routes through without calling fetch', async () => {
@@ -304,6 +341,46 @@ describe('resolveSlugRequest — the six new routes', () => {
     expect(await resolveSlugRequest('/stores/pk', TEST_ENV, fetchMock)).toBe('pass');
     expect(await resolveSlugRequest('/deals', TEST_ENV, fetchMock)).toBe('pass');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('slugExists — creators (one REST fetch against the creator_slugs view)', () => {
+  it('returns true when the slug is in the public view', async () => {
+    const fetchMock = mockFetchJson([{ creator_slug: 'deal-hunter-pk' }]);
+    expect(
+      await slugExists('creator', 'deal-hunter-pk', TEST_ENV, fetchMock)
+    ).toBe(true);
+    const url = String(
+      (fetchMock as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0]
+    );
+    expect(url).toContain('/rest/v1/creator_slugs?creator_slug=eq.deal-hunter-pk');
+    expect(url).toContain('select=creator_slug&limit=1');
+  });
+
+  it('returns false when the view exists but the slug is not in it', async () => {
+    const fetchMock = mockFetchJson([]);
+    expect(
+      await slugExists('creator', 'does-not-exist-xyz', TEST_ENV, fetchMock)
+    ).toBe(false);
+  });
+
+  it('throws when the view is missing (migration 044 not run) — fail-open, never a false 404', async () => {
+    // The view missing proves NOTHING about the slug: profiles may
+    // hold creators the anon key cannot see, so the check must
+    // throw (resolveSlugRequest turns it into 'pass') until 044
+    // is applied — never return false here.
+    const missingView = mockFetchJson(
+      { code: 'PGRST205', message: 'Could not find the table' },
+      false,
+      404
+    );
+    await expect(
+      slugExists('creator', 'deal-hunter-pk', TEST_ENV, missingView)
+    ).rejects.toThrow('creator_slugs view missing');
+    const serverError = mockFetchJson({ message: 'boom' }, false, 500);
+    await expect(
+      slugExists('creator', 'deal-hunter-pk', TEST_ENV, serverError)
+    ).rejects.toThrow('HTTP 500');
   });
 });
 
@@ -349,19 +426,42 @@ describe('middleware wiring + rewrite-target pins (structural)', () => {
     expect(existsSync(join(process.cwd(), 'app/__smartbuy_not_found__'))).toBe(false);
   });
 
-  it('the creators fail-open is grounded: profiles has no public select policy, and the page uses the service client', () => {
+  it('the creators check is grounded: profiles stays private, the public view carries the slugs', () => {
+    // profiles has no public select policy (only select_own), so
+    // the middleware must never query profiles directly — and the
+    // page still resolves creators via the service client.
     const migration001 = readFileSync(
       join(process.cwd(), 'supabase/migrations/20260710063738_001_core_foundation_tables.sql'),
       'utf8'
     );
     expect(migration001).toContain('profiles_select_own');
     expect(migration001).toContain('TO authenticated USING (auth.uid() = id)');
-    // If a future migration ever adds a public creator-slug read,
-    // this test must be revisited — /creators could then be checked.
     const storefront = readFileSync(
       join(process.cwd(), 'lib/creator-storefront.ts'),
       'utf8'
     );
     expect(storefront).toContain('createSupabaseServiceClient');
+    // Migration 044 is the public read: a security_invoker=false
+    // view exposing ONLY id + creator_slug (a public policy on
+    // profiles would leak email/full_name), granted to anon.
+    const migration044 = readFileSync(
+      join(process.cwd(), 'supabase/migrations/20261112170000_044_creator_slugs_public_view.sql'),
+      'utf8'
+    );
+    expect(migration044).toContain('CREATE OR REPLACE VIEW public.creator_slugs');
+    expect(migration044).toContain('security_invoker = false');
+    expect(migration044).toContain('creator_slug');
+    // The view selects ONLY id + creator_slug — no email/full_name
+    // (the word "email" appears in the explanatory comment only).
+    expect(migration044).toContain('SELECT id, creator_slug\nFROM public.profiles');
+    expect(migration044).not.toMatch(/GRANT SELECT ON public\.profiles/);
+    expect(migration044).toContain('GRANT SELECT ON public.creator_slugs TO anon');
+    // And the middleware queries the view, never profiles.
+    const slugExistsSrc = readFileSync(
+      join(process.cwd(), 'lib/middleware/slug-exists.ts'),
+      'utf8'
+    );
+    expect(slugExistsSrc).toContain('/rest/v1/creator_slugs');
+    expect(slugExistsSrc).not.toContain('/rest/v1/profiles');
   });
 });

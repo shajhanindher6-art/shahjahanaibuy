@@ -70,24 +70,37 @@
  * - live: a row in `live_shopping_sessions` with that slug
  *   (app/live/[slug]/page.tsx:119 via getLiveSessionDetail). Until
  *   migration 033 runs the table does not exist: PostgREST answers
- *   non-200, the check throws, and the request FAILS OPEN — the
- *   page then renders its honest "not set up yet" state with 200,
- *   never a 404. A 404 is returned ONLY when the table exists and
- *   positively has no row with that slug.
- * - creator: NOT CHECKABLE with the anon key, so ALWAYS pass
- *   (fail-open by necessity, not by error). The page resolves a
- *   creator via `profiles.creator_slug`
+ *   404 PGRST205 — and that is a POSITIVE answer, not a failure:
+ *   sessions live ONLY in this table, so when it is missing no
+ *   session with ANY slug can exist, and the check returns false
+ *   (rewrite to the routing-level 404). Verified live 2026-11-12:
+ *   /live/unknown-slug-xyz returned 200 + "not set up yet" while
+ *   the table was missing — the old fail-open-on-PGRST205 left a
+ *   real soft-404 gap. Any OTHER non-200 still throws -> fail-open.
+ *   (Trade-off: while the table is missing, /live/[slug] 404s
+ *   instead of rendering the detail page's "not set up yet" state;
+ *   the /live index still shows it.)
+ * - creator: a row in the `creator_slugs` VIEW with that slug
+ *   (migration 044, owner-applied — NOT yet live as of 2026-11-12).
+ *   The page resolves a creator via `profiles.creator_slug`
  *   (app/creators/[slug]/page.tsx:72 via getCreatorBySlug), and
  *   that lookup needs the SERVICE-ROLE client because the only
  *   profiles select policy is `profiles_select_own`
  *   (TO authenticated USING auth.uid() = id, migration 001) — an
  *   anon REST query on profiles returns [] for EVERY slug, real
- *   creators included, so checking it would 404 every real
- *   storefront. creator_rewards IS publicly readable but carries
- *   no slug column, so it cannot substitute. Covering /creators
- *   needs an owner-gated data change (e.g. a public read policy
- *   on creator_slug, or a public slug view) — never the service
- *   key in edge middleware. Pinned by tests.
+ *   creators included, so checking profiles directly would 404
+ *   every real storefront. creator_rewards IS publicly readable
+ *   but carries no slug column, so it cannot substitute. The view
+ *   (security_invoker = false, owned by postgres) exposes ONLY
+ *   id + creator_slug — a public policy on profiles would leak
+ *   email/full_name, so the view is the minimal safe shape, and
+ *   slugs are public by design (the /creators index links them).
+ *   Until 044 runs the view is missing: PostgREST answers 404
+ *   PGRST205, the check THROWS, and the request FAILS OPEN —
+ *   the view missing proves nothing (profiles may hold creators
+ *   the anon key cannot see), so an unknown slug stays 200 until
+ *   the owner applies 044, at which point the check activates
+ *   with NO redeploy. Pinned by tests.
  *
  * FAIL-OPEN, always: any fetch error, timeout, non-200 from
  * Supabase, or missing env resolves to 'pass' — the request
@@ -225,7 +238,7 @@ export function localSlugExists(
 }
 
 /** Kinds whose existence is checked with one Supabase REST fetch. */
-export type RestSlugKind = 'product' | 'brand' | 'category' | 'live';
+export type RestSlugKind = 'product' | 'brand' | 'category' | 'live' | 'creator';
 
 function restHeaders(anonKey: string): Record<string, string> {
   return {
@@ -236,14 +249,35 @@ function restHeaders(anonKey: string): Record<string, string> {
 }
 
 /**
+ * PostgREST reports a relation missing from its schema cache as HTTP
+ * 404 with code PGRST205. Only that exact code counts as "missing":
+ * any other non-200 (or an unparseable body) is a generic failure
+ * and must fail open. Consumes the response body — call only on an
+ * error response whose body is not needed afterwards.
+ */
+async function isMissingTableResponse(res: Response): Promise<boolean> {
+  if (res.status !== 404) return false;
+  try {
+    const body = (await res.json()) as { code?: unknown };
+    return body?.code === 'PGRST205';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * True when the slug exists, false when it positively does not.
  * THROWS on missing env, fetch failure, timeout, or a non-200 from
  * Supabase — the caller (resolveSlugRequest) turns any throw into a
  * fail-open 'pass'. One REST fetch per call, edge-compatible.
  * Only REST kinds are accepted here: the static-registry kinds
  * (find / event / store / blog) never reach this function — they
- * are answered by localSlugExists — and 'creator' is fail-open by
- * necessity (see the header), so it never reaches it either.
+ * are answered by localSlugExists. Two PGRST205 exceptions, both
+ * deliberate and pinned by tests: 'live' returns FALSE on a
+ * missing table (the table IS the source of truth — no table, no
+ * sessions, no slug), while 'creator' THROWS on a missing view
+ * (the view is only a window onto profiles — missing proves
+ * nothing, so fail open until migration 044 runs).
  */
 export async function slugExists(
   kind: RestSlugKind,
@@ -276,18 +310,47 @@ export async function slugExists(
   if (kind === 'live') {
     // Same shape as the page's getLiveSessionBySlug (slug eq only,
     // no deleted filter — sessions have none). A missing table
-    // (migration 033 not run) answers non-200 (PGRST205) -> throw
-    // -> fail-open, so the page renders its honest "not set up
-    // yet" state instead of a 404.
+    // (migration 033 not run) answers 404 PGRST205 — and that is a
+    // POSITIVE answer here, not a failure: sessions live only in
+    // this table, so no session with any slug can exist. Return
+    // false so the middleware rewrites to the routing-level 404.
+    // Any OTHER non-200 still throws -> fail-open.
     const url =
       `${supabaseUrl}/rest/v1/live_shopping_sessions` +
       `?slug=eq.${encodeURIComponent(slug)}` +
       `&select=slug&limit=1`;
     const res = await fetchFn(url, { headers, signal });
     if (!res.ok) {
+      if (await isMissingTableResponse(res)) return false;
       throw new Error(`slug-exists: live check HTTP ${res.status}`);
     }
     const rows = (await res.json()) as Array<{ slug: string }>;
+    return rows.length > 0;
+  }
+
+  if (kind === 'creator') {
+    // Public slug list (migration 044: security_invoker = false
+    // view creator_slugs exposing id + creator_slug ONLY — a
+    // public policy on profiles would leak email/full_name).
+    // A missing view answers 404 PGRST205: that proves NOTHING
+    // about the slug (profiles may hold creators the anon key
+    // cannot see), so throw -> fail-open until 044 runs. Once
+    // the view exists it is the source of truth: [] means no
+    // creator has that slug (or no creators at all) -> false.
+    const url =
+      `${supabaseUrl}/rest/v1/creator_slugs` +
+      `?creator_slug=eq.${encodeURIComponent(slug)}` +
+      `&select=creator_slug&limit=1`;
+    const res = await fetchFn(url, { headers, signal });
+    if (!res.ok) {
+      if (await isMissingTableResponse(res)) {
+        throw new Error(
+          'slug-exists: creator check — creator_slugs view missing (migration 044 not run)'
+        );
+      }
+      throw new Error(`slug-exists: creator check HTTP ${res.status}`);
+    }
+    const rows = (await res.json()) as Array<{ creator_slug: string }>;
     return rows.length > 0;
   }
 
@@ -320,11 +383,11 @@ export type SlugDecision = 'pass' | 'rewrite';
  *
  * Per-request cost: the four static-registry routes (find / event /
  * store / blog) cost ZERO fetches — a pure in-memory lookup. The
- * REST routes (product / brand / category / live) cost exactly ONE
- * Supabase REST fetch. /creators costs nothing and always passes:
- * the anon key cannot positively determine creator existence
- * (profiles RLS — see the header), so any other answer would risk
- * 404ing real storefronts.
+ * REST routes (product / brand / category / live / creator) cost
+ * exactly ONE Supabase REST fetch. /creators costs that one fetch
+ * against the creator_slugs view (migration 044); while 044 is
+ * unapplied the view is missing and the request fails open with
+ * no behaviour change.
  */
 export async function resolveSlugRequest(
   pathname: string,
@@ -343,7 +406,6 @@ export async function resolveSlugRequest(
       ? 'pass'
       : 'rewrite';
   }
-  if (match.kind === 'creator') return 'pass';
   try {
     const exists = await slugExists(match.kind, match.slug, env, fetchFn);
     return exists ? 'pass' : 'rewrite';
