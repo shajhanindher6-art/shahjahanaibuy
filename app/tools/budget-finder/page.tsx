@@ -16,6 +16,9 @@
  *   — never padded with an over-budget or irrelevant product.
  */
 
+import { cookies } from 'next/headers';
+import { isSupportedLanguage, type Language } from '@/lib/region';
+import { tFor } from '@/lib/i18n';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Wallet } from 'lucide-react';
@@ -69,7 +72,18 @@ interface BudgetFinderProps {
   searchParams: { category?: string | string[]; budget?: string | string[] };
 }
 
+/**
+ * Section 15 (C3): the server reads the same sb-language cookie the
+ * root layout and homepage use for dir/lang — a first-visit language
+ * switch via localStorage takes effect on the next load.
+ */
+function toolLanguage(): Language {
+  const saved = cookies().get('sb-language')?.value ?? null;
+  return saved && isSupportedLanguage(saved) ? saved : 'en';
+}
+
 export default async function BudgetFinderPage({ searchParams }: BudgetFinderProps) {
+  const language = toolLanguage();
   const { category, budgetUsd, budgetOriginal, budgetCurrency, budgetError } =
     parseBudgetFinderParams(searchParams);
   const hasQuery = category !== null || budgetUsd !== null;
@@ -124,7 +138,7 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <Wallet className="h-7 w-7 text-blue-600" /> Budget Finder
+            <Wallet className="h-7 w-7 text-blue-600" /> {tFor(language, 'toolHeadingBudgetFinder')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             Pick a category and a budget — every priced product that

@@ -2,6 +2,9 @@
  * API v1 subscriptions endpoint.
  * GET  /api/v1/subscriptions — fetch the authenticated user's subscription.
  * POST /api/v1/subscriptions — create or update the user's subscription.
+ *   Direct upserts may ONLY ever set plan 'free' (P2-4, Section 15):
+ *   paid plans are granted exclusively by the Stripe webhook after a
+ *   real checkout — never by a client-supplied plan value.
  */
 
 import type { NextRequest } from 'next/server';
@@ -9,6 +12,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { isStripeConfigured } from '@/services/stripe';
+import { isStripeLiveLaunchApproved, isStripeLiveMode } from '@/lib/stripe';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'subscriptions' });
@@ -31,7 +35,16 @@ export async function GET(request: NextRequest) {
       return internalError('Failed to fetch subscription');
     }
 
-    return apiSuccess(data);
+    // Section 15 P2-5: the billing page banner derives from this
+    // meta, never from a hardcoded claim. paymentsLive is true only
+    // when a live key AND the owner's explicit
+    // STRIPE_LIVE_LAUNCHED=true are both present (same derivation
+    // as /pricing). stripeConfigured is the same flag the POST
+    // branch already reads.
+    return apiSuccess(data, 200, {
+      paymentsLive: isStripeLiveMode() && isStripeLiveLaunchApproved(),
+      stripeConfigured: isStripeConfigured(),
+    });
   } catch {
     return internalError('Failed to fetch subscription');
   }
@@ -56,12 +69,23 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createSupabaseServerClient();
 
-    // If Stripe is configured, subscription changes must go through Stripe
-    if (isStripeConfigured() && plan !== 'free') {
-      return badRequest('Use /api/v1/subscriptions/checkout to upgrade plans');
+    // P2-4 (Section 15): close the subscriptions self-grant bypass.
+    // A direct upsert may ONLY ever set plan 'free'. Paid plans are
+    // granted exclusively by the Stripe webhook
+    // (services/stripe.ts syncSubscriptionFromStripe) after a real
+    // checkout — never by a client-supplied plan value. Previously
+    // any authenticated user could upsert plan 'team' + status
+    // 'active' whenever Stripe was unconfigured and receive the
+    // 100,000/day Team quota (lib/api-quota.ts trusts the row).
+    if (plan !== 'free') {
+      if (isStripeConfigured()) {
+        return badRequest('Use /api/v1/subscriptions/checkout to upgrade plans');
+      }
+      return badRequest('Paid plans are only available through Stripe checkout');
     }
 
     // Without Stripe, or for cancel-to-free, allow direct upsert
+    // (plan is 'free' from here on — see the whitelist above).
     const existing = await supabase
       .from('subscriptions')
       .select('*')

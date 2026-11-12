@@ -32,6 +32,7 @@ import {
   paginateList,
   sortCoupons,
 } from '@/lib/deal-list';
+import { DEAL_VERIFIED_MEANING } from '@/lib/fact-check';
 
 interface RankedDeal {
   id: string;
@@ -440,6 +441,27 @@ export default function DealsPage() {
             product page may show a different saving, calculated from the retailer&apos;s
             compare-at price — the two bases are not the same number.
           </p>
+          <p className="mx-auto mt-2 max-w-2xl text-xs text-muted-foreground">
+            Follow these deals in a feed reader:{' '}
+            <Link href="/deals/rss.xml" className="underline">
+              Deals RSS feed
+            </Link>
+          </p>
+          {/* Badge legend — what the "Verified" badge means, word-for-word
+              from the fact-check source (lib/fact-check.ts). */}
+          <div className="mx-auto mt-4 max-w-2xl rounded-lg border bg-card p-4 text-left">
+            <p className="flex items-center gap-2 text-sm font-semibold">
+              <Badge>Verified</Badge>
+              <span>What this badge means</span>
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">{DEAL_VERIFIED_MEANING}</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Full methodology:{' '}
+              <Link href="/methodology" className="underline">
+                How SmartBuy AI works
+              </Link>
+            </p>
+          </div>
           {/* S3#10 — share this deals page (WhatsApp / X / Facebook /
               copy link + your own referral link). */}
           <div className="mt-5 flex justify-center">

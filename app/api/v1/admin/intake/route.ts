@@ -11,7 +11,15 @@
  *    explicitly chose to include. Re-validates everything against the
  *    live catalog, then inserts only the valid rows (products +
  *    merchant_products) and records the batch in admin_audit_logs with
- *    `source: 'manual-intake'`.
+ *    `source: 'manual-intake'`. Section 15, P3-2: the eBay preview
+ *    flow reuses this approve step and passes
+ *    `source: 'ebay-browse-api'` instead — the audit log then
+ *    records the eBay origin (plus per-row ebay_item_id, itemWebUrl
+ *    and fetched_at from the preview), and the inserted products
+ *    get `data_freshness` stamped at approve time so the "Live eBay
+ *    asking price, checked <timestamp>" label is grounded. The
+ *    default stays 'manual-intake'; any other source value is
+ *    rejected.
  *
  * Prices entered here are MANUAL prices — typed in by an admin, never
  * fetched live and never presented as live prices. `products` /
@@ -49,6 +57,7 @@ import {
   type IntakeRowInput,
   type IntakeReviewedRow,
 } from '@/services/catalog-intake';
+import { EBAY_INTAKE_SOURCE } from '@/services/ebay-intake';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,9 +67,11 @@ const MAX_ROWS = 1000;
 /**
  * Loads the live catalog context used for validation: existing product
  * slugs + name/brand keys, merchants by normalized slug/name, and
- * currencies by code. Read-only.
+ * currencies by code. Read-only. Exported for the eBay preview route
+ * (Section 15, P3-2), which validates eBay listings against the same
+ * live catalog instead of duplicating the loader.
  */
-async function loadCatalogContext(
+export async function loadCatalogContext(
   service: SupabaseClient,
 ): Promise<IntakeCatalogContext> {
   const [productsRes, merchantsRes, currenciesRes] = await Promise.all([
@@ -125,6 +136,10 @@ export async function POST(request: NextRequest) {
   let csv: string | undefined;
   let rows: IntakeRowInput[] | undefined;
   let includeRowNumbers: number[] = [];
+  // Section 15, P3-2: optional provenance source for the approve
+  // step. Defaults to 'manual-intake'; the eBay preview flow
+  // passes 'ebay-browse-api'. Any other value is rejected below.
+  let source: string = INTAKE_SOURCE;
 
   try {
     if (contentType.includes('multipart/form-data')) {
@@ -145,6 +160,17 @@ export async function POST(request: NextRequest) {
       }
       action = typeof body.action === 'string' ? body.action : undefined;
       if (typeof body.csv === 'string') csv = body.csv;
+      if (typeof body.source === 'string') {
+        if (
+          body.source !== INTAKE_SOURCE &&
+          body.source !== EBAY_INTAKE_SOURCE
+        ) {
+          return badRequest(
+            `Unknown intake source "${body.source}" — expected "${INTAKE_SOURCE}" or "${EBAY_INTAKE_SOURCE}"`
+          );
+        }
+        source = body.source;
+      }
       if (Array.isArray(body.rows)) {
         rows = body.rows as IntakeRowInput[];
       }
@@ -223,6 +249,11 @@ export async function POST(request: NextRequest) {
 
     const inserted: string[] = [];
     const skipped: Array<{ row: number; reason: string }> = [];
+    // Section 15, P3-2: the approve-time check timestamp for eBay
+    // rows — the "Live eBay asking price, checked <timestamp>"
+    // label reads data_freshness, so it is stamped here, once per
+    // batch, only for the eBay source.
+    const approvedAt = new Date().toISOString();
 
     for (const plan of plans) {
       const { data: product, error: productError } = await service
@@ -237,6 +268,9 @@ export async function POST(request: NextRequest) {
             : {}),
           ...(plan.product.image_url ? { image_url: plan.product.image_url } : {}),
           ...(plan.product.gtin ? { gtin: plan.product.gtin } : {}),
+          ...(source === EBAY_INTAKE_SOURCE
+            ? { data_freshness: approvedAt }
+            : {}),
         })
         .select('id')
         .single();
@@ -278,14 +312,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Provenance for the batch: products/merchant_products have no
-    // `source` column, so the manual-intake origin is recorded here.
+    // `source` column, so the origin is recorded here — 'manual-intake'
+    // for CSV batches, 'ebay-browse-api' for eBay preview batches.
     const { error: auditError } = await service.from('admin_audit_logs').insert({
       admin_id: auth.userId,
       action: 'catalog_intake_approve',
       target_type: 'products',
       target_id: null,
       details: {
-        source: INTAKE_SOURCE,
+        source,
         inserted,
         skipped,
         reviewed: review.summary,
@@ -298,10 +333,16 @@ export async function POST(request: NextRequest) {
     }
 
     return apiSuccess({
-      source: INTAKE_SOURCE,
+      source,
       inserted,
       skipped,
       summary: review.summary,
+      ...(source === EBAY_INTAKE_SOURCE
+        ? {
+            priceNote:
+              `Live eBay asking prices, checked ${approvedAt}. No price history, no Deal Score and no alerts were created from these listings.`,
+          }
+        : {}),
     });
   }
 

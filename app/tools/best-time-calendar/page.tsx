@@ -8,6 +8,8 @@
 
 'use client';
 
+import { useRegion } from '@/components/region/region-provider';
+import { tFor } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
@@ -35,6 +37,7 @@ interface CategoryCalendar {
 }
 
 export default function BestTimePage() {
+  const { language } = useRegion();
   const [categories, setCategories] = useState<CategoryCalendar[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +69,7 @@ export default function BestTimePage() {
       <main className="container mx-auto flex-1 px-4 py-12">
         <div className="mx-auto max-w-2xl">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <CalendarDays className="h-7 w-7 text-blue-600" /> Best time to buy
+            <CalendarDays className="h-7 w-7 text-blue-600" /> {tFor(language, 'toolHeadingBestTime')}
           </h1>
           <p className="mt-2 text-muted-foreground">
             For each category, the months when recorded prices were

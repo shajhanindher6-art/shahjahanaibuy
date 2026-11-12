@@ -14,6 +14,7 @@
  */
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { Upload, FileCheck, AlertTriangle, Copy, CheckCircle2, XCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -170,6 +171,15 @@ export default function CatalogIntakePage() {
               admin. They are <strong>not live prices</strong> and are recorded as
               manual-intake prices — never present them as live merchant prices.
             </span>
+          </p>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Prefer live listings?{' '}
+            <Link href="/admin/intake/ebay" className="font-medium text-blue-600 underline hover:text-blue-800">
+              Import from eBay Browse
+            </Link>{' '}
+            — search the live eBay catalog, review each listing, then send it to the same
+            review table below. Needs eBay developer keys (owner step); nothing is inserted
+            until you approve.
           </p>
         </div>
 

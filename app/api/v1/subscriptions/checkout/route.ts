@@ -14,6 +14,7 @@ import { apiSuccess, badRequest, internalError, serviceUnavailable } from '@/lib
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { isStripeLiveModeBlocked } from '@/lib/stripe';
 import { logger } from '@/lib/config/logger';
+import { normalizePlanKey } from '@/lib/pricing-config';
 import { createCheckoutSession, isStripeConfigured, type PlanKey } from '@/services/stripe';
 
 export async function POST(request: NextRequest) {
@@ -46,9 +47,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { plan } = body ?? {};
 
-    if (!plan || !['pro'].includes(plan)) {
-      return badRequest('Invalid plan. Available: pro');
+    // Section 15 P2-2: canonical plan keys are TierIds ('premium',
+    // 'family', 'team'). 'pro' is accepted as a deprecated alias
+    // for 'premium' for one release. A tier whose Stripe price ID
+    // is not configured fails honestly inside
+    // createCheckoutSession ('Invalid plan or missing price ID').
+    if (!plan || !['premium', 'family', 'team', 'pro'].includes(plan)) {
+      return badRequest('Invalid plan. Available: premium, family, team (pro is a deprecated alias for premium)');
     }
+    const normalizedPlan = normalizePlanKey(plan, 'premium');
 
     const supabase = await createSupabaseServerClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -57,7 +64,7 @@ export async function POST(request: NextRequest) {
     const result = await createCheckoutSession(
       auth.userId,
       user.email,
-      plan as PlanKey
+      normalizedPlan as PlanKey
     );
 
     if ('error' in result) {

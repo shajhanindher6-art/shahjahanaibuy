@@ -701,16 +701,18 @@ export default function HomePage() {
         {/* Pricing — Premium tiers 2.0 (S5#17, wave 2 wiring).
             The old 3-plan block (Free / Premium / Business) is
             replaced by TiersSection (Free / Premium / Family /
-            Team, from lib/tiers.ts — Premium $9.99/month live,
-            Family "To be announced", Team custom). The wrapper
+            Team, from lib/tiers.ts — Premium $9.99/month is the
+            planned price, not a live charge, Family "To be
+            announced", Team custom). The wrapper
             keeps id="pricing" so the header/footer #pricing anchor
             still lands here; the section itself is id="pricing-tiers". */}
         <div id="pricing">
           <TiersSection />
           {/* Section 12, chunk C — honesty note under the pricing
               cards. The TiersSection itself already states the
-              price-lock dormancy, but its Premium card still shows
-              the stored trial CTA from lib/tiers.ts and lists the
+              price-lock dormancy, and its Premium card shows the
+              stored CTA from lib/tiers.ts ("See Premium plans",
+              which links back to /pricing) and lists the
               price-lock as a feature — and no trial terms exist
               anywhere in the code. This note, directly under the
               cards, says plainly that payments aren't live yet,

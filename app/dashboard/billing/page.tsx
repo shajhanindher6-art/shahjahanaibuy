@@ -8,6 +8,16 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+// Section 15 P2-1/P2-2/P2-5/P2-8: plan keys are TierIds
+// ('premium' is canonical; legacy 'pro' rows normalize to it),
+// and prices come from lib/tiers.ts — never a hardcoded dollar
+// figure in this file. The Premium price label is the planned
+// price until launch; the test-mode banner and the Premium price
+// note derive from the subscriptions API meta (paymentsLive —
+// live key AND STRIPE_LIVE_LAUNCHED=true), so they flip
+// automatically when the owner launches instead of claiming
+// test mode forever.
+import { getTier, normalizeTierId } from '@/lib/tiers';
 
 interface Subscription {
   id: string;
@@ -34,7 +44,10 @@ const PLANS = [
   {
     key: 'free',
     name: 'Free',
-    price: 0,
+    // Price label from the canonical tier definition (lib/tiers.ts).
+    priceLabel: getTier('free')?.priceLabel ?? 'Price to be announced',
+    priceSuffix: 'forever',
+    priceNote: null as string | null,
     icon: Sparkles,
     features: [
       'AI product search',
@@ -50,14 +63,17 @@ const PLANS = [
     color: 'border-slate-300',
   },
   {
-    // Section 12: display name is "Premium" (matches lib/tiers.ts
-    // everywhere else). The internal key stays 'pro' — the checkout
-    // API (app/api/v1/subscriptions/checkout/route.ts) only accepts
-    // plan 'pro', so renaming the key is an API change, not a copy
-    // fix; the key is never shown to the user.
-    key: 'pro',
+    // Section 15 P2-2: the key is 'premium' now (canonical
+    // TierId). Stored 'pro' rows normalize to 'premium' via
+    // normalizeTierId below, so legacy subscriptions still match
+    // this card. Section 15 P2-8: no hardcoded price — the label
+    // comes from lib/tiers.ts, where it is the PLANNED price,
+    // not a live charge.
+    key: 'premium',
     name: 'Premium',
-    price: 9.99,
+    priceLabel: getTier('premium')?.priceLabel ?? 'Price to be announced',
+    priceSuffix: 'per month',
+    priceNote: 'Planned price — payments are not live yet, so nothing is charged.',
     icon: Crown,
     features: [
       'Everything in Free',
@@ -82,6 +98,7 @@ export default function BillingPage() {
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [billingHistory, setBillingHistory] = useState<BillingRecord[]>([]);
   const [stripeConfigured, setStripeConfigured] = useState(false);
+  const [paymentsLive, setPaymentsLive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -92,15 +109,22 @@ export default function BillingPage() {
         fetch('/api/v1/subscriptions/history').catch(() => null),
       ]);
       const subData = await subRes.json();
+      if (subData.success) {
+        // Section 15 P2-5: Stripe live state comes from the
+        // subscriptions API meta (server-derived), never from a
+        // hardcoded banner. Read it even when the user has no
+        // subscription row yet (data null) — the meta is about
+        // server config, not the row. Falls back to the
+        // stored-customer-ID heuristic only when the meta is
+        // absent (older deploy).
+        setPaymentsLive(Boolean(subData.meta?.paymentsLive));
+        setStripeConfigured(
+          subData.meta?.stripeConfigured ??
+            Boolean((subData.data as Subscription | null)?.stripeCustomerId)
+        );
+      }
       if (subData.success && subData.data) {
         setSubscription(subData.data as Subscription);
-        // stripeConfigured was never set anywhere, so the Stripe
-        // portal button could never appear and the payment card
-        // always claimed Stripe was unconfigured. The subscriptions
-        // API returns no config flag, but a stored Stripe customer ID
-        // only exists when Stripe has actually been used — derive
-        // from that instead of asserting server config state.
-        setStripeConfigured(Boolean((subData.data as Subscription).stripeCustomerId));
       }
       if (histRes && histRes.ok) {
         const histData = await histRes.json();
@@ -193,7 +217,9 @@ export default function BillingPage() {
     );
   }
 
-  const currentPlan = subscription?.plan ?? 'free';
+  // Section 15 P2-2: normalize the stored plan key — legacy 'pro'
+  // rows read as 'premium', so they match the Premium card.
+  const currentPlan = normalizeTierId(subscription?.plan ?? 'free');
 
   return (
     <div className="space-y-6">
@@ -203,10 +229,20 @@ export default function BillingPage() {
           Billing & Subscription
         </h1>
         <p className="mt-1 text-muted-foreground">Manage your subscription and billing preferences</p>
-        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-          Payments are in test mode: Stripe is not live yet, so upgrading does not take
-          a real payment. No card is charged while this note is shown.
-        </p>
+        {/* Section 15 P2-5: the payments banner derives from the
+            subscriptions API meta (paymentsLive), never a hardcoded
+            claim — it flips automatically when the owner launches. */}
+        {paymentsLive ? (
+          <p className="mt-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
+            Payments are live: Stripe live payments are enabled, so upgrading takes a real payment.
+          </p>
+        ) : (
+          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+            {stripeConfigured
+              ? 'Payments are in test mode: Stripe is not live yet, so upgrading does not take a real payment. No card is charged while this note is shown.'
+              : 'Stripe is not configured yet, so upgrading is not available today. No card is charged while this note is shown.'}
+          </p>
+        )}
       </div>
 
       {subscription && subscription.plan !== 'free' && (
@@ -219,12 +255,13 @@ export default function BillingPage() {
                   Current Subscription
                 </CardTitle>
                 <CardDescription className="mt-1">
-                  {subscription.plan === 'pro' ? 'Premium Plan' : subscription.plan} — {subscription.status}
+                  {currentPlan === 'premium' ? 'Premium Plan' : currentPlan} — {subscription.status}
                 </CardDescription>
               </div>
-              {/* Display name mapping: the stored plan key is 'pro'
-                  (checkout API), the tier name shown is 'Premium'. */}
-              <Badge className="bg-blue-600 capitalize">{subscription.plan === 'pro' ? 'Premium' : subscription.plan}</Badge>
+              {/* Display name mapping: the stored plan key normalizes
+                  to a TierId (legacy 'pro' → 'premium'); the tier
+                  name shown is 'Premium'. */}
+              <Badge className="bg-blue-600 capitalize">{currentPlan === 'premium' ? 'Premium' : currentPlan}</Badge>
             </div>
           </CardHeader>
           <CardContent>
@@ -265,6 +302,12 @@ export default function BillingPage() {
         {PLANS.map((plan) => {
           const isCurrent = currentPlan === plan.key;
           const Icon = plan.icon;
+          // Section 15 P2-5: the Premium "planned price" note only
+          // applies while payments are not live. Once the owner
+          // launches, the price below is the live price and the
+          // note must not claim otherwise.
+          const priceNote =
+            plan.key === 'premium' && paymentsLive ? null : plan.priceNote;
           return (
             <Card key={plan.key} className={cn('relative', plan.color)}>
               {plan.popular && (
@@ -276,16 +319,19 @@ export default function BillingPage() {
                 <div className="flex items-center gap-2">
                   <div className={cn(
                     'flex h-10 w-10 items-center justify-center rounded-lg',
-                    plan.key === 'pro' ? 'bg-blue-600' : 'bg-muted dark:bg-accent'
+                    plan.key === 'premium' ? 'bg-blue-600' : 'bg-muted dark:bg-accent'
                   )}>
-                    <Icon className={cn('h-5 w-5', plan.key === 'pro' ? 'text-white' : 'text-muted-foreground')} />
+                    <Icon className={cn('h-5 w-5', plan.key === 'premium' ? 'text-white' : 'text-muted-foreground')} />
                   </div>
                   <div>
                     <CardTitle className="text-xl">{plan.name}</CardTitle>
                     <p className="text-2xl font-bold">
-                      ${plan.price}
-                      <span className="text-sm font-normal text-muted-foreground">/month</span>
+                      {plan.priceLabel}
+                      <span className="text-sm font-normal text-muted-foreground">/{plan.priceSuffix}</span>
                     </p>
+                    {priceNote ? (
+                      <p className="text-xs font-normal text-muted-foreground">{priceNote}</p>
+                    ) : null}
                   </div>
                 </div>
               </CardHeader>

@@ -2,6 +2,7 @@
  * API v1 extension price endpoint.
  * GET /api/v1/extension/price?slug=macbook-air-13
  * GET /api/v1/extension/price?q=macbook%20air
+ * GET /api/v1/extension/price?slug=macbook-air-13&country=PK
  *
  * Public, no-auth endpoint for the SmartBuy browser extension's
  * better-price banner and background price-drop sync. Returns the
@@ -9,12 +10,26 @@
  * real merchant_products rows only, never invented prices.
  * Responses are capped (max 5 offers) and contain only public
  * price fields — never service-role data or user-private data.
+ *
+ * Section 15, A12: the response meta also carries `storeLinks` —
+ * search links (lib/stores.ts builders) for the same product name,
+ * so the extension banner can show "also search on" links for
+ * stores that have no priced row. These are links to each store's
+ * OWN search results, never a SmartBuy price, deal, or stock claim.
+ * An optional `country` (ISO 3166-1 alpha-2) picks that country's
+ * local stores first; without one, the global fallback plus the
+ * flagship store of each newly covered local merchant (Daraz PK,
+ * PriceOye PK, Noon AE, Jumia NG, Flipkart IN) is returned.
+ * Stores already shown as priced offers (Amazon / Best Buy) are
+ * excluded from the links, matching the product-page rule that the
+ * same merchant never appears twice.
  */
 
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { buildExtensionStoreLinks } from '@/lib/extension-store-links';
 
 interface MerchantProductRow {
   price: number;
@@ -36,6 +51,11 @@ export async function GET(request: NextRequest) {
     const params = request.nextUrl.searchParams;
     const slug = (params.get('slug') ?? '').trim();
     const q = (params.get('q') ?? '').trim();
+    const countryRaw = (params.get('country') ?? '').trim();
+    // Optional 2-letter country code; anything else is ignored
+    // (the global + flagship fallback below) rather than 400 —
+    // the extension may not know the shopper's country.
+    const country = /^[A-Za-z]{2}$/.test(countryRaw) ? countryRaw.toUpperCase() : null;
     if (!slug && !q) return badRequest('slug or q is required');
 
     const supabase = await createSupabaseServerClient();
@@ -71,7 +91,7 @@ export async function GET(request: NextRequest) {
         productSlug = data.slug;
       }
     }
-    if (!productId) return apiSuccess([], 200, { product: null, note: 'No catalog product matches.' });
+    if (!productId) return apiSuccess([], 200, { product: null, note: 'No catalog product matches.', storeLinks: [] });
 
     const { data, error } = await supabase
       .from('merchant_products')
@@ -79,7 +99,14 @@ export async function GET(request: NextRequest) {
       .eq('product_id', productId)
       .order('price', { ascending: true })
       .limit(20);
-    if (error || !data) return apiSuccess([], 200, { product: { name: productName, slug: productSlug } });
+    if (error || !data) {
+      return apiSuccess([], 200, {
+        product: { name: productName, slug: productSlug },
+        // Store links do not depend on merchant rows, so they are
+        // still useful when the offers query fails.
+        storeLinks: productName ? buildExtensionStoreLinks(productName, country) : [],
+      });
+    }
 
     // Same in-stock rule as the product page: in_stock true OR
     // availability 'in_stock'. Cheapest first, capped at 5.
@@ -94,7 +121,18 @@ export async function GET(request: NextRequest) {
         inStock: true,
       }));
 
-    return apiSuccess(offers, 200, { product: { name: productName, slug: productSlug } });
+    // Section 15, A12: store search links for the banner's
+    // "also search on" row. Priced-offer merchants are excluded
+    // from the links so no merchant appears twice.
+    const storeLinks = productName
+      ? buildExtensionStoreLinks(
+          productName,
+          country,
+          offers.map((o) => o.merchant).filter((m): m is string => m !== null)
+        )
+      : [];
+
+    return apiSuccess(offers, 200, { product: { name: productName, slug: productSlug }, storeLinks });
   } catch {
     return internalError('Failed to fetch extension price');
   }

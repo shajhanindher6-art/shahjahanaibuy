@@ -3,14 +3,22 @@
  * POST /api/v1/notifications/process — drains the notification queue.
  * Intended to be called by a cron scheduler (e.g. Supabase scheduled function).
  * Protected by a CRON_SECRET header check.
+ *
+ * Section 15, P4-2 — SERVICE-ROLE client (was the cookie-based
+ * anon-key server client): processNotificationQueue reads and
+ * updates queue rows belonging to every user, which the
+ * authenticated-only RLS policies on notification_queue hide from
+ * an anon/authenticated client. Same pattern as alerts/check and
+ * prices/refresh.
  */
 
 import type { NextRequest } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { apiSuccess, unauthorized, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { processNotificationQueue } from '@/services/notification-dispatch';
-import { generateWeeklyDigest } from '@/services/notifications';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'notifications.process' });
@@ -33,8 +41,14 @@ export async function POST(request: NextRequest) {
     return unauthorized('Invalid cron secret');
   }
 
+  const supabase = createSupabaseServiceClient();
+  if (!supabase) {
+    return internalError(
+      'SUPABASE_SERVICE_ROLE_KEY is not configured; notification processing requires the service-role client'
+    );
+  }
+
   try {
-    const supabase = await createSupabaseServerClient();
     const result = await processNotificationQueue(supabase);
     return apiSuccess(result);
   } catch {

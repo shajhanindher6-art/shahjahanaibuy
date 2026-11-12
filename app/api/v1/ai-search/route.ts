@@ -112,6 +112,13 @@ export async function POST(request: NextRequest) {
       // "Compare these two" CTA — [] when the query had no `vs`
       // or a side could not be resolved.
       compareProducts: result.compareProducts ?? [],
+      // Section 15, B10: the Levenshtein-corrected spelling (and
+      // whether the returned results are for it, not the typed
+      // query) — the page offers it as "Did you mean: …?" for
+      // zero AND few results, and labels fuzzy-corrected results
+      // honestly. Null when no correction exists.
+      didYouMean: result.didYouMean ?? null,
+      fuzzyCorrected: result.fuzzyCorrected ?? false,
     });
   } catch {
     return internalError('Failed to perform AI search');

@@ -18,6 +18,7 @@ import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { PriceIndexTable } from '@/components/price-index/price-index-table';
+import { CategoryInflation } from '@/components/category-inflation';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
@@ -164,6 +165,13 @@ export default function PriceIndexPage() {
             </>
           )}
         </div>
+
+        {/* Section 15, C5 — the Category Inflation Index was orphaned
+            (zero importers). It self-fetches live
+            /api/v1/category-inflation and renders its own loading /
+            empty states, so it sits below the index table and is
+            always shown, even when the index table above fails. */}
+        <CategoryInflation className="mt-8" />
       </main>
       <SiteFooter />
     </div>

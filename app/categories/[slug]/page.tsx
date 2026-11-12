@@ -21,11 +21,12 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ProductCard } from '@/components/products/product-card';
 import { ShareButtons } from '@/components/products/share-buttons';
+import { StoreSearchLinks } from '@/components/taxonomy/store-search-links';
 import type { Product } from '@/types';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getLatestPrices } from '@/services/price-history';
 import { predictPriceDrop } from '@/services/ai-predictions';
-import { computeDealScoreFromPrediction } from '@/lib/deal-score';
+import { dealScoreForDisplay } from '@/lib/deal-score';
 import {
   buildTaxonomyJsonLd,
   buildTaxonomyMetadata,
@@ -39,7 +40,11 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const page = await getCategoryPageData(params.slug);
   if (!page) {
-    return { title: 'Category not found' };
+    // Section 15 P0-2: notFound() MUST fire here — see the note in
+    // app/products/[slug]/page.tsx. A notFound() thrown only by the
+    // page body is swallowed by the streaming not-found boundary
+    // and the response keeps status 200 (soft 404).
+    notFound();
   }
   return buildTaxonomyMetadata(page, appConfig.url);
 }
@@ -61,8 +66,9 @@ export default async function CategoryPage({
   // price per product from price_history (one query) and the cached
   // price-drop prediction per product (same source the product page
   // scores from). Products with no price history show no price;
-  // products with no usable prediction show no badge — never a
-  // guessed price or score. ?sort=price-asc|price-desc|deal-score
+  // products with no usable prediction — or fewer than 5 price
+  // points (Section 15, B1: the badge hides below 5) — show no
+  // badge — never a guessed price or score. ?sort=price-asc|price-desc|deal-score
   // reorders the grid; unpriced / unscored products sort last.
   const sortRaw = searchParams?.sort;
   const sortParam = Array.isArray(sortRaw) ? sortRaw[0] : sortRaw;
@@ -79,7 +85,7 @@ export default async function CategoryPage({
         productIds.map((id) => predictPriceDrop(supabase, id))
       );
       predictions.forEach((prediction, i) => {
-        const score = computeDealScoreFromPrediction(prediction);
+        const score = dealScoreForDisplay(prediction);
         if (score !== null) dealScores.set(productIds[i], score);
       });
     } catch {
@@ -226,6 +232,13 @@ export default async function CategoryPage({
               </div>
             </>
           )}
+
+          {/* Section 15 A2 — every store's own search for this
+              category (84 links). Renders for categories with
+              products and for categories with none: the links are
+              store searches, not catalog products, so an empty
+              catalog changes nothing. */}
+          <StoreSearchLinks query={page.name} label={page.name} />
         </div>
       </main>
       <SiteFooter />

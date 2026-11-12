@@ -6,7 +6,7 @@
  * to: priced merchants, the eBay live API, search-link retailers,
  * the Skimlinks aggregator, and the local-stores directory. A
  * platform with no configured account is reported as
- * `not-configured` / `pending-approval` / `search-links-only` —
+ * `not-configured` / `search-links-only` —
  * never as "connected". No secret value is ever returned, only
  * booleans, counts, and plain-language notes.
  */

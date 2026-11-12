@@ -7,16 +7,21 @@
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
+  apiError,
   apiSuccess,
   badRequest,
   internalError,
 } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import {
+  checkAlertCap,
+  countAlerts,
   getAlerts,
   createAlert,
   type CreateAlertInput,
 } from '@/services/alerts';
+import { BILLING_URL, getTierForUserId, getUpgradeTier } from '@/lib/api-quota';
+import { getMaxAlerts, getTier } from '@/lib/tiers';
 import { getCachedProductBySlug } from '@/services/products';
 
 export async function GET(request: NextRequest) {
@@ -31,8 +36,14 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await createSupabaseServerClient();
     const alerts = await getAlerts(supabase, auth.userId);
-
-    return apiSuccess(alerts);
+    // The guest-merge runner reads this meta to cap the merge at
+    // the signed-in tier's limit without a separate tier lookup.
+    const tier = await getTierForUserId(auth.userId);
+    const count = await countAlerts(supabase, auth.userId);
+    return apiSuccess(alerts, 200, {
+      maxAlerts: getMaxAlerts(tier),
+      alertCount: count < 0 ? alerts.length : count,
+    });
   } catch {
     return internalError('Failed to fetch alerts');
   }
@@ -68,6 +79,33 @@ export async function POST(request: NextRequest) {
 
     if (!resolvedProductId) {
       return badRequest('productId or productSlug is required');
+    }
+
+    // Section 15 B14: enforce the signed-in tier's alert cap
+    // (Free = 5) before inserting — a 6th alert is a 403 with an
+    // upgrade hint, never a silent drop or a 500.
+    const tier = await getTierForUserId(auth.userId);
+    const cap = await checkAlertCap(supabase, auth.userId, tier);
+    if (!cap.allowed && cap.max !== null) {
+      const tierName = getTier(tier)?.name ?? tier;
+      const upgradeTier = getUpgradeTier(tier);
+      const upgrade = upgradeTier ? getTier(upgradeTier) : null;
+      return apiError(
+        'FORBIDDEN',
+        `Your ${tierName} plan allows up to ${cap.max} price alerts (you have ${cap.current}). ` +
+          (upgrade
+            ? `Upgrade to ${upgrade.name} for unlimited price alerts. `
+            : `You are on the highest alert tier. `) +
+          `See ${BILLING_URL}.`,
+        403,
+        {
+          tier,
+          limit: cap.max,
+          current: cap.current,
+          upgradeTier: upgradeTier ?? null,
+          billingUrl: BILLING_URL,
+        }
+      );
     }
 
     const input: CreateAlertInput = {

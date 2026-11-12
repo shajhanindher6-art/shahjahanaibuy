@@ -29,6 +29,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { buildStatusSummary, type StatusIncident } from '@/lib/status';
 import type { UptimeCheckRow } from '@/lib/uptime';
 import { describePlatformStatus, type PlatformStatus } from '@/services/platform-status';
+import { getLatestRefreshRun, type RefreshRunRow } from '@/services/refresh-run';
 import { appConfig } from '@/lib/config/app';
 
 export const dynamic = 'force-dynamic';
@@ -59,7 +60,6 @@ const PLATFORM_STATUS_LABELS: Record<PlatformStatus, string> = {
   live: 'Live',
   configured: 'Configured',
   'not-configured': 'Not configured',
-  'pending-approval': 'Pending approval',
   'search-links-only': 'Search links only',
 };
 
@@ -67,7 +67,6 @@ const PLATFORM_STATUS_STYLES: Record<PlatformStatus, string> = {
   live: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100',
   configured: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100',
   'not-configured': 'bg-muted text-muted-foreground',
-  'pending-approval': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100',
   'search-links-only': 'bg-muted text-muted-foreground',
 };
 
@@ -79,9 +78,35 @@ function formatDate(iso: string): string {
   });
 }
 
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+// Section 15, P1-5 — labels for the last recorded refresh run
+// (price_refresh_runs, migration 040). A `running` row means a run
+// started and has not finished yet.
+const REFRESH_RUN_STATUS_LABELS: Record<string, string> = {
+  completed: 'Completed',
+  completed_with_failures: 'Completed with failures',
+  failed: 'Failed',
+  running: 'Running',
+};
+
 export default async function StatusPage() {
   let checks: UptimeCheckRow[] = [];
   let incidents: StatusIncident[] = [];
+  // Section 15, P1-5: the latest recorded refresh run, or null when
+  // no run has been recorded yet (migration 040 not applied, or no
+  // run since it was applied). Fail-open by design — a missing
+  // table renders the "no refresh recorded yet" state below, never
+  // a 500.
+  let lastRefresh: RefreshRunRow | null = null;
 
   try {
     const supabase = await createSupabaseServerClient();
@@ -103,6 +128,7 @@ export default async function StatusPage() {
     if (!incidentsRes.error && incidentsRes.data) {
       incidents = incidentsRes.data as unknown as StatusIncident[];
     }
+    lastRefresh = await getLatestRefreshRun(supabase);
   } catch {
     // Fail-safe: render the honest "no data yet" state below.
   }
@@ -165,7 +191,7 @@ export default async function StatusPage() {
 
           <h2 className="mt-10 text-xl font-semibold">Last verified</h2>
           <p className="mt-4 rounded-lg border p-6 text-muted-foreground">
-            Last manual verification: 11 November 2026 — the homepage, the tools
+            Last manual verification: 12 November 2026 — the homepage, the tools
             pages, /pricing, /coming-soon, the MacBook Air 13 product page, and the
             stores, platforms, and eBay-search APIs all responded. Check the live
             site yourself:{' '}
@@ -179,12 +205,52 @@ export default async function StatusPage() {
             </a>
             .
           </p>
+          <h2 className="mt-10 text-xl font-semibold">Last price refresh</h2>
+          {lastRefresh ? (
+            <div className="mt-4 rounded-lg border p-6">
+              <p className="text-muted-foreground">
+                Last refresh run: {formatDateTime(lastRefresh.started_at)} —{' '}
+                {REFRESH_RUN_STATUS_LABELS[lastRefresh.status] ?? lastRefresh.status}
+                {lastRefresh.source === 'alerts-check'
+                  ? ' (started by the alerts check)'
+                  : ''}
+                .
+              </p>
+              {(() => {
+                const failedSteps = Object.entries(lastRefresh.steps ?? {})
+                  .filter(([, step]) => step.status === 'failed')
+                  .map(([name]) => name);
+                return failedSteps.length > 0 ? (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Steps that failed in this run: {failedSteps.join(', ')}. A failed
+                    step reports its own error in the run record; the other steps
+                    still ran.
+                  </p>
+                ) : null;
+              })()}
+              {lastRefresh.finished_at ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Finished {formatDateTime(lastRefresh.finished_at)}.
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="mt-4 rounded-lg border border-dashed p-6 text-muted-foreground">
+              No price refresh run has been recorded yet. Refresh runs are recorded
+              once migration 040 is applied — until then the app has no record of
+              the last refresh, and this section stays empty rather than inventing
+              one.
+            </p>
+          )}
           <p className="mt-4 text-sm text-muted-foreground">
             What this page cannot tell you: the app cannot see whether the owner&apos;s
             scheduled jobs are running — the price refresh (every 6 hours) and the uptime
             check runner (every 5 minutes) are cron-job.org jobs that live outside the app —
             or the state of the owner&apos;s external UptimeRobot monitor. Those are stated
-            as unknown here, not as up. No uptime percentage is shown until the in-app
+            as unknown here, not as up. The last recorded refresh run above is written by
+            the refresh endpoint itself once migration 040 is applied — it shows the last
+            run that actually happened, not whether the cron job is still scheduled.
+            No uptime percentage is shown until the in-app
             check runner has recorded real checks.
           </p>
 

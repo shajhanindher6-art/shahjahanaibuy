@@ -1,10 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/features/auth';
+import {
+  parseReferralCodeFromSearch,
+  storePendingReferralCode,
+  peekPendingReferralCode,
+  clearPendingReferralCode,
+  submitReferralAttribution,
+} from '@/lib/referral';
 import { AuthShell } from '@/components/layout/auth-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,6 +30,16 @@ export default function SignUpPage() {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Section 15, B13 — remember a referral code from `?ref=` so
+  // the signup can be attributed to its owner. An invalid code is
+  // dropped here (parse returns null); a valid one is stored in
+  // localStorage so it survives the email-confirmation redirect
+  // and the auth callback can attribute it after sign-in.
+  useEffect(() => {
+    const code = parseReferralCodeFromSearch(window.location.search);
+    if (code) storePendingReferralCode(code);
+  }, []);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -38,8 +55,20 @@ export default function SignUpPage() {
       const result = await signUp(email, password, fullName);
       if (result.success) {
         if (result.error) {
+          // No session yet (email confirmation required) — the
+          // code stays stored; /auth/callback attributes it once
+          // the user signs in.
           setMessage(result.error);
         } else {
+          // Session exists: attribute this signup to the referrer
+          // (if any). Best-effort and never blocking — a failed
+          // attribution never stops the redirect, and an unknown
+          // code is ignored silently by the endpoint.
+          const code = peekPendingReferralCode();
+          if (code) {
+            const outcome = await submitReferralAttribution(code);
+            if (outcome !== 'retry') clearPendingReferralCode();
+          }
           router.push('/dashboard');
         }
       } else {

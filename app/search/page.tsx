@@ -22,14 +22,16 @@ import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
 import { Price } from '@/components/region/price';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
 import { PriceTrendSparkline } from '@/components/products/price-trend-sparkline';
-import { computeDealScoreFromPrediction } from '@/lib/deal-score';
+import { dealScoreForDisplay } from '@/lib/deal-score';
 import {
   VoiceSearchButton,
   speakSearchSummary,
 } from '@/components/search/voice-search-button';
 import { SearchAutocomplete } from '@/components/search/search-autocomplete';
+import { SavedSearches } from '@/components/search/saved-searches';
 import { ProductSearchResults } from '@/components/search/product-search-results';
 import {
+  FEW_SEARCH_RESULTS,
   suggestSearchCorrection,
   type SearchCatalogTokens,
 } from '@/lib/search-suggestions';
@@ -323,6 +325,14 @@ function SearchPageContent() {
   const [dealScores, setDealScores] = useState<Record<string, number>>({});
   const dealScoreAttemptedRef = useRef<Set<string>>(new Set());
 
+  // Section 15, B10: the ai-search API's own did-you-mean (from its
+  // fuzzy fallback / few-results correction) — the server's
+  // correction is preferred over the page's client-side one below,
+  // because the server knows whether the returned results are for
+  // the corrected query. Reset at the start of every search so a
+  // stale suggestion never flashes for the next query.
+  const [serverDidYouMean, setServerDidYouMean] = useState<string | null>(null);
+
   // Spoken reply for a voice-started search: once the results land,
   // speak the count in the voice input's language, then clear the flag
   // so filter changes never re-speak.
@@ -356,6 +366,7 @@ function SearchPageContent() {
     if (!searchQuery.trim()) return;
     setLoading(true);
     setSearchError(false);
+    setServerDidYouMean(null);
     setHasSearched(true);
     const effectiveMode = req.mode ?? searchMode;
     const activeFilters = req.filters ?? filters;
@@ -448,6 +459,15 @@ function SearchPageContent() {
         setParsedIntent(data.meta?.parsedIntent ?? null);
         setCompareProducts(
           Array.isArray(data.meta?.compareProducts) ? data.meta.compareProducts : []
+        );
+        // Section 15, B10: the server's did-you-mean (fuzzy
+        // fallback / few-results correction) — preferred over the
+        // page's client-side suggestion below. Only a string
+        // counts; anything else is treated as "no suggestion".
+        setServerDidYouMean(
+          typeof data.meta?.didYouMean === 'string' && data.meta.didYouMean.trim() !== ''
+            ? data.meta.didYouMean
+            : null
         );
         // B4: "On deal" badges for the returned products, from the
         // ranked-deals endpoint (one call per search, same rows the
@@ -835,11 +855,18 @@ function SearchPageContent() {
   const clientFiltersActive =
     sort !== 'relevance' || storeFilter !== '' || filters.minRating !== '' || priceBand !== 'all';
 
-  // B5: did-you-mean, computed only for a true zero-result search
-  // (nothing in the catalog AND nothing from the web). Tokens come
-  // from the catalog fetch above (names + brands + categories) —
-  // never from a guessed list. The empty state below offers the
-  // suggestion as a link; it never auto-redirects.
+  // B5: did-you-mean — Section 15, B10 extends it from zero
+  // results to FEW results (catalog + web combined below
+  // FEW_SEARCH_RESULTS): a 1–2 result set for a mistyped query is
+  // a typo the visitor should be told about, not a success. The
+  // server's suggestion (from the ai-search fuzzy fallback /
+  // few-results correction) wins when present — it knows whether
+  // the results are for the corrected query; the client-side
+  // Levenshtein correction over the catalog tokens is the fallback
+  // for older cached responses. Tokens come from the catalog fetch
+  // above (names + brands + categories) — never from a guessed
+  // list. The empty state below offers the suggestion as a link;
+  // it never auto-redirects.
   const catalogTokens: SearchCatalogTokens = useMemo(
     () => ({
       names: catalogFacets.names,
@@ -850,9 +877,9 @@ function SearchPageContent() {
   );
   const didYouMean = useMemo(() => {
     if (!hasSearched || loading || searchError) return null;
-    if (results.length > 0 || webResults.length > 0) return null;
-    return suggestSearchCorrection(query, catalogTokens);
-  }, [hasSearched, loading, searchError, results, webResults, query, catalogTokens]);
+    if (results.length + webResults.length >= FEW_SEARCH_RESULTS) return null;
+    return serverDidYouMean ?? suggestSearchCorrection(query, catalogTokens);
+  }, [hasSearched, loading, searchError, results, webResults, query, catalogTokens, serverDidYouMean]);
 
   // ItemList JSON-LD for the displayed catalog results (S4#15):
   // real result URLs only (/products/<slug>). Web results are not
@@ -891,7 +918,12 @@ function SearchPageContent() {
           if (!predRes.ok) return;
           const predData = await predRes.json();
           if (!predData.success || !predData.data) return;
-          const score = computeDealScoreFromPrediction(predData.data);
+          // Section 15, B1: dealScoreForDisplay hides the badge
+          // while the prediction rests on fewer than
+          // DEAL_SCORE_MIN_DATA_POINTS (5) price points — the live
+          // catalog's 4 points per product all score a meaningless
+          // 100/100. The formula itself is unchanged.
+          const score = dealScoreForDisplay(predData.data);
           if (score === null) return;
           setDealScores((prev) => ({ ...prev, [r.product.id]: score }));
         } catch {
@@ -1034,6 +1066,15 @@ function SearchPageContent() {
             </button>
           </div>
         )}
+
+        {/* Section 15, C2 — saved searches (named, re-runnable,
+            dashboard-listed). The save form gets the live URL query
+            string — everything /search URL-syncs — so saving is just
+            persisting that string + a name. Guests see the sign-in
+            hint; a failed fetch hides the card. */}
+        <div className="mb-6">
+          <SavedSearches currentQueryString={searchParams.toString()} />
+        </div>
 
         {showFilters && (
           <Card className="mb-6">
@@ -1268,6 +1309,31 @@ function SearchPageContent() {
           </div>
         )}
 
+        {/* B5: did-you-mean — one suggested correction, offered as
+            a link the visitor taps to run it. Never an
+            auto-redirect. Section 15, B10: this row lives OUTSIDE
+            the empty-state block, so it shows for zero AND few
+            results (catalog + web below FEW_SEARCH_RESULTS) — when
+            the fuzzy fallback already ran, the results below ARE
+            the corrected query's, and the row says so by offering
+            the spelling they came from. A filtered-out result set
+            is still a filter problem, not a typo: the suggestion
+            only appears when a real correction exists. */}
+        {didYouMean && results.length + webResults.length < FEW_SEARCH_RESULTS && (
+          <div className="mb-6 flex justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                setQuery(didYouMean);
+                void performSearch(didYouMean, { mode: 'text', page: 1 });
+              }}
+              className="flex min-h-[44px] items-center rounded-full border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition-all hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-300"
+            >
+              Did you mean: {didYouMean}?
+            </button>
+          </div>
+        )}
+
         {loading && (
           <div className="grid gap-4" aria-label="Loading search results">
             <p className="text-sm text-muted-foreground">
@@ -1322,25 +1388,9 @@ function SearchPageContent() {
                 icon={Search}
               />
             )}
-            {/* B5: did-you-mean — one suggested correction, offered
-                as a link the visitor taps to run it. Never an
-                auto-redirect, and only when the catalog + web both
-                returned nothing (a filtered-out result set is a
-                filter problem, not a typo). */}
-            {didYouMean && results.length === 0 && webResults.length === 0 && (
-              <div className="mt-4 flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuery(didYouMean);
-                    void performSearch(didYouMean, { mode: 'text', page: 1 });
-                  }}
-                  className="flex min-h-[44px] items-center rounded-full border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition-all hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                >
-                  Did you mean: {didYouMean}?
-                </button>
-              </div>
-            )}
+            {/* B5 did-you-mean row moved above (Section 15, B10):
+                it now renders for zero AND few results, outside
+                this empty-state block. */}
             {(clientFiltersActive || filters.category || filters.brand || filters.budgetMax) && (
               <div className="mt-4 flex justify-center">
                 <Button

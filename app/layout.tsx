@@ -133,12 +133,18 @@ const structuredData = {
   url: appConfig.url,
   applicationCategory: 'ShoppingApplication',
   operatingSystem: 'Web',
+  // Section 15, P2-5 — no hardcoded chargeable figure. The old
+  // structured-data offer block claimed a 9.99 high price as if
+  // Premium were purchasable — $9.99 is a PLANNED price label
+  // (lib/tiers.ts), not a live charge (Stripe is in test mode). Only the Free
+  // plan is live today, so the structured data offers exactly
+  // that; paid tiers are not listed as purchasable offers.
   offers: {
-    '@type': 'AggregateOffer',
+    '@type': 'Offer',
+    price: '0',
     priceCurrency: 'USD',
-    lowPrice: '0',
-    highPrice: '9.99',
-    offerCount: 2,
+    availability: 'https://schema.org/InStock',
+    description: 'Free plan. Paid plans are planned — no live charge yet.',
   },
   featureList: [
     'AI product search',

@@ -8,6 +8,8 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'affiliate.links' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).

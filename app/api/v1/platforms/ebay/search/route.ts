@@ -18,6 +18,7 @@ import type { NextRequest } from 'next/server';
 import {
   apiSuccess,
   badRequest,
+  rateLimited,
   serviceUnavailable,
 } from '@/lib/api/responses';
 import {
@@ -29,6 +30,10 @@ import {
   isEbayConfigured,
   searchEbayListings,
 } from '@/services/ebay-browse';
+import {
+  reserveEbayDailyCall,
+} from '@/services/ebay-budget';
+import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { validateLocalFirstQuery } from '@/services/local-first-search';
 
 export const dynamic = 'force-dynamic';
@@ -53,7 +58,38 @@ export async function GET(request: NextRequest) {
   const parsedLimit = rawLimit ? Number.parseInt(rawLimit, 10) : undefined;
   const limit = Number.isFinite(parsedLimit) ? parsedLimit : undefined;
 
+  // Section 15, P3-5 — GLOBAL daily budget (cap 4,500/day, 90% of
+  // the 5,000 free tier). The 30/min/IP limit above does not
+  // protect the shared daily budget, so every real eBay call
+  // reserves one call first. Unconfigured eBay spends nothing.
+  // At the cap: an honest 429 — the UI falls back to the catalog
+  // + store search links instead of showing fake listings.
+  let budget: Awaited<ReturnType<typeof reserveEbayDailyCall>> | null = null;
+  if (isEbayConfigured()) {
+    // The DB-counter fallback needs the service client; when it
+    // is unavailable the budget module falls back to Redis, and
+    // then fails open (allows the call, logs a warning).
+    budget = await reserveEbayDailyCall(createSupabaseServiceClient());
+    if (!budget.allowed) {
+      return rateLimited(
+        'eBay daily budget used — try tomorrow. The catalog and store search links still work.',
+        {
+          budgetRemaining: 0,
+          budgetLimit: budget.limit,
+          budgetUsed: budget.used,
+          fallback: 'catalog',
+        }
+      );
+    }
+  }
+
   const result = await searchEbayListings(validated.query, { limit });
+  if (!result.ok && result.reason === 'rate-limited') {
+    return rateLimited('eBay rate-limited this request — try again shortly.', {
+      budgetRemaining: budget?.remaining ?? null,
+      budgetLimit: budget?.limit ?? null,
+    });
+  }
   if (!result.ok && result.reason === 'api-error') {
     return serviceUnavailable(
       'eBay is temporarily unavailable. Try again later.'
@@ -63,5 +99,14 @@ export async function GET(request: NextRequest) {
     configured: isEbayConfigured(),
     source: result.ok ? result.source : result.reason,
     listings: result.listings,
+    ...(budget
+      ? {
+          budget: {
+            remaining: budget.remaining,
+            used: budget.used,
+            limit: budget.limit,
+          },
+        }
+      : {}),
   });
 }

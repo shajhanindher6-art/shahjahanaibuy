@@ -6,7 +6,7 @@
  * Skimlinks aggregator, and the local-stores directory. Statuses
  * come from services/platform-status.ts (booleans and counts from
  * real configuration only) — a platform with no configured account
- * is shown as "Not configured" or "Pending approval", never as
+ * is shown as "Not configured" or "Search links only", never as
  * "connected". No secret value is ever rendered.
  *
  * Also explains, in plain language, how country detection works:
@@ -42,7 +42,6 @@ const STATUS_LABELS: Record<PlatformStatus, string> = {
   live: 'Live',
   configured: 'Configured',
   'not-configured': 'Not configured',
-  'pending-approval': 'Pending approval',
   'search-links-only': 'Search links only',
 };
 
@@ -51,8 +50,6 @@ const STATUS_STYLES: Record<PlatformStatus, string> = {
   configured: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
   'not-configured':
     'bg-muted text-foreground dark:bg-muted dark:text-foreground',
-  'pending-approval':
-    'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
   'search-links-only':
     'bg-muted text-foreground dark:bg-muted dark:text-foreground',
 };

@@ -15,16 +15,22 @@ import extensionManifest from '@/extension/manifest.json';
  * Browser extension guide page: /extension
  *
  * The extension (extension/ folder in the repo, v2.0.0) runs on
- * Amazon, Walmart, Best Buy, eBay and AliExpress product +
- * checkout pages: a better-price overlay on product pages (best
- * recorded price + recorded price-history sparkline + browser-local
- * price alert), and a coupon panel with Apply buttons on checkout
- * pages. It is NOT on the Chrome Web Store yet (publishing needs a
- * developer account, a fee and a review), so this page documents
- * the honest install route: load the folder as an unpacked
- * extension in developer mode. No login is required and no account
- * data is collected — the extension only sends a product title to
- * SmartBuy's public API and reads public coupon codes.
+ * Amazon, Walmart, Best Buy, eBay, AliExpress, Daraz, PriceOye,
+ * Noon, Jumia and Flipkart product + checkout pages: a
+ * better-price overlay on product pages (best recorded price +
+ * recorded price-history sparkline + browser-local price alert,
+ * plus search links for the same product on other stores), and a
+ * coupon panel with Apply buttons on checkout pages. The five
+ * local merchants (Daraz, PriceOye, Noon, Jumia, Flipkart) use
+ * generic page detection only — no merchant-specific selector
+ * has been verified for them — so the overlay may not appear on
+ * some of their product pages. It is NOT on the Chrome Web Store
+ * yet (publishing needs a developer account, a fee and a review),
+ * so this page documents the honest install route: load the
+ * folder as an unpacked extension in developer mode. No login is
+ * required and no account data is collected — the extension only
+ * sends a product title to SmartBuy's public API and reads
+ * public coupon codes.
  */
 // Section 13, Chunk E: self-canonical + Open Graph metadata (the
 // root layout's canonical points at the homepage, so without this
@@ -32,14 +38,14 @@ import extensionManifest from '@/extension/manifest.json';
 export const metadata: Metadata = {
   title: 'SmartBuy Browser Extension — SmartBuy AI',
   description:
-    'Shop on Amazon, Walmart, Best Buy, eBay or AliExpress and let SmartBuy watch prices and coupons for you — right on the retailer’s own pages.',
+    'Shop on Amazon, Walmart, Best Buy, eBay, AliExpress, Daraz, PriceOye, Noon, Jumia or Flipkart and let SmartBuy watch prices and coupons for you — right on the retailer’s own pages.',
   alternates: {
     canonical: `${appConfig.url}/extension`,
   },
   openGraph: {
     title: 'SmartBuy Browser Extension — SmartBuy AI',
     description:
-      'Shop on Amazon, Walmart, Best Buy, eBay or AliExpress and let SmartBuy watch prices and coupons for you — right on the retailer’s own pages.',
+      'Shop on Amazon, Walmart, Best Buy, eBay, AliExpress, Daraz, PriceOye, Noon, Jumia or Flipkart and let SmartBuy watch prices and coupons for you — right on the retailer’s own pages.',
     url: `${appConfig.url}/extension`,
     type: 'website',
     locale: 'en_US',
@@ -48,7 +54,7 @@ export const metadata: Metadata = {
     card: 'summary',
     title: 'SmartBuy Browser Extension — SmartBuy AI',
     description:
-      'Shop on Amazon, Walmart, Best Buy, eBay or AliExpress and let SmartBuy watch prices and coupons for you — right on the retailer’s own pages.',
+      'Shop on Amazon, Walmart, Best Buy, eBay, AliExpress, Daraz, PriceOye, Noon, Jumia or Flipkart and let SmartBuy watch prices and coupons for you — right on the retailer’s own pages.',
   },
 };
 
@@ -80,8 +86,9 @@ export default function ExtensionPage() {
               <Puzzle className="h-7 w-7 text-blue-600" /> SmartBuy Browser Extension
             </h1>
             <p className="mt-2 text-muted-foreground">
-              Shop on Amazon, Walmart, Best Buy, eBay or AliExpress and let SmartBuy watch prices
-              and coupons for you — right on the retailer&apos;s own pages.
+              Shop on Amazon, Walmart, Best Buy, eBay, AliExpress, Daraz, PriceOye, Noon, Jumia
+              or Flipkart and let SmartBuy watch prices and coupons for you — right on the
+              retailer&apos;s own pages.
             </p>
           </div>
 
@@ -98,7 +105,10 @@ export default function ExtensionPage() {
                   overlay when SmartBuy has it cheaper — with a recorded price-history
                   sparkline and a browser-local price-alert button. The overlay can also be
                   opened on demand from the extension popup (&ldquo;Show Price History&rdquo;),
-                  even when SmartBuy is not cheaper.
+                  even when SmartBuy is not cheaper. It also lists search links for the same
+                  product on other stores — including Daraz, PriceOye, Noon, Jumia and
+                  Flipkart — so you can check it there; those links go to each store&apos;s own
+                  search results, not to a SmartBuy price.
                 </span>
               </p>
               <p className="flex items-start gap-2">
@@ -129,6 +139,14 @@ export default function ExtensionPage() {
             <CardContent className="space-y-2 text-sm">
               <p className="flex justify-between gap-4">
                 <span><strong>Better-price overlay</strong> — best recorded price, price-history sparkline and price-alert button on retailer product pages</span>
+                <span className="shrink-0 font-medium text-green-700">Available in v2.0.0</span>
+              </p>
+              <p className="flex justify-between gap-4">
+                <span><strong>Local-merchant coverage</strong> — Daraz, PriceOye, Noon, Jumia and Flipkart product pages, with generic page detection (no merchant-specific selectors verified yet, so the overlay may not appear on some of their pages)</span>
+                <span className="shrink-0 font-medium text-green-700">Available in v2.0.0</span>
+              </p>
+              <p className="flex justify-between gap-4">
+                <span><strong>Store search links in the banner</strong> — the overlay lists other stores to search the same product on; links go to each store&apos;s own search results, never a SmartBuy price or stock claim</span>
                 <span className="shrink-0 font-medium text-green-700">Available in v2.0.0</span>
               </p>
               <p className="flex justify-between gap-4">
@@ -182,6 +200,14 @@ export default function ExtensionPage() {
                   history for the overlay sparkline.
                 </li>
                 <li>
+                  <code>GET /api/v1/extension/price?slug=&lt;slug&gt;</code> — cheapest
+                  in-stock offers for the product, plus store search links for the same
+                  product (the banner&apos;s &ldquo;also search on&rdquo; row; an optional{' '}
+                  <code>country</code> parameter, e.g. <code>country=PK</code>, puts that
+                  country&apos;s local stores first). Search links go to each store&apos;s own
+                  search results — never a SmartBuy price or stock claim.
+                </li>
+                <li>
                   <code>GET /api/v1/extension/coupons?domain=amazon.com</code> — that merchant&apos;s
                   currently-valid coupons (expired coupons are never served). Coupons have no
                   public-API equivalent yet, so the extension still uses this route.
@@ -229,8 +255,11 @@ export default function ExtensionPage() {
               <p className="text-muted-foreground">
                 Honest limits: retailer page layouts change often, so a redesigned checkout may
                 hide its promo box — in that case the panel says so instead of pretending a code
-                was applied. Retailers with no SmartBuy coupon yet simply show no panel. Prefer
-                no install at all? The <Link className="text-blue-600 underline" href="/bookmarklet">bookmarklet</Link> tracks
+                was applied. Retailers with no SmartBuy coupon yet simply show no panel. On
+                Daraz, PriceOye, Noon, Jumia and Flipkart the extension uses generic page
+                detection (no merchant-specific selectors have been verified for them yet), so
+                the overlay may not appear on some of their product pages — it never shows a
+                price it did not find. Prefer no install at all? The <Link className="text-blue-600 underline" href="/bookmarklet">bookmarklet</Link> tracks
                 from any store without an extension.
               </p>
             </CardContent>

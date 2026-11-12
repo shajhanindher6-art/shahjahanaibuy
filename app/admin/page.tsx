@@ -133,6 +133,11 @@ export default function AdminPage() {
                 <Upload className="mr-2 h-4 w-4" /> Catalog intake — CSV upload &amp; review
               </Link>
             </Button>
+            <Button asChild variant="outline">
+              <Link href="/admin/intake/ebay">
+                <Package className="mr-2 h-4 w-4" /> eBay Browse import — live listings &amp; review
+              </Link>
+            </Button>
           </div>
         </div>
 

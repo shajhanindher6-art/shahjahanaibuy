@@ -4,6 +4,7 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { appConfig } from '@/lib/config/app';
 import { getConfiguredAmazonLocales } from '@/services/affiliate-geo';
+import { DEAL_VERIFIED_MEANING } from '@/lib/fact-check';
 
 export const metadata: Metadata = {
   title: 'How SmartBuy AI works — SmartBuy AI',
@@ -103,6 +104,9 @@ export default function MethodologyPage() {
             by an admin confirmation or by a merchant-price match within 5%. Upvotes never
             verify a deal, and no seed or fake deals or votes exist on the site.
           </p>
+
+          <h2 className="mt-8 text-xl font-semibold">What a &ldquo;Verified&rdquo; deal means</h2>
+          <p className="mt-3 text-muted-foreground">{DEAL_VERIFIED_MEANING}</p>
 
           <h2 className="mt-8 text-xl font-semibold">Estimates, simulations, and missing data</h2>
           <p className="mt-3 text-muted-foreground">

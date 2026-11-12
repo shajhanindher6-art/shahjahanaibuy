@@ -37,6 +37,7 @@ import {
   toInitialProduct,
 } from '@/lib/product-seo';
 import { getProductSeo } from '@/lib/product-seo-server';
+import { formatLastChecked, isPriceStale } from '@/lib/price-freshness';
 import ProductDetailClient from '@/components/products/product-detail-client';
 
 export async function generateMetadata({
@@ -46,7 +47,17 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const seo = await getProductSeo(params.slug);
   if (!seo) {
-    return { title: 'Product not found' };
+    // Section 15 P0-2: notFound() MUST fire here, not only in the
+    // page body. In Next 13.5.9 a notFound() thrown only by the page
+    // is caught by the not-found boundary while streaming and the
+    // response keeps status 200 (soft 404 — the bug this fixes). A
+    // notFound() thrown by generateMetadata is re-thrown by the
+    // MetadataOutlet during the RSC render and reaches the outer
+    // render catch, which sets res.statusCode = 404 (verified
+    // against node_modules/next/dist in 13.5.9: lib/metadata/
+    // metadata.js MetadataOutlet re-throws; server/app-render/
+    // app-render.js sets 404 on isNotFoundError).
+    notFound();
   }
   const meta = buildProductMetadata(seo, appConfig.url);
   // Per-product hreflang (Section 2 item 13): x-default + one
@@ -81,6 +92,16 @@ export default async function ProductPage({
   // strict script-src policy blocks it.
   const nonce = headers().get('x-nonce');
 
+  // Section 15 P1-11: "Prices last checked", rendered SERVER-side
+  // from the product row getProductSeo already loaded
+  // (products.dataFreshness) — the client component below renders
+  // the same fact after its own fetch, but SSR HTML carried no
+  // trace of it until now. No label at all when the row has no
+  // freshness timestamp; a stale badge when the last check is older
+  // than STALE_PRICE_DAYS (7). Nothing here is client-side.
+  const lastCheckedLabel = formatLastChecked(seo.dataFreshness);
+  const pricesStale = isPriceStale(seo.dataFreshness);
+
   return (
     <>
       <script
@@ -90,6 +111,18 @@ export default async function ProductPage({
           __html: buildProductJsonLd(seo, appConfig.url),
         }}
       />
+      {lastCheckedLabel && (
+        <div className="container mx-auto max-w-6xl px-4 pt-6">
+          <p className="text-sm text-muted-foreground">
+            Prices last checked {lastCheckedLabel}
+            {pricesStale && (
+              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                Stale — prices may be out of date
+              </span>
+            )}
+          </p>
+        </div>
+      )}
       {/* Section skeletons (Section 4, item 2): the hero renders from
           server-provided initial data, so this fallback is a safety
           net for a slow client boundary — never a blank area or a

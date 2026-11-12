@@ -25,11 +25,13 @@ import {
   logApiRequest,
   rateLimitResponse,
   getClientIp,
+  requireAuth,
 } from '@/lib/api/middleware';
 import {
   buildReferralUrl,
   isValidReferralCode,
 } from '@/lib/referral';
+import { countReferralSignups } from '@/services/referral-attribution';
 
 export const dynamic = 'force-dynamic';
 
@@ -132,6 +134,29 @@ export async function GET(request: NextRequest) {
   if (limited) return limited;
 
   const code = request.nextUrl.searchParams.get('code');
+
+  // Section 15, B13 — the caller's OWN signup count, from real
+  // referral_signups rows only (migration 038). Scoped to the
+  // authenticated user by construction: the count query filters
+  // referrer_user_id = auth.userId, so no other user's signups
+  // can ever leak through this mode. `available: false` when
+  // migration 038 has not been applied yet — the dashboard card
+  // hides the count then instead of showing a guessed 0.
+  if (request.nextUrl.searchParams.get('mine') === '1') {
+    const auth = await requireAuth(request);
+    if ('error' in auth) return auth.error;
+
+    const service = createSupabaseServiceClient();
+    if (!service) return internalError('Referral stats unavailable');
+
+    try {
+      const { count, available } = await countReferralSignups(service, auth.userId);
+      return apiSuccess({ signups: count, available });
+    } catch {
+      return internalError('Failed to fetch referral signups');
+    }
+  }
+
   if (!isValidReferralCode(code)) {
     return badRequest('A valid referral code is required');
   }

@@ -4,6 +4,11 @@ import { useState, Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/features/auth';
+import {
+  peekPendingReferralCode,
+  clearPendingReferralCode,
+  submitReferralAttribution,
+} from '@/lib/referral';
 import { AuthShell } from '@/components/layout/auth-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +37,20 @@ function AuthCallbackContent() {
       return;
     }
     if (!isRecovery && !isOAuthError) {
+      // Section 15, B13 — a signup that needed email confirmation
+      // had no session on the sign-up page, so its `?ref=` code is
+      // still stored from there. Attribute it now that the user is
+      // signed in. Fire-and-forget and idempotent: attribution
+      // only ever writes when profiles.referred_by is still NULL
+      // and no referral_signups row exists, so a returning user
+      // landing here again changes nothing. A failed attempt keeps
+      // the code stored for the next sign-in.
+      const code = peekPendingReferralCode();
+      if (code) {
+        void submitReferralAttribution(code).then((outcome) => {
+          if (outcome !== 'retry') clearPendingReferralCode();
+        });
+      }
       const timer = setTimeout(() => router.push('/dashboard'), 1500);
       return () => clearTimeout(timer);
     }

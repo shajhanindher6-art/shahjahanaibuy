@@ -37,6 +37,35 @@
  *     date is recorded anywhere, and guessing one would be invented
  *     data. (MetadataRoute.Sitemap entries allow lastModified to be
  *     absent; crawlers treat that as "unknown", which is honest.)
+ *
+ * Section 15 (B3, B6, A3, A4, C1, C9):
+ *   - B3 TIMEOUT GUARD — the 4 Supabase-backed sections used to run
+ *     sequentially with NO timeout, so one black-holed query hung the
+ *     whole sitemap (this killed the sandbox clean build at
+ *     /sitemap.xml). Now each runs under AbortSignal.timeout(10s)
+ *     on the query itself where the query lives here
+ *     (products, taxonomy) plus a withTimeout() bound on the waiter
+ *     for the two sections whose queries live in other modules
+ *     (live, creators — lib/live-sessions.ts and
+ *     lib/creator-storefront.ts take no signal), and all four run
+ *     concurrently via Promise.allSettled. A failed/timed-out
+ *     section degrades to an empty section — never a failed sitemap.
+ *   - A3/A4 — /stores + the 84 /stores/[country]/[slug] pages
+ *     (lib/store-directory.ts) and /find + the 500 /find/[query]
+ *     pages (lib/search-terms.ts). Both lists are enumerated from
+ *     their registries, never hardcoded; the sitemap grows by ~586
+ *     URLs, which is expected, and the B3 guard is what keeps
+ *     generation safe.
+ *   - B6 — /rss.xml + /widgets/embed added (both live 200, were
+ *     absent). /offline is DELIBERATELY absent: it is the PWA
+ *     offline shell, not content, and must never be indexed.
+ *   - C1 — /tools/coupons-cashback added.
+ *   - C9 — /deals/rss.xml follows the SAME pattern as the blog
+ *     /rss.xml: at HEAD neither feed was listed; B6 lists the blog
+ *     feed, so the deals feed is listed too. Both routes exist
+ *     (app/rss.xml/route.ts, app/deals/rss.xml/route.ts). If either
+ *     feed is ever delisted, delist the other one too — the two
+ *     stay consistent.
  */
 
 import type { MetadataRoute } from 'next';
@@ -47,6 +76,16 @@ import { getAllPosts } from '@/lib/blog/posts';
 import { buildTaxonomySitemapEntries } from '@/lib/brand-category-seo';
 import { getLiveSessions } from '@/lib/live-sessions';
 import { getTopCreators } from '@/lib/creator-storefront';
+import { getAllStorePages } from '@/lib/store-directory';
+import { SEARCH_TERMS } from '@/lib/search-terms';
+import { withTimeout } from '@/lib/with-timeout';
+
+/**
+ * Hard bound on any single Supabase-backed sitemap section (B3).
+ * A query that has not answered in 10s is treated as failed and its
+ * section degrades to empty — the sitemap must never hang.
+ */
+const SITEMAP_QUERY_TIMEOUT_MS = 10_000;
 
 type ChangeFrequency = NonNullable<
   MetadataRoute.Sitemap[number]['changeFrequency']
@@ -148,6 +187,14 @@ const STATIC_PAGES: Array<{
   { path: '/privacy', priority: 0.3, changeFrequency: 'yearly' },
   { path: '/terms', priority: 0.3, changeFrequency: 'yearly' },
   { path: '/cookies', priority: 0.3, changeFrequency: 'yearly' },
+  // Section 15: A3/A4 index pages, C1 tool, B6 feeds + embed.
+  // /offline is NOT here (PWA shell, not content — B6 rejection).
+  { path: '/stores', priority: 0.7, changeFrequency: 'weekly' },
+  { path: '/find', priority: 0.7, changeFrequency: 'weekly' },
+  { path: '/tools/coupons-cashback', priority: 0.6, changeFrequency: 'weekly' },
+  { path: '/rss.xml', priority: 0.5, changeFrequency: 'weekly' },
+  { path: '/deals/rss.xml', priority: 0.5, changeFrequency: 'daily' },
+  { path: '/widgets/embed', priority: 0.5, changeFrequency: 'monthly' },
 ];
 
 function staticSitemap(baseUrl: string): MetadataRoute.Sitemap {
@@ -188,7 +235,11 @@ async function productSitemap(baseUrl: string): Promise<MetadataRoute.Sitemap> {
       // getProducts in services/products.ts).
       .neq('slug', 'sample-laptop')
       .order('updated_at', { ascending: false })
-      .limit(500);
+      .limit(500)
+      // Section 15 (B3): abort a black-holed query instead of
+      // hanging the whole sitemap — the catch below degrades this
+      // section to empty.
+      .abortSignal(AbortSignal.timeout(SITEMAP_QUERY_TIMEOUT_MS));
 
     if (products) {
       for (const product of products as Array<{
@@ -244,7 +295,9 @@ async function taxonomySitemap(baseUrl: string): Promise<MetadataRoute.Sitemap> 
       // Section 14: exclude the sample-laptop health-check row, or
       // its brand ('Sample') would mint a /brands/sample URL.
       .neq('slug', 'sample-laptop')
-      .limit(500);
+      .limit(500)
+      // Section 15 (B3): same timeout guard as productSitemap.
+      .abortSignal(AbortSignal.timeout(SITEMAP_QUERY_TIMEOUT_MS));
 
     if (!products) return [];
     return buildTaxonomySitemapEntries(
@@ -305,18 +358,79 @@ async function creatorSitemap(
   }
 }
 
+/**
+ * Store directory pages (Section 15, A3). Pure registry data —
+ * lib/store-directory.ts enumerates the 84 pages (80 local + 4
+ * worldwide) from lib/stores.ts, so no URL here is ever invented
+ * and no database is touched. No lastModified — no per-store
+ * modification date is recorded.
+ */
+function storeSitemap(baseUrl: string): MetadataRoute.Sitemap {
+  return getAllStorePages().map(({ path }) => ({
+    url: `${baseUrl}${path}`,
+    changeFrequency: 'weekly',
+    priority: 0.6,
+  }));
+}
+
+/**
+ * Curated query pages (Section 15, A4). Pure curated data —
+ * lib/search-terms.ts holds the 500 hand-curated queries, so every
+ * /find/[query] URL here has a real page behind it (the page 404s
+ * on any other slug). No database is touched. No lastModified —
+ * the list changes only when a term is curated in or out.
+ */
+function findSitemap(baseUrl: string): MetadataRoute.Sitemap {
+  return SEARCH_TERMS.map((term) => ({
+    url: `${baseUrl}/find/${term.slug}`,
+    changeFrequency: 'weekly',
+    priority: 0.6,
+  }));
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = appConfig.url;
-  const products = await productSitemap(baseUrl);
-  const taxonomy = await taxonomySitemap(baseUrl);
-  const live = await liveSitemap(baseUrl);
-  const creators = await creatorSitemap(baseUrl);
+  // Section 15 (B3): the four Supabase-backed sections run
+  // CONCURRENTLY under Promise.allSettled, each waiter-bounded by
+  // withTimeout(SITEMAP_QUERY_TIMEOUT_MS). A section that throws,
+  // errors, or times out degrades to an empty section — it can
+  // never fail or hang the whole sitemap. The static, store, find,
+  // and blog sections never touch the database, so they are always
+  // present even when every DB section fails open.
+  const [products, taxonomy, live, creators] = await Promise.allSettled([
+    withTimeout(
+      productSitemap(baseUrl),
+      SITEMAP_QUERY_TIMEOUT_MS,
+      'product sitemap'
+    ),
+    withTimeout(
+      taxonomySitemap(baseUrl),
+      SITEMAP_QUERY_TIMEOUT_MS,
+      'taxonomy sitemap'
+    ),
+    withTimeout(
+      liveSitemap(baseUrl),
+      SITEMAP_QUERY_TIMEOUT_MS,
+      'live sitemap'
+    ),
+    withTimeout(
+      creatorSitemap(baseUrl),
+      SITEMAP_QUERY_TIMEOUT_MS,
+      'creator sitemap'
+    ),
+  ]);
+  const settled = (
+    result: PromiseSettledResult<MetadataRoute.Sitemap>
+  ): MetadataRoute.Sitemap =>
+    result.status === 'fulfilled' ? result.value : [];
   return [
     ...staticSitemap(baseUrl),
-    ...products,
-    ...taxonomy,
-    ...live,
-    ...creators,
+    ...settled(products),
+    ...settled(taxonomy),
+    ...settled(live),
+    ...settled(creators),
+    ...storeSitemap(baseUrl),
+    ...findSitemap(baseUrl),
     ...blogSitemap(baseUrl),
   ];
 }

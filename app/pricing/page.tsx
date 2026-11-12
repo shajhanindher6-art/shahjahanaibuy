@@ -7,17 +7,22 @@
  * HONESTY — read before changing the CTAs:
  * - Payments are NOT live yet: Stripe is in test mode, so no paid
  *   plan can be bought today and no free trial is offered. No trial
- *   terms exist anywhere in the code. The tier definitions still
- *   carry a trial CTA for Premium (lib/tiers.ts), so this page does
- *   NOT render tier.cta verbatim — HONEST_CTA below replaces it with
- *   copy that promises nothing. Do not "fix" this by rendering
- *   tier.cta until a real trial (with terms) exists.
- * - Premium $9.99/month is the planned price, not a live charge.
- *   Family is "To be announced" and Team is custom — both are owner
- *   decisions, never invented numbers (see lib/tiers.ts).
+ *   terms exist anywhere in the code. The Premium CTA stored in
+ *   lib/tiers.ts ("See Premium plans") links back to this page, so
+ *   this page does NOT render tier.cta verbatim — HONEST_CTA below
+ *   replaces it with "Create a free account". Do not "fix" this by
+ *   rendering tier.cta until a real trial (with terms) exists.
+ * - Premium $9.99/month is the planned price, not a live charge
+ *   (Section 15 P2-5: lib/tiers.ts Premium is priceStatus
+ *   'planned', availability 'planned'). Family is "To be
+ *   announced" and Team is custom — both are owner decisions,
+ *   never invented numbers (see lib/tiers.ts).
  * - The price-lock guarantee on Premium/Family/Team is dormant
  *   until Stripe is configured (lib/price-lock.ts) — the box below
  *   says so in plain sight, and the feature bullet is footnoted.
+ * - Starter (Section 15 P2-7) is a configurable option, off by
+ *   default: its card renders ONLY when STRIPE_STARTER_PRICE_ID
+ *   is set, and no dollar figure is ever claimed for it.
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -28,6 +33,12 @@ import { appConfig } from '@/lib/config/app';
 import { TIERS, availabilityLabel, isConciergeIncluded, isPriceLockIncluded, type TierId } from '@/lib/tiers';
 import { API_QUOTAS } from '@/lib/api-quota';
 import { getPriceLockConfig } from '@/lib/price-lock';
+// Section 15 P2-1/P2-5/P2-7: prices and launch state come from
+// the single pricing config — the banner below is derived from
+// live Stripe state, never hardcoded, and the Starter card only
+// renders when its price ID is configured.
+import { getStarterPriceDisplay, isStarterConfigured } from '@/lib/pricing-config';
+import { isStripeConfigured, isStripeLiveLaunchApproved, isStripeLiveMode } from '@/lib/stripe';
 import { buildFaqJsonLd, toJsonLd } from '@/lib/json-ld';
 
 export const metadata: Metadata = {
@@ -41,8 +52,8 @@ export const metadata: Metadata = {
 
 /**
  * Honest CTAs, per tier. Only the Premium entry differs from
- * lib/tiers.ts: its stored CTA promises a free trial that does
- * not exist, so it is replaced with "Create a free account" —
+ * lib/tiers.ts: its stored CTA ("See Premium plans") links back to
+ * this page, so it is replaced with "Create a free account" —
  * signing up is free, and no trial (or charge) starts.
  */
 const HONEST_CTA: Record<TierId, { label: string; href: string }> = {
@@ -151,11 +162,31 @@ const COMPARISON_ROWS: Array<{ label: string; key: string }> = [
 export default function PricingPage() {
   const priceLock = getPriceLockConfig();
   const priceLockActive = priceLock.stripeConfigured && priceLock.enabled;
+  // Section 15 P2-5: the payments banner is derived from live
+  // Stripe state, never hardcoded. A live key alone never counts
+  // as launched — only a live key PLUS the owner's explicit
+  // STRIPE_LIVE_LAUNCHED=true approval.
+  const paymentsLive = isStripeLiveMode() && isStripeLiveLaunchApproved();
+  const stripeConfigured = isStripeConfigured();
+  // Section 15 P2-7: Starter exists only when its price ID is
+  // configured (off by default). Its FAQ entry joins the list
+  // only then, so the JSON-LD and the rendered FAQ stay in sync.
+  const starterConfigured = isStarterConfigured();
+  const faqs = starterConfigured
+    ? [
+        ...PRICING_FAQS,
+        {
+          question: 'Is there a Starter plan?',
+          answer:
+            'Starter is a planned smaller option. Its price is set by the owner and is not a live charge — payments are not live yet, so nothing is billed today.',
+        },
+      ]
+    : PRICING_FAQS;
   // CSP Phase 2 nonce (set per request by middleware.ts), same source
   // /faq and the blog use — the JSON-LD script tag needs it or the
   // strict script-src policy blocks it.
   const nonce = headers().get('x-nonce');
-  const faqJsonLd = toJsonLd(buildFaqJsonLd(PRICING_FAQS));
+  const faqJsonLd = toJsonLd(buildFaqJsonLd(faqs));
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -174,16 +205,27 @@ export default function PricingPage() {
           </p>
 
           {/* Payments status — stated before any price, so no plan
-              below can be read as something you can buy today. */}
-          <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm dark:border-amber-900 dark:bg-amber-950/40">
-            <p className="font-semibold">Payments aren&apos;t live yet</p>
-            <p className="mt-1 text-muted-foreground">
-              Stripe is in test mode, so no paid plan can be bought today and no free trial is
-              offered — there are no trial terms yet. Creating an account is free. The
-              $9.99/month Premium price below is the planned price, not a live charge; Family
-              pricing is still to be announced and Team pricing is custom.
-            </p>
-          </div>
+              below can be read as something you can buy today.
+              Derived from live Stripe state (Section 15 P2-5). */}
+          {paymentsLive ? (
+            <div className="mt-6 rounded-lg border border-green-200 bg-green-50 p-4 text-sm dark:border-green-900 dark:bg-green-950/40">
+              <p className="font-semibold">Payments are live</p>
+              <p className="mt-1 text-muted-foreground">
+                Stripe live payments are enabled. Premium billing is active — the
+                $9.99/month Premium price below is the live price; Family pricing
+                is still to be announced and Team pricing is custom.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm dark:border-amber-900 dark:bg-amber-950/40">
+              <p className="font-semibold">Payments aren&apos;t live yet</p>
+              <p className="mt-1 text-muted-foreground">
+                {stripeConfigured
+                  ? 'Stripe is in test mode, so no paid plan can be bought today and no free trial is offered — there are no trial terms yet. Creating an account is free. The $9.99/month Premium price below is the planned price, not a live charge; Family pricing is still to be announced and Team pricing is custom.'
+                  : 'Stripe is not configured yet, so no paid plan can be bought today and no free trial is offered — there are no trial terms yet. Creating an account is free. The $9.99/month Premium price below is the planned price, not a live charge; Family pricing is still to be announced and Team pricing is custom.'}
+              </p>
+            </div>
+          )}
 
           <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             {TIERS.map((tier) => {
@@ -237,6 +279,30 @@ export default function PricingPage() {
             })}
           </div>
 
+          {/* Section 15 P2-7: Starter is a configurable option,
+              off by default — this card renders ONLY when
+              STRIPE_STARTER_PRICE_ID is set. No dollar figure is
+              ever claimed for it: the price ID alone does not state
+              an amount, and the live price decision stays the
+              owner's. */}
+          {starterConfigured ? (
+            <div className="mt-6 flex flex-col rounded-xl border border-slate-200 p-6">
+              <h2 className="text-xl font-bold">Starter</h2>
+              <p className="mt-1 text-3xl font-extrabold">{getStarterPriceDisplay()}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Planned — price to be announced</p>
+              <p className="mt-3 text-sm text-muted-foreground">
+                A smaller starting option for trying Premium features. It is planned, not
+                live — payments aren&apos;t live yet, so nothing is billed today.
+              </p>
+              <Link
+                href="/sign-up"
+                className="mt-6 inline-block rounded-lg bg-muted px-4 py-2 text-center text-sm font-semibold text-foreground hover:bg-accent"
+              >
+                Create a free account
+              </Link>
+            </div>
+          ) : null}
+
           {/* Section 14, chunk 9 — plan comparison. Every cell is
               computed from lib/tiers.ts / lib/api-quota.ts (see
               comparisonValue above); "—" means the tier definition
@@ -280,7 +346,7 @@ export default function PricingPage() {
               structured data can never drift apart. */}
           <h2 className="mt-12 text-2xl font-bold">Pricing questions</h2>
           <div className="mt-4 space-y-4">
-            {PRICING_FAQS.map((faq) => (
+            {faqs.map((faq) => (
               <div key={faq.question} className="rounded-xl border border-slate-200 p-6">
                 <h3 className="text-base font-semibold">{faq.question}</h3>
                 <p className="mt-2 text-sm text-muted-foreground">{faq.answer}</p>

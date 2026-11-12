@@ -28,10 +28,53 @@
  *      under the stated budget. Fail-safe, inside THIS chain only:
  *      no second scheduler, and a hunt failure never breaks the
  *      refresh (see the try/catch at the call site).
+ *   8. (S15 P4-2) generateWeeklyDigestsForPremiumUsers(): one
+ *      weekly digest per active Premium subscriber — but ONLY when
+ *      no digest has been stored in the last 7 days. The refresh
+ *      runs every 6h; the digest is weekly, so this step usually
+ *      reports `due: false` and does nothing. This is the ONLY
+ *      digest trigger (no second cron job — single-scheduler rule).
+ *      A missing weekly_digests table (migration 009 unapplied)
+ *      skips the step honestly instead of failing the run.
  *
  * Steps 4–6 are best-effort and fail-safe: a missing migration 026
  * table (or any error inside them) is counted and reported, never
  * fails the whole refresh, and never blocks steps 1–3.
+ *
+ * Section 15, P1-9 — eBay AS STEP 0 (services/ebay-refresh.ts):
+ * the first LIVE fetch leg. Before any recorded-price step runs,
+ * due products are searched on eBay Browse, keyword-matched, and
+ * upserted into merchant_products with data_freshness stamped —
+ * so the steps below finally have fresh input. The step never
+ * throws and never fails the run: on any eBay failure the route
+ * degrades to "eBay unavailable, continued on recorded prices"
+ * (steps.ebay.status stays 'ok' with a degraded result).
+ *
+ * Section 15, P1-1 — PER-STEP ISOLATION: every step runs through
+ * runRefreshStep() (services/refresh-run.ts) in its own try/catch.
+ * A throwing step is recorded as `steps.<name>.status: 'failed'`
+ * with its error, its counts fall back to zero, and the chain
+ * CONTINUES — the handler always returns 200 with per-step
+ * results. A failed step is never a silent success. (Steps 4–6
+ * already had this shape; steps 1–3 did not, and one throw used
+ * to return 500 with no counts and skip every later step.)
+ *
+ * Section 15, P1-7 — ONE RUN AT A TIME: before the chain starts,
+ * tryStartRefreshRun() checks price_refresh_runs (migration 040)
+ * for a still-`running` row younger than 30 minutes. When one
+ * exists the run is SKIPPED with 200 + `skipped: true` instead of
+ * duplicating the chain (cron + /alerts/check + the Edge Function
+ * worker are three triggers for the same chain). The guard fails
+ * open while migration 040 is unapplied.
+ *
+ * Section 15, P1-5 — RUN RECORD: one row per run is written to
+ * price_refresh_runs (started/finished, overall status, per-step
+ * summary) and the latest row is read by /status.
+ *
+ * Section 15, P1-8 — DB-LOAD FAILURES SURFACE: refreshTrackedPrices
+ * (services/price-refresh.ts) and recordAvailabilitySnapshots below
+ * check the `error` of every source select; a failed load marks
+ * its step `failed` instead of reporting `tracked: 0` + success.
  *
  * SINGLE-SCHEDULER RULE — THIS IS THE CANONICAL TRIGGER (see
  * docs/alerts-delivery-setup.md): schedule exactly ONE free cron job
@@ -57,11 +100,28 @@ import type { NextRequest } from 'next/server';
 import { apiSuccess, unauthorized, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
-import { refreshTrackedPrices } from '@/services/price-refresh';
-import { checkPriceAlerts } from '@/services/alert-checker';
+import { refreshTrackedPrices, type PriceRefreshResult } from '@/services/price-refresh';
+import {
+  refreshEbayPrices,
+  type EbayRefreshResult,
+} from '@/services/ebay-refresh';
+import { checkPriceAlerts, type AlertCheckResult } from '@/services/alert-checker';
+import {
+  generateWeeklyDigestsForPremiumUsers,
+  type WeeklyDigestRunResult,
+} from '@/services/notifications';
 import { runHuntsForConsentedUsers } from '@/lib/agent-hunt';
 import { processNotificationQueue } from '@/services/notification-dispatch';
 import { sendEmail } from '@/services/email';
+import { PUSH_SEND_TIMEOUT_MS } from '@/services/push';
+import { withTimeout } from '@/lib/with-timeout';
+import {
+  runRefreshStep,
+  summarizeStep,
+  tryStartRefreshRun,
+  finishRefreshRun,
+  type RefreshStepSummary,
+} from '@/services/refresh-run';
 import { env } from '@/lib/config/env';
 import { appConfig } from '@/lib/config/app';
 import { logger } from '@/lib/config/logger';
@@ -84,6 +144,15 @@ export interface StockRefreshResult {
   failed: number;
   /** Product ids that transitioned out-of-stock → in-stock. */
   backInStock: string[];
+  /**
+   * Section 15, P1-8: true when a source LOAD failed (a tracked-set
+   * select, the merchant_products read, or the availability_history
+   * read returned an error). The step is reported as failed, never
+   * as a silent `tracked: 0` success. Per-row insert failures still
+   * land in `failed` and do NOT set this.
+   */
+  loadFailed: boolean;
+  loadError?: string;
 }
 
 interface MerchantStockRow {
@@ -102,6 +171,7 @@ async function recordAvailabilitySnapshots(
     unchanged: 0,
     failed: 0,
     backInStock: [],
+    loadFailed: false,
   };
 
   const productIds = new Set<string>();
@@ -111,13 +181,39 @@ async function recordAvailabilitySnapshots(
         table === 'alerts' || table === 'guest_email_alerts'
           ? supabase.from(table).select('product_id').eq('active', true).limit(1000)
           : supabase.from(table).select('product_id').limit(1000);
-      const { data } = await query;
+      // Section 15, P1-8: a failed select used to destructure
+      // `{ data }` and silently treat it as "no products to track".
+      // Check `error`: a failed load marks the step failed, while a
+      // table that DID load still contributes its products.
+      const { data, error } = await query;
+      if (error) {
+        // A missing guest_email_alerts table (migration 026 not run
+        // yet) means no guest products exist — the designed empty
+        // state, not a failure. Any other load error marks the step
+        // failed (P1-8), including a missing core table.
+        const missingTable = error.code === '42P01' || error.code === 'PGRST205';
+        if (missingTable && table === 'guest_email_alerts') continue;
+        logger.warn('recordAvailabilitySnapshots: tracked-set query failed', {
+          table,
+          error: error.message,
+        });
+        result.loadFailed = true;
+        result.loadError = result.loadError ?? `${table}: ${error.message}`;
+        continue;
+      }
       for (const row of (data ?? []) as Array<{ product_id: string }>) {
         if (row.product_id) productIds.add(row.product_id);
       }
-    } catch {
+    } catch (err) {
       // A missing table (migration 026 not run) just means no guest
       // products to track — the signed-in tables above still work.
+      // A throw here is a load failure, not an empty set.
+      logger.warn('recordAvailabilitySnapshots: tracked-set query threw', {
+        table,
+        error: String(err),
+      });
+      result.loadFailed = true;
+      result.loadError = result.loadError ?? `${table}: ${String(err)}`;
     }
   }
 
@@ -137,6 +233,11 @@ async function recordAvailabilitySnapshots(
       error: merchantError?.message,
     });
     result.failed = ids.length;
+    // P1-8: no stock was read, so nothing was recorded.
+    result.loadFailed = true;
+    result.loadError =
+      result.loadError ??
+      `merchant_products: ${merchantError?.message ?? 'no rows returned'}`;
     return result;
   }
 
@@ -178,12 +279,32 @@ async function recordAvailabilitySnapshots(
   // Latest recorded snapshot per product (newest first, first wins).
   const previousByProduct = new Map<string, AvailabilitySnapshot>();
   try {
-    const { data: historyRows } = await supabase
+    const { data: historyRows, error: historyError } = await supabase
       .from('availability_history')
       .select('product_id, availability, in_stock, price, recorded_at')
       .in('product_id', ids)
       .order('recorded_at', { ascending: false })
       .limit(1000);
+    // P1-8: a failed history read must NOT be treated as "no
+    // history" — with an empty previous map every product would
+    // look new and the inserts below could record duplicates.
+    // A missing table (migration 026 not run) is the one exception:
+    // every product looks "new", so inserts below fail per-row and
+    // are counted — the run still reports honestly instead of
+    // crashing. Any other read error fails the step instead.
+    if (historyError) {
+      const missingTable =
+        historyError.code === '42P01' || historyError.code === 'PGRST205';
+      if (!missingTable) {
+        logger.warn('recordAvailabilitySnapshots: availability_history query failed', {
+          error: historyError.message,
+        });
+        result.loadFailed = true;
+        result.loadError =
+          result.loadError ?? `availability_history: ${historyError.message}`;
+        return result;
+      }
+    }
     for (const row of (historyRows ?? []) as Array<{
       product_id: string;
       availability: string;
@@ -330,15 +451,21 @@ async function sendGuestPush(
     let sentAny = false;
     for (const sub of subs as Array<Record<string, unknown>>) {
       try {
-        await webpush.sendNotification(
-          {
-            endpoint: sub.endpoint as string,
-            keys: {
-              p256dh: sub.p256dh_key as string,
-              auth: sub.auth_key as string,
+        // Section 15, P1-3: bound each push send (10s) so a hung
+        // push endpoint cannot stall the guest-alert step.
+        await withTimeout(
+          webpush.sendNotification(
+            {
+              endpoint: sub.endpoint as string,
+              keys: {
+                p256dh: sub.p256dh_key as string,
+                auth: sub.auth_key as string,
+              },
             },
-          },
-          payload
+            payload
+          ),
+          PUSH_SEND_TIMEOUT_MS,
+          'Guest web push send'
         );
         sentAny = true;
       } catch (err) {
@@ -688,82 +815,219 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  try {
-    const refresh = await refreshTrackedPrices(supabase);
-    const alerts = await checkPriceAlerts(supabase);
-
-    // S6#2: autonomous deal hunting, inside THIS refresh chain only
-    // (no second scheduler). Fail-safe by design: the runner never
-    // throws, and this try/catch is the second layer — a hunt
-    // failure must never break the refresh chain.
-    let hunts: Awaited<ReturnType<typeof runHuntsForConsentedUsers>> = {
-      usersChecked: 0,
-      huntsRun: 0,
-      matchesCreated: 0,
-      huntsEnabled: false,
-    };
-    try {
-      hunts = await runHuntsForConsentedUsers(supabase);
-    } catch (err) {
-      logger.warn('prices.refresh: agent hunts failed', {
-        error: String(err),
-      });
+  // Section 15, P1-7 — one run at a time, across all triggers.
+  // When another run is in progress this call skips (200 +
+  // skipped: true) instead of duplicating the chain. The guard
+  // fails open while migration 040 is unapplied.
+  const guard = await tryStartRefreshRun(supabase, 'prices-refresh');
+  if (!guard.started) {
+    const stepNames = [
+      'ebay',
+      'refresh',
+      'alerts',
+      'hunts',
+      'digest',
+      'notifications',
+      'stock',
+      'guestAlerts',
+      'guestEmail',
+    ] as const;
+    const steps: Record<string, RefreshStepSummary> = {};
+    for (const name of stepNames) {
+      steps[name] = { status: 'skipped', error: 'Another refresh run is in progress.' };
     }
-
-    const notifications = await processNotificationQueue(supabase);
-
-    // S3#3 + S3#7: fail-safe — these steps report their own counts
-    // and can never fail the refresh above.
-    let stock: StockRefreshResult = {
-      tracked: 0,
-      recorded: 0,
-      unchanged: 0,
-      failed: 0,
-      backInStock: [],
-    };
-    let guestAlerts: GuestAlertsResult = {
-      checked: 0,
-      triggered: 0,
-      queued: 0,
-      pushSent: 0,
-      pushFailed: 0,
-      failed: 0,
-    };
-    let guestEmail: GuestQueueResult = {
-      processed: 0,
-      sent: 0,
-      failed: 0,
-      pendingNoProvider: 0,
-    };
-    try {
-      stock = await recordAvailabilitySnapshots(supabase);
-    } catch (err) {
-      logger.warn('prices.refresh: availability snapshots failed', {
-        error: String(err),
-      });
-      stock.failed = stock.tracked;
-    }
-    try {
-      guestAlerts = await checkGuestEmailAlerts(
-        supabase,
-        new Set(stock.backInStock)
-      );
-    } catch (err) {
-      logger.warn('prices.refresh: guest alert check failed', {
-        error: String(err),
-      });
-      guestAlerts.failed++;
-    }
-    try {
-      guestEmail = await drainGuestNotificationQueue(supabase);
-    } catch (err) {
-      logger.warn('prices.refresh: guest queue drain failed', {
-        error: String(err),
-      });
-    }
-
-    return apiSuccess({ refresh, alerts, hunts, notifications, stock, guestAlerts, guestEmail });
-  } catch {
-    return internalError('Failed to refresh prices');
+    return apiSuccess({
+      skipped: true,
+      reason: 'run-in-progress',
+      existingRunId: guard.existingRunId,
+      steps,
+    });
   }
+
+  // Section 15, P1-1 — every step isolated: a throw (or a
+  // load failure, P1-8) records `failed` with its error, keeps
+  // zeroed fallback counts, and the chain continues. The handler
+  // always returns 200 with per-step results.
+  const zeroRefresh: PriceRefreshResult = {
+    tracked: 0,
+    inserted: 0,
+    unchanged: 0,
+    skippedNoRetailer: 0,
+    skippedNoPrice: 0,
+    failed: 0,
+    loadFailed: false,
+  };
+  // Section 15, P1-9 — step 0: the first live fetch leg. The
+  // step never throws and gets NO isFailed predicate, so an eBay
+  // failure degrades the run ("eBay unavailable, continued on
+  // recorded prices") instead of failing it — the steps below
+  // still run on the recorded prices.
+  const zeroEbay: EbayRefreshResult = {
+    status: 'unavailable',
+    checked: 0,
+    updated: 0,
+    inserted: 0,
+    skippedMismatch: 0,
+    skippedNoListing: 0,
+    skippedUnknownCurrency: 0,
+    failed: 0,
+    budgetExhausted: false,
+    products: [],
+  };
+  const zeroAlerts: AlertCheckResult = {
+    checked: 0,
+    triggered: 0,
+    queued: 0,
+    skippedDuplicate: 0,
+    failed: 0,
+  };
+  const zeroHunts: Awaited<ReturnType<typeof runHuntsForConsentedUsers>> = {
+    usersChecked: 0,
+    huntsRun: 0,
+    matchesCreated: 0,
+    huntsEnabled: false,
+  };
+  // Section 15, P4-2 — weekly digest step. Usually `due: false`
+  // (a digest was stored within the last 7 days) — the step then
+  // does nothing. A load failure (not a missing table) marks the
+  // step failed via the isFailed predicate below.
+  const zeroDigest: WeeklyDigestRunResult = {
+    due: false,
+    generated: 0,
+    failed: 0,
+    total: 0,
+  };
+  const zeroNotifications = { processed: 0, sent: 0, failed: 0 };
+  const zeroStock: StockRefreshResult = {
+    tracked: 0,
+    recorded: 0,
+    unchanged: 0,
+    failed: 0,
+    backInStock: [],
+    loadFailed: false,
+  };
+  const zeroGuestAlerts: GuestAlertsResult = {
+    checked: 0,
+    triggered: 0,
+    queued: 0,
+    pushSent: 0,
+    pushFailed: 0,
+    failed: 0,
+  };
+  const zeroGuestEmail: GuestQueueResult = {
+    processed: 0,
+    sent: 0,
+    failed: 0,
+    pendingNoProvider: 0,
+  };
+
+  const ebay = await runRefreshStep(
+    'refreshEbayPrices',
+    () => refreshEbayPrices(supabase),
+    zeroEbay
+  );
+  const refresh = await runRefreshStep(
+    'refreshTrackedPrices',
+    () => refreshTrackedPrices(supabase),
+    zeroRefresh,
+    (r) => (r.loadFailed ? (r.loadError ?? 'price load failed') : null)
+  );
+  const alerts = await runRefreshStep(
+    'checkPriceAlerts',
+    () => checkPriceAlerts(supabase),
+    zeroAlerts
+  );
+
+  // S6#2: autonomous deal hunting, inside THIS refresh chain only
+  // (no second scheduler). Fail-safe by design: the runner never
+  // throws, and runRefreshStep is the second layer — a hunt
+  // failure must never break the refresh chain.
+  const hunts = await runRefreshStep(
+    'runHuntsForConsentedUsers',
+    () => runHuntsForConsentedUsers(supabase),
+    zeroHunts
+  );
+
+  // Section 15, P4-2 — weekly digest, inside THIS chain only (no
+  // second scheduler). Runs before the notification drain so a
+  // digest generated on this run is queued in time to be sent by
+  // the notifications step below. Usually a no-op (`due: false`).
+  const digest = await runRefreshStep(
+    'generateWeeklyDigestsForPremiumUsers',
+    () => generateWeeklyDigestsForPremiumUsers(supabase),
+    zeroDigest,
+    (r) => r.error ?? null
+  );
+
+  const notifications = await runRefreshStep(
+    'processNotificationQueue',
+    () => processNotificationQueue(supabase),
+    zeroNotifications
+  );
+
+  // S3#3 + S3#7: fail-safe — these steps report their own counts
+  // and can never fail the refresh above.
+  const stock = await runRefreshStep(
+    'recordAvailabilitySnapshots',
+    () => recordAvailabilitySnapshots(supabase),
+    zeroStock,
+    (r) => (r.loadFailed ? (r.loadError ?? 'availability load failed') : null)
+  );
+  const guestAlerts = await runRefreshStep(
+    'checkGuestEmailAlerts',
+    () => checkGuestEmailAlerts(supabase, new Set(stock.result.backInStock)),
+    zeroGuestAlerts
+  );
+  const guestEmail = await runRefreshStep(
+    'drainGuestNotificationQueue',
+    () => drainGuestNotificationQueue(supabase),
+    zeroGuestEmail
+  );
+
+  const steps: Record<string, RefreshStepSummary> = {
+    ebay: summarizeStep(ebay),
+    refresh: summarizeStep(refresh),
+    alerts: summarizeStep(alerts),
+    hunts: summarizeStep(hunts),
+    digest: summarizeStep(digest),
+    notifications: summarizeStep(notifications),
+    stock: summarizeStep(stock),
+    guestAlerts: summarizeStep(guestAlerts),
+    guestEmail: summarizeStep(guestEmail),
+  };
+  const failedSteps = Object.entries(steps).filter(
+    ([, s]) => s.status === 'failed'
+  );
+  const overallStatus =
+    failedSteps.length === 0
+      ? 'completed'
+      : failedSteps.length === Object.keys(steps).length
+        ? 'failed'
+        : 'completed_with_failures';
+
+  // Section 15, P1-5 — record the run (no-op while migration 040
+  // is unapplied: finishRefreshRun logs and continues).
+  await finishRefreshRun(
+    supabase,
+    guard.runId,
+    steps,
+    overallStatus,
+    failedSteps.length > 0
+      ? failedSteps.map(([name, s]) => `${name}: ${s.error ?? 'failed'}`).join('; ')
+      : undefined
+  );
+
+  return apiSuccess({
+    skipped: false,
+    ebay: ebay.result,
+    refresh: refresh.result,
+    alerts: alerts.result,
+    hunts: hunts.result,
+    digest: digest.result,
+    notifications: notifications.result,
+    stock: stock.result,
+    guestAlerts: guestAlerts.result,
+    guestEmail: guestEmail.result,
+    steps,
+  });
 }

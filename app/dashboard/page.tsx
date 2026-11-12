@@ -69,6 +69,8 @@ import { SavingsHistory } from '@/components/dashboard/savings-history';
 import { ReferralCard } from '@/components/dashboard/referral-card';
 import { GettingStartedChecklist } from '@/components/dashboard/getting-started-checklist';
 import { DigestSnapshotCard } from '@/components/dashboard/digest-snapshot-card';
+import { DigestArchive } from '@/components/dashboard/digest-archive';
+import { SavedSearches } from '@/components/search/saved-searches';
 import { PushOptInPrompt } from '@/components/home/push-opt-in-prompt';
 import type { SavingsEvent } from '@/lib/savings';
 import type { AccuracySummary } from '@/lib/prediction-accuracy';
@@ -755,6 +757,23 @@ export default function DashboardPage() {
                 </CardContent>
               </div>
             )}
+          </div>
+
+          {/* Section 15, C2 — saved searches (list-only here; the
+              save form lives on /search). Re-run links go back to
+              /search?<query string>. Guests see nothing: the
+              component hides itself when the API 401s. */}
+          <div className="animate-fade-in motion-reduce:animate-none" style={{ animationDelay: '520ms' }}>
+            <h2 className="mb-4 text-lg font-semibold">Saved searches</h2>
+            <SavedSearches />
+          </div>
+
+          {/* Section 15, B12 — past weekly digests archive, newest
+              week first, reading GET /api/v1/digests. Honest empty
+              state when none were ever generated (including when
+              migration 009 is unapplied). */}
+          <div className="animate-fade-in motion-reduce:animate-none" style={{ animationDelay: '580ms' }}>
+            <DigestArchive />
           </div>
         </div>
       </div>

@@ -1,15 +1,33 @@
 /**
  * Weekly digest cron endpoint.
- * POST /api/v1/notifications/digest — generates weekly digests for all Pro users.
+ * POST /api/v1/notifications/digest — generates weekly digests for all Premium users.
  * Intended to be called weekly by a cron scheduler.
+ *
+ * Section 15, P4-2 — SERVICE-ROLE client (was the cookie-based
+ * anon-key server client): generateWeeklyDigest inserts into
+ * weekly_digests / notification_queue, which grant INSERT only TO
+ * authenticated, so the old client failed both inserts silently
+ * while the endpoint still reported `generated: N`. The service
+ * client bypasses RLS; generateWeeklyDigest now returns null when
+ * the digest row was not stored, and only stored digests are
+ * counted. Plan filter is 'premium' after tier unification
+ * (P2-2) — legacy 'pro' rows are still included for one release
+ * (see DIGEST_PLANS in services/notifications.ts).
+ *
+ * No new scheduler is created for this endpoint: the single
+ * cron-job.org job POSTs /api/v1/prices/refresh every 6h, and the
+ * refresh chain calls generateWeeklyDigestsForPremiumUsers on a
+ * weekly cadence. This endpoint remains for manual / weekly runs.
  */
 
 import type { NextRequest } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { apiSuccess, unauthorized, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
-import { generateWeeklyDigest } from '@/services/notifications';
+import { generateWeeklyDigest, DIGEST_PLANS } from '@/services/notifications';
 import { logger } from '@/lib/config/logger';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'notifications.digest' });
@@ -31,28 +49,42 @@ export async function POST(request: NextRequest) {
     return unauthorized('Invalid cron secret');
   }
 
-  try {
-    const supabase = await createSupabaseServerClient();
+  // Service-role client: the digest inserts must bypass the
+  // authenticated-only RLS policies on weekly_digests and
+  // notification_queue (see header). Without the service key the
+  // endpoint fails fast instead of silently generating zero
+  // digests and reporting success.
+  const supabase = createSupabaseServiceClient();
+  if (!supabase) {
+    return internalError(
+      'SUPABASE_SERVICE_ROLE_KEY is not configured; digest generation requires the service-role client'
+    );
+  }
 
-    // Get all Pro users
+  try {
+    // Premium subscribers (legacy 'pro' rows included — P2-2).
     const { data: subs, error } = await supabase
       .from('subscriptions')
       .select('user_id')
-      .eq('plan', 'pro')
+      .in('plan', [...DIGEST_PLANS])
       .eq('status', 'active');
 
     if (error || !subs) {
-      return internalError('Failed to fetch Pro users');
+      return internalError('Failed to fetch Premium users');
     }
 
     let generated = 0;
+    let failed = 0;
     for (const sub of subs as Array<{ user_id: string }>) {
+      // generateWeeklyDigest returns null when the digest row was
+      // NOT stored (P4-2) — only stored digests are counted.
       const result = await generateWeeklyDigest(supabase, sub.user_id);
       if (result) generated++;
+      else failed++;
     }
 
-    logger.info('Weekly digest generated', { count: generated, total: subs.length });
-    return apiSuccess({ generated, total: subs.length });
+    logger.info('Weekly digest generated', { count: generated, failed, total: subs.length });
+    return apiSuccess({ generated, failed, total: subs.length });
   } catch {
     return internalError('Failed to generate weekly digests');
   }
