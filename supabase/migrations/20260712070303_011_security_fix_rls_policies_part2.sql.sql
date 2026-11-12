@@ -337,6 +337,23 @@ CREATE POLICY delete_admin_audit_logs ON admin_audit_logs FOR DELETE TO authenti
   USING (admin_id = auth.uid());
 
 -- --- analytics_events (insert by anon+auth, read/update/delete by owner) ---
+-- SECTION 17, STAGE H, ITEM 29 (audit §4 #12) — CONSCIOUS DECISION: KEEP.
+--   The anon+authenticated INSERT is by design, not an oversight:
+--   logged-out visitors must be able to log events (page views,
+--   searches, clicks) or all anonymous analytics silently vanish
+--   and the admin analytics totals undercount. The policy is
+--   insert-only — there is NO anon SELECT/UPDATE/DELETE (update and
+--   delete are owner-only, authenticated), and WITH CHECK requires a
+--   non-null event_type. Worst case from abuse is junk rows in an
+--   append-only telemetry table: no PII exposure, no catalog/price
+--   data at risk, nothing a fake event can corrupt downstream.
+--   Restricting INSERT to authenticated was considered and rejected
+--   for that reason.
+--   NOTE: migration 015 (20260716112723) later re-creates this same
+--   policy name as authenticated-only in the file chain, so on a DB
+--   where 015 has run the effective policy is already tighter than
+--   this file's. This file is left as written; no new migration was
+--   created for this item.
 CREATE POLICY insert_analytics_events ON analytics_events FOR INSERT TO anon, authenticated
   WITH CHECK (event_type IS NOT NULL);
 CREATE POLICY update_analytics_events ON analytics_events FOR UPDATE TO authenticated

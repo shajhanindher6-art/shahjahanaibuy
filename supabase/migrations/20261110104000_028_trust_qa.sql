@@ -159,9 +159,19 @@ BEGIN
     WHERE schemaname = 'storage' AND tablename = 'objects'
       AND policyname = 'review-photos authenticated upload'
   ) THEN
+    -- Section 17, Stage H, item 13 (audit §4 #10): the upload was
+    -- any-authenticated with only a bucket check, so a user could
+    -- upload into ANOTHER user's folder. It is now folder-scoped
+    -- exactly like the delete policy below — the first path segment
+    -- must be the caller's own uid, which is also the path the
+    -- reviews API writes (`<uid>/<review-id>/<file>`,
+    -- app/api/v1/products/[slug]/reviews/route.ts).
     CREATE POLICY "review-photos authenticated upload"
       ON storage.objects FOR INSERT TO authenticated
-      WITH CHECK (bucket_id = 'review-photos');
+      WITH CHECK (
+        bucket_id = 'review-photos'
+        AND (storage.foldername(name))[1] = auth.uid()::text
+      );
   END IF;
 
   IF NOT EXISTS (

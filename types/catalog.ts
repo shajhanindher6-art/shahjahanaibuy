@@ -145,6 +145,15 @@ export interface MerchantProduct {
   inStock: boolean;
   stockQuantity: number | null;
   lastSyncedAt: string | null;
+  /**
+   * Section 17, Stage C item 14 (migration 045, unapplied):
+   * per-listing price verification. Optional so rows read before
+   * the migration keep compiling — services/commerce.ts always
+   * sets them, defaulting to 'unverified' / 'manual-intake'.
+   */
+  priceVerificationStatus?: import('@/services/price-verification').PriceVerificationStatus;
+  priceSource?: import('@/services/price-verification').PriceSource;
+  priceVerifiedAt?: string | null;
 }
 
 export interface DataSource {

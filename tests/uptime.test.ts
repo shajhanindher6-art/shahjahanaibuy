@@ -101,6 +101,21 @@ describe('buildStatusSummary', () => {
     expect(summary.message).toContain('No checks recorded yet');
   });
 
+  it('claims no monitoring start date when no check has been recorded (Section 17, Stage H item 5)', () => {
+    // The old MONITORING_STARTED_FALLBACK invented "10 November 2026"
+    // — a date that went stale by construction. With no checks the
+    // honest value is null, and the message carries no date at all.
+    const summary = buildStatusSummary([], [], 90, now);
+    expect(summary.monitoringStartedAt).toBeNull();
+    expect(summary.message).not.toContain('November');
+    expect(summary.message).not.toContain('2026');
+  });
+
+  it('uses the first recorded check as the monitoring start date', () => {
+    const summary = buildStatusSummary([check({ ok: true })], [], 90, now);
+    expect(summary.monitoringStartedAt).toBe('2026-11-10T08:00:00.000Z');
+  });
+
   it('is operational when the latest check passed and nothing is open', () => {
     const summary = buildStatusSummary([check({ ok: true })], [], 90, now);
     expect(summary.overall).toBe('operational');

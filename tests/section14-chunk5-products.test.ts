@@ -51,6 +51,12 @@ function productRow(overrides: Partial<Row>): Row {
     confidence_score: 100,
     data_freshness: 'fresh',
     deleted_at: null,
+    // Section 17, Stage C item 15: the public query path filters
+    // status = 'published' in the query — the fake rows are
+    // published rows, so the filter passes them through.
+    status: 'published',
+    price_verification_status: 'unverified',
+    price_verified_at: null,
     created_at: '2026-11-01T00:00:00Z',
     updated_at: '2026-11-01T00:00:00Z',
     ...overrides,
@@ -288,17 +294,26 @@ describe('getLowestMerchantPrices', () => {
     // Section 16, #30: the result also carries the cheapest row's
     // compare-at price and its discount — these fixture rows carry
     // no compare_at_price, so both are null (not omitted).
+    // Section 17, Stage C item 14: it also carries the cheapest
+    // row's verification — these fixture rows carry none, so
+    // unverified / manual-intake / null (not omitted).
     expect(prices.get('1')).toEqual({
       price: 999,
       merchantCount: 2,
       compareAtPrice: null,
       discountPercent: null,
+      priceVerificationStatus: 'unverified',
+      priceSource: 'manual-intake',
+      priceVerifiedAt: null,
     });
     expect(prices.get('2')).toEqual({
       price: 1199,
       merchantCount: 1,
       compareAtPrice: null,
       discountPercent: null,
+      priceVerificationStatus: 'unverified',
+      priceSource: 'manual-intake',
+      priceVerifiedAt: null,
     });
     expect(prices.has('3')).toBe(false);
   });

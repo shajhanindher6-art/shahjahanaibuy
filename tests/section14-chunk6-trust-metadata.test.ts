@@ -277,7 +277,9 @@ describe('already-present at base — verified, not re-built', () => {
 
   it('robots.ts already exists with honest rules', () => {
     const text = readSource('app/robots.ts');
-    expect(text).toContain("disallow: ['/api/', '/dashboard/', '/admin/', '/auth/']");
+    // Section 17, Stage H item 19 added '/owner/' (the admin-only
+    // owner dashboard, same as '/admin/').
+    expect(text).toContain("disallow: ['/api/', '/dashboard/', '/admin/', '/owner/', '/auth/']");
     expect(text).toContain('/sitemap.xml');
   });
 

@@ -89,3 +89,14 @@ DROP POLICY IF EXISTS "saved_calculations_delete_own" ON public.saved_calculatio
 CREATE POLICY "saved_calculations_delete_own" ON public.saved_calculations
   FOR DELETE TO authenticated
   USING (auth.uid() = user_id);
+
+-- A user updates only their own rows (and cannot hand a row to
+-- another user: WITH CHECK re-pins the owner on the new row).
+-- Section 17, Stage H, item 13 (audit §4 #9): SELECT/INSERT/DELETE
+-- own policies existed but FOR UPDATE count was 0, so calculations
+-- could only be deleted and recreated, never edited.
+DROP POLICY IF EXISTS "saved_calculations_update_own" ON public.saved_calculations;
+CREATE POLICY "saved_calculations_update_own" ON public.saved_calculations
+  FOR UPDATE TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);

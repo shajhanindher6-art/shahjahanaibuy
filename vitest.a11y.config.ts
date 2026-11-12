@@ -11,9 +11,11 @@ import path from 'path';
  *
  *   npm run test:a11y
  *
- * CI wiring is BLOCKED for the push tool (no .github/workflows
- * changes in this wave), so this is a local/pre-push gate until
- * the workflow owner wires `npm run test:a11y` into CI.
+ * CI wiring: .github/workflows/check-a11y.yml runs `npm run test:a11y`
+ * on every PR and push to main. WEB-UI-ONLY — that workflow file can
+ * never go through the GitHub push tool (403 on .github/workflows/*);
+ * add it via the GitHub website. Until it is added there, this stays
+ * a local/pre-push gate: run `npm run test:a11y` before pushing.
  */
 export default defineConfig({
   resolve: {

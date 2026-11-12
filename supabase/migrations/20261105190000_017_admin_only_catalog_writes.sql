@@ -17,11 +17,25 @@
 --
 -- WHAT THIS DOES:
 --   Replaces each wide-open write policy with an admin-only one:
---   the caller must have profiles.role = 'admin'. SELECT policies are
+--   the caller's profiles.role_id must point at a roles row whose
+--   name is 'admin' (see is_admin() below). SELECT policies are
 --   NOT touched — the public catalog keeps reading exactly as before.
 --   The service-role client (ingestion, price refresh, monitoring,
 --   geo-click logging) bypasses RLS, so server-side writes are
 --   unaffected.
+--
+-- SECTION 17, STAGE H, ITEM 7 (audit §4 #1) — is_admin() FIX:
+--   The original is_admin() read `profiles.role = 'admin'`, but the
+--   `profiles` table as created in migration 001 has NO `role`
+--   column — only `role_id` (FK to roles.id). On a database matching
+--   the migration chain the function errored on every call, so every
+--   admin-only policy denied and the admin surface was unusable.
+--   is_admin() now joins `profiles.role_id → roles.name = 'admin'`,
+--   the same resolution services/profiles.ts already uses in code.
+--   ⚠️ DEPENDENCY FLAG: this fix is written against the migration
+--   chain. If the live DB turns out to HAVE a `profiles.role`
+--   column added out-of-band, this function needs revisiting — the
+--   live column, not the join, would be the source of truth then.
 --
 -- KNOWN BEHAVIOUR CHANGE (documented, not a bug):
 --   /api/v1/ai-summary and /api/v1/predictions compute on the fly and
@@ -53,6 +67,8 @@
 
 -- Helper: true only for a signed-in admin. SECURITY DEFINER so the
 -- profiles lookup is not blocked by profiles' own RLS.
+-- Resolves via profiles.role_id -> roles.name: profiles has NO role
+-- column in the migration chain (001 creates only role_id).
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS boolean
 LANGUAGE sql
@@ -60,8 +76,9 @@ SECURITY DEFINER
 STABLE
 AS $$
   SELECT EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE id = auth.uid() AND role = 'admin'
+    SELECT 1 FROM public.profiles p
+    JOIN public.roles r ON r.id = p.role_id
+    WHERE p.id = auth.uid() AND r.name = 'admin'
   );
 $$;
 

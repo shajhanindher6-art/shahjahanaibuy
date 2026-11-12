@@ -110,6 +110,16 @@ export interface Product {
   dataFreshness: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Section 17, Stage C items 14–15 (migration 045, unapplied):
+   * publish gate + price-verification rollup. Optional so rows
+   * read before the migration (and every existing Product
+   * literal in tests) keep compiling — services/products.ts
+   * always sets them, defaulting to 'published' / 'unverified'.
+   */
+  status?: import('@/services/price-verification').ProductStatus;
+  priceVerificationStatus?: import('@/services/price-verification').PriceVerificationStatus;
+  priceVerifiedAt?: string | null;
 }
 
 export interface ProductImage {

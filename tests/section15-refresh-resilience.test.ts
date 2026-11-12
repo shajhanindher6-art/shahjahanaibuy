@@ -120,6 +120,7 @@ class FakeQuery {
   private insertRows: Row[] = [];
   private updatePatch: Row = {};
   private wantSingle = false;
+  private wantMaybeSingle = false;
 
   constructor(
     private readonly db: typeof fakeDb,
@@ -145,6 +146,10 @@ class FakeQuery {
     this.filters.push((r) => String(r[col] ?? '') >= String(value));
     return this;
   }
+  lte(col: string, value: unknown): this {
+    this.filters.push((r) => String(r[col] ?? '') <= String(value));
+    return this;
+  }
   order(col: string, opts: { ascending: boolean }): this {
     this.orderCol = col;
     this.orderAsc = opts.ascending;
@@ -156,6 +161,14 @@ class FakeQuery {
   }
   single(): this {
     this.wantSingle = true;
+    return this;
+  }
+  // Section 17, Stage D: the eBay leg (.maybeSingle on the
+  // merchants lookup) and the pipeline leg (.lte on the
+  // next_refresh_at due query) both need these chain methods —
+  // the real Supabase builder has them, the fake did not.
+  maybeSingle(): this {
+    this.wantMaybeSingle = true;
     return this;
   }
   insert(rowOrRows: Row | Row[]): this {
@@ -222,6 +235,10 @@ class FakeQuery {
       });
     }
     if (this.limitN !== null) rows = rows.slice(0, this.limitN);
+    if (this.wantMaybeSingle) {
+      // Like the real builder: 0 rows is data null, no error.
+      return { data: rows[0] ?? null, error: null };
+    }
     if (this.wantSingle) {
       return rows.length === 0
         ? { data: null, error: { code: 'PGRST116', message: '0 rows' } }
@@ -623,6 +640,9 @@ describe('P1-5 price_refresh_runs record', () => {
     expect(steps.refresh.status).toBe('ok');
     expect(steps.alerts.status).toBe('ok');
     expect(steps.notifications.status).toBe('ok');
+    // Section 17, Stage D: the pipeline step is part of the
+    // recorded run, with its honest skip status.
+    expect(steps.pipeline.status).toBe('ok');
   });
 
   it('records completed_with_failures when a step fails', async () => {
@@ -760,5 +780,87 @@ describe('P1-3 timeouts', () => {
     const checkSrc = repoFile('app', 'api', 'v1', 'alerts', 'check', 'route.ts');
     expect(refreshSrc).not.toContain('maxDuration');
     expect(checkSrc).not.toContain('maxDuration');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 17, Stage D — pipeline re-fetch leg + run ledger
+// ---------------------------------------------------------------------------
+
+describe('Stage D pipeline step (refresh route)', () => {
+  it('runs after ebay and before refresh, and available:false is a skip, not a failure', async () => {
+    const res = await refreshPOST(refreshRequest());
+    expect(res.status).toBe(200);
+    const { data } = (await res.json()) as {
+      data: {
+        skipped: boolean;
+        ebay: { status: string };
+        pipeline: { available: boolean; reason?: string };
+        steps: Record<string, { status: string }>;
+      };
+    };
+    expect(data.skipped).toBe(false);
+    // Step order: ebay → pipeline → refresh (insertion order of
+    // the steps record).
+    const names = Object.keys(data.steps);
+    expect(names.indexOf('pipeline')).toBeGreaterThan(names.indexOf('ebay'));
+    expect(names.indexOf('pipeline')).toBeLessThan(names.indexOf('refresh'));
+    // In this harness the Mock provider is available but the
+    // fake client has no `products` table, so the step reports
+    // available:false — and the step status is still 'ok': an
+    // honest skip, never a failure.
+    expect(data.pipeline.available).toBe(false);
+    expect(data.pipeline.reason).toBe('due-products-unreadable');
+    expect(data.steps.pipeline.status).toBe('ok');
+    // The run is NOT completed_with_failures because of it.
+    const rows = fakeDb.tables.price_refresh_runs!.rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('completed');
+  });
+
+  it('the eBay leg is still intact: it runs first and degrades to merchant-missing', async () => {
+    const res = await refreshPOST(refreshRequest());
+    expect(res.status).toBe(200);
+    const { data } = (await res.json()) as {
+      data: {
+        ebay: { status: string };
+        steps: Record<string, { status: string }>;
+      };
+    };
+    // merchants has only the amazon row in this harness — no
+    // ebay row — so the step degrades honestly and the run
+    // continues on recorded prices.
+    expect(data.ebay.status).toBe('merchant-missing');
+    expect(data.steps.ebay.status).toBe('ok');
+  });
+
+  it('the run ledger is still written when the table exists, and the run proceeds when it is missing', async () => {
+    const res = await refreshPOST(refreshRequest());
+    expect(res.status).toBe(200);
+    const rows = fakeDb.tables.price_refresh_runs!.rows;
+    expect(rows).toHaveLength(1);
+    const steps = rows[0].steps as Record<string, { status: string }>;
+    expect(steps.ebay.status).toBe('ok');
+    expect(steps.pipeline.status).toBe('ok');
+    expect(steps.refresh.status).toBe('ok');
+
+    // Missing-table path (migration 040 unapplied): the guard
+    // fails open — 200, unguarded, unrecorded, never a 500.
+    delete fakeDb.tables.price_refresh_runs;
+    const res2 = await refreshPOST(refreshRequest('203.0.113.12'));
+    expect(res2.status).toBe(200);
+    const body2 = (await res2.json()) as { data: { skipped: boolean } };
+    expect(body2.data.skipped).toBe(false);
+  });
+
+  it('the route wires the pipeline wrapper, not pipeline ingestion', () => {
+    const src = repoFile('app', 'api', 'v1', 'prices', 'refresh', 'route.ts');
+    expect(src).toContain('refreshPricesViaPipeline');
+    expect(src).toContain("from '@/services/pipeline-refresh'");
+    expect(src).toContain('pipeline: summarizeStep(pipeline)');
+    expect(src).toContain('pipeline: pipeline.result');
+    expect(src).toContain("'pipeline',");
+    expect(src).not.toContain('ingestBatch');
+    expect(src).not.toContain('ingestProduct');
   });
 });

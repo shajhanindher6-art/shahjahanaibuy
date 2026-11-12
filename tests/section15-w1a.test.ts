@@ -52,6 +52,12 @@ const macbook: Row = {
   gtin: null,
   confidence_score: 100,
   data_freshness: '2026-11-02T07:13:52.000Z',
+  // Section 17, Stage C item 15: the public query path filters
+  // status = 'published' in the query — the fake row is a
+  // published row, so the filter passes it through.
+  status: 'published',
+  price_verification_status: 'unverified',
+  price_verified_at: null,
   created_at: '2026-11-01T00:00:00Z',
   updated_at: '2026-11-01T00:00:00Z',
 };

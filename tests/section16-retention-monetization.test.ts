@@ -321,17 +321,27 @@ describe('getLowestMerchantPrices compare-at plumbing (Section 16, #30)', () => 
   it('carries the cheapest row compare-at price and its discount', async () => {
     const client = makePricesClient(SEARCH_MERCHANT_ROWS);
     const prices = await getLowestMerchantPrices(client, ['p-macbook', 'p-sony', 'p-galaxy']);
+    // Section 17, Stage C item 14: the result also carries the
+    // cheapest row's verification — these fixture rows carry none,
+    // so unverified / manual-intake / null (not omitted).
+    const unverified = {
+      priceVerificationStatus: 'unverified',
+      priceSource: 'manual-intake',
+      priceVerifiedAt: null,
+    } as const;
     expect(prices.get('p-macbook')).toEqual({
       price: 999,
       merchantCount: 2,
       compareAtPrice: 1099,
       discountPercent: 9.1,
+      ...unverified,
     });
     expect(prices.get('p-sony')).toEqual({
       price: 349,
       merchantCount: 2,
       compareAtPrice: 399,
       discountPercent: 12.5,
+      ...unverified,
     });
     // Galaxy's compare-at equals its price → no saving, null discount.
     expect(prices.get('p-galaxy')).toEqual({
@@ -339,6 +349,7 @@ describe('getLowestMerchantPrices compare-at plumbing (Section 16, #30)', () => 
       merchantCount: 1,
       compareAtPrice: 799,
       discountPercent: null,
+      ...unverified,
     });
   });
 
@@ -352,6 +363,9 @@ describe('getLowestMerchantPrices compare-at plumbing (Section 16, #30)', () => 
       merchantCount: 1,
       compareAtPrice: null,
       discountPercent: null,
+      priceVerificationStatus: 'unverified',
+      priceSource: 'manual-intake',
+      priceVerifiedAt: null,
     });
   });
 });
