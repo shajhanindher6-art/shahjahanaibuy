@@ -459,15 +459,19 @@ CREATE POLICY delete_tags ON tags FOR DELETE TO authenticated
   USING (public.is_admin());
 
 -- --- admin_audit_logs ---
+-- Section 18, item 15 — APPEND-ONLY: the audit log is a tamper-evident
+-- record, so ONLY the INSERT policy is granted (admin-only). There is
+-- deliberately NO UPDATE or DELETE policy: RLS default-deny rejects any
+-- UPDATE / DELETE on audit rows, including by admins. The DROP POLICY
+-- IF EXISTS lines below remove the old admin UPDATE/DELETE policies on
+-- re-apply, so a database that already has them becomes append-only too.
+-- (The service-role client bypasses RLS, but app code never updates or
+-- deletes audit rows — recordAdminAction only inserts.)
 DROP POLICY IF EXISTS insert_admin_audit_logs ON admin_audit_logs;
 DROP POLICY IF EXISTS update_admin_audit_logs ON admin_audit_logs;
 DROP POLICY IF EXISTS delete_admin_audit_logs ON admin_audit_logs;
 CREATE POLICY insert_admin_audit_logs ON admin_audit_logs FOR INSERT TO authenticated
   WITH CHECK (public.is_admin());
-CREATE POLICY update_admin_audit_logs ON admin_audit_logs FOR UPDATE TO authenticated
-  USING (public.is_admin()) WITH CHECK (public.is_admin());
-CREATE POLICY delete_admin_audit_logs ON admin_audit_logs FOR DELETE TO authenticated
-  USING (public.is_admin());
 
 -- --- ai_predictions ---
 DROP POLICY IF EXISTS insert_ai_predictions ON ai_predictions;
@@ -507,7 +511,9 @@ NOTIFY pgrst, 'reload schema';
 
 -- VERIFICATION (last statement: this is what the editor shows).
 -- Expect one row per policy below (3 per table), all with the new
--- admin-only definitions. If a table is missing here, its policies
+-- admin-only definitions — EXCEPT admin_audit_logs, which is
+-- append-only by design (Section 18, item 15) and has only its
+-- INSERT policy. If a table is missing here, its policies
 -- were already dropped/renamed by a later migration — check
 -- pg_policies for that table before assuming the hole is closed.
 SELECT schemaname, tablename, policyname, cmd, roles

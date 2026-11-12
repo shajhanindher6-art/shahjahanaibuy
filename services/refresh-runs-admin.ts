@@ -21,7 +21,7 @@
  * module does no auth of its own.
  */
 
-import type { RefreshRunRow, RefreshStepSummary } from '@/services/refresh-run';
+import type { RefreshRunRow, RefreshStepCounts, RefreshStepSummary } from '@/services/refresh-run';
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 
 const RUNS_TABLE = 'price_refresh_runs';
@@ -75,6 +75,8 @@ export async function listRefreshRuns(
 export interface FailedRefreshStep {
   name: string;
   error?: string;
+  /** Section 18, item 38 — the step's stored counts, when it has them. */
+  counts?: RefreshStepCounts;
 }
 
 /**
@@ -89,7 +91,7 @@ export function failedStepsOf(run: RefreshRunRow): FailedRefreshStep[] {
   >;
   return Object.entries(steps)
     .filter(([, summary]) => summary?.status === 'failed')
-    .map(([name, summary]) => ({ name, error: summary.error }));
+    .map(([name, summary]) => ({ name, error: summary.error, counts: summary.counts }));
 }
 
 /**

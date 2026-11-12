@@ -18,9 +18,11 @@ export async function getUserSettings(
   supabase: AnySupabaseClient,
   userId: string
 ): Promise<UserSettings | null> {
+  // Section 18, item 30 — explicit columns (was select('*')):
+  // exactly the fields the mapper below reads.
   const { data, error } = await supabase
     .from('user_settings')
-    .select('*')
+    .select('id, user_id, currency, language, timezone, email_notifications, push_notifications, price_alerts, created_at, updated_at')
     .eq('user_id', userId)
     .maybeSingle();
 
@@ -63,7 +65,7 @@ export async function updateUserSettings(
     .from('user_settings')
     .update(updateData)
     .eq('user_id', userId)
-    .select('*')
+    .select('id, user_id, currency, language, timezone, email_notifications, push_notifications, price_alerts, created_at, updated_at')
     .maybeSingle();
 
   if (error) {

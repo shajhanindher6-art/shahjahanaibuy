@@ -56,14 +56,14 @@ describe('press-counts.json — generated, not hardcoded', () => {
     expect(viaReader.date).toBe(pressCounts.date);
   });
 
-  it('is the current Section 17 Stage H baseline (216 files / 2,685 tests, 12 November 2026)', () => {
+  it('is the current Section 18 baseline (254 files / 3,066 tests, 12 November 2026)', () => {
     // Baseline only — the coordinator re-locks this after the final
-    // full Section 17 gate run (other workers add tests after this
+    // full Section 18 gate run (other workers add tests after this
     // change). If this test fails, regenerate the JSON
     // (`npm run generate:press-counts`) and update this baseline in
     // the same change; never edit the JSON by hand.
     expect(pressCounts).toEqual(
-      expect.objectContaining({ tests: 2685, files: 216, date: '2026-11-12' }),
+      expect.objectContaining({ tests: 3066, files: 254, date: '2026-11-12' }),
     );
   });
 });

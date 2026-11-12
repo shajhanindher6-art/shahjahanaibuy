@@ -32,9 +32,9 @@ describe('dashboard server auth-gate (Section 15, B17)', () => {
   });
 
   it('redirects anonymous visitors to /sign-in (the admin pattern)', () => {
-    expect(dashboardLayout).toContain("redirect('/sign-in')");
+    expect(dashboardLayout).toContain("redirect('/sign-in?reason=session-expired')");
     // Same building blocks as the admin layout's gate.
-    expect(adminLayout).toContain("redirect('/sign-in')");
+    expect(adminLayout).toContain("redirect('/sign-in?reason=session-expired')");
     expect(adminLayout).toContain('supabase.auth.getUser()');
   });
 

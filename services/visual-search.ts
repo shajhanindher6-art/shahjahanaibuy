@@ -37,10 +37,21 @@
  *   model) or plain caption text is embedded. Nothing is stored.
  */
 
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import { logger } from '@/lib/config/logger';
 import { env } from '@/lib/config/env';
 
-export const MAX_SCAN_IMAGE_BYTES = 8 * 1024 * 1024; // 8 MB
+// Client-safe helpers live in services/visual-search-client.ts (zero
+// imports — the 'use client' scan page imports them from there, because
+// importing this module into a client bundle would pull in the node:*
+// imports above and break webpack). Imported here (not `export ... from`,
+// which binds nothing locally) so MAX_VISUAL_SEARCH_IMAGE_BYTES below
+// can reference MAX_SCAN_IMAGE_BYTES, and re-exported so server
+// importers and tests keep importing them from '@/services/visual-search'
+// unchanged; single source of truth, no duplication.
+import { MAX_SCAN_IMAGE_BYTES, validateScanImage } from './visual-search-client';
+export { MAX_SCAN_IMAGE_BYTES, validateScanImage };
 
 export type ScanMode = 'visual' | 'keyword-assisted' | 'needs-keywords';
 
@@ -49,13 +60,6 @@ export interface VisualMatch {
   source: string | null;
   link: string | null;
   thumbnail: string | null;
-}
-
-/** Client-side validation for an uploaded/captured image. Null = OK. */
-export function validateScanImage(file: { type: string; size: number }): string | null {
-  if (!file.type.startsWith('image/')) return 'Please choose an image file (JPG, PNG, or WebP).';
-  if (file.size > MAX_SCAN_IMAGE_BYTES) return 'That image is over 8 MB. Please choose a smaller photo.';
-  return null;
 }
 
 /**
@@ -210,6 +214,116 @@ export function isPublicImageUrl(value: string): boolean {
   }
 }
 
+// =====================================================================
+// SSRF guard (Section 18, audit §1 #2 / §12 item 7)
+//
+// isPublicImageUrl above is only a protocol check — it cannot stop a
+// server-side fetch from reaching a private address. Before any
+// bytes are fetched, the host is DNS-resolved server-side and EVERY
+// returned address must be a public IP. Redirects are followed
+// manually and each redirect target is validated the same way, so a
+// public URL cannot 302 to 169.254.169.254, localhost, or any
+// RFC-1918 address. Any failure (bad URL, unresolvable host, DNS
+// error) rejects — fail closed. No host allowlist: no merchant host
+// is known yet (audit item 39, explicitly blocked).
+//
+// Residual limitation (documented, not hidden): the address is
+// checked at validation time, while fetch resolves the host again
+// at request time, so a DNS-rebinding host could in theory answer
+// differently between the two lookups. Closing that gap needs an
+// IP-pinned fetch (custom lookup/dial), which Node's fetch does not
+// offer — out of scope for this item.
+// =====================================================================
+
+function isPrivateIpv4Address(ip: string): boolean {
+  const parts = ip.split('.').map(Number);
+  // Malformed literal: fail closed.
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
+  const [a, b, c] = parts;
+  if (a === 0) return true; // 0.0.0.0/8 — "this network" / unspecified
+  if (a === 10) return true; // RFC-1918 10/8
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT 100.64/10
+  if (a === 127) return true; // loopback 127/8
+  if (a === 169 && b === 254) return true; // link-local 169.254/16 (incl. cloud metadata)
+  if (a === 172 && b >= 16 && b <= 31) return true; // RFC-1918 172.16/12
+  if (a === 192 && b === 0 && c === 0) return true; // IETF protocol assignments 192.0.0/24
+  if (a === 192 && b === 0 && c === 2) return true; // TEST-NET-1 192.0.2/24
+  if (a === 192 && b === 168) return true; // RFC-1918 192.168/16
+  if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking 198.18/15
+  if (a === 198 && b === 51 && c === 100) return true; // TEST-NET-2 198.51.100/24
+  if (a === 203 && b === 0 && c === 113) return true; // TEST-NET-3 203.0.113/24
+  if (a >= 224) return true; // multicast 224/4 + reserved 240/4
+  return false;
+}
+
+function isPrivateIpv6Address(ip: string): boolean {
+  const lower = ip.toLowerCase();
+  if (lower === '::1' || lower === '::') return true; // loopback / unspecified
+  // IPv4-mapped IPv6 (::ffff:a.b.c.d or ::ffff:7f00:1) — unwrap and
+  // judge the embedded IPv4 address.
+  if (lower.startsWith('::ffff:')) {
+    const rest = lower.slice('::ffff:'.length);
+    if (rest.includes('.')) return isPrivateIpv4Address(rest);
+    const groups = rest.split(':');
+    if (groups.length === 2) {
+      const hi = parseInt(groups[0], 16);
+      const lo = parseInt(groups[1], 16);
+      if (!Number.isNaN(hi) && !Number.isNaN(lo)) {
+        return isPrivateIpv4Address(
+          `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`
+        );
+      }
+    }
+    return true; // unparseable mapped form: fail closed
+  }
+  const firstGroup = parseInt(lower.split(':')[0] || '', 16);
+  if (Number.isNaN(firstGroup)) return true; // malformed: fail closed
+  if (firstGroup >= 0xfe80 && firstGroup <= 0xfebf) return true; // link-local fe80::/10
+  if (firstGroup >= 0xfc00 && firstGroup <= 0xfdff) return true; // unique-local fc00::/7
+  if (firstGroup >= 0xff00) return true; // multicast ff00::/8
+  if (lower.startsWith('2001:db8')) return true; // documentation 2001:db8::/32
+  return false;
+}
+
+/** True when the IP is loopback, private, link-local, or otherwise non-public. Non-IP input fails closed. */
+export function isPrivateIpAddress(ip: string): boolean {
+  const family = isIP(ip);
+  if (family === 4) return isPrivateIpv4Address(ip);
+  if (family === 6) return isPrivateIpv6Address(ip);
+  return true;
+}
+
+/**
+ * Async SSRF guard: http(s) only, and every address the host
+ * resolves to must be public. Literal IPs are checked directly
+ * (no DNS); hostnames are resolved with dns/promises and ALL
+ * returned addresses are checked, not just the first. DNS failure
+ * or an empty answer rejects (fail closed).
+ */
+export async function isSafePublicImageUrl(value: string): Promise<boolean> {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+  const host = url.hostname;
+  if (!host) return false;
+  if (isIP(host) !== 0) return !isPrivateIpAddress(host);
+  let addresses: Array<{ address: string }>;
+  try {
+    addresses = await lookup(host, { all: true });
+  } catch {
+    return false; // DNS failure: fail closed
+  }
+  if (!addresses || addresses.length === 0) return false;
+  return addresses.every((a) => !isPrivateIpAddress(a.address));
+}
+
+/** Maximum manual redirect hops followed when fetching an image. */
+export const MAX_IMAGE_FETCH_REDIRECTS = 3;
+
 /**
  * Caption a PUBLIC image URL with BLIP image-captioning.
  * The URL's bytes are fetched server-side and forwarded to the model
@@ -218,7 +332,10 @@ export function isPublicImageUrl(value: string): boolean {
  * accepted here: callers only pass user-pasted public URLs.
  */
 export async function captionPublicImageUrl(imageUrl: string): Promise<HfResult<string>> {
-  if (!isPublicImageUrl(imageUrl)) {
+  // SSRF guard (Section 18): DNS-resolve + reject private/loopback/
+  // link-local/metadata addresses BEFORE any fetch. The route's own
+  // isPublicImageUrl check is only a fast syntactic pre-check.
+  if (!(await isSafePublicImageUrl(imageUrl))) {
     return { ok: false, error: 'Only public http(s) image URLs can be captioned.', retryable: false };
   }
   let imageBytes: ArrayBuffer;
@@ -228,7 +345,42 @@ export async function captionPublicImageUrl(imageUrl: string): Promise<HfResult<
     const timer = setTimeout(() => controller.abort(), HF_TIMEOUT_MS);
     let res: Response;
     try {
-      res = await fetch(imageUrl, { signal: controller.signal });
+      // Redirects are followed MANUALLY (never fetch's default):
+      // each redirect target is re-validated with the same SSRF
+      // guard before it is fetched, so a public URL cannot 302 to
+      // a private address. One 30s budget covers all hops.
+      let currentUrl = imageUrl;
+      let fetched: Response | null = null;
+      for (let hop = 0; hop <= MAX_IMAGE_FETCH_REDIRECTS; hop++) {
+        fetched = await fetch(currentUrl, { signal: controller.signal, redirect: 'manual' });
+        if (fetched.status < 300 || fetched.status >= 400) break;
+        const location = fetched.headers.get('location');
+        if (!location) {
+          return {
+            ok: false,
+            error: `Could not fetch the image URL (HTTP ${fetched.status}). Check that the link is public.`,
+            retryable: false,
+          };
+        }
+        if (hop === MAX_IMAGE_FETCH_REDIRECTS) {
+          return { ok: false, error: 'That image URL redirects too many times.', retryable: false };
+        }
+        let nextUrl: string;
+        try {
+          nextUrl = new URL(location, currentUrl).toString();
+        } catch {
+          return { ok: false, error: 'That image URL has an invalid redirect.', retryable: false };
+        }
+        if (!(await isSafePublicImageUrl(nextUrl))) {
+          return {
+            ok: false,
+            error: 'That image URL redirects to a non-public address.',
+            retryable: false,
+          };
+        }
+        currentUrl = nextUrl;
+      }
+      res = fetched as Response;
     } finally {
       clearTimeout(timer);
     }

@@ -25,6 +25,14 @@
  *   - tool page: CurrencyConverterPage (full page incl. header,
  *     footer, form, ShareButtons) with a real query (?amount=100
  *     USD->PKR)
+ *   - full-page assembly (Section 18, item 61): homepage chrome +
+ *     hero + local stores + a product card + footer in one tree,
+ *     the closest jsdom gets to a full page render
+ *   - auth flow (Section 18, item 61): the sign-in page, incl. the
+ *     session-expired banner state (via the mocked search params)
+ *   - dashboard sub-page (Section 18, item 61): the dashboard
+ *     sidebar (all 17 nav links + sign-out) with the checklist and
+ *     savings widget, as a dashboard sub-page assembly
  *
  * Next.js primitives are mocked to plain DOM: next/link -> <a>,
  * next/navigation hooks -> static stubs, useAuth -> signed-out
@@ -56,6 +64,8 @@ import { GettingStartedChecklist } from '@/components/dashboard/getting-started-
 import { SavingsWidget } from '@/components/dashboard/savings-widget';
 import { RegionProvider } from '@/components/region/region-provider';
 import CurrencyConverterPage from '@/app/tools/currency-converter/page';
+import SignInPage from '@/app/sign-in/page';
+import { DashboardSidebar } from '@/components/layout/dashboard-sidebar';
 
 afterEach(cleanup);
 
@@ -287,5 +297,40 @@ describe('runtime accessibility (axe-core)', () => {
       )
     );
     await expectNoAxeViolations(container, 'CurrencyConverterPage');
+  });
+
+  it('full page: homepage assembly (header + hero + stores + product card + footer) has no axe violations', async () => {
+    const { container } = render(
+      withRegion(
+        <>
+          <SiteHeader />
+          <main>
+            <HeroCopy />
+            <LocalStoresSection />
+            <ProductCard product={MACBOOK} />
+          </main>
+          <SiteFooter />
+        </>
+      )
+    );
+    await expectNoAxeViolations(container, 'homepage full-page assembly');
+  });
+
+  it('auth flow: sign-in page has no axe violations', async () => {
+    const { container } = render(withRegion(<SignInPage />));
+    await expectNoAxeViolations(container, 'SignInPage');
+  });
+
+  it('dashboard sub-page: sidebar + checklist + savings widget have no axe violations', async () => {
+    const { container } = render(
+      withRegion(
+        <>
+          <DashboardSidebar />
+          <GettingStartedChecklist hasSavedProduct hasAlert={false} />
+          <SavingsWidget totalSaved={42.5} eventCount={3} streakWeeks={2} badge="bronze" />
+        </>
+      )
+    );
+    await expectNoAxeViolations(container, 'dashboard sub-page assembly');
   });
 });

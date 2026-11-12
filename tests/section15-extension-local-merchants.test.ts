@@ -222,7 +222,7 @@ vi.mock('@/lib/supabase/server', () => ({
       // maybeSingle() resolves the product row; awaiting the
       // chain itself resolves the merchant_products rows.
       const chain: Record<string, unknown> = {};
-      for (const method of ['select', 'eq', 'neq', 'ilike', 'order', 'limit']) {
+      for (const method of ['select', 'eq', 'neq', 'ilike', 'is', 'order', 'limit']) {
         chain[method] = () => chain;
       }
       chain.maybeSingle = async () => result;

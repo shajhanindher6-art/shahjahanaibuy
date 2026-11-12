@@ -12,10 +12,15 @@
 --   * price_refresh_runs stores ONE row per refresh run: which
 --     trigger started it (prices-refresh or alerts-check), when it
 --     started/finished, its overall status, and a compact per-step
---     summary ({ refresh: { status }, alerts: { status, error } … }
---     in the steps jsonb column — statuses and error messages only,
---     no counts; the full counts live in the run's API response,
---     which is ephemeral by design).
+--     summary ({ refresh: { status, counts: { processed,
+--     succeeded, failed, skipped } }, alerts: { status, error } … }
+--     in the steps jsonb column — statuses, error messages, and
+--     per-step counts (Section 18, item 38). Only counts the step
+--     already computes are stored: a step with no failure count
+--     (hunts) stores no counts rather than an invented zero, and
+--     savedSearches stores counts only when the step succeeded.
+--     The full per-step results still live in the run's API
+--     response, which is ephemeral by design.
 --   * The row is the "run in progress" guard (P1-7): a run starts
 --     by inserting a `running` row, and a second trigger that finds
 --     a still-`running` row younger than 30 minutes skips its run

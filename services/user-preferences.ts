@@ -22,9 +22,11 @@ export async function getUserPreferences(
   userId: string
 ): Promise<UserPreferences | null> {
   try {
+    // Section 18, item 30 — explicit columns (was select('*')):
+    // exactly the fields mapPreferencesRow reads.
     const { data, error } = await supabase
       .from('user_preferences')
-      .select('*')
+      .select('id, user_id, budget_min, budget_max, favorite_brands, favorite_categories, preferred_retailers, notification_email, notification_push, created_at, updated_at')
       .eq('user_id', userId)
       .maybeSingle();
 
@@ -64,7 +66,7 @@ export async function upsertUserPreferences(
     const { data, error } = await supabase
       .from('user_preferences')
       .upsert(updateData, { onConflict: 'user_id' })
-      .select('*')
+      .select('id, user_id, budget_min, budget_max, favorite_brands, favorite_categories, preferred_retailers, notification_email, notification_push, created_at, updated_at')
       .maybeSingle();
 
     if (error || !data) {

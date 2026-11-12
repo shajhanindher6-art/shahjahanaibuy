@@ -775,11 +775,44 @@ describe('P1-3 timeouts', () => {
     expect(ebaySrc).toContain('AbortSignal.timeout(EBAY_FETCH_TIMEOUT_MS)');
   });
 
-  it('no route sets maxDuration (owner/Vercel-plan decision, still pending)', () => {
-    const refreshSrc = repoFile('app', 'api', 'v1', 'prices', 'refresh', 'route.ts');
-    const checkSrc = repoFile('app', 'api', 'v1', 'alerts', 'check', 'route.ts');
-    expect(refreshSrc).not.toContain('maxDuration');
-    expect(checkSrc).not.toContain('maxDuration');
+  it('maxDuration is set only on the five intended cron routes, and never above the 60s Hobby ceiling', () => {
+    // Section 18, item 36 — the old "no route sets maxDuration"
+    // premise is superseded BY DESIGN: the five long-running cron
+    // routes deliberately export maxDuration = 60 (the Vercel
+    // Hobby ceiling, documented in each route's comment). The
+    // policy now is: no maxDuration anywhere exceeds 60, and
+    // exactly these five routes carry it.
+    const intended = [
+      ['app', 'api', 'v1', 'prices', 'refresh', 'route.ts'],
+      ['app', 'api', 'v1', 'alerts', 'check', 'route.ts'],
+      ['app', 'api', 'v1', 'data', 'refresh', 'route.ts'],
+      ['app', 'api', 'v1', 'notifications', 'process', 'route.ts'],
+      ['app', 'api', 'v1', 'notifications', 'digest', 'route.ts'],
+    ];
+    for (const parts of intended) {
+      expect(repoFile(...parts)).toContain('export const maxDuration = 60');
+    }
+    // Sweep the whole app tree: every maxDuration assignment must
+    // be <= 60, and only the five intended routes may set one.
+    const found: Array<{ file: string; value: number }> = [];
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(entry.name)) {
+          const src = fs.readFileSync(full, 'utf8');
+          for (const m of src.matchAll(/maxDuration\s*=\s*(\d+)/g)) {
+            found.push({ file: full, value: Number(m[1]) });
+          }
+        }
+      }
+    };
+    walk(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'app'));
+    expect(found.length).toBe(5);
+    for (const { file, value } of found) {
+      expect(value).toBeLessThanOrEqual(60);
+      expect(value).toBe(60);
+    }
   });
 });
 
@@ -857,7 +890,7 @@ describe('Stage D pipeline step (refresh route)', () => {
     const src = repoFile('app', 'api', 'v1', 'prices', 'refresh', 'route.ts');
     expect(src).toContain('refreshPricesViaPipeline');
     expect(src).toContain("from '@/services/pipeline-refresh'");
-    expect(src).toContain('pipeline: summarizeStep(pipeline)');
+    expect(src).toContain('pipeline: summarizeStep(pipeline, {');
     expect(src).toContain('pipeline: pipeline.result');
     expect(src).toContain("'pipeline',");
     expect(src).not.toContain('ingestBatch');

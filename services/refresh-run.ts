@@ -18,10 +18,19 @@
  *      Function worker can otherwise duplicate the chain). A
  *      `running` row older than the window is stale — a previous
  *      run that crashed before finishing — and is marked `failed`
- *      so a new run may start. The guard FAILS OPEN: when the
- *      table does not exist yet (migration 040 not applied) the
- *      run proceeds unguarded and unrecorded, and a warning is
- *      logged — never a 500.
+ *      so a new run may start. The guard FAILS OPEN ONLY for a
+ *      missing table (migration 040 not applied): the run proceeds
+ *      unguarded and unrecorded, and a warning is logged — never a
+ *      500. ANY other guard-read or insert error FAILS SAFE
+ *      (Section 18, item 35 — coordinator decision, 12 Nov 2026):
+ *      the run is NOT started, and the caller reports the honest
+ *      not-started state. Failing open on any error used to let a
+ *      transient DB error silently run the refresh unguarded,
+ *      risking duplicate concurrent runs writing conflicting price
+ *      history; failing closed on a guard error costs at most one
+ *      6h refresh cycle (prices just stay stale one more cycle).
+ *      Missing-table is the only error that must fail open — the
+ *      Section 16/17 precedent (PGRST205 = table not applied).
  *   3. getLatestRefreshRun() — the status page's read of the
  *      latest run. Also fail-open: a missing table or any read
  *      error returns null and the page keeps its existing text.
@@ -84,14 +93,85 @@ export async function runRefreshStep<T>(
 export type RefreshStepSummary = {
   status: RefreshStepStatus;
   error?: string;
+  /** Section 18, item 38 — per-step counts, where honestly computed. */
+  counts?: RefreshStepCounts;
 };
 
 export function summarizeStep<T>(
-  outcome: RefreshStepOutcome<T>
+  outcome: RefreshStepOutcome<T>,
+  /** Section 18, item 38 — omit when the step computes no counts. */
+  counts?: RefreshStepCounts
 ): RefreshStepSummary {
-  return outcome.error
+  const summary: RefreshStepSummary = outcome.error
     ? { status: outcome.status, error: outcome.error }
     : { status: outcome.status };
+  if (counts) summary.counts = counts;
+  return summary;
+}
+
+// ---------------------------------------------------------------------------
+// Per-step load-error sanitising (Section 18, Phase 2 — item 11,
+// audit §1 #58)
+// ---------------------------------------------------------------------------
+
+/**
+ * Section 18, item 38 — per-step counts stored in
+ * `price_refresh_runs.steps` alongside the status/error. Only
+ * counts the step already computes are stored — never invented:
+ * a step with no failure count (hunts) stores NO counts at all
+ * rather than a fabricated zero.
+ */
+export interface RefreshStepCounts {
+  processed: number;
+  succeeded: number;
+  failed: number;
+  skipped?: number;
+}
+
+/**
+ * Generic per-step load-error text for the refresh response.
+ * The response's `loadError` fields used to carry the raw
+ * Supabase error (`${table}: ${error.message}`), which can leak a
+ * table/column name or a PostgREST code to the CRON_SECRET
+ * caller. This helper logs the full detail server-side (logger,
+ * masked) and returns ONLY this generic string for the response.
+ *
+ * WIRING (left for the Section 18 coordinator — the refresh route
+ * file is owned by the Wave 2 performance worker): replace the
+ * four raw assignments in `app/api/v1/prices/refresh/route.ts`
+ * (`recordAvailabilitySnapshots`: lines ~220, ~235, ~257-258,
+ * ~322-323) with
+ * `result.loadError = result.loadError ?? sanitizeRefreshStepLoadError(table, error)`
+ * (or the matching table name for the merchant/history reads).
+ * The adjacent `logger.warn` lines at those sites then duplicate
+ * this helper's log and can be dropped. `runRefreshStep`'s own
+ * `error` field is unaffected — it already stores the raw message
+ * in the server-side run record, never in the response.
+ */
+export const REFRESH_STEP_LOAD_ERROR_MESSAGE = 'Failed to load step data';
+
+export function sanitizeRefreshStepLoadError(table: string, error: unknown): string {
+  // PostgREST errors are plain-looking objects ({ code, message })
+  // in the response shape, but the real PostgrestError extends
+  // Error — extract .message AND .code whenever they exist so
+  // the server-side log keeps the real detail (String(error)
+  // alone would log '[object Object]').
+  let detail: string;
+  if (error instanceof Error) detail = error.message;
+  else if (error != null && typeof error === 'object' && 'message' in error)
+    detail = String((error as { message: unknown }).message);
+  else if (error == null) detail = 'no rows returned';
+  else detail = String(error);
+  const code =
+    error != null && typeof error === 'object' && 'code' in error
+      ? String((error as { code: unknown }).code)
+      : undefined;
+  logger.warn('refresh step load failed', {
+    table,
+    ...(code ? { code } : {}),
+    error: detail,
+  });
+  return REFRESH_STEP_LOAD_ERROR_MESSAGE;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,15 +212,37 @@ function isMissingTableError(error: { code?: string; message?: string } | null):
   return error.code === '42P01' || error.code === 'PGRST205';
 }
 
+/**
+ * Section 18, item 35 — the same check for a THROWN error (a
+ * transport failure throws an Error instead of returning
+ * `{ error }`). Only a missing-table throw fails open; any other
+ * throw fails safe. The message match is deliberately narrow:
+ * PostgREST missing-table errors carry PGRST205 / 42P01 (or the
+ * Postgres "relation … does not exist" text).
+ */
+function isMissingTableThrown(err: unknown): boolean {
+  if (!err) return false;
+  const message = err instanceof Error ? err.message : String(err);
+  const code = (err as { code?: string }).code;
+  if (code === '42P01' || code === 'PGRST205') return true;
+  return (
+    message.includes('PGRST205') ||
+    message.includes('42P01') ||
+    /relation .* does not exist/i.test(message)
+  );
+}
+
 export interface StartRefreshRunResult {
-  /** False only when another run is currently in progress. */
+  /** False when another run is in progress OR the guard failed (see reason). */
   started: boolean;
   /** The new run's id, or null when the table does not exist yet. */
   runId: string | null;
   /** Present only when started is false. */
-  reason?: 'run-in-progress';
+  reason?: 'run-in-progress' | 'guard-error';
   /** The in-progress run's id, when started is false. */
   existingRunId?: string;
+  /** The guard error message, when reason is 'guard-error'. */
+  error?: string;
 }
 
 export async function tryStartRefreshRun(
@@ -158,19 +260,31 @@ export async function tryStartRefreshRun(
     if (error) {
       if (isMissingTableError(error)) {
         logger.warn('tryStartRefreshRun: price_refresh_runs missing (migration 040 not applied) — running unguarded');
-      } else {
-        logger.warn('tryStartRefreshRun: guard read failed — running unguarded', {
-          error: error.message,
-        });
+        return { started: true, runId: null };
       }
-      return { started: true, runId: null };
+      // Section 18, item 35 — any OTHER guard-read error fails
+      // SAFE: the run is not started. Running unguarded on a
+      // transient DB error risked duplicate concurrent runs.
+      logger.warn('tryStartRefreshRun: guard read failed — run NOT started', {
+        error: error.message,
+      });
+      return { started: false, runId: null, reason: 'guard-error', error: error.message };
     }
     running = (data ?? []) as Array<{ id: string; started_at: string }>;
   } catch (err) {
-    logger.warn('tryStartRefreshRun: guard read threw — running unguarded', {
+    if (isMissingTableThrown(err)) {
+      logger.warn('tryStartRefreshRun: price_refresh_runs missing (migration 040 not applied) — running unguarded');
+      return { started: true, runId: null };
+    }
+    logger.warn('tryStartRefreshRun: guard read threw — run NOT started', {
       error: String(err),
     });
-    return { started: true, runId: null };
+    return {
+      started: false,
+      runId: null,
+      reason: 'guard-error',
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 
   const current = running[0];
@@ -213,19 +327,36 @@ export async function tryStartRefreshRun(
     if (error || !data) {
       if (error && isMissingTableError(error)) {
         logger.warn('tryStartRefreshRun: price_refresh_runs missing (migration 040 not applied) — running unguarded');
-      } else {
-        logger.warn('tryStartRefreshRun: run insert failed — running unguarded', {
-          error: error?.message,
-        });
+        return { started: true, runId: null };
       }
-      return { started: true, runId: null };
+      // Section 18, item 35 — a failed run insert fails SAFE too:
+      // without a recorded `running` row there is no guard, so the
+      // run must not start unguarded.
+      logger.warn('tryStartRefreshRun: run insert failed — run NOT started', {
+        error: error?.message,
+      });
+      return {
+        started: false,
+        runId: null,
+        reason: 'guard-error',
+        error: error?.message ?? 'run insert failed',
+      };
     }
     return { started: true, runId: (data as { id: string }).id };
   } catch (err) {
-    logger.warn('tryStartRefreshRun: run insert threw — running unguarded', {
+    if (isMissingTableThrown(err)) {
+      logger.warn('tryStartRefreshRun: price_refresh_runs missing (migration 040 not applied) — running unguarded');
+      return { started: true, runId: null };
+    }
+    logger.warn('tryStartRefreshRun: run insert threw — run NOT started', {
       error: String(err),
     });
-    return { started: true, runId: null };
+    return {
+      started: false,
+      runId: null,
+      reason: 'guard-error',
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 

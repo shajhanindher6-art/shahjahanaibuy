@@ -1,0 +1,48 @@
+-- 052 — Atomic one-run-at-a-time guard for refresh runs (Section 18, item 19; audit §1 #25).
+--
+-- DO NOT APPLY YET: this migration is written but intentionally NOT
+-- applied. Applying it is an OWNER step (run once in the Supabase
+-- dashboard SQL editor). Until it is applied, the guard keeps its
+-- current behaviour exactly (SELECT-then-INSERT in
+-- services/refresh-run.ts, fail-open on any error) — nothing 500s
+-- because this file is unapplied.
+--
+--   * The guard today is NOT atomic: tryStartRefreshRun() SELECTs
+--     for a `running` row and then INSERTs, with no unique partial
+--     index. Two triggers in the same instant can both see "no
+--     running row" and both insert — a duplicate run.
+--   * This file adds ONE unique partial index: at most one row in
+--     price_refresh_runs may have status = 'running' at any time.
+--     The second same-instant INSERT then fails with 23505 instead
+--     of silently duplicating the run. The index is on the status
+--     value itself (every 'running' row carries the same value, so
+--     uniqueness on it admits exactly one such row) with the
+--     partial predicate, matching the existing non-unique partial
+--     index idx_price_refresh_runs_running from migration 040 —
+--     that index is left in place (it serves the guard's SELECT;
+--     this one enforces the invariant).
+--   * The index is created idempotently (IF NOT EXISTS), so a
+--     re-run never fails on a half-applied state. It does NOT
+--     touch the stale-run window: a `running` row older than 30
+--     minutes is still marked `failed` by the next trigger before
+--     the new row is inserted (services/refresh-run.ts), so the
+--     index never blocks a legitimate run after a crash.
+--   * No code change ships in this item: how the guard reacts to
+--     a 23505 on insert (treat as run-in-progress instead of
+--     failing open) is item 35, owned by the performance worker.
+--     Until that lands, a duplicate trigger that hits 23505 logs
+--     "run insert failed — running unguarded" and proceeds — the
+--     same fail-open as today, not a new failure mode.
+--   * If the live table somehow holds TWO `running` rows already
+--     (a past duplicate run), index creation fails: the owner
+--     must first mark all but the newest `running` row `failed`.
+--     That check is a one-liner:
+--
+--       SELECT count(*) FROM public.price_refresh_runs
+--       WHERE status = 'running';
+--
+--     Apply only when the count is 0 or 1.
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_price_refresh_runs_one_running
+  ON public.price_refresh_runs (status)
+  WHERE status = 'running';

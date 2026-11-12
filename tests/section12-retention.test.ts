@@ -159,7 +159,9 @@ describe('push opt-in prompt honesty', () => {
     expect(pushSubscribeFailureMessage('unsupported')).toContain('not supported');
     expect(pushSubscribeFailureMessage('denied')).toContain('blocked');
     expect(pushSubscribeFailureMessage('server')).toContain('Could not save');
-    expect(pushSubscribeFailureMessage('unknown')).toContain('Something went wrong');
+    expect(pushSubscribeFailureMessage('unknown')).toContain(
+      "couldn't turn on push alerts"
+    );
   });
 
   it('no failure message ever claims the visitor is subscribed', () => {

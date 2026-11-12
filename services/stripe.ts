@@ -264,6 +264,43 @@ export async function handleInvoicePaymentFailed(
   }
 }
 
+/**
+ * Record a webhook event's handler outcome (Section 18, item 46;
+ * migration 049 adds the `status` + `error` columns).
+ *
+ * Best-effort by design: when 049 is unapplied the columns do not
+ * exist and the update fails (42703) — that is logged and the
+ * webhook itself is NOT failed over bookkeeping, otherwise a
+ * successfully handled event would 500 and Stripe would retry an
+ * event that was already handled. Never throws.
+ */
+async function updateWebhookEventOutcome(
+  supabase: AnySupabaseClient,
+  stripeEventId: string,
+  status: 'processed' | 'failed',
+  errorMessage?: string
+): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('webhook_events')
+      .update({ status, error: errorMessage ?? null })
+      .eq('stripe_event_id', stripeEventId);
+    if (error) {
+      logger.warn('Failed to record webhook event outcome', {
+        eventId: stripeEventId,
+        status,
+        error: error.message,
+      });
+    }
+  } catch (err) {
+    logger.warn('Failed to record webhook event outcome', {
+      eventId: stripeEventId,
+      status,
+      error: String(err),
+    });
+  }
+}
+
 export async function processWebhookEvent(
   supabase: AnySupabaseClient,
   event: { id: string; type: string; data: Record<string, unknown> }
@@ -275,26 +312,73 @@ export async function processWebhookEvent(
     .eq('stripe_event_id', event.id)
     .maybeSingle();
 
+  // Section 18, item 46 — reprocess-on-retry: a row whose status
+  // is 'failed' means the handlers never completed, so a Stripe
+  // retry must run them again instead of skipping. The status read
+  // tolerates a missing column (migration 049 unapplied): any
+  // error reading it keeps the old skip behaviour, so an unapplied
+  // 049 changes nothing.
+  let isFailedRetry = false;
   if (existing) {
-    logger.info('Webhook event already processed', { eventId: event.id, type: event.type });
-    return;
+    const { data: statusRow } = await supabase
+      .from('webhook_events')
+      .select('status')
+      .eq('stripe_event_id', event.id)
+      .maybeSingle();
+    if ((statusRow as { status?: string } | null)?.status === 'failed') {
+      logger.info('Webhook event previously failed; reprocessing', {
+        eventId: event.id,
+        type: event.type,
+      });
+      isFailedRetry = true;
+    } else {
+      logger.info('Webhook event already processed', { eventId: event.id, type: event.type });
+      return;
+    }
   }
 
-  // Record the event. A failed write must THROW (the route turns
-  // it into a 500 so Stripe retries) — silently dropping the event
-  // while returning 200 used to lose paid subscriptions with no
-  // trace (Section 15 webhook-RLS investigation).
-  const { error: recordError } = await supabase.from('webhook_events').insert({
-    stripe_event_id: event.id,
-    event_type: event.type,
-    payload: event.data as Record<string, unknown>,
-  });
-  if (recordError) {
-    throw new Error(`Failed to record webhook event ${event.id}: ${recordError.message}`);
+  if (!isFailedRetry) {
+    // Record the event. A failed write must THROW (the route turns
+    // it into a 500 so Stripe retries) — silently dropping the event
+    // while returning 200 used to lose paid subscriptions with no
+    // trace (Section 15 webhook-RLS investigation).
+    //
+    // Section 18, item 21: a 23505 here is NOT a failure — it is a
+    // concurrent double delivery: the select above found no row,
+    // but the other delivery inserted the same stripe_event_id
+    // first. Treat it as already-processed and return cleanly (no
+    // throw, no 500, no Stripe retry storm): the other delivery
+    // owns handling, and if it fails, its 'failed' outcome makes
+    // the next Stripe retry reprocess the event instead of
+    // skipping it (item 46).
+    const { error: recordError } = await supabase.from('webhook_events').insert({
+      stripe_event_id: event.id,
+      event_type: event.type,
+      payload: event.data as Record<string, unknown>,
+    });
+    if (recordError) {
+      if ((recordError as { code?: string }).code === '23505') {
+        logger.info('Webhook event already recorded by a concurrent delivery', {
+          eventId: event.id,
+          type: event.type,
+        });
+        return;
+      }
+      throw new Error(`Failed to record webhook event ${event.id}: ${recordError.message}`);
+    }
   }
 
   const stripe = getStripe();
-  if (!stripe) return;
+  if (!stripe) {
+    // No Stripe client: the handlers cannot run. Record the
+    // outcome so the row does not sit as 'pending' forever (the
+    // route already rejects unconfigured Stripe before reaching
+    // here; this is a defensive path for direct callers).
+    await updateWebhookEventOutcome(supabase, event.id, 'failed', 'Stripe is not configured');
+    return;
+  }
+
+  try {
 
   // Event-shape normalization (ONE place, all handlers below use
   // `payload`): the webhook route passes `event.data.object` as
@@ -430,6 +514,22 @@ export async function processWebhookEvent(
 
     default:
       logger.info('Unhandled webhook event type', { type: event.type });
+  }
+
+    // Section 18, item 46: the handlers ran to completion — stamp
+    // the outcome (best-effort; see updateWebhookEventOutcome).
+    await updateWebhookEventOutcome(supabase, event.id, 'processed');
+  } catch (err) {
+    // A handler threw: record the failure, then rethrow so the
+    // route answers 500 and Stripe retries — the retry sees status
+    // 'failed' and reprocesses instead of skipping (see above).
+    await updateWebhookEventOutcome(
+      supabase,
+      event.id,
+      'failed',
+      err instanceof Error ? err.message : String(err)
+    );
+    throw err;
   }
 }
 

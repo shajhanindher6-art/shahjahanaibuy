@@ -187,7 +187,7 @@ describe('refresh chain digest step (P4-2)', () => {
   it('the refresh route runs the weekly digest step with per-step isolation and no second scheduler', () => {
     const text = readSource('app/api/v1/prices/refresh/route.ts');
     expect(text).toContain('generateWeeklyDigestsForPremiumUsers');
-    expect(text).toContain('digest: summarizeStep(digest)');
+    expect(text).toContain('digest: summarizeStep(digest, {');
     expect(text).toContain('digest: digest.result');
     expect(text).toContain("'digest',");
     // The digest rides the single 6-hourly refresh — no new cron.
