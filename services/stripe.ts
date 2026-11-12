@@ -5,15 +5,30 @@
  */
 
 import { getStripe, isStripeConfigured } from '@/lib/stripe';
-import { env } from '@/lib/config/env';
 import { appConfig } from '@/lib/config/app';
 import { logger } from '@/lib/config/logger';
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { sendSubscriptionEmail, sendInvoiceEmail } from '@/services/email';
+// Section 15 P2-1/P2-2: price IDs and plan-key normalization live
+// in the single pricing config — never hardcode a price ID or a
+// dollar figure here.
+import { PRICE_IDS, getTrialDays, isTrialOffered, normalizePlanKey } from '@/lib/pricing-config';
 
+/**
+ * Checkout plan config (Section 15 P2-2). Keys are TierIds now:
+ * 'premium' is canonical. 'pro' is kept as a deprecated alias for
+ * one release (same price ID as 'premium') so old clients keep
+ * working; the webhook writes 'premium'. Price IDs come from
+ * lib/pricing-config.ts (env, nullable) — an unset ID means that
+ * tier cannot be bought.
+ */
 export const PLAN_CONFIG = {
   free: { name: 'Free', priceId: null },
-  pro: { name: 'Pro', priceId: env.stripeProPriceId ?? null },
+  premium: { name: 'Premium', priceId: PRICE_IDS.premium },
+  family: { name: 'Family', priceId: PRICE_IDS.family },
+  team: { name: 'Team', priceId: PRICE_IDS.team },
+  /** @deprecated Legacy key for 'premium'; kept for one release. */
+  pro: { name: 'Premium', priceId: PRICE_IDS.premium },
 } as const;
 
 export type PlanKey = keyof typeof PLAN_CONFIG;
@@ -32,6 +47,11 @@ export async function createCheckoutSession(
   if (!priceId) return { error: 'Invalid plan or missing price ID' };
 
   try {
+    // Section 15 P2-7: a free trial is only ever attached when the
+    // owner configured trial days (STRIPE_TRIAL_DAYS > 0) AND the
+    // live launch is approved. Default is 0 days = no trial, and no
+    // trial is ever created in test mode.
+    const trialDays = isTrialOffered() ? getTrialDays() : 0;
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer_email: userEmail,
@@ -41,6 +61,7 @@ export async function createCheckoutSession(
       metadata: { userId, plan },
       subscription_data: {
         metadata: { userId, plan },
+        ...(trialDays > 0 ? { trial_period_days: trialDays } : {}),
       },
     });
 
@@ -83,7 +104,13 @@ export async function syncSubscriptionFromStripe(
     const userId = sub.metadata.userId;
     if (!userId) return;
 
-    const plan = sub.metadata.plan ?? 'pro';
+    // Section 15 P2-2: the webhook writes canonical TierIds.
+    // Legacy 'pro' metadata (old checkout sessions) maps to
+    // 'premium'; unknown values fail closed to 'premium' here only
+    // because Stripe has already accepted payment for this
+    // subscription — the tier itself is resolved from the row by
+    // lib/api-quota.ts, which fails closed to free.
+    const plan = normalizePlanKey(sub.metadata.plan, 'premium');
     const currentPeriodStart = new Date(sub.current_period_start * 1000).toISOString();
     const currentPeriodEnd = new Date(sub.current_period_end * 1000).toISOString();
     const canceledAt = sub.canceled_at ? new Date(sub.canceled_at * 1000).toISOString() : null;
@@ -128,12 +155,18 @@ export async function processWebhookEvent(
     return;
   }
 
-  // Record the event
-  await supabase.from('webhook_events').insert({
+  // Record the event. A failed write must THROW (the route turns
+  // it into a 500 so Stripe retries) — silently dropping the event
+  // while returning 200 used to lose paid subscriptions with no
+  // trace (Section 15 webhook-RLS investigation).
+  const { error: recordError } = await supabase.from('webhook_events').insert({
     stripe_event_id: event.id,
     event_type: event.type,
     payload: event.data as Record<string, unknown>,
   });
+  if (recordError) {
+    throw new Error(`Failed to record webhook event ${event.id}: ${recordError.message}`);
+  }
 
   const stripe = getStripe();
   if (!stripe) return;
@@ -146,9 +179,21 @@ export async function processWebhookEvent(
         await syncSubscriptionFromStripe(supabase, subscriptionId);
         const customerEmail = session.customer_email as string;
         const metadata = session.metadata as Record<string, string> | undefined;
-        const plan = metadata?.plan;
-        if (customerEmail && plan) {
-          void sendSubscriptionEmail(customerEmail, plan, 'active');
+        // Section 15 P2-2: normalize the legacy 'pro' key so the
+        // email copy uses the canonical tier name.
+        const plan = normalizePlanKey(metadata?.plan, 'premium');
+        if (customerEmail && metadata?.plan) {
+          // Section 15, P4-5 — no fire-and-forget: a failed
+          // subscription email used to vanish silently (`void`
+          // send). Check the result and log it instead.
+          const emailResult = await sendSubscriptionEmail(customerEmail, plan, 'active');
+          if (!emailResult.success) {
+            logger.warn('Subscription email failed', {
+              email: customerEmail,
+              plan,
+              error: emailResult.error,
+            });
+          }
         }
       }
       break;
@@ -216,7 +261,17 @@ export async function processWebhookEvent(
           .maybeSingle();
 
         if (profile?.email && invoiceUrl) {
-          void sendInvoiceEmail(profile.email, amountPaid, currency, invoiceUrl);
+          // Section 15, P4-5 — no fire-and-forget: check the
+          // result and log a failed invoice email instead of
+          // assuming it was sent.
+          const emailResult = await sendInvoiceEmail(profile.email, amountPaid, currency, invoiceUrl);
+          if (!emailResult.success) {
+            logger.warn('Invoice email failed', {
+              email: profile.email,
+              invoiceId,
+              error: emailResult.error,
+            });
+          }
         }
       }
       break;

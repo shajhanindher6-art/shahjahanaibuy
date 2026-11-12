@@ -9,7 +9,7 @@
 |---|---|---|
 | Manifest | `public/manifest.json` | name "SmartBuy AI — AI-Powered Shopping Intelligence", `short_name` SmartBuy, `display: standalone`, `theme_color #1e40af`, `background_color #0f172a`, icons 192 + 512 (`purpose: any maskable`) |
 | Icons | `public/icon-192.png`, `public/icon-512.png` | Exist; the old 404 is fixed |
-| Service worker | `public/sw.js` (cache `smartbuy-v2`) | See caching strategy below |
+| Service worker | `public/sw.js` (cache `smartbuy-v4`) | See caching strategy below |
 | Registration | `components/pwa/service-worker-register.tsx` | Registers `/sw.js` in production only; silent failure |
 | Install prompt | `components/pwa/install-prompt.tsx` | `beforeinstallprompt`, dismissible, honest (below) |
 | Offline page | `app/offline/page.tsx` | Served by the SW when a navigation fails offline |
@@ -45,9 +45,16 @@ The root layout (`app/layout.tsx`) links the manifest, sets
 ## Caching strategy (`public/sw.js`)
 
 - **Install:** precaches `/`, `/search`, `/compare`, `/deals`,
-  `/manifest.json`, `/robots.txt`, `/offline`. (If any precache
-  fetch fails, the whole `cache.addAll` fails — the shell pages
-  above are all served by the app, so this is expected to succeed.)
+  `/tools`, `/pricing`, `/products`, `/brands`, `/categories`,
+  `/blog`, `/faq`, `/help`, `/manifest.json`, `/robots.txt`,
+  `/offline` (15 assets, `smartbuy-v4`). Each asset is precached
+  on its own, so one failed fetch only logs and skips that asset
+  instead of failing the whole install.
+  Honest scope: navigation is network-first, so precaching only
+  helps a page you have NOT visited yet when you are offline — the
+  worker serves the precached copy after the network fails. It
+  does not make live data (prices, search, compare results) work
+  offline.
 - **Images:** stale-while-revalidate (serve cache, refresh in
   background).
 - **Navigations:** network-first; on failure, serve the cached
@@ -61,7 +68,7 @@ The root layout (`app/layout.tsx`) links the manifest, sets
   without a push event.
 - **Updates:** `SKIP_WAITING` message handler; a new worker takes
   over on next navigation. Bump `CACHE_VERSION` when the shell
-  changes (currently `smartbuy-v2`).
+  changes (currently `smartbuy-v4`).
 
 ## What the PWA does NOT do (honest limits)
 

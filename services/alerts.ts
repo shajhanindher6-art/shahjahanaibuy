@@ -13,6 +13,7 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import { getMaxAlerts, type TierId } from '@/lib/tiers';
 import type { Alert } from '@/types/catalog';
 
 // ---------------------------------------------------------------------------
@@ -95,6 +96,70 @@ export async function getAlerts(
     logger.error('getAlerts: unexpected error', { error: String(err) });
     return [];
   }
+}
+
+/**
+ * Count a user's alerts (active and inactive — the tier cap counts
+ * every stored alert, not just active ones). Returns -1 when the
+ * count cannot be determined (DB error); callers treat -1 as
+ * "unknown" and fail open (never block a legitimate request on a
+ * count failure, same philosophy as lib/api-quota.ts).
+ */
+export async function countAlerts(
+  supabase: AnySupabaseClient,
+  userId: string
+): Promise<number> {
+  try {
+    const { count, error } = await supabase
+      .from('alerts')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId);
+
+    if (error) {
+      logger.warn('countAlerts: count failed', { error: error.message });
+      return -1;
+    }
+    return count ?? 0;
+  } catch (err) {
+    logger.error('countAlerts: unexpected error', { error: String(err) });
+    return -1;
+  }
+}
+
+export interface AlertCapCheck {
+  /** False only when the tier has a cap AND the user is at/over it. */
+  allowed: boolean;
+  /** Current alert count, or -1 when it could not be determined. */
+  current: number;
+  /** The tier's cap (`null` = unlimited). */
+  max: number | null;
+  tier: TierId;
+}
+
+/**
+ * Count-before-insert cap check (Section 15 B14). Unlimited tiers
+ * skip the count entirely. A count failure fails OPEN (allowed,
+ * current -1) so a DB hiccup never blocks alert creation.
+ */
+export async function checkAlertCap(
+  supabase: AnySupabaseClient,
+  userId: string,
+  tierId: TierId
+): Promise<AlertCapCheck> {
+  const max = getMaxAlerts(tierId);
+  if (max === null) {
+    return { allowed: true, current: -1, max, tier: tierId };
+  }
+  const current = await countAlerts(supabase, userId);
+  if (current < 0) {
+    return { allowed: true, current, max, tier: tierId };
+  }
+  return {
+    allowed: current < max,
+    current,
+    max,
+    tier: tierId,
+  };
 }
 
 /**

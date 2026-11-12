@@ -36,6 +36,14 @@ export interface ProductSeoData {
   /** Cheapest recorded merchant price, or null when no priced listing exists. */
   lowestPrice: number | null;
   /**
+   * Recorded `products.data_freshness` — when this product's prices
+   * were last checked (Section 15 P1-11: the product page renders
+   * "Prices last checked" server-side from this value). Null when
+   * the row carries no freshness timestamp; the page then renders
+   * no label rather than an invented date.
+   */
+  dataFreshness: string | null;
+  /**
    * ISO date until which the recorded price is valid, or null.
    * Merchant data carries no validity window, so this is null today
    * and the Offer omits priceValidUntil rather than inventing one

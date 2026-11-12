@@ -17,6 +17,28 @@ export interface AffiliateClickPayload {
   targetUrl: string;
 }
 
+/**
+ * Wrap an outbound merchant URL in the /go redirect hub (Section 15,
+ * A6). Pure string builder — no network, no navigation side effect.
+ * The destination is preserved exactly: it travels as one encoded
+ * `u` query param, and /go redirects to it byte-for-byte after
+ * host validation. Optional `s` (product slug) and `m` (merchant
+ * name) are the same tracking context the client beacon used to
+ * send; /go records them server-side instead, so callers routing
+ * through /go must NOT also fire trackAffiliateClick for the same
+ * click (that would double-count it).
+ */
+export function buildGoUrl(
+  targetUrl: string,
+  opts?: { productSlug?: string | null; merchantName?: string | null }
+): string {
+  const params = new URLSearchParams();
+  params.set('u', targetUrl);
+  if (opts?.productSlug) params.set('s', opts.productSlug);
+  if (opts?.merchantName) params.set('m', opts.merchantName);
+  return `/go?${params.toString()}`;
+}
+
 export function trackAffiliateClick(payload: AffiliateClickPayload): void {
   try {
     if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') {

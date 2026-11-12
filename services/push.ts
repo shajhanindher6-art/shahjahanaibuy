@@ -7,6 +7,17 @@
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { env } from '@/lib/config/env';
 import { logger } from '@/lib/config/logger';
+import { withTimeout } from '@/lib/with-timeout';
+
+/**
+ * Section 15, P1-3: hard timeout on every web-push send (10s, the
+ * same bound as the eBay adapter and the email sender). web-push
+ * exposes no AbortSignal option, so each send is bounded with
+ * withTimeout instead — a hung push endpoint can no longer stall
+ * the notification drain, and the timeout is caught by the
+ * per-endpoint handler below and logged as a failed endpoint.
+ */
+export const PUSH_SEND_TIMEOUT_MS = 10_000;
 
 export interface PushSubscriptionData {
   endpoint: string;
@@ -100,7 +111,11 @@ export async function sendPushNotification(
         keys: { p256dh: sub.p256dh_key as string, auth: sub.auth_key as string },
       };
       try {
-        await webpush.sendNotification(pushSub, payload);
+        await withTimeout(
+          webpush.sendNotification(pushSub, payload),
+          PUSH_SEND_TIMEOUT_MS,
+          'Web push send'
+        );
         sentAny = true;
       } catch (err) {
         const error = err as { statusCode?: number };

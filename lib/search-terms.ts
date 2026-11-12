@@ -1,0 +1,671 @@
+/**
+ * Curated shopping search terms — /find/[query] (Section 15, A4).
+ *
+ * HONESTY — read before adding a term:
+ * - Every entry is a genuine shopping query a human would type into a
+ *   search box: a real brand/model, a real product type, or a real
+ *   price-band / use-case query ("best laptop under 500"). Nothing is
+ *   generated gibberish, no nonsense brand+model combinations, no
+ *   keyword-stuffed variants of the same query.
+ * - These terms power SEARCH LINKS only. A /find/[query] page links
+ *   the query to each of the 84 stores' OWN search results
+ *   (lib/stores.ts). It never claims a product, price, deal, stock
+ *   level, rating, or review exists — the store itself shows its own
+ *   results when the shopper clicks through.
+ * - N = 500, curated by hand, organised by category. Growing this
+ *   list means curating more real queries, never padding it.
+ */
+
+import {
+  GLOBAL_STORES,
+  LOCAL_STORES,
+  buildStoreSearchUrl,
+  type LocalStore,
+} from './stores';
+import { slugify } from './brand-category-seo';
+
+export interface SearchTerm {
+  /** The query exactly as a shopper would type it. */
+  query: string;
+  /** Display category label, e.g. "Laptops". */
+  category: string;
+  /** URL slug for /find/[query], derived with slugify(). */
+  slug: string;
+}
+
+/** Categories in display order, with the /find index grouped the same way. */
+export const SEARCH_TERM_CATEGORIES: string[] = [
+  'Laptops',
+  'Smartphones',
+  'Headphones & Audio',
+  'TVs & Home Entertainment',
+  'Cameras',
+  'Wearables',
+  'Tablets',
+  'Gaming',
+  'Home Appliances',
+  'Kitchen',
+  'Smart Home',
+  'Monitors & Accessories',
+  'Storage & Networking',
+  'Fitness & Outdoors',
+];
+
+type RawTerm = { query: string; category: string };
+
+function terms(category: string, queries: string[]): RawTerm[] {
+  return queries.map((query) => ({ query, category }));
+}
+
+const RAW_TERMS: RawTerm[] = [
+  ...terms('Laptops', [
+    'macbook air 13',
+    'macbook air 15',
+    'macbook pro 14',
+    'macbook pro 16',
+    'best budget laptop 2026',
+    'best laptop for students',
+    'best laptop under 500',
+    'best laptop under 1000',
+    'dell xps 13',
+    'dell xps 15',
+    'hp spectre x360',
+    'hp pavilion 15',
+    'lenovo thinkpad x1 carbon',
+    'lenovo ideapad slim 5',
+    'asus rog strix g16',
+    'asus zenbook 14',
+    'acer swift go 14',
+    'acer aspire 5',
+    'microsoft surface laptop 7',
+    'microsoft surface pro 11',
+    'samsung galaxy book 4',
+    'lg gram 17',
+    'razer blade 14',
+    'msi katana 15',
+    'gaming laptop under 1000',
+    'laptop for video editing',
+    'laptop for programming',
+    'lightweight laptop',
+    '2 in 1 laptop',
+    'chromebook under 300',
+    'best ultrabook 2026',
+    'laptop with 16gb ram',
+    'laptop with rtx 4060',
+    'dell inspiron 14',
+    'hp omen 16',
+    'lenovo legion 5',
+    'asus vivobook 15',
+    'acer nitro 5',
+    'apple macbook air m3',
+    'apple macbook pro m4',
+    'best laptop for college',
+    'laptop for graphic design',
+    'business laptop',
+    'laptop under 300',
+    'laptop under 700',
+    'touchscreen laptop',
+    'laptop with long battery life',
+    '17 inch laptop',
+    'mini laptop',
+    'refurbished macbook pro',
+    'dell latitude 5540',
+    'hp elitebook 840',
+    'lenovo yoga slim 7',
+    'asus tuf gaming a15',
+    'msi prestige 14',
+    'samsung galaxy book 4 pro',
+    'best laptop for photo editing',
+    'laptop for engineering students',
+    'quiet fanless laptop',
+    'laptop with oled display',
+  ]),
+  ...terms('Smartphones', [
+    'samsung galaxy s24 ultra price',
+    'samsung galaxy s24 price',
+    'samsung galaxy a55',
+    'iphone 15 price',
+    'iphone 15 pro max',
+    'iphone 16',
+    'iphone 16 pro',
+    'iphone 14 price',
+    'google pixel 8 pro',
+    'google pixel 8a',
+    'google pixel 9',
+    'oneplus 12',
+    'oneplus nord 4',
+    'xiaomi 14 pro',
+    'xiaomi redmi note 13 pro',
+    'oppo reno 12',
+    'vivo v40',
+    'realme 12 pro plus',
+    'best budget phone 2026',
+    'best phone under 300',
+    'best phone under 500',
+    'best camera phone',
+    'best phone for gaming',
+    'best battery life phone',
+    'samsung galaxy z fold 6',
+    'samsung galaxy z flip 6',
+    'iphone 13 price',
+    'iphone se 2024',
+    'google pixel 7a',
+    'samsung galaxy s23 fe',
+    'nothing phone 2a',
+    'motorola edge 50 pro',
+    'sony xperia 1 vi',
+    'honor magic 6 pro',
+    'asus rog phone 8',
+    'phone with best camera under 500',
+    '5g phone under 200',
+    'best android phone 2026',
+    'best small phone',
+    'phone with stylus',
+    'foldable phone',
+    'samsung galaxy a35',
+    'iphone 15 plus',
+    'google pixel 8',
+    'oneplus 12r',
+    'xiaomi poco x6 pro',
+    'oppo find x7 ultra',
+    'vivo x100 pro',
+    'realme gt 6',
+    'best phone for photography',
+    'best phone for students',
+    'dual sim phone',
+    'phone with 256gb storage',
+    'best mid range phone 2026',
+    'samsung galaxy s24 fe',
+    'iphone 16 plus',
+    'google pixel 9 pro',
+    'nothing phone 2',
+    'motorola moto g84',
+    'best rugged phone',
+  ]),
+  ...terms('Headphones & Audio', [
+    'wireless noise cancelling headphones',
+    'sony wh-1000xm5',
+    'sony wh-1000xm4',
+    'bose quietcomfort ultra headphones',
+    'bose quietcomfort 45',
+    'airpods pro 2',
+    'airpods max',
+    'samsung galaxy buds 2 pro',
+    'best wireless earbuds 2026',
+    'best budget earbuds',
+    'best earbuds under 100',
+    'jbl flip 6',
+    'jbl charge 5',
+    'marshall emberton 2',
+    'sonos era 100',
+    'best bluetooth speaker under 100',
+    'best soundbar',
+    'samsung hw-q990d soundbar',
+    'sonos beam gen 2',
+    'best headphones for working out',
+    'best headphones for calls',
+    'best over ear headphones',
+    'best wireless headphones under 200',
+    'sennheiser momentum 4',
+    'audio technica ath-m50x',
+    'beyerdynamic dt 770 pro',
+    'best studio headphones',
+    'best earbuds for running',
+    'google pixel buds pro',
+    'beats studio pro',
+    'beats fit pro',
+    'jabra elite 10',
+    'anker soundcore liberty 4',
+    'best portable speaker',
+    'best smart speaker',
+    'amazon echo dot 5th gen',
+    'google nest audio',
+    'apple homepod mini',
+    'best headphones for kids',
+    'best noise cancelling earbuds',
+    'sony wf-1000xm5',
+    'bose quietcomfort earbuds',
+    'best gaming headset',
+    'steelseries arctis nova 7',
+    'hyperx cloud ii',
+    'best turntable under 500',
+    'best bookshelf speakers',
+    'kef ls50 meta',
+    'best waterproof speaker',
+    'best headphones for travel',
+  ]),
+  ...terms('TVs & Home Entertainment', [
+    'best 55 inch tv',
+    'best 65 inch tv',
+    'best oled tv',
+    'lg c4 oled tv',
+    'samsung s90d oled tv',
+    'sony bravia 8',
+    'best tv under 500',
+    'best 4k tv under 1000',
+    'best tv for gaming',
+    'best tv for sports',
+    'tcl qm7 tv',
+    'hisense u8n tv',
+    'best 75 inch tv',
+    'best 43 inch tv',
+    'best smart tv',
+    'samsung qled tv 55 inch',
+    'lg oled evo c3',
+    'best budget tv 2026',
+    'best tv for ps5',
+    'best projector under 500',
+    'best home theater projector',
+    'epson home cinema 1080',
+    'best streaming device',
+    'amazon fire tv stick 4k',
+    'roku streaming stick 4k',
+    'apple tv 4k',
+    'google chromecast',
+    'nvidia shield tv pro',
+    'best tv wall mount',
+    'best tv stand',
+    'samsung the frame tv',
+    'best outdoor tv',
+    'best 8k tv',
+    'best mini led tv',
+    'best tv for bright rooms',
+    'lg g4 oled tv',
+    'sony a95l qd oled',
+    'best 32 inch tv',
+    'best tv under 300',
+    'best 85 inch tv',
+  ]),
+  ...terms('Cameras', [
+    'best camera for beginners',
+    'canon eos r50',
+    'sony a6700',
+    'fujifilm x100vi',
+    'best mirrorless camera',
+    'best camera for vlogging',
+    'sony zv-e10',
+    'dji osmo pocket 3',
+    'gopro hero 12 black',
+    'best action camera',
+    'best drone with camera',
+    'dji mini 4 pro',
+    'best instant camera',
+    'fujifilm instax mini 12',
+    'best camera for photography',
+    'nikon z6 iii',
+    'canon eos r6 mark ii',
+    'best camera lens for portraits',
+    'best 50mm lens',
+    'best camera for travel',
+    'best webcam for streaming',
+    'logitech brio 4k webcam',
+    'best dash cam',
+    'best security camera',
+    'ring video doorbell',
+    'best baby monitor camera',
+    'best camera for youtube',
+    'sony a7 iv',
+    'best film camera',
+    'best camera bag',
+  ]),
+  ...terms('Wearables', [
+    'apple watch series 9',
+    'apple watch se 2',
+    'apple watch ultra 2',
+    'samsung galaxy watch 6',
+    'samsung galaxy watch 6 classic',
+    'best smartwatch 2026',
+    'best smartwatch under 200',
+    'best fitness tracker',
+    'fitbit charge 6',
+    'garmin forerunner 265',
+    'garmin venu 3',
+    'best running watch',
+    'best smartwatch for android',
+    'best smartwatch for iphone',
+    'amazfit gtr 4',
+    'best sleep tracker',
+    'oura ring gen 3',
+    'best smart ring',
+    'samsung galaxy ring',
+    'best smartwatch for kids',
+    'best smartwatch for seniors',
+    'best gps watch',
+    'best heart rate monitor',
+    'polar h10 heart rate sensor',
+    'best smartwatch for swimming',
+    'best budget smartwatch',
+    'fossil gen 6 smartwatch',
+    'ticwatch pro 5',
+    'best hybrid smartwatch',
+    'best smartwatch battery life',
+  ]),
+  ...terms('Tablets', [
+    'ipad air 11 inch',
+    'ipad pro 11 inch m4',
+    'ipad 10th generation',
+    'ipad mini 6',
+    'samsung galaxy tab s9',
+    'samsung galaxy tab a9',
+    'best tablet 2026',
+    'best tablet under 300',
+    'best tablet for kids',
+    'best tablet for drawing',
+    'microsoft surface go 4',
+    'lenovo tab p12',
+    'best android tablet',
+    'best tablet for reading',
+    'best tablet for students',
+    'amazon fire hd 10',
+    'best e reader',
+    'kindle paperwhite',
+    'kobo libra 2',
+    'best tablet for note taking',
+    'best tablet keyboard',
+    'ipad air m2',
+    'samsung galaxy tab s9 fe',
+    'best tablet for travel',
+    'best tablet for watching movies',
+    'best budget tablet 2026',
+    'xiaomi pad 6',
+    'best tablet for gaming',
+    'best tablet for seniors',
+    'best tablet accessories',
+  ]),
+  ...terms('Gaming', [
+    'playstation 5',
+    'playstation 5 slim',
+    'ps5 pro',
+    'xbox series x',
+    'xbox series s',
+    'nintendo switch oled',
+    'nintendo switch lite',
+    'best gaming console 2026',
+    'best gaming monitor',
+    'best 144hz monitor',
+    'best 4k gaming monitor',
+    'best gaming chair',
+    'best gaming keyboard',
+    'best gaming mouse',
+    'logitech g pro x superlight',
+    'razer deathadder v3',
+    'best gaming headset under 100',
+    'best ps5 controller',
+    'best xbox controller',
+    'best gaming laptop under 1500',
+    'best vr headset',
+    'meta quest 3',
+    'best racing wheel',
+    'best gaming desk',
+    'best gaming pc under 1000',
+    'best graphics card',
+    'nvidia rtx 4070',
+    'best mechanical keyboard',
+    'keychron k2',
+    'best gaming earbuds',
+    'best capture card',
+    'elgato stream deck',
+    'best microphone for streaming',
+    'blue yeti microphone',
+    'best webcam for gaming',
+    'best gaming router',
+    'best handheld gaming console',
+    'steam deck oled',
+    'asus rog ally',
+    'best gaming chair under 300',
+  ]),
+  ...terms('Home Appliances', [
+    'best robot vacuum',
+    'roborock s8 pro ultra',
+    'dyson v15 detect',
+    'best cordless vacuum',
+    'best vacuum for pet hair',
+    'best air purifier',
+    'dyson purifier cool',
+    'best washing machine',
+    'best front load washer',
+    'best refrigerator',
+    'best french door fridge',
+    'best dishwasher',
+    'best microwave oven',
+    'best air fryer',
+    'ninja air fryer',
+    'best stand mixer',
+    'kitchenaid stand mixer',
+    'best coffee maker',
+    'best espresso machine',
+    'breville barista express',
+    'best blender',
+    'vitamix 5200',
+    'best food processor',
+    'best toaster',
+    'best electric kettle',
+    'best rice cooker',
+    'best slow cooker',
+    'best pressure cooker',
+    'instant pot duo',
+    'best iron',
+    'best steam mop',
+    'best dehumidifier',
+    'best portable air conditioner',
+    'best ceiling fan',
+    'best smart lock',
+    'best robot mop',
+    'best vacuum for hardwood floors',
+    'best chest freezer',
+    'best water purifier',
+    'best juicer',
+  ]),
+  ...terms('Kitchen', [
+    'best chef knife',
+    'best knife set',
+    'best cast iron skillet',
+    'lodge cast iron skillet',
+    'best nonstick pan',
+    'best cookware set',
+    'best dutch oven',
+    'le creuset dutch oven',
+    'best baking sheet',
+    'best cutting board',
+    'best kitchen scale',
+    'best immersion blender',
+    'best hand mixer',
+    'best waffle maker',
+    'best toaster oven',
+    'best sous vide machine',
+    'best bread maker',
+    'best pasta maker',
+    'best spice grinder',
+    'best mandoline slicer',
+    'best mixing bowl set',
+    'best kitchen torch',
+    'best popcorn maker',
+    'best ice cream maker',
+    'best electric grill',
+    'best outdoor grill',
+    'weber spirit ii grill',
+    'best smoker grill',
+    'best pizza oven',
+    'ooni koda 12 pizza oven',
+  ]),
+  ...terms('Smart Home', [
+    'best google home speaker',
+    'best smart display',
+    'google nest hub',
+    'best smart thermostat',
+    'google nest thermostat',
+    'ecobee smart thermostat',
+    'best smart light bulbs',
+    'philips hue starter kit',
+    'best smart plug',
+    'best video doorbell',
+    'ring video doorbell pro',
+    'best smart door lock',
+    'august smart lock',
+    'best home security system',
+    'best smart camera indoor',
+    'best outdoor security camera',
+    'best smart blinds',
+    'best smart garage door opener',
+    'best smart smoke detector',
+    'google nest protect',
+    'best smart home hub',
+    'best wifi mesh system',
+    'google nest wifi pro',
+    'best smart sprinkler controller',
+    'best robot lawn mower',
+  ]),
+  ...terms('Monitors & Accessories', [
+    'best monitor under 300',
+    'best ultrawide monitor',
+    'best 4k monitor',
+    'best monitor for work from home',
+    'lg ultragear 27 inch monitor',
+    'dell ultrasharp 27 monitor',
+    'best curved monitor',
+    'best portable monitor',
+    'best wireless keyboard',
+    'logitech mx keys s',
+    'best wireless mouse',
+    'logitech mx master 3s',
+    'best ergonomic mouse',
+    'best laptop stand',
+    'best monitor arm',
+    'best docking station',
+    'best usb c hub',
+    'best external ssd',
+    'samsung t7 shield ssd',
+    'best external hard drive',
+    'best nas storage',
+    'synology ds223j',
+    'best wifi router',
+    'best mesh wifi system',
+    'best printer for home',
+    'best laser printer',
+    'hp laserjet pro printer',
+    'best webcam for work',
+    'logitech c920 webcam',
+    'best usb microphone',
+  ]),
+  ...terms('Storage & Networking', [
+    'best sd card for camera',
+    'best microsd card',
+    'best usb flash drive',
+    'best power bank',
+    'anker power bank 10000mah',
+    'best surge protector',
+    'best ups battery backup',
+    'best ethernet cable',
+    'best network switch',
+    'best wifi extender',
+    'best vpn router',
+    'best external ssd 1tb',
+    'best external ssd 2tb',
+    'best hard drive for ps5',
+    'best ssd for gaming',
+    'samsung 990 pro ssd',
+    'best nvme ssd',
+    'best ram for gaming pc',
+    'best laptop ram upgrade',
+    'best thunderbolt dock',
+  ]),
+  ...terms('Fitness & Outdoors', [
+    'best running shoes',
+    'nike pegasus 41',
+    'best hiking boots',
+    'best camping tent',
+    'best sleeping bag',
+    'best electric bike',
+    'best treadmill for home',
+    'best dumbbell set',
+    'best yoga mat',
+    'best electric scooter',
+    'best bike helmet',
+    'best hiking backpack',
+    'best portable cooler',
+    'best camping chair',
+    'best fitness watch for running',
+  ]),
+];
+
+/** The curated list, with a URL slug derived from each query. */
+export const SEARCH_TERMS: SearchTerm[] = RAW_TERMS.map(({ query, category }) => ({
+  query,
+  category,
+  slug: slugify(query),
+}));
+
+const SEARCH_TERM_BY_SLUG = new Map<string, SearchTerm>(
+  SEARCH_TERMS.map((term) => [term.slug, term]),
+);
+
+/** URL slug for a query, e.g. "macbook air 13" -> "macbook-air-13". */
+export function searchTermSlug(query: string): string {
+  return slugify(query);
+}
+
+/** The curated term for a /find/[query] slug, or null when unknown. */
+export function getSearchTermBySlug(slug: string): SearchTerm | null {
+  if (!slug) return null;
+  return SEARCH_TERM_BY_SLUG.get(slugify(slug)) ?? null;
+}
+
+/** All curated terms in one category, in list order. */
+export function getSearchTermsByCategory(category: string): SearchTerm[] {
+  return SEARCH_TERMS.filter((term) => term.category === category);
+}
+
+/** Per-category term counts, in SEARCH_TERM_CATEGORIES order. */
+export function getSearchTermCategoryCounts(): Array<{
+  category: string;
+  count: number;
+}> {
+  return SEARCH_TERM_CATEGORIES.map((category) => ({
+    category,
+    count: getSearchTermsByCategory(category).length,
+  }));
+}
+
+/**
+ * Every store a /find page links to: the 80 local stores plus the 4
+ * global fallback stores (lib/stores.ts). The audit counts 84 store
+ * entries; see getFindQueryStoreLinks() for the deduped link list.
+ */
+export const ALL_FIND_STORES: LocalStore[] = [...LOCAL_STORES, ...GLOBAL_STORES];
+
+/** One outbound search link: a store plus its search URL for the query. */
+export interface FindStoreLink {
+  store: LocalStore;
+  url: string;
+}
+
+/**
+ * Search links for one query, one per store, in directory order
+ * (local stores first, then the global fallback). Links are deduped
+ * by final URL: a store listed twice under the same domain (e.g.
+ * eBay US and the global eBay entry both point at ebay.com) yields
+ * one link, so the same URL never appears twice on a page. Every URL
+ * goes to the retailer's OWN search results — never an invented
+ * product, price, or deal.
+ */
+export function getFindQueryStoreLinks(query: string): FindStoreLink[] {
+  const seen = new Set<string>();
+  const links: FindStoreLink[] = [];
+  for (const store of ALL_FIND_STORES) {
+    const url = buildStoreSearchUrl(store, query);
+    if (seen.has(url)) continue;
+    seen.add(url);
+    links.push({ store, url });
+  }
+  return links;
+}
+
+/**
+ * Total outbound link instances across all /find pages, counting
+ * every store entry per query (500 queries x 84 stores = 42,000).
+ * The deduped per-page count from getFindQueryStoreLinks() is one
+ * lower per page where a local and a global entry share a domain.
+ */
+export function getFindLinkInstanceTotal(): number {
+  return SEARCH_TERMS.length * ALL_FIND_STORES.length;
+}

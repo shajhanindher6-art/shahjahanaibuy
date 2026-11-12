@@ -16,6 +16,93 @@
 
 export const REFERRAL_QUERY_PARAM = 'ref';
 export const GUEST_REFERRAL_TOKEN_KEY = 'sb-guest-referral-token';
+/**
+ * Section 15, B13 — a `?ref=` code seen on the sign-up page is
+ * kept here until a session exists: email-confirmation signups
+ * have no session at sign-up time, so the code must survive the
+ * redirect to /auth/callback, which attempts attribution once the
+ * user is signed in. Cleared once attribution answers
+ * definitively (attributed or ignored); kept for a later attempt
+ * when the request could not reach the server.
+ */
+export const PENDING_REFERRAL_CODE_KEY = 'sb-pending-referral-code';
+
+/** Remember a valid ref code seen on the sign-up page. Never throws. */
+export function storePendingReferralCode(code: string): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    if (!isValidReferralCode(code)) return;
+    window.localStorage.setItem(PENDING_REFERRAL_CODE_KEY, code);
+  } catch {
+    // Storage unavailable — attribution is best-effort only.
+  }
+}
+
+/** Read the stored ref code without consuming it. Never throws. */
+export function peekPendingReferralCode(): string | null {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return null;
+    return parseReferralCode(window.localStorage.getItem(PENDING_REFERRAL_CODE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+/** Drop the stored ref code. Never throws. */
+export function clearPendingReferralCode(): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    window.localStorage.removeItem(PENDING_REFERRAL_CODE_KEY);
+  } catch {
+    // Nothing to do.
+  }
+}
+
+export type ReferralAttributionOutcome = 'attributed' | 'ignored' | 'retry';
+
+/**
+ * Submit a signup for referral attribution (POST
+ * /api/v1/referrals/attribute). Never throws.
+ *   - 'attributed': the signup was recorded for the referrer.
+ *   - 'ignored': the server answered definitively that this code
+ *     does not attribute (invalid, unknown, guest-owned,
+ *     self-referral, already attributed, or not signed in yet is
+ *     NOT ignored — see below).
+ *   - 'retry': the request never reached a definitive answer
+ *     (network failure, 401/no session yet, attribution
+ *     unavailable because migration 038 has not run) — the caller
+ *     should keep the code for a later attempt.
+ */
+export async function submitReferralAttribution(
+  code: string
+): Promise<ReferralAttributionOutcome> {
+  if (!isValidReferralCode(code)) return 'ignored';
+  try {
+    const res = await fetch('/api/v1/referrals/attribute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    // 401 (no session yet — e.g. email confirmation pending):
+    // keep the code; the auth callback retries after sign-in.
+    if (res.status === 401) return 'retry';
+    if (!res.ok) return 'retry';
+    const data: unknown = await res.json().catch(() => null);
+    const payload =
+      data && typeof data === 'object'
+        ? (data as { data?: { attributed?: unknown; reason?: unknown } }).data
+        : null;
+    if (!payload || typeof payload !== 'object') return 'retry';
+    if (payload.attributed === true) return 'attributed';
+    // 'not-available' (migration 038 unapplied) is a retry: the
+    // signup may still be attributed once the migration runs and
+    // the user signs in again.
+    if (payload.reason === 'not-available') return 'retry';
+    return 'ignored';
+  } catch {
+    return 'retry';
+  }
+}
 
 const REFERRAL_CODE_RE = /^sb-[a-z0-9]{10}$/;
 

@@ -19,6 +19,17 @@ export interface PricePredictionResult {
   averagePrice: number | null;
   lowestPrice: number | null;
   highestPrice: number | null;
+  /**
+   * Number of price_history rows this prediction was computed
+   * from (Section 15, B1). The predictions API exposes it so
+   * clients can hide the Deal Score badge while it is below
+   * DEAL_SCORE_MIN_DATA_POINTS (5) — the live catalog's 4
+   * points per product all score a meaningless 100/100. Also
+   * persisted into ai_predictions.price_data_range (no
+   * migration — the jsonb column already exists) and read back
+   * by getCachedPrediction.
+   */
+  dataPoints: number;
   price30Day: PriceTrendPoint[];
   price90Day: PriceTrendPoint[];
   price1Year: PriceTrendPoint[];
@@ -96,6 +107,10 @@ export async function predictPriceDrop(
       averagePrice,
       lowestPrice,
       highestPrice,
+      // Section 15, B1: the point count behind the prediction —
+      // the predictions API exposes it and the Deal Score badge
+      // hides while it is below DEAL_SCORE_MIN_DATA_POINTS (5).
+      dataPoints: prices.length,
       price30Day: price30Day.map((p) => ({ date: p.date, price: p.price })),
       price90Day: price90Day.map((p) => ({ date: p.date, price: p.price })),
       price1Year: price1Year.map((p) => ({ date: p.date, price: p.price })),
@@ -245,6 +260,20 @@ async function getCachedPrediction(
 
       if (!data) return null;
       const row = data as Record<string, unknown>;
+      // Section 15, B1: the point count is plumbed through the
+      // existing ai_predictions.price_data_range jsonb (no
+      // migration — the column already exists, migration 008).
+      // A cached row written before B1 carries no dataPoints:
+      // return null (a cache miss) so the prediction is
+      // recomputed fresh from price_history and re-stored WITH
+      // the count — old rows self-heal on their next read
+      // instead of hiding the Deal Score badge forever.
+      const range = row.price_data_range as Record<string, unknown> | null;
+      const dataPoints =
+        range && typeof range.dataPoints === 'number' && Number.isFinite(range.dataPoints)
+          ? (range.dataPoints as number)
+          : null;
+      if (dataPoints === null) return null;
       return {
         productId: row.product_id as string,
         discountProbability: parseFloat(String(row.discount_probability)),
@@ -256,6 +285,7 @@ async function getCachedPrediction(
         averagePrice: null,
         lowestPrice: null,
         highestPrice: null,
+        dataPoints,
         price30Day: [],
         price90Day: [],
         price1Year: [],
@@ -280,6 +310,10 @@ async function storePrediction(
       expected_lowest_price: result.expectedLowestPrice,
       confidence_score: result.confidenceScore,
       explanation: result.explanation,
+      // Section 15, B1: persist the point count in the existing
+      // price_data_range jsonb (no migration) so a cached read
+      // can return it and the Deal Score gate can apply.
+      price_data_range: { dataPoints: result.dataPoints },
     });
   } catch (err) {
     logger.warn('storePrediction: insert failed', { error: String(err) });

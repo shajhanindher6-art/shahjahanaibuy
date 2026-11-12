@@ -8,6 +8,18 @@
 import { env } from '@/lib/config/env';
 import { appConfig } from '@/lib/config/app';
 import { logger } from '@/lib/config/logger';
+import { withTimeout } from '@/lib/with-timeout';
+
+/**
+ * Section 15, P1-3: hard timeout on every Resend send (10s, the
+ * same bound as the eBay adapter and the webhook senders). Resend
+ * v3 exposes no AbortSignal/fetch option, so the send is bounded
+ * with withTimeout instead — the waiter gives up after 10s and the
+ * failure is reported honestly (see lib/with-timeout.ts: a send
+ * that lands after the timeout may still deliver, so a timeout is
+ * a failed send here, never a claimed delivery).
+ */
+export const EMAIL_SEND_TIMEOUT_MS = 10_000;
 
 export interface EmailMessage {
   to: string;
@@ -20,6 +32,18 @@ export interface EmailResult {
   success: boolean;
   messageId?: string;
   error?: string;
+}
+
+/**
+ * True when the Resend provider key is set (Section 15, P4-4).
+ * The only provider gate code can check: whether the sender
+ * domain/address itself is verified in Resend is enforced by the
+ * provider — an unverified sender makes sendEmail return
+ * success:false, so it is counted as failed, never claimed sent.
+ * No code-side "verified" flag is invented.
+ */
+export function isEmailConfigured(): boolean {
+  return Boolean(env.resendApiKey);
 }
 
 type EmailType =
@@ -49,13 +73,17 @@ export async function sendEmail(
     }
     const { Resend } = resendModule;
     const resend = new Resend(env.resendApiKey);
-    const { data, error } = await resend.emails.send({
-      from: `${env.emailFromName} <${env.emailFromAddress}>`,
-      to: message.to,
-      subject: message.subject,
-      html: message.html,
-      text: message.text,
-    });
+    const { data, error } = await withTimeout(
+      resend.emails.send({
+        from: `${env.emailFromName} <${env.emailFromAddress}>`,
+        to: message.to,
+        subject: message.subject,
+        html: message.html,
+        text: message.text,
+      }),
+      EMAIL_SEND_TIMEOUT_MS,
+      'Resend email send'
+    );
 
     if (error) {
       logger.error('Email send failed', { error: error.message, type });

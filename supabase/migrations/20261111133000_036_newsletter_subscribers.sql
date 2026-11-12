@@ -26,11 +26,15 @@
 --     migration 026) is already reserved for them.
 --   * No invented or backfilled rows: the table starts EMPTY and a
 --     missing row means "never signed up", never an assumed state.
---   * RLS is enabled with an insert-only policy for anon (anyone
---     may create their own signup; the email is the non-null owner
---     key). There is NO anon/authenticated SELECT, UPDATE or DELETE
---     policy, so subscriber emails are never readable via the API —
---     reads happen only through the service-role client.
+--   * RLS is enabled with an insert-only policy for anon AND
+--     authenticated (Section 15, P4-1): the subscribe route uses
+--     the cookie-based server client, so a signed-in visitor's
+--     request runs as role `authenticated`, not `anon` — an
+--     anon-only policy denied those inserts (42501 → 500) while
+--     anonymous visitors worked. There is NO anon/authenticated
+--     SELECT, UPDATE or DELETE policy, so subscriber emails are
+--     never readable via the API — reads happen only through the
+--     service-role client.
 
 CREATE TABLE IF NOT EXISTS public.newsletter_subscribers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -59,6 +63,11 @@ ALTER TABLE public.newsletter_subscribers ENABLE ROW LEVEL SECURITY;
 
 -- Opt-in insert only: anyone may create their own signup, but
 -- anonymous clients can never read, update or delete rows.
+-- Section 15, P4-1 — TO anon, authenticated (was anon only):
+-- the subscribe route uses the cookie-based server client
+-- (createSupabaseServerClient), so a signed-in visitor's request
+-- runs as role `authenticated` and an anon-only policy denied
+-- the insert (42501 → 500). Anonymous visitors were unaffected.
 DROP POLICY IF EXISTS "newsletter_subscribers_insert_anon" ON public.newsletter_subscribers;
 -- Section 14, Chunk 1 — the CHECK above lists all five sources in
 -- lib/newsletter.ts (NEWSLETTER_SOURCES). It used to list only
@@ -67,5 +76,5 @@ DROP POLICY IF EXISTS "newsletter_subscribers_insert_anon" ON public.newsletter_
 -- the database even though the route accepted the source. The RLS
 -- policy below must list the same five values.
 CREATE POLICY "newsletter_subscribers_insert_anon" ON public.newsletter_subscribers
-  FOR INSERT TO anon
+  FOR INSERT TO anon, authenticated
   WITH CHECK (email IS NOT NULL AND email <> '' AND source IN ('footer', 'homepage', 'deals', 'digest', 'notifications'));

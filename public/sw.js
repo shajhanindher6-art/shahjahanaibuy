@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'smartbuy-v3';
+const CACHE_VERSION = 'smartbuy-v4';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -11,6 +11,10 @@ const STATIC_ASSETS = [
   '/deals',
   '/tools',
   '/pricing',
+  '/products',
+  '/brands',
+  '/categories',
+  '/blog',
   '/faq',
   '/help',
   '/manifest.json',

@@ -42,8 +42,27 @@ export const env = {
   // Stripe
   stripeSecretKey: process.env.STRIPE_SECRET_KEY,
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-  stripePublishableKey: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
+  // Section 15 P2-8: the publishable key is removed — no
+  // @stripe/stripe-js anywhere in the repo, so nothing ever used it.
+  // Section 15 P2-1/P2-7: Stripe price IDs are all nullable — an
+  // unset ID means that tier cannot be bought (never a hardcoded
+  // dollar figure). STRIPE_PREMIUM_PRICE_ID is the current name;
+  // STRIPE_PRO_PRICE_ID is kept as a deprecated alias for one
+  // release and loses if both are set. The live price decision
+  // ($1 vs $4.99 vs $9.99) is the owner's — no amount lives here.
+  stripePremiumPriceId:
+    process.env.STRIPE_PREMIUM_PRICE_ID ?? process.env.STRIPE_PRO_PRICE_ID,
+  /** @deprecated Use STRIPE_PREMIUM_PRICE_ID. Kept as an alias (see above). */
   stripeProPriceId: process.env.STRIPE_PRO_PRICE_ID,
+  stripeFamilyPriceId: process.env.STRIPE_FAMILY_PRICE_ID,
+  stripeTeamPriceId: process.env.STRIPE_TEAM_PRICE_ID,
+  // Section 15 P2-7: optional Starter price ID. Unset = no Starter
+  // plan exists (the Starter card is not rendered). Never a live
+  // price claim on its own — see lib/pricing-config.ts.
+  stripeStarterPriceId: process.env.STRIPE_STARTER_PRICE_ID,
+  // Section 15 P2-7: free-trial length in days. Default 0 = no
+  // trial. Only honoured when > 0 AND the live launch is approved.
+  stripeTrialDays: process.env.STRIPE_TRIAL_DAYS,
 
   // Email (Resend)
   resendApiKey: process.env.RESEND_API_KEY,

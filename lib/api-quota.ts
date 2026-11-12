@@ -24,24 +24,33 @@
  * pricing page (Section 12). No new billing URL is invented;
  * Stripe stays in TEST mode and no checkout flow is touched here.
  *
- * Storage: quota state is checked AND incremented per request in
- * an in-memory daily store (same pattern as the in-memory fallback
- * in lib/api/middleware.ts — a limiter outage never blocks
- * legitimate traffic, and a missing store never fails open: when
- * the store is unavailable the request is allowed, never counted
- * as over quota). A durable cross-instance counter table
- * (`api_key_usage`) is defined in migration 035
- * (supabase/migrations/20261110150000_035_api_key_quotas.sql) for
- * future use — that migration is NOT applied and is NOT required
- * for this module to work.
+ * Storage: quota state is checked AND incremented per request.
+ * The default store is durable-first (Section 15 P2-6): it tries
+ * the `api_key_usage` ledger (migration 035,
+ * supabase/migrations/20261110150000_035_api_key_quotas.sql) via
+ * the service-role client, and fails open to the in-memory daily
+ * store on ANY database error — including the table not existing
+ * yet, because migration 035 is NOT applied and is NOT required
+ * for the paywall to function. Once the owner applies 035 the
+ * same code becomes durable across instances with no code change.
+ * The in-memory store is the same pattern as the in-memory
+ * fallback in lib/api/middleware.ts — a limiter outage never
+ * blocks legitimate traffic, and a missing store never fails
+ * open: when the store is unavailable the request is allowed,
+ * never counted as over quota. Buckets are keyed by the SHA-256
+ * hash of the bucket key (the ledger stores hashes only, never
+ * raw key prefixes or IPs).
  */
 
+import { createHash } from 'node:crypto';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { NextRequest } from 'next/server';
 import { rateLimited } from '@/lib/api/responses';
 import { getClientIp } from '@/lib/api/middleware';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
+import { logger } from '@/lib/config/logger';
 import type { ValidatedApiKey } from '@/lib/api-keys';
-import { getTier, type TierId } from '@/lib/tiers';
+import { getTier, normalizeTierId, type TierId } from '@/lib/tiers';
 
 /** Canonical pricing page — the billing link used in 429 bodies. */
 export const BILLING_URL = '/pricing';
@@ -72,17 +81,15 @@ export function getUpgradeTier(tier: TierId): TierId | null {
  * Map a `subscriptions` row to a tier. Only an `active` subscription
  * counts — canceled / trialing / past-due rows fall back to free, and
  * unknown plan values fail closed to free (never to a paid tier).
- * Stripe's own plan keys ('pro') map onto the matching tier.
+ * The legacy Stripe plan key 'pro' maps onto the matching tier
+ * (see normalizeTierId in lib/tiers.ts, Section 15 P2-2).
  */
 export function resolveTierFromSubscription(
   plan: string | null,
   status: string | null
 ): TierId {
   if (status !== 'active') return 'free';
-  if (plan === 'premium' || plan === 'pro') return 'premium';
-  if (plan === 'family') return 'family';
-  if (plan === 'team') return 'team';
-  return 'free';
+  return normalizeTierId(plan);
 }
 
 /**
@@ -146,9 +153,11 @@ export interface QuotaStore {
   /**
    * Atomically count one request against `bucketKey` for the quota
    * day containing `now`, then report the decision. Every call
-   * increments — including calls that end up over quota.
+   * increments — including calls that end up over quota. Async
+   * (Section 15 P2-6) so the durable store can hit the database;
+   * the in-memory store resolves immediately.
    */
-  checkAndIncrement(bucketKey: string, limit: number, tier: TierId, now?: Date): QuotaDecision;
+  checkAndIncrement(bucketKey: string, limit: number, tier: TierId, now?: Date): Promise<QuotaDecision>;
 }
 
 /**
@@ -160,7 +169,7 @@ export function createMemoryQuotaStore(): QuotaStore {
   const counts = new Map<string, { count: number; resetAt: Date }>();
 
   return {
-    checkAndIncrement(bucketKey, limit, tier, now = new Date()) {
+    async checkAndIncrement(bucketKey, limit, tier, now = new Date()) {
       const day = quotaDayStart(now);
       const dayKey = day.toISOString().slice(0, 10);
       const resetAt = new Date(day.getTime() + 24 * 60 * 60 * 1000);
@@ -183,7 +192,133 @@ export function createMemoryQuotaStore(): QuotaStore {
 }
 
 /** Process-wide store used by the route handlers. */
-export const defaultQuotaStore = createMemoryQuotaStore();
+export const defaultQuotaStore = createDurableQuotaStore();
+
+export interface DurableQuotaStoreOptions {
+  /**
+   * In-memory fallback used when the database write fails (or the
+   * service client / table is unavailable). Defaults to a fresh
+   * in-memory store — the pre-P2-6 behaviour, preserved exactly.
+   */
+  fallback?: QuotaStore;
+  /**
+   * Service-role client override. Defaults to
+   * createSupabaseServiceClient(); pass `null` explicitly to force
+   * the memory fallback (tests). When omitted AND no service key
+   * is configured, the store is memory-only.
+   */
+  serviceClient?: SupabaseClient | null;
+}
+
+/**
+ * Durable quota store (Section 15 P2-6, CODE part only — applying
+ * migration 035 is owner-gated, never apply it here).
+ *
+ * Counts one request in the `api_key_usage` ledger (one row per
+ * bucket-key hash per UTC day) via the service-role client — the
+ * table has no RLS policy for anon/authenticated, so only the
+ * service client can write it. Read-then-write with a single
+ * conflict retry: a concurrent first-write for the same bucket
+ * surfaces as a primary-key conflict (23505) on insert, which
+ * retries as an update.
+ *
+ * FAIL-OPEN: any database error — no service key, table missing
+ * (035 not applied yet), network error — falls back to the
+ * in-memory store for that call, so quota enforcement degrades to
+ * today's behaviour instead of blocking traffic. The fallback is
+ * logged once per process to avoid log spam.
+ */
+export function createDurableQuotaStore(
+  options: DurableQuotaStoreOptions = {}
+): QuotaStore {
+  const fallback = options.fallback ?? createMemoryQuotaStore();
+  let warned = false;
+
+  function warnOnce(message: string, error?: unknown) {
+    if (warned) return;
+    warned = true;
+    logger.warn(message, error !== undefined ? { error: String(error) } : undefined);
+  }
+
+  return {
+    async checkAndIncrement(bucketKey, limit, tier, now = new Date()) {
+      const service =
+        options.serviceClient !== undefined
+          ? options.serviceClient
+          : createSupabaseServiceClient();
+      if (!service) {
+        warnOnce('Durable quota store unavailable (no service-role client); using in-memory quota store');
+        return fallback.checkAndIncrement(bucketKey, limit, tier, now);
+      }
+
+      const day = quotaDayStart(now);
+      const dayKey = day.toISOString().slice(0, 10);
+      const resetAt = new Date(day.getTime() + 24 * 60 * 60 * 1000);
+      // The ledger stores hashes only — never the raw key prefix/IP.
+      const keyHash = createHash('sha256').update(bucketKey).digest('hex');
+
+      try {
+        const { data, error: readError } = await service
+          .from('api_key_usage')
+          .select('request_count')
+          .eq('key_hash', keyHash)
+          .eq('window_date', dayKey)
+          .maybeSingle();
+        if (readError) throw readError;
+
+        const existing = data as { request_count?: number | null } | null;
+        let count: number;
+        if (existing) {
+          count = (existing.request_count ?? 0) + 1;
+          const { error: updateError } = await service
+            .from('api_key_usage')
+            .update({ request_count: count, tier, updated_at: new Date().toISOString() })
+            .eq('key_hash', keyHash)
+            .eq('window_date', dayKey);
+          if (updateError) throw updateError;
+        } else {
+          count = 1;
+          const { error: insertError } = await service.from('api_key_usage').insert({
+            key_hash: keyHash,
+            window_date: dayKey,
+            request_count: 1,
+            tier,
+          });
+          if (insertError) {
+            // Concurrent first write for this bucket: the row now
+            // exists — retry once as an update instead of failing.
+            if ((insertError as { code?: string }).code === '23505') {
+              const { data: retry, error: retryReadError } = await service
+                .from('api_key_usage')
+                .select('request_count')
+                .eq('key_hash', keyHash)
+                .eq('window_date', dayKey)
+                .maybeSingle();
+              if (retryReadError) throw retryReadError;
+              const retryRow = retry as { request_count?: number | null } | null;
+              count = (retryRow?.request_count ?? 0) + 1;
+              const { error: retryUpdateError } = await service
+                .from('api_key_usage')
+                .update({ request_count: count, tier, updated_at: new Date().toISOString() })
+                .eq('key_hash', keyHash)
+                .eq('window_date', dayKey);
+              if (retryUpdateError) throw retryUpdateError;
+            } else {
+              throw insertError;
+            }
+          }
+        }
+        return checkQuotaDecision(count, limit, tier, resetAt);
+      } catch (err) {
+        warnOnce(
+          'Durable quota write failed (migration 035 may not be applied yet); using in-memory quota store',
+          err
+        );
+        return fallback.checkAndIncrement(bucketKey, limit, tier, now);
+      }
+    },
+  };
+}
 
 /**
  * Honest 429 for a quota breach: names the current tier and limit,
@@ -250,7 +385,7 @@ export async function enforceApiQuota(
   if (keyInfo) {
     const resolveTier = options.resolveTier ?? getTierForUserId;
     const tier = await resolveTier(keyInfo.userId);
-    const decision = store.checkAndIncrement(
+    const decision = await store.checkAndIncrement(
       `key:${keyInfo.keyPrefix}`,
       getQuotaForTier(tier),
       tier,
@@ -260,7 +395,7 @@ export async function enforceApiQuota(
     return null;
   }
 
-  const decision = store.checkAndIncrement(
+  const decision = await store.checkAndIncrement(
     `anon:${getClientIp(request as NextRequest)}`,
     ANONYMOUS_DAILY_QUOTA,
     'free',

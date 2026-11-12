@@ -30,6 +30,8 @@
  * Deal Score, and no "lowest ever" claim.
  */
 
+import { logger } from '@/lib/config/logger';
+
 export interface EbayListing {
   itemId: string;
   title: string;
@@ -44,6 +46,7 @@ export interface EbayListing {
 export type EbaySearchFailureReason =
   | 'not-configured'
   | 'invalid-query'
+  | 'rate-limited'
   | 'api-error';
 
 export type EbaySearchResult =
@@ -68,6 +71,39 @@ const EBAY_DEFAULT_LIMIT = 5;
 const EBAY_MAX_QUERY_LENGTH = 200;
 /** Refresh the token 60s before eBay says it expires. */
 const TOKEN_EARLY_REFRESH_MS = 60 * 1000;
+/**
+ * Section 15, P1-3: hard timeout on every eBay call (matches the
+ * 10s precedent in lib/generic-webhook.ts and
+ * services/alert-webhooks.ts). A hanging eBay call used to block
+ * the caller forever; now it aborts and surfaces as 'api-error'.
+ */
+export const EBAY_FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Section 15, P3-4: eBay Browse `conditions` filter values. Only
+ * these are ever sent — an unknown value is ignored, never passed
+ * through to eBay, so a bad caller cannot craft an arbitrary
+ * filter string.
+ */
+export const EBAY_CONDITIONS = [
+  'NEW',
+  'LIKE_NEW',
+  'NEW_OTHER',
+  'USED',
+  'FOR_PARTS_OR_NOT_WORKING',
+  'CERTIFIED_REFURBISHED',
+  'SELLER_REFURBISHED',
+  'MANUFACTURER_REFURBISHED',
+  'REFURBISHED',
+] as const;
+export type EbayCondition = (typeof EBAY_CONDITIONS)[number];
+
+export function isEbayCondition(value: unknown): value is EbayCondition {
+  return (
+    typeof value === 'string' &&
+    (EBAY_CONDITIONS as readonly string[]).includes(value.toUpperCase())
+  );
+}
 
 type FetchFn = typeof fetch;
 
@@ -180,8 +216,18 @@ async function getEbayAccessToken(
         grant_type: 'client_credentials',
         scope: EBAY_SCOPE,
       }).toString(),
+      // P1-3: never wait forever for the token endpoint.
+      signal: AbortSignal.timeout(EBAY_FETCH_TIMEOUT_MS),
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      // Section 15, P3-4: a failed token fetch used to be silent.
+      // Log the status (never the credentials or the token) so a
+      // bad client id/secret is diagnosable instead of invisible.
+      logger.warn('ebay-browse: token request failed', {
+        status: response.status,
+      });
+      return null;
+    }
     const data: unknown = await response.json().catch(() => null);
     if (!data || typeof data !== 'object') return null;
     const body = data as Record<string, unknown>;
@@ -195,7 +241,9 @@ async function getEbayAccessToken(
       expiresAtMs: now + expiresIn * 1000 - TOKEN_EARLY_REFRESH_MS,
     };
     return token;
-  } catch {
+  } catch (err) {
+    // Section 15, P3-4: a throwing token fetch used to be silent.
+    logger.warn('ebay-browse: token request threw', { error: String(err) });
     return null;
   }
 }
@@ -207,7 +255,16 @@ async function getEbayAccessToken(
  */
 export async function searchEbayListings(
   rawQuery: string,
-  options?: { limit?: number; fetchFn?: FetchFn }
+  options?: {
+    limit?: number;
+    fetchFn?: FetchFn;
+    /**
+     * Section 15, P3-4: optional condition filter, sent as the
+     * Browse API `conditions:{VALUE}` filter. Unknown values are
+     * ignored (no filter) rather than failing the search.
+     */
+    condition?: string;
+  }
 ): Promise<EbaySearchResult> {
   const fetchFn = options?.fetchFn ?? fetch;
   const query = typeof rawQuery === 'string' ? rawQuery.trim() : '';
@@ -230,18 +287,40 @@ export async function searchEbayListings(
     url.searchParams.set('q', query);
     url.searchParams.set('limit', String(limit));
     url.searchParams.set('sort', 'price');
+    if (isEbayCondition(options?.condition)) {
+      url.searchParams.set(
+        'filter',
+        `conditions:{${(options?.condition as string).toUpperCase()}}`
+      );
+    }
     const response = await fetchFn(url.toString(), {
       headers: {
         Authorization: `Bearer ${token}`,
         'X-EBAY-C-MARKETPLACE-ID': getEbayMarketplaceId(),
         'Content-Type': 'application/json',
       },
+      // P1-3: never wait forever for the Browse API.
+      signal: AbortSignal.timeout(EBAY_FETCH_TIMEOUT_MS),
     });
     if (!response.ok) {
-      return { ok: false, reason: 'api-error', listings: [] };
+      // Section 15, P3-4: HTTP 429 is a distinct reason now
+      // ('rate-limited'), not a generic 'api-error' — callers
+      // retry/back off on it instead of reporting a vague 503,
+      // and the daily-budget guard can tell "eBay throttled us"
+      // apart from "eBay is down".
+      const status =
+        typeof response.status === 'number' ? response.status : 0;
+      logger.warn('ebay-browse: search request failed', { status, query });
+      return {
+        ok: false,
+        reason: status === 429 ? 'rate-limited' : 'api-error',
+        listings: [],
+      };
     }
     const data: unknown = await response.json().catch(() => null);
     if (!data || typeof data !== 'object') {
+      // Malformed JSON: an upstream failure, never a fake listing.
+      logger.warn('ebay-browse: search response was not JSON', { query });
       return { ok: false, reason: 'api-error', listings: [] };
     }
     const summaries = (data as Record<string, unknown>).itemSummaries;
@@ -254,7 +333,14 @@ export async function searchEbayListings(
       if (listing) listings.push(listing);
     }
     return { ok: true, source: 'ebay-browse-api', listings };
-  } catch {
+  } catch (err) {
+    // Section 15, P3-4: a throwing search (network error, the 10s
+    // timeout aborting) used to be silent. Log it; the caller
+    // still gets an honest 'api-error', never a fake listing.
+    logger.warn('ebay-browse: search request threw', {
+      query,
+      error: String(err),
+    });
     return { ok: false, reason: 'api-error', listings: [] };
   }
 }

@@ -56,6 +56,60 @@ export interface DealScorePrediction {
   currentPrice: number | null;
   lowestPrice: number | null;
   confidenceScore: number;
+  /**
+   * Number of recorded price-history points behind this
+   * prediction (Section 15, B1). The live catalog has 4 points
+   * per product, which is why every product scores 100/100:
+   * 4 points → discount probability 0, confidence 20 →
+   * 100 − 0 + 30 + 6 = 136, clamped to 100. The formula is
+   * NOT rebased — instead the badge is hidden until the
+   * prediction rests on enough points (see
+   * DEAL_SCORE_MIN_DATA_POINTS). Null/undefined when the
+   * prediction came from a source that does not carry the
+   * count (e.g. a cached row written before B1) — treated as
+   * "not enough data", never as 0 points.
+   */
+  dataPoints?: number | null;
+}
+
+/**
+ * Minimum price-history points for a Deal Score to be shown
+ * (Section 15, B1). Below this the score is a 4-point artifact
+ * (see DealScorePrediction.dataPoints), so callers hide the
+ * badge instead of showing a 100/100 that means nothing.
+ * A threshold, not a formula change: computeDealScore is
+ * untouched.
+ */
+export const DEAL_SCORE_MIN_DATA_POINTS = 5;
+
+/**
+ * Whether a Deal Score may be SHOWN for a prediction resting
+ * on `dataPoints` recorded prices. False for null/undefined
+ * (unknown count — hide, never guess) and for anything below
+ * DEAL_SCORE_MIN_DATA_POINTS.
+ */
+export function shouldShowDealScore(dataPoints: number | null | undefined): boolean {
+  return (
+    typeof dataPoints === 'number' &&
+    Number.isFinite(dataPoints) &&
+    dataPoints >= DEAL_SCORE_MIN_DATA_POINTS
+  );
+}
+
+/**
+ * The display gate for a Deal Score: the canonical score when
+ * the prediction rests on enough price points, null otherwise.
+ * The formula itself (computeDealScoreFromPrediction) is
+ * unchanged — this only decides whether the number is honest
+ * enough to show. Callers render no badge when this returns
+ * null.
+ */
+export function dealScoreForDisplay(
+  prediction: DealScorePrediction | null | undefined
+): number | null {
+  if (!prediction) return null;
+  if (!shouldShowDealScore(prediction.dataPoints)) return null;
+  return computeDealScoreFromPrediction(prediction);
 }
 
 /**

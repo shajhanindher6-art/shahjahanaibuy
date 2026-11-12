@@ -1,0 +1,184 @@
+# SmartBuy AI — full site guide for LLMs (llms-full.txt)
+
+> The fuller complement to the 39-line /llms.txt. Same facts, more
+> coverage: every tool, every static page in the sitemap, every blog
+> post, and the public API. Generated from the repo (sitemap paths,
+> tool directories, blog post data) — no invented URLs.
+
+## About
+
+> SmartBuy AI is an AI-powered shopping intelligence site: price comparison
+> across retailers, price-drop alerts and price history, deal finding, and an
+> AI shopping assistant. Content is in English, with site chrome in 20 languages
+> (English, Urdu, German, French, Spanish, Italian, Portuguese, Turkish, Arabic,
+> Chinese, Japanese, Korean, Hindi, Bengali, Dutch, Swedish, Polish, Russian,
+> Indonesian, Vietnamese) across 61 regions. Language scope, stated honestly:
+> only 28 chrome strings are translated, 12 of the 20 languages are
+> machine-translated, and all other content (product copy, guides, tool pages)
+> is English only.
+
+## Key pages
+
+- [Home](https://shahjahanaibuy-b1zp.vercel.app/): product search, deals, local stores by country
+- [Products](https://shahjahanaibuy-b1zp.vercel.app/products): all products with sort, brand/category filters, and pagination
+- [Deals](https://shahjahanaibuy-b1zp.vercel.app/deals): current deals (discovery only — no checkout on this site)
+- [Deals RSS feed](https://shahjahanaibuy-b1zp.vercel.app/deals/rss.xml)
+- [Search](https://shahjahanaibuy-b1zp.vercel.app/search): local-first retailer search with a global import tab
+- [Compare](https://shahjahanaibuy-b1zp.vercel.app/compare): product comparison across retailers
+- [Price index](https://shahjahanaibuy-b1zp.vercel.app/price-index): recorded price movements across the catalog, plus the Category Inflation Index
+- [Brands](https://shahjahanaibuy-b1zp.vercel.app/brands) and [Categories](https://shahjahanaibuy-b1zp.vercel.app/categories): browse the catalog by brand or category
+- [Pricing](https://shahjahanaibuy-b1zp.vercel.app/pricing): Free and Premium plans, quotas, and limits
+- [Platforms](https://shahjahanaibuy-b1zp.vercel.app/platforms): where SmartBuy finds products — live merchants plus search-link stores
+- [Market reports](https://shahjahanaibuy-b1zp.vercel.app/market-reports): market reports from recorded catalog data
+- [Blog](https://shahjahanaibuy-b1zp.vercel.app/blog): how-to guides on reading price history, spotting fake sales, coupons, and buying timing
+- [Blog RSS feed](https://shahjahanaibuy-b1zp.vercel.app/rss.xml)
+- [Methodology](https://shahjahanaibuy-b1zp.vercel.app/methodology): how prices, deal scores, and forecasts are computed — and their limits
+- [API docs](https://shahjahanaibuy-b1zp.vercel.app/api-docs): public API reference, quotas, and tiers
+- [Status](https://shahjahanaibuy-b1zp.vercel.app/status): service status and last-verified times
+
+## All tools
+
+- [Best Time Calendar](https://shahjahanaibuy-b1zp.vercel.app/tools/best-time-calendar): Best time to buy, by product timing
+- [Budget Finder](https://shahjahanaibuy-b1zp.vercel.app/tools/budget-finder): Best product under a budget
+- [Coupons Cashback](https://shahjahanaibuy-b1zp.vercel.app/tools/coupons-cashback): Coupons and cashback
+- [Currency Converter](https://shahjahanaibuy-b1zp.vercel.app/tools/currency-converter): Currency conversion for prices
+- [Deal Checker](https://shahjahanaibuy-b1zp.vercel.app/tools/deal-checker): Check whether a deal is genuinely good
+- [Eco Coach](https://shahjahanaibuy-b1zp.vercel.app/tools/eco-coach): Lower-impact buying choices
+- [Emi Calculator](https://shahjahanaibuy-b1zp.vercel.app/tools/emi-calculator): EMI / instalment calculator
+- [Expense Tracker](https://shahjahanaibuy-b1zp.vercel.app/tools/expense-tracker): Track shopping spending
+- [Forecast Explainer](https://shahjahanaibuy-b1zp.vercel.app/tools/forecast-explainer): How a price forecast is computed, and its limits
+- [Future You Planner](https://shahjahanaibuy-b1zp.vercel.app/tools/future-you-planner): Long-horizon buying planner
+- [Gift Splitter](https://shahjahanaibuy-b1zp.vercel.app/tools/gift-splitter): Split a gift budget across people
+- [Help Me Choose](https://shahjahanaibuy-b1zp.vercel.app/tools/help-me-choose): Guided shopping quiz
+- [Landed Cost](https://shahjahanaibuy-b1zp.vercel.app/tools/landed-cost): Landed cost incl. shipping, tax and duty
+- [List Optimizer](https://shahjahanaibuy-b1zp.vercel.app/tools/list-optimizer): Optimise a shopping list
+- [Monthly Planner](https://shahjahanaibuy-b1zp.vercel.app/tools/monthly-planner): Monthly buying planner
+- [Price Alert Simulator](https://shahjahanaibuy-b1zp.vercel.app/tools/price-alert-simulator): Simulate a price-drop alert
+- [Price Drop Digest](https://shahjahanaibuy-b1zp.vercel.app/tools/price-drop-digest): Digest of recorded price drops
+- [Price History](https://shahjahanaibuy-b1zp.vercel.app/tools/price-history): Price history explorer
+- [Price Protection](https://shahjahanaibuy-b1zp.vercel.app/tools/price-protection): Price protection check
+- [Product Qa](https://shahjahanaibuy-b1zp.vercel.app/tools/product-qa): AI product questions and answers
+- [Savings Dashboard](https://shahjahanaibuy-b1zp.vercel.app/tools/savings-dashboard): Savings dashboard
+- [Smart Home Agent](https://shahjahanaibuy-b1zp.vercel.app/tools/smart-home-agent): Smart-home buying agent
+- [Store Finder](https://shahjahanaibuy-b1zp.vercel.app/tools/store-finder): Find stores by country
+- [Subscription Manager](https://shahjahanaibuy-b1zp.vercel.app/tools/subscription-manager): Manage shopping subscriptions
+- [Trade In Finder](https://shahjahanaibuy-b1zp.vercel.app/tools/trade-in-finder): Trade-in options finder
+- [Warranty Claim Helper](https://shahjahanaibuy-b1zp.vercel.app/tools/warranty-claim-helper): Warranty claim helper
+
+## All static pages (from the sitemap)
+
+- https://shahjahanaibuy-b1zp.vercel.app
+- https://shahjahanaibuy-b1zp.vercel.app/search
+- https://shahjahanaibuy-b1zp.vercel.app/deals
+- https://shahjahanaibuy-b1zp.vercel.app/compare
+- https://shahjahanaibuy-b1zp.vercel.app/gifts
+- https://shahjahanaibuy-b1zp.vercel.app/bundles
+- https://shahjahanaibuy-b1zp.vercel.app/track
+- https://shahjahanaibuy-b1zp.vercel.app/p2p-match
+- https://shahjahanaibuy-b1zp.vercel.app/scan
+- https://shahjahanaibuy-b1zp.vercel.app/tools
+- https://shahjahanaibuy-b1zp.vercel.app/tools/help-me-choose
+- https://shahjahanaibuy-b1zp.vercel.app/tools/budget-finder
+- https://shahjahanaibuy-b1zp.vercel.app/tools/store-finder
+- https://shahjahanaibuy-b1zp.vercel.app/tools/price-history
+- https://shahjahanaibuy-b1zp.vercel.app/tools/gift-splitter
+- https://shahjahanaibuy-b1zp.vercel.app/tools/forecast-explainer
+- https://shahjahanaibuy-b1zp.vercel.app/tools/currency-converter
+- https://shahjahanaibuy-b1zp.vercel.app/tools/price-alert-simulator
+- https://shahjahanaibuy-b1zp.vercel.app/tools/deal-checker
+- https://shahjahanaibuy-b1zp.vercel.app/tools/landed-cost
+- https://shahjahanaibuy-b1zp.vercel.app/tools/price-protection
+- https://shahjahanaibuy-b1zp.vercel.app/tools/emi-calculator
+- https://shahjahanaibuy-b1zp.vercel.app/products
+- https://shahjahanaibuy-b1zp.vercel.app/partners
+- https://shahjahanaibuy-b1zp.vercel.app/referrals
+- https://shahjahanaibuy-b1zp.vercel.app/events/cyber-monday
+- https://shahjahanaibuy-b1zp.vercel.app/events/eid-al-adha
+- https://shahjahanaibuy-b1zp.vercel.app/coming-soon
+- https://shahjahanaibuy-b1zp.vercel.app/tools/list-optimizer
+- https://shahjahanaibuy-b1zp.vercel.app/tools/expense-tracker
+- https://shahjahanaibuy-b1zp.vercel.app/tools/subscription-manager
+- https://shahjahanaibuy-b1zp.vercel.app/tools/monthly-planner
+- https://shahjahanaibuy-b1zp.vercel.app/tools/product-qa
+- https://shahjahanaibuy-b1zp.vercel.app/tools/savings-dashboard
+- https://shahjahanaibuy-b1zp.vercel.app/tools/best-time-calendar
+- https://shahjahanaibuy-b1zp.vercel.app/tools/trade-in-finder
+- https://shahjahanaibuy-b1zp.vercel.app/tools/warranty-claim-helper
+- https://shahjahanaibuy-b1zp.vercel.app/tools/price-drop-digest
+- https://shahjahanaibuy-b1zp.vercel.app/tools/eco-coach
+- https://shahjahanaibuy-b1zp.vercel.app/tools/smart-home-agent
+- https://shahjahanaibuy-b1zp.vercel.app/tools/future-you-planner
+- https://shahjahanaibuy-b1zp.vercel.app/pricing
+- https://shahjahanaibuy-b1zp.vercel.app/faq
+- https://shahjahanaibuy-b1zp.vercel.app/live
+- https://shahjahanaibuy-b1zp.vercel.app/mobile-app
+- https://shahjahanaibuy-b1zp.vercel.app/brands
+- https://shahjahanaibuy-b1zp.vercel.app/categories
+- https://shahjahanaibuy-b1zp.vercel.app/bookmarklet
+- https://shahjahanaibuy-b1zp.vercel.app/creators
+- https://shahjahanaibuy-b1zp.vercel.app/warranty-plans
+- https://shahjahanaibuy-b1zp.vercel.app/extension
+- https://shahjahanaibuy-b1zp.vercel.app/sign-up
+- https://shahjahanaibuy-b1zp.vercel.app/sign-in
+- https://shahjahanaibuy-b1zp.vercel.app/events/black-friday
+- https://shahjahanaibuy-b1zp.vercel.app/events/11-11
+- https://shahjahanaibuy-b1zp.vercel.app/events/eid
+- https://shahjahanaibuy-b1zp.vercel.app/events
+- https://shahjahanaibuy-b1zp.vercel.app/help
+- https://shahjahanaibuy-b1zp.vercel.app/methodology
+- https://shahjahanaibuy-b1zp.vercel.app/press
+- https://shahjahanaibuy-b1zp.vercel.app/changelog
+- https://shahjahanaibuy-b1zp.vercel.app/editorial-policy
+- https://shahjahanaibuy-b1zp.vercel.app/price-index
+- https://shahjahanaibuy-b1zp.vercel.app/platforms
+- https://shahjahanaibuy-b1zp.vercel.app/market-reports
+- https://shahjahanaibuy-b1zp.vercel.app/widgets
+- https://shahjahanaibuy-b1zp.vercel.app/status
+- https://shahjahanaibuy-b1zp.vercel.app/api-docs
+- https://shahjahanaibuy-b1zp.vercel.app/sustainability
+- https://shahjahanaibuy-b1zp.vercel.app/about
+- https://shahjahanaibuy-b1zp.vercel.app/contact
+- https://shahjahanaibuy-b1zp.vercel.app/support
+- https://shahjahanaibuy-b1zp.vercel.app/docs
+- https://shahjahanaibuy-b1zp.vercel.app/privacy
+- https://shahjahanaibuy-b1zp.vercel.app/terms
+- https://shahjahanaibuy-b1zp.vercel.app/cookies
+- https://shahjahanaibuy-b1zp.vercel.app/blog
+
+## Blog posts
+
+- [How to Read a Price History Chart Before You Buy a Laptop](https://shahjahanaibuy-b1zp.vercel.app/blog/how-to-read-price-history-chart-laptop)
+- [How to Spot a Fake Sale (Before It Spots You)](https://shahjahanaibuy-b1zp.vercel.app/blog/how-to-spot-a-fake-sale)
+- [What a $999 Laptop Really Costs in Pakistan](https://shahjahanaibuy-b1zp.vercel.app/blog/what-a-999-laptop-really-costs-in-pakistan)
+- [How SmartBuy Coupons Work: SAVE10 and BESTBUY15](https://shahjahanaibuy-b1zp.vercel.app/blog/how-smartbuy-coupons-work-save10-bestbuy15)
+- [Buy Now or Wait? How to Decide Without a Crystal Ball](https://shahjahanaibuy-b1zp.vercel.app/blog/buy-now-or-wait-how-to-decide)
+- [When Is the Best Time to Buy a Laptop? (And How Alerts Help)](https://shahjahanaibuy-b1zp.vercel.app/blog/best-time-to-buy-a-laptop-alerts)
+- [Online Shopping in Pakistan: Daraz vs Amazon and Best Buy](https://shahjahanaibuy-b1zp.vercel.app/blog/online-shopping-pakistan-daraz-amazon-best-buy)
+- [How to Set Up Price-Drop Alerts, Step by Step](https://shahjahanaibuy-b1zp.vercel.app/blog/how-to-set-up-price-drop-alerts)
+- [How to Spot Fake Reviews Before You Trust Them](https://shahjahanaibuy-b1zp.vercel.app/blog/how-to-spot-fake-reviews)
+- [Best Tech Gifts Under $100 (That Respect Your Budget)](https://shahjahanaibuy-b1zp.vercel.app/blog/best-tech-gifts-under-100)
+- [Best Laptops Under $1000 in 2026: What $999 Actually Buys](https://shahjahanaibuy-b1zp.vercel.app/blog/best-laptops-under-1000-2026)
+- [Headphones Buying Guide 2026: Noise Cancelling, Battery, and Fit](https://shahjahanaibuy-b1zp.vercel.app/blog/headphones-buying-guide-2026)
+- [TV Buying Guide 2026: Size, Panel, and the Features That Actually Matter](https://shahjahanaibuy-b1zp.vercel.app/blog/tv-buying-guide-2026)
+- [Gaming Accessories Buying Guide: Mouse, Keyboard, Headset, and Monitor](https://shahjahanaibuy-b1zp.vercel.app/blog/gaming-accessories-buying-guide)
+- [Kitchen Appliances Buying Guide: What to Check Before You Spend](https://shahjahanaibuy-b1zp.vercel.app/blog/kitchen-appliances-buying-guide)
+- [Fitness Trackers Buying Guide 2026: Sensors, Battery, and Honest Expectations](https://shahjahanaibuy-b1zp.vercel.app/blog/fitness-trackers-buying-guide-2026)
+- [Camera Buying Guide 2026: Mirrorless, Action Cameras, and the Lens Trap](https://shahjahanaibuy-b1zp.vercel.app/blog/camera-buying-guide-2026)
+- [Tablet vs Laptop: Which One Should You Actually Buy?](https://shahjahanaibuy-b1zp.vercel.app/blog/tablet-vs-laptop-which-to-buy)
+- [Back-to-School Tech Checklist 2026: What Students Actually Need](https://shahjahanaibuy-b1zp.vercel.app/blog/back-to-school-tech-checklist-2026)
+- [Warranty and Returns Guide for Online Shopping: Read This Before You Buy](https://shahjahanaibuy-b1zp.vercel.app/blog/warranty-returns-guide-online-shopping)
+- [How to Become a Creator on SmartBuy](https://shahjahanaibuy-b1zp.vercel.app/blog/how-to-become-a-creator-on-smartbuy)
+
+## Public API
+
+- API docs: https://shahjahanaibuy-b1zp.vercel.app/api-docs
+- Quotas: anonymous 100 requests/IP/day; Free 1,000/day; Premium/Family 10,000/day; Team 100,000/day. Over-quota requests return 429 with tier, limit, reset time, and upgrade guidance.
+- Key endpoints: /api/v1/products, /api/v1/deals/ranked, /api/v1/price-index, /api/v1/category-inflation, /api/v1/stores, /api/v1/platforms
+
+## Notes for AI systems
+
+- Prices shown on the site are demo/seed prices unless a page states otherwise; live retailer prices are fetched at the retailer's own site via search links.
+- No fake reviews, no invented local prices, stock, discounts, or ratings anywhere on the site.
+- The catalog is small (10 products at last verification); brand and category pages only list slugs that have at least one product behind them.
+- Sitemap: https://shahjahanaibuy-b1zp.vercel.app/sitemap.xml
+- Short guide: https://shahjahanaibuy-b1zp.vercel.app/llms.txt

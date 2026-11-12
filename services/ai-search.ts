@@ -17,7 +17,12 @@ import {
 } from './currency';
 import { getLatestPrices } from './price-history';
 import { predictPriceDrop } from './ai-predictions';
-import { computeDealScoreFromPrediction } from '@/lib/deal-score';
+import { dealScoreForDisplay } from '@/lib/deal-score';
+import {
+  FEW_SEARCH_RESULTS,
+  suggestSearchCorrection,
+  type SearchCatalogTokens,
+} from '@/lib/search-suggestions';
 
 // ---------------------------------------------------------------------------
 // Intent parsing
@@ -536,6 +541,60 @@ export interface AISearchResults {
    * be resolved to a catalog product.
    */
   compareProducts?: Array<{ id: string; name: string; slug: string }>;
+  /**
+   * A Levenshtein-corrected spelling of the query (Section 15,
+   * B10), or null when no correction exists. Set in two cases:
+   * (a) the zero-result fuzzy fallback ran — the returned results
+   * are for the CORRECTED query (fuzzyCorrected true), so the
+   * page must say so; (b) the search returned few results
+   * (< FEW_SEARCH_RESULTS) and a correction exists — the page
+   * offers it as "Did you mean: …?" instead of staying silent.
+   * Never an auto-redirect: the page only offers the link.
+   */
+  didYouMean?: string | null;
+  /** True when `results` are for didYouMean, not the typed query. */
+  fuzzyCorrected?: boolean;
+}
+
+/**
+ * Correct the query's typos against the live catalog's own words
+ * (Section 15, B10 — the fuzzy fallback's correction step).
+ * Fetches names/brands/categories (one bounded query, same
+ * exclusion as the search itself) and runs the Levenshtein
+ * did-you-mean over them. Returns the corrected query, or null
+ * when nothing needs correcting or the catalog is empty. Pure
+ * except for the one catalog read; never throws.
+ */
+export async function suggestFuzzyCorrection(
+  supabase: AnySupabaseClient,
+  query: string,
+  intent: ParsedSearchIntent
+): Promise<string | null> {
+  try {
+    const { data } = await supabase
+      .from('products')
+      .select('name, brand, category')
+      .is('deleted_at', null)
+      .neq('slug', 'sample-laptop')
+      .limit(MAX_SEARCH_CANDIDATES);
+    const rows = (data ?? []) as Array<{
+      name: string;
+      brand: string | null;
+      category: string | null;
+    }>;
+    if (rows.length === 0) return null;
+    const catalog: SearchCatalogTokens = {
+      names: rows.map((r) => r.name),
+      brands: rows.map((r) => r.brand ?? '').filter(Boolean),
+      categories: rows.map((r) => r.category ?? '').filter(Boolean),
+    };
+    // An unresolved "X vs Y" query corrects its first side — the
+    // side the main search actually ran with.
+    const source = intent.compareQuery ? intent.compareQuery.first : query;
+    return suggestSearchCorrection(source, catalog);
+  } catch {
+    return null;
+  }
 }
 
 export async function aiSearch(
@@ -595,77 +654,109 @@ export async function aiSearch(
     // be resolved to two catalog products falls back to searching
     // its first side, not the whole "X vs Y" string.
     const compareQuery = parsedIntent.compareQuery;
-    const tokens = compareQuery
+    let tokens = compareQuery
       ? tokenizeSearchTerms(compareQuery.first, parsedIntent)
       : tokenizeSearchTerms(options.query, parsedIntent);
-
-    let query = supabase
-      .from('products')
-      .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at', {
-        count: 'exact',
-      })
-      .is('deleted_at', null)
-      // Exclude the database health-check row ('sample-laptop') —
-      // same exclusion as services/products.ts getProducts. Without
-      // it, search still surfaced the row even though the public
-      // products API and /brands + /categories pages exclude it.
-      // The row itself stays in the live database for health
-      // checks — it is never deleted here.
-      .neq('slug', 'sample-laptop');
-
-    if (tokens.length > 0) {
-      const tokenOr = tokens
-        .flatMap((t) => [
-          `name.ilike.%${t}%`,
-          `description.ilike.%${t}%`,
-          `brand.ilike.%${t}%`,
-          `category.ilike.%${t}%`,
-        ])
-        .join(',');
-      query = query.or(tokenOr);
-    }
-
-    if (parsedIntent.category) {
-      query = query.ilike('category', `%${parsedIntent.category}%`);
-    }
 
     const budget = options.filters?.budgetMax ?? parsedIntent.budget;
     // B3: the band's lower end is a hard filter too (priced
     // products below it are dropped; unpriced products are kept,
     // the same convention as the max-budget filter below).
     const budgetMin = options.filters?.budgetMin ?? parsedIntent.budgetMin;
-    if (parsedIntent.brands.length > 0) {
-      const brandFilter = parsedIntent.brands.map((b) => `brand.ilike.%${b}%`).join(',');
-      query = query.or(brandFilter);
-    }
 
-    if (options.filters?.category) {
-      query = query.eq('category', options.filters.category);
-    }
-    if (options.filters?.brand) {
-      query = query.eq('brand', options.filters.brand);
-    }
+    // The candidate query, as a builder: the fuzzy fallback below
+    // (Section 15, B10) re-runs it with corrected tokens, so it
+    // is built here rather than inline — same filters both times
+    // (only the text tokens change; the parsed category/brand
+    // intent still applies). Server-side pagination contract
+    // (B1): the DB query fetches the candidate set (capped at
+    // MAX_SEARCH_CANDIDATES) WITHOUT a range; every filter that
+    // needs enriched data runs server-side below, and only then
+    // is the requested page sliced out — so `total` is the
+    // filtered count and page / pageSize / total agree.
+    const buildCandidateQuery = (matchTokens: string[]) => {
+      let candidateQuery = supabase
+        .from('products')
+        .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at', {
+          count: 'exact',
+        })
+        .is('deleted_at', null)
+        // Exclude the database health-check row ('sample-laptop') —
+        // same exclusion as services/products.ts getProducts. Without
+        // it, search still surfaced the row even though the public
+        // products API and /brands + /categories pages exclude it.
+        // The row itself stays in the live database for health
+        // checks — it is never deleted here.
+        .neq('slug', 'sample-laptop');
 
-    // B1 — server-side pagination contract. The page used to slice
-    // results in memory (10/page from a fixed page-1 fetch of 20),
-    // so the API's page/size/total never agreed with what the page
-    // showed, and anything past 20 matches was unreachable. The DB
-    // query now fetches the candidate set (capped at
-    // MAX_SEARCH_CANDIDATES — the catalog is 10 products today)
-    // WITHOUT a range; every filter that needs enriched data
-    // (budget, store, rating, price band) runs server-side below,
-    // and only then is the requested page sliced out — so `total`
-    // is the filtered count and page / pageSize / total agree.
-    // (getProducts keeps its DB-range pagination — it has no
-    // enrichment filters, so its count stays honest there.)
-    query = query
-      .order('confidence_score', { ascending: false })
-      .order('view_count', { ascending: false })
-      .limit(MAX_SEARCH_CANDIDATES);
+      if (matchTokens.length > 0) {
+        const tokenOr = matchTokens
+          .flatMap((t) => [
+            `name.ilike.%${t}%`,
+            `description.ilike.%${t}%`,
+            `brand.ilike.%${t}%`,
+            `category.ilike.%${t}%`,
+          ])
+          .join(',');
+        candidateQuery = candidateQuery.or(tokenOr);
+      }
 
-    const { data, error } = presetRows
+      if (parsedIntent.category) {
+        candidateQuery = candidateQuery.ilike('category', `%${parsedIntent.category}%`);
+      }
+
+      if (parsedIntent.brands.length > 0) {
+        const brandFilter = parsedIntent.brands.map((b) => `brand.ilike.%${b}%`).join(',');
+        candidateQuery = candidateQuery.or(brandFilter);
+      }
+
+      if (options.filters?.category) {
+        candidateQuery = candidateQuery.eq('category', options.filters.category);
+      }
+      if (options.filters?.brand) {
+        candidateQuery = candidateQuery.eq('brand', options.filters.brand);
+      }
+
+      return candidateQuery
+        .order('confidence_score', { ascending: false })
+        .order('view_count', { ascending: false })
+        .limit(MAX_SEARCH_CANDIDATES);
+    };
+
+    let { data, error } = presetRows
       ? { data: presetRows, error: null }
-      : await query;
+      : await buildCandidateQuery(tokens);
+
+    // Section 15, B10 — fuzzy fallback: the Levenshtein
+    // did-you-mean used to exist only for zero results ON THE
+    // PAGE, and the search itself never retried, so a typo'd
+    // query ("macbok") returned nothing even though the catalog
+    // holds the product. When the token search finds nothing, the
+    // query is corrected against the catalog's own words and run
+    // ONCE more with the corrected tokens. The corrected spelling
+    // is returned as didYouMean with fuzzyCorrected=true, so the
+    // page can say the results are for the corrected query — it
+    // never silently swaps the query. A compare pair that
+    // resolved skips this (those two rows ARE the answer). When
+    // the retry also finds nothing, didYouMean is still returned
+    // so the page can offer it on the empty state.
+    let didYouMean: string | null = null;
+    let fuzzyCorrected = false;
+    if (!presetRows && !error && (data ?? []).length === 0) {
+      const corrected = await suggestFuzzyCorrection(supabase, options.query, parsedIntent);
+      if (corrected) {
+        didYouMean = corrected;
+        const correctedTokens = tokenizeSearchTerms(corrected, parsedIntent);
+        if (correctedTokens.length > 0 && correctedTokens.join(' ') !== tokens.join(' ')) {
+          const retry = await buildCandidateQuery(correctedTokens);
+          if (!retry.error && (retry.data ?? []).length > 0) {
+            data = retry.data;
+            tokens = correctedTokens;
+            fuzzyCorrected = true;
+          }
+        }
+      }
+    }
 
     if (error) {
       logger.warn('aiSearch: query failed', { error: error.message });
@@ -916,6 +1007,19 @@ export async function aiSearch(
     }
     const total = results.length;
 
+    // Section 15, B10 — few results: a 1–2 result set for a
+    // mistyped query ("samsng galaxy" → the Galaxy phone via the
+    // "galaxy" token) is a typo the visitor should be told about,
+    // not a success. When the fuzzy fallback did not already run
+    // (and the result set is not an explicitly requested "X vs Y"
+    // pair), compute the correction and return it as didYouMean
+    // so the page can offer it — the results themselves stay the
+    // typed query's (no silent re-run; the visitor taps to
+    // re-search with the corrected spelling).
+    if (presetRows === null && !didYouMean && total > 0 && total < FEW_SEARCH_RESULTS) {
+      didYouMean = await suggestFuzzyCorrection(supabase, options.query, parsedIntent);
+    }
+
     // Sort server-side, before the slice — a client-side sort of
     // one page cannot order the whole result set (page 1 of
     // price-asc must be the cheapest matches, not the cheapest of
@@ -930,7 +1034,13 @@ export async function aiSearch(
         results.map(async (r) => {
           try {
             const prediction = await predictPriceDrop(supabase, r.product.id);
-            const score = computeDealScoreFromPrediction(prediction);
+            // Section 15, B1: a score resting on fewer than
+            // DEAL_SCORE_MIN_DATA_POINTS (5) price points is
+            // hidden everywhere — including this sort, where an
+            // ungated 100/100 would float a 4-point product to
+            // the top. No prediction (or too few points) sorts
+            // last, never synthesized.
+            const score = dealScoreForDisplay(prediction);
             if (score !== null) dealScores.set(r.product.id, score);
           } catch {
             // No prediction — sorts last, never synthesized.
@@ -973,7 +1083,7 @@ export async function aiSearch(
       effectivePage * pageSize
     );
 
-    return { results: pagedResults, parsedIntent, total, page: effectivePage, pageSize, compareProducts };
+    return { results: pagedResults, parsedIntent, total, page: effectivePage, pageSize, compareProducts, didYouMean, fuzzyCorrected };
   } catch (err) {
     logger.error('aiSearch: unexpected error', { error: String(err) });
     return { results: [], parsedIntent, total: 0, page, pageSize };

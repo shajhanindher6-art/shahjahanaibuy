@@ -26,7 +26,7 @@
 //     sign-in on the site — the overlay says so, it never claims
 //     otherwise.
 //
-// Privacy: the content script runs only on the five retailer
+// Privacy: the content script runs only on the ten retailer
 // domains in the manifest, only on product/checkout pages, and
 // sends nothing except the product title (price match) and slug
 // (history). No browsing tracking.
@@ -44,6 +44,14 @@
 // is the latest recorded price (labelled as such) with no
 // merchant attribution, and the "View Deal" link goes to the
 // SmartBuy product page, not a retailer checkout.
+// Section 15, C6: Daraz, PriceOye, Noon, Jumia and Flipkart use
+// GENERIC detection only (first h1 + a generic price scan — see
+// findGenericPriceEl). No merchant-specific DOM selector for
+// these five has been verified, so none is claimed: on some of
+// their product pages the overlay simply will not appear, and it
+// never shows a price it did not find. The banner also lists
+// store search links (Section 15, A12) — links to each store's
+// own search results, never a SmartBuy price or stock claim.
 
 const API_BASE = 'https://shahjahanaibuy-b1zp.vercel.app';
 
@@ -83,7 +91,74 @@ const RETAILER_PATTERNS = {
     priceSelector: '.product-price-value, [class*="product-price"]',
     imageSelector: '.magnifier-image, [class*="image"] img',
   },
+  // Section 15, C6 — local merchants. NO merchant-specific DOM
+  // selector below is verified, so none is invented: title is the
+  // generic first h1 and the price comes from the generic scan
+  // (findGenericPriceEl). Hostnames match the verified search-URL
+  // domains in lib/stores.ts. If either lookup misses, the
+  // overlay simply does not appear — never a guessed price.
+  daraz: {
+    hostname: /daraz\.(pk|com\.bd|lk|com\.np)/,
+    merchantName: 'Daraz',
+    titleSelector: 'h1',
+    genericPrice: true,
+    imageSelector: 'main img',
+  },
+  priceoye: {
+    hostname: /priceoye\.pk/,
+    merchantName: 'PriceOye',
+    titleSelector: 'h1',
+    genericPrice: true,
+    imageSelector: 'main img',
+  },
+  noon: {
+    hostname: /noon\.com/,
+    merchantName: 'Noon',
+    titleSelector: 'h1',
+    genericPrice: true,
+    imageSelector: 'main img',
+  },
+  jumia: {
+    hostname: /jumia\.(com\.ng|com\.eg|co\.ke|ma|ci|sn|ug|com\.gh)/,
+    merchantName: 'Jumia',
+    titleSelector: 'h1',
+    genericPrice: true,
+    imageSelector: 'main img',
+  },
+  flipkart: {
+    hostname: /flipkart\.com/,
+    merchantName: 'Flipkart',
+    titleSelector: 'h1',
+    genericPrice: true,
+    imageSelector: 'main img',
+  },
 };
+
+function findGenericPriceEl() {
+  // Generic, merchant-agnostic price scan for the C6 local
+  // merchants, whose page layouts have no verified selector:
+  // elements that advertise a price via schema.org or a
+  // price-like class/id/testid. First VISIBLE element whose own
+  // text parses to a positive number wins. Containers that hold
+  // a nested price element are skipped (the child is the price,
+  // not the wrapper), and long text is skipped (a price is a
+  // short string, not a paragraph). Best-effort only: the number
+  // is used solely to decide whether the banner may appear, and
+  // the best price the banner shows is always SmartBuy's
+  // recorded price — never this scanned number.
+  const candidates = document.querySelectorAll(
+    '[itemprop="price"], [class*="price" i], [id*="price" i], [data-testid*="price" i]'
+  );
+  for (const el of candidates) {
+    if (el.offsetParent === null) continue;
+    const text = el.textContent?.trim() ?? '';
+    if (!text || text.length > 40) continue;
+    if (el.querySelector('[itemprop="price"], [class*="price" i], [id*="price" i]')) continue;
+    const value = parseFloat(text.replace(/[^0-9.]/g, ''));
+    if (value > 0) return el;
+  }
+  return null;
+}
 
 function detectRetailer() {
   const hostname = window.location.hostname;
@@ -98,7 +173,9 @@ function extractProductInfo(retailer) {
   if (!config) return null;
 
   const titleEl = document.querySelector(config.titleSelector);
-  const priceEl = document.querySelector(config.priceSelector);
+  const priceEl = config.genericPrice
+    ? findGenericPriceEl()
+    : document.querySelector(config.priceSelector);
   const imageEl = document.querySelector(config.imageSelector);
 
   if (!titleEl) return null;
@@ -180,7 +257,7 @@ function buildSparkline(points, width, height) {
   return svg;
 }
 
-function createPriceOverlay(productInfo, bestPrice, history, productSlug) {
+function createPriceOverlay(productInfo, bestPrice, history, productSlug, storeLinks) {
   if (document.getElementById('smartbuy-banner')) return;
   const overlay = document.createElement('div');
   overlay.id = 'smartbuy-banner';
@@ -251,6 +328,42 @@ function createPriceOverlay(productInfo, bestPrice, history, productSlug) {
   }
   info.appendChild(historyBox);
 
+  // Section 15, A12 — "also search on" store links from the
+  // extension price endpoint (GET /api/v1/extension/price?slug=…,
+  // meta.storeLinks). Links to each store's OWN search results
+  // for this product — never a SmartBuy price, deal, or stock
+  // claim; the note under the links says so. Empty / failed
+  // fetch renders nothing here (the banner still works).
+  const links = Array.isArray(storeLinks) ? storeLinks : [];
+  if (links.length > 0) {
+    const storesBox = document.createElement('div');
+    storesBox.style.cssText = 'margin-bottom: 12px;';
+    const storesTitle = document.createElement('div');
+    storesTitle.style.cssText = 'font-size: 12px; font-weight: 600; margin-bottom: 4px;';
+    storesTitle.textContent = 'Also search for this product on:';
+    storesBox.appendChild(storesTitle);
+    const storesList = document.createElement('div');
+    storesList.style.cssText = 'display: flex; flex-wrap: wrap; gap: 6px;';
+    for (const store of links) {
+      if (typeof store?.url !== 'string' || typeof store?.name !== 'string') continue;
+      const storeLink = document.createElement('a');
+      storeLink.textContent = store.name;
+      storeLink.target = '_blank';
+      storeLink.rel = 'noopener noreferrer';
+      storeLink.href = store.url;
+      storeLink.style.cssText = 'background: rgba(255,255,255,0.15); color: white; padding: 4px 10px; border-radius: 999px; text-decoration: none; font-size: 12px;';
+      storesList.appendChild(storeLink);
+    }
+    if (storesList.childElementCount > 0) {
+      storesBox.appendChild(storesList);
+      const storesNote = document.createElement('div');
+      storesNote.style.cssText = 'font-size: 11px; color: #e0f2fe; margin-top: 4px;';
+      storesNote.textContent = 'Search links to each store — prices and stock are shown by the store itself.';
+      storesBox.appendChild(storesNote);
+      info.appendChild(storesBox);
+    }
+  }
+
   const actions = document.createElement('div');
   actions.style.cssText = 'display: flex; gap: 8px; flex-wrap: wrap;';
   const link = document.createElement('a');
@@ -312,6 +425,24 @@ function rememberTrackedPrice(productSlug, price, title) {
   }
 }
 
+// Section 15, A12 — store search links for the banner's "also
+// search on" row, from the extension price endpoint
+// (GET /api/v1/extension/price?slug=… — meta.storeLinks). Returns
+// [] on any failure; the banner renders fine without links.
+async function fetchStoreLinks(productSlug) {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/v1/extension/price?slug=${encodeURIComponent(productSlug)}`
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    const links = Array.isArray(data?.meta?.storeLinks) ? data.meta.storeLinks : [];
+    return links.filter((l) => typeof l?.url === 'string' && typeof l?.name === 'string');
+  } catch (e) {
+    return [];
+  }
+}
+
 async function checkForBetterPrices(productInfo, options) {
   const forceShow = !!(options && options.forceShow);
   try {
@@ -355,7 +486,8 @@ async function checkForBetterPrices(productInfo, options) {
     const isCheaper = productInfo.price && bestPrice.price < productInfo.price;
     if (!isCheaper && !forceShow) return;
     const history = await fetchPriceHistory(productSlug);
-    createPriceOverlay(productInfo, bestPrice, history, productSlug);
+    const storeLinks = await fetchStoreLinks(productSlug);
+    createPriceOverlay(productInfo, bestPrice, history, productSlug, storeLinks);
   } catch (e) {
     // Silently fail — extension should not disrupt shopping
   }

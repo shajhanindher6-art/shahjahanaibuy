@@ -47,6 +47,10 @@ export async function getProductSeo(
       gtin: product.gtin,
       confidenceScore: product.confidenceScore,
       lowestPrice: cheapest ? cheapest.price : null,
+      // Section 15 P1-11: the recorded freshness timestamp travels
+      // with the SEO facts so the page can render "Prices last
+      // checked" server-side — no extra query, no client fetch.
+      dataFreshness: product.dataFreshness ?? null,
       // No validity window exists in merchant data — see
       // ProductSeoData.priceValidUntil in lib/product-seo.ts.
       priceValidUntil: null,

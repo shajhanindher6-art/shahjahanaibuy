@@ -19,6 +19,20 @@ export interface SearchCatalogTokens {
   categories: string[];
 }
 
+/**
+ * "Few results" (Section 15, B10): a search returning fewer than
+ * this many results (catalog + web combined) still gets a
+ * did-you-mean offer when a correction exists — a 1–2 result set
+ * for a mistyped query ("samsng galaxy" → the Galaxy phone) is a
+ * typo the visitor should be told about, not a success. The same
+ * constant gates the server-side correction in services/ai-search.ts
+ * (catalog total) and the page's suggestion row, so the two can
+ * never drift apart. Shared here (a pure, client-safe module)
+ * rather than in the service, so the client page can import it
+ * without pulling server code into its bundle.
+ */
+export const FEW_SEARCH_RESULTS = 3;
+
 /** Words that are never corrected: intent / filler / budget words. */
 const SUGGESTION_STOPWORDS = new Set([
   'a', 'an', 'the', 'for', 'with', 'and', 'or', 'of', 'to', 'in', 'on',

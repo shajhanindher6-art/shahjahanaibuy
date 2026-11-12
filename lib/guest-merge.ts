@@ -26,8 +26,12 @@
  *    POST /api/v1/product-views), posts only the new items, and
  *    clears each guest key ONLY after that category's server writes
  *    all confirmed. A failed category keeps its guest data for the
- *    next sign-in retry. Re-running the merge is a no-op: the server
- *    state is re-read fresh every run, so already-merged items are
+ *    next sign-in retry. The alerts category also respects the
+ *    signed-in tier's alert cap (Section 15 B14): GET /api/v1/alerts
+ *    carries maxAlerts in its meta, the merge keeps only the most
+ *    recent guest alerts that fit, and any alerts dropped for the
+ *    cap are named in the banner — never silently lost. Re-running
+ *    the merge is a no-op: the server state is re-read fresh every run, so already-merged items are
  *    deduped out before anything is posted.
  *
  * No new data source, no new migration, no new API route. Recent
@@ -99,6 +103,12 @@ export interface GuestMergeResult {
   wishlistAlreadyHad: number;
   alertsAdded: number;
   alertsAlreadyHad: number;
+  /** Guest alerts dropped because the signed-in tier's alert cap
+   *  (Section 15 B14) left no room for them — never silently lost:
+   *  formatGuestMergeSummary says so plainly. */
+  alertsSkippedDueToCap: number;
+  /** The tier cap the merge was held to (`null` = unlimited / unknown). */
+  alertsCapLimit: number | null;
   viewsRecorded: number;
   buyListAdded: number;
   buyListAlreadyHad: number;
@@ -115,6 +125,8 @@ export function emptyGuestMergeResult(): GuestMergeResult {
     wishlistAlreadyHad: 0,
     alertsAdded: 0,
     alertsAlreadyHad: 0,
+    alertsSkippedDueToCap: 0,
+    alertsCapLimit: null,
     viewsRecorded: 0,
     buyListAdded: 0,
     buyListAlreadyHad: 0,
@@ -129,6 +141,7 @@ export function hasGuestMergeResult(result: GuestMergeResult): boolean {
   return (
     result.wishlistAdded > 0 ||
     result.alertsAdded > 0 ||
+    result.alertsSkippedDueToCap > 0 ||
     result.viewsRecorded > 0 ||
     result.buyListAdded > 0 ||
     result.searchesKept > 0
@@ -217,33 +230,65 @@ export function mergeGuestWishlist(
 export interface AlertsMerge {
   toAdd: GuestAlertMergeItem[];
   alreadyHad: GuestAlertMergeItem[];
+  /**
+   * Guest alerts that passed dedupe but were dropped because the
+   * signed-in tier's cap left no room (`maxAlerts` given and the
+   * account already holds that many). 0 when uncapped.
+   */
+  skippedDueToCap: number;
+}
+
+export interface MergeGuestAlertsOptions {
+  /**
+   * Signed-in tier cap (`null` / omitted = unlimited). The merged
+   * set is capped at `maxAlerts - existing.length`, keeping the
+   * MOST RECENT guest alerts (guest storage is oldest-first, see
+   * lib/local-alerts.ts) and dropping the rest into
+   * `skippedDueToCap` — the merge never pushes a user over cap.
+   */
+  maxAlerts?: number | null;
 }
 
 /**
  * Dedupe guest alerts against the account's existing alerts, by
  * productId within the same alert type. On a conflict the signed-in
- * alert wins (its target price / channel are untouched). Pure and
- * deterministic.
+ * alert wins (its target price / channel are untouched). When
+ * `options.maxAlerts` is set, the new set is capped so
+ * existing + toAdd never exceeds it — most recent guest alerts win
+ * the remaining room. Pure and deterministic.
  */
 export function mergeGuestAlerts(
   guest: GuestAlertMergeItem[],
-  existing: SignedInAlertMergeItem[]
+  existing: SignedInAlertMergeItem[],
+  options: MergeGuestAlertsOptions = {}
 ): AlertsMerge {
-  const toAdd: GuestAlertMergeItem[] = [];
+  const deduped: GuestAlertMergeItem[] = [];
   const alreadyHad: GuestAlertMergeItem[] = [];
   for (const item of guest) {
     if (!normalizeId(item.productId)) continue;
     const seen =
-      toAdd.some((t) => sameAlert(t, item)) ||
+      deduped.some((t) => sameAlert(t, item)) ||
       alreadyHad.some((t) => sameAlert(t, item));
     if (seen) continue;
     if (existing.some((e) => sameAlert(item, e))) {
       alreadyHad.push(item);
     } else {
-      toAdd.push(item);
+      deduped.push(item);
     }
   }
-  return { toAdd, alreadyHad };
+  const max = options.maxAlerts ?? null;
+  if (max === null) {
+    return { toAdd: deduped, alreadyHad, skippedDueToCap: 0 };
+  }
+  const room = Math.max(0, max - existing.length);
+  // Guest storage is oldest-first: the tail is the most recent.
+  // (slice(-0) is slice(0), so room === 0 needs its own branch.)
+  const toAdd = room === 0 ? [] : deduped.slice(-room);
+  return {
+    toAdd,
+    alreadyHad,
+    skippedDueToCap: deduped.length - toAdd.length,
+  };
 }
 
 export interface ViewsMerge {
@@ -382,15 +427,39 @@ export function formatGuestMergeSummary(result: GuestMergeResult): string | null
   }
   if (parts.length === 0) {
     if (result.searchesKept > 0) {
-      return `Welcome back — your ${result.searchesKept} recent ${plural(result.searchesKept, 'search', 'searches')} from this device are still here. Recent searches stay on this device.`;
+      let sentence = `Welcome back — your ${result.searchesKept} recent ${plural(result.searchesKept, 'search', 'searches')} from this device are still here. Recent searches stay on this device.`;
+      const note = capNote(result);
+      if (note) sentence += ` ${note}`;
+      return sentence;
     }
-    return null;
+    return capNote(result);
   }
   let sentence = `Welcome back — we carried over from this device: ${joinParts(parts)}.`;
   if (result.searchesKept > 0) {
     sentence += ' Your recent searches stay on this device.';
   }
+  const note = capNote(result);
+  if (note) sentence += ` ${note}`;
   return sentence;
+}
+
+/**
+ * Honest note for guest alerts that could not be carried over
+ * because the signed-in tier's alert cap left no room. Returns null
+ * when nothing was skipped, so no banner renders for it.
+ */
+function capNote(result: GuestMergeResult): string | null {
+  if (result.alertsSkippedDueToCap <= 0) return null;
+  const cap = result.alertsCapLimit;
+  const capText =
+    cap !== null && cap !== undefined
+      ? `Your plan allows up to ${cap} price alerts`
+      : 'Your plan has a price-alert limit';
+  return (
+    `${result.alertsSkippedDueToCap} price ${plural(result.alertsSkippedDueToCap, 'alert')} ` +
+    `from this device could not be carried over — ${capText}. ` +
+    `Upgrade to Premium for unlimited price alerts: /pricing.`
+  );
 }
 
 function joinParts(parts: string[]): string {
@@ -460,33 +529,66 @@ interface ApiEnvelope<T> {
 }
 
 async function fetchJson<T>(url: string): Promise<T | null> {
+  const envelope = await fetchEnvelope<T>(url);
+  return envelope?.data ?? null;
+}
+
+/** Same as fetchJson, but also returns the envelope meta (used by the
+ *  alerts category: GET /api/v1/alerts carries maxAlerts there). */
+async function fetchJsonWithMeta<T>(url: string): Promise<{
+  data: T | null;
+  meta: Record<string, unknown> | null;
+}> {
+  const envelope = await fetchEnvelope<T>(url);
+  return { data: envelope?.data ?? null, meta: envelope?.meta ?? null };
+}
+
+interface ApiEnvelopeWithMeta<T> {
+  success?: boolean;
+  data?: T;
+  meta?: Record<string, unknown>;
+}
+
+async function fetchEnvelope<T>(url: string): Promise<ApiEnvelopeWithMeta<T> | null> {
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
     const body: unknown = await res.json().catch(() => null);
     if (!body || typeof body !== 'object') return null;
-    const envelope = body as ApiEnvelope<T>;
+    const envelope = body as ApiEnvelopeWithMeta<T>;
     if (envelope.success !== true) return null;
-    return (envelope.data ?? null) as T | null;
+    return envelope;
   } catch {
     return null;
   }
 }
 
 async function postJson(url: string, payload: Record<string, unknown>): Promise<boolean> {
+  const { ok } = await postJsonWithStatus(url, payload);
+  return ok;
+}
+
+/** POST that also reports the HTTP status, so callers can tell a
+ *  403 alert-cap rejection (handled, not a failure) from a real
+ *  write failure (guest data kept for retry). */
+async function postJsonWithStatus(
+  url: string,
+  payload: Record<string, unknown>
+): Promise<{ ok: boolean; status: number }> {
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) return false;
+    if (!res.ok) return { ok: false, status: res.status };
     const body: unknown = await res.json().catch(() => null);
-    return (
-      !!body && typeof body === 'object' && (body as ApiEnvelope<unknown>).success === true
-    );
+    return {
+      ok: !!body && typeof body === 'object' && (body as ApiEnvelope<unknown>).success === true,
+      status: res.status,
+    };
   } catch {
-    return false;
+    return { ok: false, status: 0 };
   }
 }
 
@@ -651,35 +753,64 @@ async function mergeAlertsCategory(
   guestAlerts: ReturnType<typeof loadLocalAlerts>,
   result: GuestMergeResult
 ): Promise<boolean> {
-  const existingAlerts = await fetchJson<
+  // GET /api/v1/alerts carries the signed-in tier's cap in meta
+  // (maxAlerts: number | null) — the merge caps itself at that
+  // limit instead of posting alerts the server would reject.
+  const { data: existingAlerts, meta } = await fetchJsonWithMeta<
     Array<{ productId: string; alertType: string }>
   >('/api/v1/alerts');
   if (existingAlerts === null) return false;
+  const maxAlerts =
+    typeof meta?.maxAlerts === 'number' ? meta.maxAlerts : null;
 
-  const { toAdd, alreadyHad } = mergeGuestAlerts(
+  const { toAdd, alreadyHad, skippedDueToCap } = mergeGuestAlerts(
     guestAlerts.map((a) => ({
       productId: a.productId,
       alertType: a.alertType,
       targetPrice: a.targetPrice,
     })),
-    existingAlerts
+    existingAlerts,
+    { maxAlerts }
   );
   result.alertsAlreadyHad = alreadyHad.length;
+  result.alertsSkippedDueToCap = skippedDueToCap;
+  result.alertsCapLimit = maxAlerts;
   if (toAdd.length === 0) {
+    // Everything was already on the account, or the cap left no
+    // room: the skipped alerts are intentionally NOT kept — keeping
+    // them would retry a merge the server will always reject, and
+    // the banner says plainly why they were dropped.
     clearLocalAlerts();
     return true;
   }
 
-  for (const alert of toAdd) {
-    const ok = await postJson('/api/v1/alerts', {
+  for (let i = 0; i < toAdd.length; i++) {
+    const alert = toAdd[i];
+    const { ok, status } = await postJsonWithStatus('/api/v1/alerts', {
       productId: alert.productId,
       alertType: alert.alertType,
       ...(alert.alertType === 'price_drop' && typeof alert.targetPrice === 'number'
         ? { conditionValue: alert.targetPrice }
         : {}),
     });
-    if (!ok) return false;
-    result.alertsAdded += 1;
+    if (ok) {
+      result.alertsAdded += 1;
+      continue;
+    }
+    if (status === 403) {
+      // Race: the account hit its cap between the GET and this
+      // POST (alerts added elsewhere). The remaining guest alerts
+      // are cap-skipped, not failed — stop posting, record them,
+      // and clear the guest key (the banner explains the drop).
+      const remaining = toAdd.length - i;
+      result.alertsSkippedDueToCap += remaining;
+      if (result.alertsCapLimit === null) {
+        result.alertsCapLimit = existingAlerts.length + result.alertsAdded;
+      }
+      clearLocalAlerts();
+      return true;
+    }
+    return false;
   }
   clearLocalAlerts();
   return true;

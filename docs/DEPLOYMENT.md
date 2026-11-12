@@ -56,8 +56,11 @@
 |----------|-------------|---------|
 | `STRIPE_SECRET_KEY` | Stripe API secret key | `sk_test_...` or `sk_live_...` |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret | `whsec_...` |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key | `pk_test_...` or `pk_live_...` |
-| `STRIPE_PRO_PRICE_ID` | Stripe Price ID for Pro plan | `price_...` |
+| `STRIPE_PREMIUM_PRICE_ID` | Stripe Price ID for Premium plan (`STRIPE_PRO_PRICE_ID` is a deprecated alias) | `price_...` |
+| `STRIPE_FAMILY_PRICE_ID` | Stripe Price ID for Family plan (optional) | `price_...` |
+| `STRIPE_TEAM_PRICE_ID` | Stripe Price ID for Team plan (optional) | `price_...` |
+| `STRIPE_STARTER_PRICE_ID` | Stripe Price ID for Starter plan (optional, off by default) | `price_...` |
+| `STRIPE_TRIAL_DAYS` | Free-trial length in days (optional, default 0 = no trial) | `0` |
 
 ### Email (Required for email delivery)
 | Variable | Description | Example |

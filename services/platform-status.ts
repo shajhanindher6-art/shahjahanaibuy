@@ -28,7 +28,6 @@ export type PlatformStatus =
   | 'live'
   | 'configured'
   | 'not-configured'
-  | 'pending-approval'
   | 'search-links-only';
 
 export interface PlatformStatusEntry {
@@ -116,7 +115,7 @@ export function describePlatformStatus(): PlatformStatusEntry[] {
       kind: 'aggregator',
       status: affiliate.skimlinksConfigured
         ? 'configured'
-        : 'pending-approval',
+        : 'not-configured',
       coverage: affiliate.skimlinksConfigured
         ? 'Aggregator configured — merchant links may be wrapped'
         : 'Not applied yet — one approval would cover 48,500+ merchants',

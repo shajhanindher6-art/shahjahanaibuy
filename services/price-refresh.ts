@@ -37,6 +37,10 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import {
+  markProductRefreshed,
+  markProductRefreshFailed,
+} from './freshness';
 
 export interface PriceRefreshResult {
   tracked: number;
@@ -45,6 +49,16 @@ export interface PriceRefreshResult {
   skippedNoRetailer: number;
   skippedNoPrice: number;
   failed: number;
+  /**
+   * Section 15, P1-8: true when a source LOAD failed (alerts /
+   * wishlist / merchant_products / price_history select returned an
+   * error). The step must be reported as failed, never as a silent
+   * `tracked: 0` success — a failed load means the tracked set is
+   * unknown, not empty. `loadError` carries the first such error.
+   * Per-row failures still land in `failed` and do NOT set this.
+   */
+  loadFailed: boolean;
+  loadError?: string;
 }
 
 interface MerchantProductRow {
@@ -66,25 +80,48 @@ export async function refreshTrackedPrices(
     skippedNoRetailer: 0,
     skippedNoPrice: 0,
     failed: 0,
+    loadFailed: false,
   };
 
   const productIds = new Set<string>();
 
-  const { data: alertRows } = await supabase
+  // Section 15, P1-8: a failed select used to destructure `{ data }`
+  // and silently treat it as "no alerts / no wishlist" — `tracked: 0`
+  // + 200 "success". Check `error` now: a failed load marks the
+  // whole step failed, but a load that DID succeed still contributes
+  // its products, so one broken table cannot hide the other.
+  const { data: alertRows, error: alertError } = await supabase
     .from('alerts')
     .select('product_id')
     .eq('active', true)
     .limit(1000);
-  for (const row of (alertRows ?? []) as Array<{ product_id: string }>) {
-    if (row.product_id) productIds.add(row.product_id);
+  if (alertError) {
+    logger.warn('refreshTrackedPrices: alerts query failed', {
+      error: alertError.message,
+    });
+    result.loadFailed = true;
+    result.loadError = `alerts: ${alertError.message}`;
+  } else {
+    for (const row of (alertRows ?? []) as Array<{ product_id: string }>) {
+      if (row.product_id) productIds.add(row.product_id);
+    }
   }
 
-  const { data: wishlistRows } = await supabase
+  const { data: wishlistRows, error: wishlistError } = await supabase
     .from('wishlist_items')
     .select('product_id')
     .limit(1000);
-  for (const row of (wishlistRows ?? []) as Array<{ product_id: string }>) {
-    if (row.product_id) productIds.add(row.product_id);
+  if (wishlistError) {
+    logger.warn('refreshTrackedPrices: wishlist query failed', {
+      error: wishlistError.message,
+    });
+    result.loadFailed = true;
+    result.loadError =
+      result.loadError ?? `wishlist_items: ${wishlistError.message}`;
+  } else {
+    for (const row of (wishlistRows ?? []) as Array<{ product_id: string }>) {
+      if (row.product_id) productIds.add(row.product_id);
+    }
   }
 
   const ids = Array.from(productIds).slice(0, 500);
@@ -104,6 +141,11 @@ export async function refreshTrackedPrices(
       error: merchantError?.message,
     });
     result.failed = ids.length;
+    // P1-8: no merchant rows were read, so no price was refreshed.
+    result.loadFailed = true;
+    result.loadError =
+      result.loadError ??
+      `merchant_products: ${merchantError?.message ?? 'no rows returned'}`;
     return result;
   }
 
@@ -137,12 +179,24 @@ export async function refreshTrackedPrices(
   }
 
   // Latest price_history row per product (newest first, first wins).
-  const { data: historyRows } = await supabase
+  // P1-8: a failed history read must NOT be treated as "no history"
+  // — with an empty latest map every product would look changed and
+  // the run would insert duplicate rows. Fail the step instead.
+  const { data: historyRows, error: historyError } = await supabase
     .from('price_history')
     .select('product_id, retailer_id, price, availability, recorded_at')
     .in('product_id', ids)
     .order('recorded_at', { ascending: false })
     .limit(1000);
+  if (historyError) {
+    logger.warn('refreshTrackedPrices: price_history query failed', {
+      error: historyError.message,
+    });
+    result.loadFailed = true;
+    result.loadError =
+      result.loadError ?? `price_history: ${historyError.message}`;
+    return result;
+  }
   const latestByKey = new Map<string, { price: number; availability: string }>();
   for (const row of (historyRows ?? []) as Array<{
     product_id: string;
@@ -178,6 +232,16 @@ export async function refreshTrackedPrices(
       const latest = latestByKey.get(`${productId}:${retailerId}`);
       if (latest && latest.price === price && latest.availability === availability) {
         result.unchanged++;
+        // Section 15, P1-10: the recorded price was re-verified
+        // against the catalog in this run, so the freshness policy
+        // layer stamps it. This means "recorded price re-checked",
+        // not "live-checked" — a live check (eBay) stamps the same
+        // columns from services/ebay-refresh.ts.
+        try {
+          await markProductRefreshed(supabase, productId);
+        } catch {
+          // Freshness bookkeeping must never fail the product.
+        }
         continue;
       }
       const { error } = await supabase.from('price_history').insert({
@@ -191,8 +255,21 @@ export async function refreshTrackedPrices(
       if (error) {
         logger.warn('refreshTrackedPrices: insert failed', { productId, error: error.message });
         result.failed++;
+        try {
+          await markProductRefreshFailed(supabase, productId);
+        } catch {
+          // Freshness bookkeeping must never fail the product.
+        }
       } else {
         result.inserted++;
+        // P1-10: a changed price was recorded, so the freshness
+        // stamp moves to this run as well (same "recorded price
+        // re-checked" meaning as the unchanged branch above).
+        try {
+          await markProductRefreshed(supabase, productId);
+        } catch {
+          // Freshness bookkeeping must never fail the product.
+        }
       }
     } catch (err) {
       logger.warn('refreshTrackedPrices: product failed', { productId, error: String(err) });

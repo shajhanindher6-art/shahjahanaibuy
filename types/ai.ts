@@ -219,7 +219,24 @@ export interface PricePrediction {
   expectedLowestPrice: number | null;
   confidenceScore: number;
   explanation: string;
+  /**
+   * The ai_predictions.price_data_range jsonb (Section 15, B1).
+   * Written by storePrediction as `{ dataPoints: <number of
+   * price_history rows> }` — no migration, the column already
+   * exists (migration 008). Read back by getCachedPrediction.
+   * Rows written before B1 carry null here, and the Deal Score
+   * display gate treats that as "not enough data" (badge hidden)
+   * until the row is recomputed.
+   */
   priceDataRange: Record<string, unknown> | null;
+  /**
+   * Price-history points behind this prediction, read out of
+   * priceDataRange (Section 15, B1). The Deal Score badge is
+   * hidden while this is below DEAL_SCORE_MIN_DATA_POINTS (5)
+   * — the live catalog's 4 points per product all score a
+   * meaningless 100/100.
+   */
+  dataPoints?: number | null;
   createdAt: string;
   expiresAt: string;
 }
