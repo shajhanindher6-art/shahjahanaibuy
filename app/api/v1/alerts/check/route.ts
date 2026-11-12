@@ -50,6 +50,7 @@
 import type { NextRequest } from 'next/server';
 import { apiSuccess, unauthorized, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { isCronAuthorized } from '@/lib/api/cron-auth';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { refreshTrackedPrices, type PriceRefreshResult } from '@/services/price-refresh';
 import { checkPriceAlerts, type AlertCheckResult } from '@/services/alert-checker';
@@ -68,14 +69,14 @@ export async function POST(request: NextRequest) {
   const limited = await rateLimitResponse(`alerts.check:${getClientIp(request)}`, 30);
   if (limited) return limited;
 
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) {
+  // Section 17, Stage G (§4 #11): timing-safe compare via
+  // lib/api/cron-auth.ts — fails closed when CRON_SECRET is unset.
+  if (!process.env.CRON_SECRET) {
     return internalError(
       'CRON_SECRET is not configured; set it in the hosting dashboard before scheduling this endpoint'
     );
   }
-  const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${cronSecret}`) {
+  if (!isCronAuthorized(request)) {
     return unauthorized('Invalid cron secret');
   }
 

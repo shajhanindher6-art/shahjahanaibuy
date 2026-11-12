@@ -5,8 +5,11 @@
  * incident history — all computed from recorded rows in
  * `uptime_checks` / `uptime_incidents` (migration 032) via
  * lib/status.ts. Honest states by design:
- * - Before any check is recorded: "Monitoring started 10 November
- *   2026 — no checks recorded yet" and NO uptime % (never invented).
+ * - Before any check is recorded: "Monitoring has not recorded any
+ *   checks yet" and NO uptime % (never invented) — and no invented
+ *   start date (Section 17, Stage H item 5 removed the hardcoded
+ *   "10 November 2026" fallback; the start date is the first
+ *   recorded check, or nothing is claimed).
  * - An empty incident list means no incidents have been recorded
  *   since monitoring started — not a claim about before then.
  * Fail-safe: if the migration has not been run, the page still
@@ -163,11 +166,9 @@ export default async function StatusPage() {
             </span>
             <p className="mt-3 text-muted-foreground">{summary.message}</p>
             <p className="mt-2 text-sm text-muted-foreground">
-              Monitoring started{' '}
               {summary.monitoringStartedAt
-                ? formatDate(summary.monitoringStartedAt)
-                : '10 November 2026'}
-              .
+                ? `Monitoring started ${formatDate(summary.monitoringStartedAt)}.`
+                : 'Monitoring has not recorded any checks yet.'}
             </p>
           </div>
 
@@ -198,21 +199,42 @@ export default async function StatusPage() {
           </ul>
 
           <h2 className="mt-10 text-xl font-semibold">Last verified</h2>
-          <p className="mt-4 rounded-lg border p-6 text-muted-foreground">
-            Last manual verification: 12 November 2026 — the homepage, the tools
-            pages, /pricing, /coming-soon, the MacBook Air 13 product page, and the
-            stores, platforms, and eBay-search APIs all responded. Check the live
-            site yourself:{' '}
-            <a
-              href={appConfig.url}
-              target="_blank"
-              rel="noreferrer"
-              className="underline"
-            >
-              {appConfig.url}
-            </a>
-            .
-          </p>
+          {checks.length > 0 && checks[0] ? (
+            <p className="mt-4 rounded-lg border p-6 text-muted-foreground">
+              Last recorded check: {formatDateTime(checks[0].checked_at)} —{' '}
+              {checks[0].ok ? 'passed' : 'failed'}
+              {checks[0].status_code ? ` (HTTP ${checks[0].status_code})` : ''}
+              {checks[0].target_url ? ` on ${checks[0].target_url}` : ''}. This
+              is the most recent row the in-app check runner recorded, not
+              a manual verification claim. Check the live site yourself:{' '}
+              <a
+                href={appConfig.url}
+                target="_blank"
+                rel="noreferrer"
+                className="underline"
+              >
+                {appConfig.url}
+              </a>
+              .
+            </p>
+          ) : (
+            <p className="mt-4 rounded-lg border border-dashed p-6 text-muted-foreground">
+              No check has been recorded yet, so there is no last-verification
+              date to show. The in-app check runner writes a row per check
+              once migration 032 is applied — until then this section stays
+              empty rather than showing a hardcoded date. Check the live
+              site yourself:{' '}
+              <a
+                href={appConfig.url}
+                target="_blank"
+                rel="noreferrer"
+                className="underline"
+              >
+                {appConfig.url}
+              </a>
+              .
+            </p>
+          )}
           <h2 className="mt-10 text-xl font-semibold">Last price refresh</h2>
           {lastRefresh ? (
             <div className="mt-4 rounded-lg border p-6">

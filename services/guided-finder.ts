@@ -20,10 +20,11 @@
  *   it already excludes 'sample-laptop' in the query. Raw Supabase
  *   product rows are never read here.
  * - `discountPercent` (lib/deal-math.ts) is the merchant-basis
- *   saving (compare_at_price vs price); `computeDealScore`
+ *   saving (compare_at_price vs price); `dealScoreForDisplay`
  *   (lib/deal-score.ts) is the canonical Deal Score, computed only
- *   when an unexpired `ai_predictions` row exists — otherwise the
- *   score is null and no badge is shown.
+ *   when an unexpired `ai_predictions` row exists AND rests on at
+ *   least DEAL_SCORE_MIN_DATA_POINTS (5) price points — otherwise
+ *   the score is null and no badge is shown (Section 17, Stage E).
  *
  * Hard rules:
  * - Budget is a HARD filter: a pick over budget is never returned.
@@ -40,7 +41,7 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { discountPercent } from '@/lib/deal-math';
-import { computeDealScore } from '@/lib/deal-score';
+import { dealScoreForDisplay } from '@/lib/deal-score';
 import { parseSearchIntent } from './ai-search';
 import { parseBudgetFromQuery } from './currency';
 import { enrichProducts } from './personal-assistant';
@@ -675,13 +676,15 @@ export async function loadGuidedCandidates(
 
     // Latest unexpired prediction per product (one query). A
     // missing/expired row means "no score", never a synthesized
-    // default — computeDealScore returns null without one.
+    // default — dealScoreForDisplay returns null without one, and
+    // also when the prediction rests on fewer than
+    // DEAL_SCORE_MIN_DATA_POINTS (5) price points.
     const ids = enriched.map((p) => p.id);
     const scoreByProduct = new Map<string, number>();
     try {
       const { data } = await supabase
         .from('ai_predictions')
-        .select('product_id, discount_probability, confidence_score, created_at')
+        .select('product_id, discount_probability, confidence_score, price_data_range, created_at')
         .in('product_id', ids)
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false })
@@ -689,7 +692,22 @@ export async function loadGuidedCandidates(
       for (const row of (data ?? []) as Array<Record<string, unknown>>) {
         const productId = row.product_id as string;
         if (scoreByProduct.has(productId)) continue;
-        const score = computeDealScore({
+        // Section 17, Stage E (#5): the point count is read back
+        // from the existing ai_predictions.price_data_range jsonb
+        // (no migration — same plumbing as
+        // services/ai-predictions.ts getCachedPrediction) and the
+        // score goes through dealScoreForDisplay, so a prediction
+        // resting on fewer than DEAL_SCORE_MIN_DATA_POINTS (5)
+        // points — or a pre-B1 row with no count at all — yields
+        // null (withheld), never the raw 100/100 the ungated
+        // formula returns for the live catalog's 4 points. The
+        // formula itself is untouched.
+        const range = row.price_data_range as Record<string, unknown> | null;
+        const dataPoints =
+          range && typeof range.dataPoints === 'number' && Number.isFinite(range.dataPoints)
+            ? (range.dataPoints as number)
+            : null;
+        const score = dealScoreForDisplay({
           discountProbability: parseFloat(String(row.discount_probability)),
           // No recorded low is passed here: the formula's own
           // fallback (+20) applies, exactly as documented in
@@ -697,6 +715,7 @@ export async function loadGuidedCandidates(
           currentPrice: null,
           lowestPrice: null,
           confidenceScore: parseFloat(String(row.confidence_score)),
+          dataPoints,
         });
         if (score !== null) scoreByProduct.set(productId, score);
       }

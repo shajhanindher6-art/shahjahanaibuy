@@ -72,6 +72,17 @@ for (const lang of SUPPORTED_LANGUAGES) {
 
 export const metadata: Metadata = {
   metadataBase: new URL(appConfig.url),
+  // Section 17, Stage H item 20 — viewport meta. Next 13.5.9 has no
+  // separate `export const viewport` (that arrived in Next 14), so
+  // the viewport lives here as a metadata field, which 13.5 renders
+  // as <meta name="viewport" content="width=device-width,
+  // initial-scale=1">. Without it mobile browsers render the page
+  // at a desktop width and pinch-zoom; with it the layout viewport
+  // matches the device width.
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+  },
   title: {
     default: `${appConfig.name} — AI-Powered Shopping Intelligence`,
     template: `%s | ${appConfig.name}`,

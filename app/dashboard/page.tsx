@@ -762,9 +762,16 @@ export default function DashboardPage() {
           {/* Section 15, C2 — saved searches (list-only here; the
               save form lives on /search). Re-run links go back to
               /search?<query string>. Guests see nothing: the
-              component hides itself when the API 401s. */}
+              component hides itself when the API 401s. The full
+              list with match-notification toggles lives on the
+              dedicated page (Section 17, Stage C item 18). */}
           <div className="animate-fade-in motion-reduce:animate-none" style={{ animationDelay: '520ms' }}>
-            <h2 className="mb-4 text-lg font-semibold">Saved searches</h2>
+            <div className="mb-4 flex items-baseline justify-between">
+              <h2 className="text-lg font-semibold">Saved searches</h2>
+              <Link href="/dashboard/saved-searches" className="text-sm text-blue-600 hover:underline">
+                Manage saved searches
+              </Link>
+            </div>
             <SavedSearches />
           </div>
 

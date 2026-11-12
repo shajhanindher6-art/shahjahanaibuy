@@ -18,15 +18,10 @@ import type { NextRequest } from 'next/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { apiSuccess, badRequest, internalError, serviceUnavailable } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp, requireAdmin } from '@/lib/api/middleware';
+import { isCronAuthorized } from '@/lib/api/cron-auth';
 import { DEFAULT_UPTIME_TARGET, runUptimeCheck } from '@/lib/uptime';
 
 export const dynamic = 'force-dynamic';
-
-function isCronAuthorized(request: NextRequest): boolean {
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return false;
-  return request.headers.get('authorization') === `Bearer ${cronSecret}`;
-}
 
 function isHttpUrl(value: string): boolean {
   try {

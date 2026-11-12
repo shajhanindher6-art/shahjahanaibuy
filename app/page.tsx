@@ -43,6 +43,12 @@ import { TiersSection } from '@/components/pricing/tiers-section';
 import { CurationGuidelines } from '@/components/curators/curation-guidelines';
 import { NewsletterCapture } from '@/components/home/newsletter-capture';
 import { PushOptInPrompt } from '@/components/home/push-opt-in-prompt';
+// NOTE (Section 17, Stage H item 4): the eleven below-hero sections
+// were tried as next/dynamic() imports to cut the 320 kB First Load
+// — a controlled A/B build measured 0 kB (the sections' code lives in
+// shared chunks used by other pages, so splitting the homepage import
+// removes nothing from First Load). The split was reverted; the
+// sections stay static imports. See docs/performance-budgets.md.
 
 /**
  * Section 13, chunk H (i18n Phase 1): the homepage section

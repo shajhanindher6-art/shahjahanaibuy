@@ -20,12 +20,16 @@ const buttonVariants = cva(
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        // Section 10 (2026-11-11) touch targets: default + icon are
-        // 44px (WCAG 2.2 target size). `sm` stays h-9 on purpose —
-        // 115 usages in dense layouts (tables, admin, dashboards)
-        // where 44px would break rows; `lg` was already h-11.
+        // Section 17, Stage H item 20 — touch targets: default, sm,
+        // lg and icon are all 44px (h-11, WCAG 2.2 target size).
+        // `sm` used to stay h-9 (36px) for dense layouts (tables,
+        // admin, dashboards) — Section 10, 2026-11-11 — but a 36px
+        // button is below the 44px minimum for a user-facing
+        // control, so sm is h-11 like the rest now. A dense layout
+        // that truly needs a shorter row can pass an explicit
+        // `h-9` className override (className wins over the variant).
         default: 'h-11 px-4 py-2',
-        sm: 'h-9 rounded-md px-3',
+        sm: 'h-11 rounded-md px-3',
         lg: 'h-11 rounded-md px-8',
         icon: 'h-11 w-11',
       },

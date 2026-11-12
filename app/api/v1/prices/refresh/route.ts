@@ -50,6 +50,15 @@
  * degrades to "eBay unavailable, continued on recorded prices"
  * (steps.ebay.status stays 'ok' with a degraded result).
  *
+ * Section 17, Stage D — pipeline re-fetch leg, after the eBay
+ * step: due products are re-fetched through the provider
+ * registry's `price.refresh` processor
+ * (services/pipeline-refresh.ts), at most 100 per run, most
+ * overdue first. `available: false` (no provider available / no
+ * product sources) is an honest skip, never a failure — the run
+ * must not report `completed_with_failures` just because no live
+ * merchant adapter is configured yet.
+ *
  * Section 15, P1-1 — PER-STEP ISOLATION: every step runs through
  * runRefreshStep() (services/refresh-run.ts) in its own try/catch.
  * A throwing step is recorded as `steps.<name>.status: 'failed'`
@@ -99,12 +108,17 @@
 import type { NextRequest } from 'next/server';
 import { apiSuccess, unauthorized, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { isCronAuthorized } from '@/lib/api/cron-auth';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { refreshTrackedPrices, type PriceRefreshResult } from '@/services/price-refresh';
 import {
   refreshEbayPrices,
   type EbayRefreshResult,
 } from '@/services/ebay-refresh';
+import {
+  refreshPricesViaPipeline,
+  type PipelineRefreshResult,
+} from '@/services/pipeline-refresh';
 import { checkPriceAlerts, type AlertCheckResult } from '@/services/alert-checker';
 import {
   notifySavedSearchMatches,
@@ -801,14 +815,14 @@ export async function POST(request: NextRequest) {
   const limited = await rateLimitResponse(`prices.refresh:${getClientIp(request)}`, 30);
   if (limited) return limited;
 
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) {
+  // Section 17, Stage G (§4 #11): timing-safe compare via
+  // lib/api/cron-auth.ts — fails closed when CRON_SECRET is unset.
+  if (!process.env.CRON_SECRET) {
     return internalError(
       'CRON_SECRET is not configured; set it in the hosting dashboard before scheduling this endpoint'
     );
   }
-  const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${cronSecret}`) {
+  if (!isCronAuthorized(request)) {
     return unauthorized('Invalid cron secret');
   }
 
@@ -827,6 +841,7 @@ export async function POST(request: NextRequest) {
   if (!guard.started) {
     const stepNames = [
       'ebay',
+      'pipeline',
       'refresh',
       'alerts',
       'hunts',
@@ -878,6 +893,17 @@ export async function POST(request: NextRequest) {
     failed: 0,
     budgetExhausted: false,
     products: [],
+  };
+  // Section 17, Stage D — pipeline step fallback: no provider
+  // available (or the due-products read failed) is an honest
+  // skip, never a failure — see services/pipeline-refresh.ts.
+  const zeroPipeline: PipelineRefreshResult = {
+    available: false,
+    reason: 'no-available-provider',
+    checked: 0,
+    refreshed: 0,
+    failed: 0,
+    errors: [],
   };
   const zeroAlerts: AlertCheckResult = {
     checked: 0,
@@ -935,6 +961,19 @@ export async function POST(request: NextRequest) {
     'refreshEbayPrices',
     () => refreshEbayPrices(supabase),
     zeroEbay
+  );
+  // Section 17, Stage D — pipeline re-fetch leg, after the ebay
+  // step and before the recorded-price refresh. Re-fetches due
+  // products through the provider registry's `price.refresh`
+  // processor (services/pipeline-refresh.ts). available:false is
+  // a SKIP, not a failure: no isFailed predicate, so the step
+  // never fails the run when no provider is available. Pipeline
+  // ingestion is deliberately NOT wired here (wrong tool for a
+  // price re-fetch — see services/pipeline-refresh.ts).
+  const pipeline = await runRefreshStep(
+    'refreshPricesViaPipeline',
+    () => refreshPricesViaPipeline(supabase),
+    zeroPipeline
   );
   const refresh = await runRefreshStep(
     'refreshTrackedPrices',
@@ -1010,6 +1049,7 @@ export async function POST(request: NextRequest) {
 
   const steps: Record<string, RefreshStepSummary> = {
     ebay: summarizeStep(ebay),
+    pipeline: summarizeStep(pipeline),
     refresh: summarizeStep(refresh),
     alerts: summarizeStep(alerts),
     hunts: summarizeStep(hunts),
@@ -1045,6 +1085,7 @@ export async function POST(request: NextRequest) {
   return apiSuccess({
     skipped: false,
     ebay: ebay.result,
+    pipeline: pipeline.result,
     refresh: refresh.result,
     alerts: alerts.result,
     hunts: hunts.result,

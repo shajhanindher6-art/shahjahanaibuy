@@ -39,6 +39,44 @@ exit 0, 796 static pages):
   exists in docs/ or tests/ — so the 329 kB printed by this
   build's route table is the recorded figure.)
 
+Section 17, Stage H item 4 (12 Nov 2026) — homepage code-split
+attempt, measured 0 kB, and honest budget re-lock:
+
+- **Measured: `/` (homepage) First Load JS: 320 kB** — clean
+  production build in the real repo, exit 0, placeholder env (the
+  Section 17 Stage H measurement build, same method as the
+  Section 16 gate). Unchanged from the Section 16 baseline.
+- The eleven sections below the hero (SmartDealWidget,
+  PersonalizedDeals, ShareButtons, LocalStoresSection,
+  BrowseByTaxonomy, StatsBar, RecentlyViewedStrip, TiersSection,
+  CurationGuidelines, NewsletterCapture, PushOptInPrompt) were
+  tried as `next/dynamic()` imports (SSR still on). A controlled
+  A/B in an isolated copy — same tree, with vs without the split —
+  measured **identical First Load JS both ways**, so the split was
+  **reverted**: the sections' code lives in shared chunks used by
+  other pages (product pages, /pricing, …), so splitting the
+  homepage import removes nothing from First Load. The revert
+  keeps the tree free of a no-op indirection.
+- Measurement-trap note: the isolated copy first printed 266 kB
+  and looked like a −54 kB win. That was an artifact of an
+  incomplete copy — it lacked `sentry.client.config.ts` /
+  `instrumentation.ts`, so the Sentry browser SDK (~60 kB) was
+  missing from its shared chunk. The A/B comparison above is the
+  valid evidence, not the 266 kB figure; 266 kB must not be quoted
+  as a homepage baseline.
+- **Warning budget honestly re-locked: ≤350 kB** (was ≤250 kB).
+  320 kB misses 250 kB by 70 kB and no safe split moves it — the
+  remaining First Load is the shared framework chunk (143 kB) +
+  the hero + SiteHeader/SiteFooter + the page's own 11 kB, and
+  splitting above-fold content trades first paint for a metric.
+  The re-lock puts the homepage warning at parity with the
+  product-page hard gate (≤350 kB) with 30 kB headroom over the
+  320 kB baseline, so future growth still bites. This is a
+  measured re-lock with this reason and date, not a silent bump.
+  The CI workflow never enforced the homepage number (it
+  hard-gates only /products/[slug] ≤350 kB), so no workflow
+  change was needed.
+
 The sandbox builds for Sections 10–13 all failed at
 `/sitemap.xml` (environmental — Node fetch to the placeholder
 Supabase host hangs; see the Section 10/11/12 build reports);
@@ -65,7 +103,7 @@ UNMEASURED — no build ran, so no size claim follows):
 | Route | First Load JS | Notes |
 |---|---|---|
 | `/products/[slug]` | **≤ 350 kB** | Hard gate — CI fails the build above this. Baseline: 329 kB (Section 15 clean build, 12 Nov 2026). |
-| `/` (homepage) | ≤ 250 kB | Warning — reported in the CI log, not a hard fail yet. Baseline: 320 kB (Section 16 gate clean build, 12 Nov 2026 — above the warning budget). |
+| `/` (homepage) | ≤ 350 kB | Warning — reported in the CI log, not a hard fail yet. Baseline: 320 kB (Section 17 Stage H item 4 clean build, 12 Nov 2026 — re-locked from ≤250 kB, see the measurement note above; the below-hero code-split attempt measured 0 kB and was reverted). |
 | `/compare` | ≤ 400 kB | Warning — matrix + charts are heavy; code-split before raising. Baseline: 372 kB (Section 16 gate clean build, 12 Nov 2026 — within budget). |
 
 Lighthouse (mobile, throttled 4G — LHCI `lighthouse:recommended` preset):

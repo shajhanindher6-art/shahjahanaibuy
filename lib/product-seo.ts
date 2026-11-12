@@ -70,6 +70,15 @@ export interface ProductSeoData {
   inStock: boolean | null;
   averageRating: number;
   reviewCount: number;
+  /**
+   * Section 17, Stage C item 14 (migration 045, unapplied):
+   * verification of the shown lowest price. Optional so older
+   * ProductSeoData literals (tests) keep compiling — the page
+   * treats a missing value as 'unverified'. Sourced from the
+   * cheapest listing when one exists, else the product rollup.
+   */
+  priceVerificationStatus?: import('@/services/price-verification').PriceVerificationStatus;
+  priceVerifiedAt?: string | null;
 }
 
 /** The product fields the client component accepts as its initial (SSR) data. */

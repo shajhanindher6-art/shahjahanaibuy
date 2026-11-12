@@ -13,6 +13,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
+import { fetchProfileRoleName } from '@/lib/admin-role';
 
 // Section 14, Chunk 6: robots noindex — /admin is auth-gated (and
 // disallowed in robots.txt); it is not content to index. No
@@ -40,11 +41,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   } = await supabase.auth.getUser();
   if (!user) redirect('/sign-in');
 
+  // Section 17, Stage H, item 7 (audit §4 #1): the role is resolved
+  // via `role_id → roles.name` — `profiles` has NO `role` column in
+  // the migration chain, so selecting `role` errored and the guard
+  // redirected everyone (including the real admin) to /dashboard.
   const service = createSupabaseServiceClient();
-  const { data: profile } = service
-    ? await service.from('profiles').select('role').eq('id', user.id).single()
-    : { data: null };
-  if ((profile as { role?: unknown } | null)?.role !== 'admin') {
+  const roleName = service ? await fetchProfileRoleName(service, user.id) : null;
+  if (roleName !== 'admin') {
     redirect('/dashboard');
   }
 

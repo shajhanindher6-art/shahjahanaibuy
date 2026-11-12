@@ -1,5 +1,7 @@
 # DATABASE SCHEMA — SmartBuy AI
 
+> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. Its numbers are stale: it says 13 migrations / 60 tables; the repo now has **43 migration files** (001–044, gaps 024/025 only), 121 CREATE TABLE statements / 120 distinct tables. Do not use it for current schema decisions. Superseded by: `project-summary.md` (Database section) and `docs/DEPLOYMENT.md` (Migrations).
+
 **Database:** PostgreSQL (Supabase)  
 **Tables:** 60  
 **Migrations:** 13  

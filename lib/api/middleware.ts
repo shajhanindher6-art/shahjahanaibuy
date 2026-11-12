@@ -6,6 +6,7 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { logger } from '@/lib/config/logger';
+import { isAdminRoleRow, PROFILE_ROLE_SELECT } from '@/lib/admin-role';
 import { unauthorized, forbidden, internalError, rateLimited } from './responses';
 import { checkRateLimitDistributed } from './rate-limit';
 import type { NextRequest } from 'next/server';
@@ -36,11 +37,15 @@ export async function requireAuth(request: NextRequest): Promise<
 
 /**
  * Requires an authenticated session AND role === 'admin'.
- * The role is read from the caller's own profiles row via the
- * service-role client (RLS would otherwise hide other users' rows
- * but must never be the only enforcement). Fail closed: no session,
- * no service client, no profile, or a non-admin role all return an
- * error response — never the user ID.
+ * The role is resolved via `role_id → roles.name` (see
+ * `lib/admin-role.ts`) — the `profiles` table has NO `role` column
+ * in the migration chain (only `role_id` FK), so selecting `role`
+ * errored and every admin route failed closed (Section 17, Stage H,
+ * item 7; audit §4 #1). The lookup runs via the service-role client
+ * (RLS would otherwise hide other users' rows but must never be the
+ * only enforcement). Fail closed: no session, no service client, no
+ * profile, or a non-admin role all return an error response — never
+ * the user ID.
  */
 export async function requireAdmin(request: NextRequest): Promise<
   { userId: string } | { error: ReturnType<typeof unauthorized> | ReturnType<typeof forbidden> | ReturnType<typeof internalError> }
@@ -56,10 +61,10 @@ export async function requireAdmin(request: NextRequest): Promise<
 
   const { data: profile } = await service
     .from('profiles')
-    .select('role')
+    .select(PROFILE_ROLE_SELECT)
     .eq('id', auth.userId)
     .single();
-  if ((profile as { role?: unknown } | null)?.role !== 'admin') {
+  if (!isAdminRoleRow(profile as { roles?: { name?: string | null } } | null)) {
     return { error: forbidden('Admin access required') };
   }
 

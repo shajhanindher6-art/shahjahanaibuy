@@ -5,7 +5,7 @@ export default function robots() {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/api/', '/dashboard/', '/admin/', '/auth/'],
+      disallow: ['/api/', '/dashboard/', '/admin/', '/owner/', '/auth/'],
     },
     // Single combined sitemap (S2#13 + S4#16, 2026-11-10): the
     // three-file the multi-file sitemap API split prerendered as 404 on Next

@@ -1,5 +1,7 @@
 # Phase 5 — Production Launch & Enterprise Readiness Summary
 
+> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. It reports 59 pages / 57 API routes and a passing Phase 5 build; the repo now has **118 page routes / 181 API routes (244 handlers)** and the verified suite is **204 files / 2,528 tests**. Do not cite its numbers as current. Superseded by: `project-summary.md` (Verification status) and `API_DOCUMENTATION.md`.
+
 **Date:** 2026-07-12  
 **Project:** SmartBuy AI — AI Shopping Intelligence SaaS  
 **Build Status:** PASSING (zero TypeScript errors, zero build errors)

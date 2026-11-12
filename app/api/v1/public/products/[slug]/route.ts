@@ -16,6 +16,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, internalError, notFound, unauthorized } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { extractApiKey, validateApiKey } from '@/lib/api-keys';
+import { enforceApiQuota } from '@/lib/api-quota';
 import { getProductBySlug } from '@/services/products';
 
 export const dynamic = 'force-dynamic';
@@ -35,6 +36,14 @@ export async function GET(
     keyInfo ? 120 : 30
   );
   if (limited) return limited;
+
+  // Section 17, Stage D (§4 #4): daily per-key quota (tier-gated) /
+  // anonymous daily cap — same pattern as public/products, prices
+  // and deals. The detail endpoint previously validated the key
+  // but never counted it, so a valid key could hammer it
+  // without quota counting.
+  const quotaExceeded = await enforceApiQuota(request, { keyInfo });
+  if (quotaExceeded) return quotaExceeded;
 
   try {
     const supabase = await createSupabaseServerClient();

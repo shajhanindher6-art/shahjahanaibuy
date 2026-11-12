@@ -5,6 +5,7 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import { resolveRoleName, type ProfileRoleRow } from '@/lib/admin-role';
 import type { AdminAnalytics, AdminAuditLog } from '@/types/ai';
 import {
   analyzeAffiliateClicks,
@@ -194,9 +195,14 @@ export async function getAllUsers(
 ): Promise<{ users: Array<Record<string, unknown>>; total: number; page: number; pageSize: number }> {
   const offset = (Math.max(1, page) - 1) * Math.min(100, Math.max(1, pageSize));
   try {
+    // Section 17, Stage H, item 7 (audit §4 #1): the role is resolved
+    // via `role_id → roles.name` — `profiles` has NO `role` column in
+    // the migration chain, so selecting `role` errored and this
+    // returned []. The returned rows keep the flat `role` string the
+    // admin users page renders (`user.role`), resolved from the join.
     const { data, error, count } = await supabase
       .from('profiles')
-      .select('id, user_id, email, full_name, avatar_url, bio, role, created_at, updated_at', { count: 'exact' })
+      .select('id, user_id, email, full_name, avatar_url, bio, role_id, roles ( name ), created_at, updated_at', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(offset, offset + Math.min(100, pageSize) - 1);
 
@@ -205,7 +211,11 @@ export async function getAllUsers(
       return { users: [], total: 0, page, pageSize };
     }
 
-    return { users: (data ?? []) as Array<Record<string, unknown>>, total: count ?? 0, page, pageSize };
+    const users = ((data ?? []) as Array<Record<string, unknown> & ProfileRoleRow>).map((row) => {
+      const { roles: _roles, ...rest } = row;
+      return { ...rest, role: resolveRoleName(row) };
+    });
+    return { users, total: count ?? 0, page, pageSize };
   } catch (err) {
     logger.error('getAllUsers: unexpected error', { error: String(err) });
     return { users: [], total: 0, page, pageSize };

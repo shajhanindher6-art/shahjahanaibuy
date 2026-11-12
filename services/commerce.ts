@@ -12,6 +12,7 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import { normalizePriceVerificationStatus } from '@/services/price-verification';
 import type {
   Merchant,
   MerchantProduct,
@@ -100,6 +101,14 @@ interface MerchantProductRow {
   in_stock: boolean;
   stock_quantity: number | null;
   last_synced_at: string | null;
+  /**
+   * Section 17, Stage C item 14 (migration 045, unapplied):
+   * optional on the row — see the 42703 retry in
+   * getMerchantProducts below.
+   */
+  price_verification_status?: string | null;
+  price_source?: string | null;
+  price_verified_at?: string | null;
 }
 
 function mapMerchantProduct(row: MerchantProductRow): MerchantProduct {
@@ -118,6 +127,14 @@ function mapMerchantProduct(row: MerchantProductRow): MerchantProduct {
     inStock: row.in_stock,
     stockQuantity: row.stock_quantity,
     lastSyncedAt: row.last_synced_at,
+    priceVerificationStatus: normalizePriceVerificationStatus(
+      row.price_verification_status
+    ),
+    priceSource:
+      row.price_source === 'ebay-browse-api' || row.price_source === 'merchant-feed'
+        ? row.price_source
+        : 'manual-intake',
+    priceVerifiedAt: row.price_verified_at ?? null,
   };
 }
 
@@ -297,20 +314,40 @@ export async function getMerchantProducts(
   productId: string
 ): Promise<MerchantProduct[]> {
   try {
-    const { data, error } = await supabase
-      .from('merchant_products')
-      .select('id, product_id, merchant_id, merchant_sku, price, compare_at_price, currency_id, availability, url, shipping_cost, shipping_days, in_stock, stock_quantity, last_synced_at')
-      .eq('product_id', productId)
-      .is('deleted_at', null)
-      .order('price', { ascending: true })
-      .limit(100);
+    // Section 17, Stage C item 14: read the per-listing
+    // verification with the price; retry without the 045 columns
+    // on 42703 (migration unapplied) instead of failing the
+    // whole "where to buy" block.
+    const fetchRows = async (withVerification: boolean) => {
+      // Plain string, not a literal union — the supabase-js
+      // .select() generic cannot parse a union of two lists. The
+      // awaited result is cast at this boundary (see getProducts).
+      const columns: string = withVerification
+        ? 'id, product_id, merchant_id, merchant_sku, price, compare_at_price, currency_id, availability, url, shipping_cost, shipping_days, in_stock, stock_quantity, last_synced_at, price_verification_status, price_source, price_verified_at'
+        : 'id, product_id, merchant_id, merchant_sku, price, compare_at_price, currency_id, availability, url, shipping_cost, shipping_days, in_stock, stock_quantity, last_synced_at';
+      const result = await supabase
+        .from('merchant_products')
+        .select(columns)
+        .eq('product_id', productId)
+        .is('deleted_at', null)
+        .order('price', { ascending: true })
+        .limit(100);
+      return result as unknown as {
+        data: MerchantProductRow[] | null;
+        error: { code?: string; message: string } | null;
+      };
+    };
+    let { data, error } = await fetchRows(true);
+    if (error && (error as { code?: string }).code === '42703') {
+      ({ data, error } = await fetchRows(false));
+    }
 
     if (error || !data) {
       if (error) logger.warn('getMerchantProducts: query failed', { error: error.message });
       return [];
     }
 
-    return data.map((row) => mapMerchantProduct(row as MerchantProductRow));
+    return data.map((row) => mapMerchantProduct(row));
   } catch (err) {
     logger.error('getMerchantProducts: unexpected error', { error: String(err) });
     return [];

@@ -31,10 +31,13 @@ export interface StatusSummary {
 }
 
 /**
- * Monitoring began when migration 032 was deployed. Used as the
- * "monitoring started" date only while no check has been recorded yet.
+ * Monitoring began with the first recorded check — there is no
+ * hardcoded start date. Section 17, Stage H item 5 removed the old
+ * MONITORING_STARTED_FALLBACK ('2026-11-10'): a date the code
+ * invented went stale by construction, and with no checks recorded
+ * the honest statement is that monitoring has not recorded any
+ * check yet, not that it started on a particular day.
  */
-export const MONITORING_STARTED_FALLBACK = '2026-11-10T00:00:00.000Z';
 
 export function buildStatusSummary(
   checks: UptimeCheckRow[],
@@ -59,7 +62,7 @@ export function buildStatusSummary(
   if (!hasData && openIncidents.length === 0) {
     overall = 'unknown';
     message =
-      'Monitoring started 10 November 2026. No checks recorded yet — uptime will appear here once checks accrue.';
+      'No checks recorded yet — uptime will appear here once checks accrue.';
   } else if (openIncidents.some((i) => i.status === 'investigating' || i.status === 'identified')) {
     overall = 'outage';
     message = `${openIncidents.length} open incident${openIncidents.length === 1 ? '' : 's'} — we are investigating.`;
@@ -80,7 +83,7 @@ export function buildStatusSummary(
     uptime,
     openIncidents,
     totalIncidents: incidents.length,
-    monitoringStartedAt: uptime.firstCheckAt ?? (hasData ? null : MONITORING_STARTED_FALLBACK),
+    monitoringStartedAt: uptime.firstCheckAt ?? null,
     hasData,
     message,
   };

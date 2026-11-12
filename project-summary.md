@@ -1,0 +1,166 @@
+# SmartBuy AI — Project Summary
+
+**Last updated:** 2026-11-12 (Section 17, Stage I)
+**Repo:** https://github.com/shajhanindher6-art/shahjahanaibuy (public, branch `main`)
+**Live site:** https://shahjahanaibuy-b1zp.vercel.app/
+**Supabase project:** https://inejitcvexpghejhuuko.supabase.co
+
+> Every number in this file has a source: the Section 17 audit (`~/workspace/section17-audit.md`, 12 Nov 2026), a count run against this repo on 2026-11-12, or a live check. Where the repo cannot prove something, this file says **maloom nahi** (unknown) instead of guessing. Older documents in this repo that contradict the numbers here are frozen historical files — see the banner at the top of each one.
+
+## What SmartBuy is
+
+SmartBuy AI is an AI shopping / price-tracking SaaS: users find products, compare prices across merchants, track prices over time, get deal alerts, and use AI tools (search, forecasts, deal scoring) to decide what to buy and when. Revenue is **$0** — Stripe is built but in test mode, and no paid plan can be bought today.
+
+The honest overall state (full project report, 12 Nov 2026): **~47%** towards the goal of a world-leading platform. Platform/code is ~75%; substance (real catalogue data, live prices, verified integrations) is ~15%. The gap is data and owner-gated configuration, not missing pages.
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 13.5.9 (App Router), React 18 |
+| Language | TypeScript 5.2.2 |
+| Database / Auth | Supabase (PostgreSQL + Supabase Auth, `@supabase/ssr`) |
+| Styling / UI | Tailwind CSS, shadcn/ui, Radix UI |
+| Charts | Recharts |
+| Hosting | Vercel (deploy on every push to `main`; no `vercel.json`) |
+| Email | Resend (fail-closed without a key) |
+| Push | Web Push API (VAPID) |
+| Payments | Stripe (TEST mode) |
+| Background jobs | cron-job.org POSTs to `CRON_SECRET`-protected endpoints — there is **no** BullMQ/Redis worker (see below) |
+| PWA | Service worker `smartbuy-v4`, manifest, `/offline` page |
+
+Next.js 13.5.9 is ~2 years old (current is 15.x). Upgrading is a project decision, not part of Section 17 — the soft-404 behaviour was proven against 13.5.9.
+
+## Architecture
+
+- **App Router pages** — 118 `page.tsx` files under `app/` (counted 2026-11-12). Dynamic routes use middleware slug-existence checks that rewrite unknown slugs to `/__smartbuy_not_found__` (a path with no route), so Next returns a real HTTP 404 with the app's not-found UI. 9 dynamic routes covered: products, brands, categories, find, stores, events, blog, live, creators. (`/creators` 404s activate only after the owner applies migration 044 — until then unknown creator slugs return 200 by design.)
+- **API** — 181 route files / 244 exported handlers under `app/api/` (GET 131, POST 82, DELETE 16, PATCH 12, PUT 3 — counted 2026-11-12). Full reference: `API_DOCUMENTATION.md`; machine-readable paths+methods: `docs/openapi.json`.
+- **Auth** — email/password + Google OAuth only; no magic link; email confirmation on; password reset via `/auth/callback?type=recovery`; 8-character client minimum. Server-side session validation uses `getUser()`, never `getSession()`. Delete-account exists (`DELETE /api/v1/account`, requires `{confirmation:"DELETE"}`, 1/hour).
+- **Admin** — `/admin` + sub-pages (analytics, affiliate clicks, users, audit logs, feature flags, intake, merchants, fact-check, community-deals), server-guarded. Admin stats are real DB counts. **Known live risk:** the server-side admin check reads a `profiles.role` column that does not exist in the migration chain (only a `role_id` FK) — if the live DB matches the chain, every admin route 403s. Live status: maloom nahi. There is **no owner dashboard** (`app/owner/` does not exist): revenue, subscription/plan counts, API usage, price-source health, failed jobs and error logs exist nowhere in aggregate.
+- **Rate limiting** — all 181 API route files call `rateLimitResponse` (enforced by test). Upstash Redis first when configured, otherwise per-instance in-memory (fail-open by design).
+- **Security** — nonce-based CSP, `requireAuth`/`requireAdmin` fail-closed, service-role client returns `null` when the key is unset (callers 503, never silently run as anon), no hardcoded secrets found by grep, Stripe webhook signature-verified with idempotency, smart-home webhook HMAC-SHA256 + `timingSafeEqual`.
+- **Background work** — there is no BullMQ/Redis worker. `bullmq`/`ioredis` are not in `package.json`; `lib/workers/queue.ts` loads BullMQ only via `eval('require')`, which always throws and falls back to an in-process `SynchronousQueue`. The only scheduler is cron-job.org (see "Cron jobs" below). The standing rule is exactly **one** scheduler — never two.
+- **i18n** — 167 keys, 20 languages. No localized routes exist (hreflang points at the same URL; disclosed as a limit in code).
+- **SEO** — programmatic pages: `/brands/[slug]` (10 brands), `/categories/[slug]` (6 categories, product-derived — the `categories` table is empty live), `/find/[query]` (500 curated queries; uncurated queries 404 by design), `/stores/[country]/[slug]` (84 stores). JSON-LD throughout. Sitemap (`app/sitemap.ts`): 93 hand-listed static paths + dynamic sections; live total claimed 724, not re-verified.
+- **PWA** — `public/sw.js` `CACHE_VERSION = 'smartbuy-v4'`, 15-URL precache, network-first navigation → `/offline`.
+
+## Features
+
+### The 36 AI tools (0 stubs)
+
+36 tool directories under `app/tools/`; the hub (`app/tools/page.tsx`) lists all 36. All render logged-out; 10 gate only their save/persist function, not viewing.
+
+Public (26): help-me-choose, budget-finder, store-finder, price-history, gift-splitter, forecast-explainer, currency-converter, price-alert-simulator, deal-checker, landed-cost, price-protection, emi-calculator, volatility-ranking, catalog-freshness, api-quota-calculator, deal-score-breakdown, store-trust-checker, real-price-converter, emi-vs-saving, target-price-picker, gift-occasions, cheapest-store-by-category, coupons-cashback (explicitly labelled demo/seed data), product-qa, best-time-calendar, trade-in-finder (directory starts empty; predictor labelled "Simulated").
+
+Auth-gated function (10): list-optimizer, expense-tracker, subscription-manager, monthly-planner, savings-dashboard, warranty-claim-helper, price-drop-digest (guest mode exists), eco-coach, smart-home-agent, future-you-planner.
+
+Per-tool metadata exists on 21 of 36 tools; 15 inherit generic `/tools` layout metadata.
+
+### Core surfaces
+
+- **Catalogue & search** — `/products` index, `/products/[slug]`, `/brands`, `/categories`, `/stores`, `/find` (500 curated queries), `/search`, AI search (tokenized matching, Levenshtein typo tolerance, curated synonyms, zero-coverage filter), `/compare`, `/deals`, `/scan`, `/gifts`, `/bundles`.
+- **Tracking** — price alerts (Free cap: 5), wishlists (+ public share pages), saved searches (API complete; no dedicated page yet), price history (ranges 7d/30d/90d/1y/all; "No interpolation, no synthesized points"), Deal Score (formula in `lib/deal-score.ts`; badge hidden below 5 data points — so 100/100 on the 10 seed products is gated, not shown as a real score).
+- **Dashboard** — `/dashboard` + 10 sub-pages (api-keys, billing, chat, notifications, profile, recommendations, settings, tracking, vault, wishlists). Guest → signed-in merge exists in code (wishlists, alerts, recently viewed, recent searches; signed-in wins on dedupe) but has never been live-verified with a real sign-in.
+- **Community & creators** — `/creators` (0 creators live), `/live` (live-shopping sessions; table missing live until migration 033 is applied), `/events`, `/blog`, `/community-deals`, pools, referrals (attribution coded; needs migration 038).
+- **Admin intake** — CSV intake (≤2 MB / ≤1,000 rows, admin review; prices labelled manual, not live; preview inserts nothing; merchant must already exist) and eBay intake (preview → review → approve, never auto-insert; blocked without eBay keys + a live `merchants` row).
+- **Public API paywall** — keys `sbk_live_` + 32 chars, SHA-256 hash only stored, `x-api-key` header only. Tiers: anon 100/IP/day, Free 1,000, Premium/Family 10,000, Team 100,000. Known gap: `GET /api/v1/public/products/[slug]` validates the key but does not count quota.
+- **Stripe** — checkout + portal wired, webhook signature-verified, events `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`; `syncSubscriptionFromStripe` re-fetches from Stripe (never trusts the event payload). No `invoice.payment_failed` handler yet. Self-grant bypass closed: `POST /api/v1/subscriptions` accepts only `plan: 'free'` (anything else → 400); paid plans only via the Stripe webhook. **Live-launch double gate:** a live secret key alone never enables charges — `STRIPE_LIVE_LAUNCHED=true` is also required (`lib/stripe.ts`). Checkout/portal refuse with 503 otherwise.
+- **Email / push** — Resend templates in-file (welcome, subscription active/canceled, price-drop alert, weekly digest, invoice); fail-closed without `RESEND_API_KEY`; newsletter batch cap 100 (max 500). Web Push wired (save/remove/send, 10s timeout, 410/404 endpoints pruned), dormant without VAPID keys.
+- **eBay** — code-complete (Browse API, OAuth client-credentials, 10s timeout, keyword-only match, daily cap 4,500 of the free-tier 5,000). Blocked: keys unverifiable + no `ebay` row in the live `merchants` table.
+- **Coupons & cashback** — `/tools/coupons-cashback` is explicitly labelled demo/seed data, not live merchant offers.
+
+## Catalogue (honest state)
+
+- **10 products** live (verified via `/api/v1/products` on 12 Nov 2026: MacBook Air, Galaxy S24 Ultra, Sony WH-1000XM5, and 7 more). No `sample-laptop` health-check row in the live API.
+- **Prices are stale.** Last recorded freshness: **2026-11-02** — 10 days old at the last check. The price-refresh endpoint re-reads the database only; it fetches nothing live except the eBay leg, which is blocked. `data_freshness` stamps say "recorded price re-checked", not "live-checked".
+- **No images, no GTINs, no specs, no variants, no reviews, no non-USD prices.** `imageUrl` NULL + `gtin` NULL on all 10 products; 0 variants/attributes rows seeded; USD-only; Amazon/Best Buy only (seeded rows — there is no live Amazon/Best Buy price adapter; Amazon is affiliate search-links + tag only).
+- **Price history is decaying.** The 4 seed points are relative to 2026-11-02, so the 7-day view is already empty (honest empty state) and the 30-day view has 3 of 4 points. Nothing re-bases them.
+- **Deal Score 100/100 on all products is a data problem, not a formula problem** — 4 points, 0 discount probability. The gate hides the badge below 5 points on main surfaces.
+- 50 verified products with images/GTIN/specs is a **data task, not a code task** — it needs real merchant sources/keys, never invented data.
+
+## Database
+
+- **43 migration files** in `supabase/migrations/` (001–044 with gaps 024, 025 only — 023 exists). 121 `CREATE TABLE` statements, 120 distinct tables, every table RLS-enabled. 616 `CREATE POLICY` statements, 273 distinct policy names (many are DROP+CREATE recreations).
+- **Applied status of every migration is UNKNOWN from the repo** — only the owner can check `supabase_migrations.schema_migrations` in Supabase. Two are proven NOT applied live: 033 (`live_shopping_sessions` table missing — proven by a PGRST205) and 044 (`creator_slugs` view — owner step; applying it activates `/creators` 404s with no redeploy).
+- **9 files carry "DO NOT APPLY YET"** (035–043). In particular: **never apply 035 without a separate explicit review** (standing rule), and never apply the unnumbered `supabase/migrations/20260718060823_fix_anonymous_access_policies.sql` as-is — it would restrict public catalogue reads to authenticated users and break the public site.
+- **10 owner-run SQL files** in `supabase/` (`add-*.sql`): affiliate-geo-clicks, alert-webhooks, clip-embeddings, community-deals, country-stores-directory, external-wishlist-items, public-wishlist-sharing-rls, receipt-vault, smartpools, visual-embeddings. Only run the ones the feature you are enabling needs — **not all of them**. Preconditions: 018 needs `add-smartpools.sql` first; 031 needs `add-community-deals.sql` first.
+- **Known schema bugs** (Section 17 audit §4): (1) CRITICAL — `profiles.role` column does not exist in the migration chain, but the admin check reads it; (2) HIGH — any signed-in user can set their own `role_id` to admin (`profiles_update_own` has no column restriction); (3) HIGH conditional — migration 010's 66 wide-open write policies are fixed by 017 in code, but 017's live application is unverified. Fixes are Stage H code work; live verification is owner-gated.
+- **Other schema facts:** no `model` column on products; no approval/published/status column (intake approve inserts directly → publicly visible immediately); no price-verification-status column anywhere; 6 tables are RLS-enabled with zero policies (deny-all, service-client only): `api_key_usage`, `app_waitlist`, `availability_history`, `creator_reward_events`, `ebay_daily_usage`, `guest_notification_queue`.
+
+## API tiers & quotas
+
+See "Public API paywall" above and `API_DOCUMENTATION.md`. Anonymous 100/IP/day · Free 1,000 · Premium/Family 10,000 · Team 100,000. Quotas are per-instance in-memory until migration 035 is applied.
+
+## Environment variables
+
+61 base variable names + 18 dynamic locale vars (`AMAZON_ASSOC_TAG_<CC>`). Only **2 are truly required** (the app throws at import without them): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Everything else is optional/nullable and degrades to an honest 503 or a disabled feature. Full list with placeholders: `.env.example`. Full reference: `docs/DEPLOYMENT.md`.
+
+Key facts:
+
+- `SUPABASE_SERVICE_ROLE_KEY` is **optional / fail-closed** — without it, service-role-dependent routes return 503; the app still starts.
+- `STRIPE_LIVE_LAUNCHED` is the **sole live-money gate** and is documented in `docs/DEPLOYMENT.md` and `.env.example` (it was documented nowhere before Section 17).
+- `NEXT_PUBLIC_APP_URL` defaults to `https://shahjahanaibuy-b1zp.vercel.app` when unset (`lib/config/app.ts`).
+- `AMAZON_ASSOC_TAG_US` is never read by code (silently ignored); the base `AMAZON_ASSOC_TAG` is used for US visitors. Tag `smartbuy-20` is verified live via the merchants API; approved vs placeholder is unknown — only the Amazon Associates dashboard can confirm.
+- Dead/phantom references (docs mention, code never reads): `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, bare `VAPID_PUBLIC_KEY`, `AFFILIATE_BEACON_SECRET` (proposed, never implemented). `NEXT_PUBLIC_ENABLE_GOOGLE_AUTH` / `NEXT_PUBLIC_ENABLE_EMAIL_VERIFICATION` in `lib/config/env.ts` are never read anywhere else.
+- **Never put a real secret in `.env.example` or in git.** Real values go only in the hosting dashboard (Vercel env) or the owner's dashboards.
+
+## Cron jobs (6)
+
+Exactly one scheduler: cron-job.org. All six endpoints are `CRON_SECRET`-protected (`Authorization: Bearer <CRON_SECRET>`; secret ≥32 chars):
+
+| Endpoint | Schedule |
+|---|---|
+| `POST /api/v1/prices/refresh` | Every 6 hours |
+| `POST /api/v1/notifications/process` | Every 5 minutes |
+| `POST /api/v1/notifications/digest` | Weekly (Monday 09:00) |
+| `POST /api/v1/monitoring/uptime/check` | Every 5 minutes |
+| `POST /api/v1/alerts/check` | Unscheduled — no decision recorded |
+| `POST /api/v1/predictions/outcomes` | Unscheduled — no decision recorded |
+
+Whether the cron-job.org jobs exist or fire is **maloom nahi** from the repo — only the owner can verify it. There is no `vercel.json` (no Vercel Cron) and no in-repo scheduler.
+
+## Deployment
+
+- **Vercel, deploy on push to `main`.** No build overrides, no custom headers, no Vercel Cron.
+- **Verification gate before every push:** `npx tsc --noEmit` = 0 errors, full `npx vitest run` = 100% pass, clean `next build`, headless smoke, live recheck after push. Push only on the user's live approval.
+- **GitHub workflow files** (`.github/workflows/*`) cannot be pushed by the GitHub App (403) — workflow changes go via the GitHub website. `check-press-counts.yml` is still pending via web UI.
+- **Press counts** are generated from real test runs (`lib/generated/press-counts.json` + `scripts/generate-press-counts.mjs`); the check fails if the JSON is stale. Note: the JSON currently says 2,524/204 while the verified suite is 2,528/204 — stale by 4 tests (Stage H regenerates it).
+
+## Verification status (baseline, 12 Nov 2026)
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | 0 errors |
+| Full `npx vitest run` | 204 files / 2,528 tests — 100% PASS |
+| Clean build (12 Nov ~18:03 gate) | exit 0, 796 pages, `/products/[slug]` First Load 329 kB (budget ≤350 kB) |
+| a11y | 7/7 runtime axe checks (local gate only, not CI) |
+| i18n | 167 keys, 20 languages |
+| Live recheck (12 Nov 18:25 PKT) | `/live` unknown slug → 404 PASS; regressions PASS; `/creators` unknown slug → 200 EXPECTED until migration 044 is applied |
+
+Known live gaps at the same date: newsletter subscribe 503 (036 unapplied); `/live` has no data (033 unapplied); uptime monitoring shows 0 (032 unapplied); homepage First Load 320 kB vs its ≤250 kB warning budget (over, warning only); no test asserts any bundle size; mobile/responsive is unproven (no viewport export, no mobile test, `docs/responsive-qa.md` is code-inspection only); Sentry event flow unproven live; guest merge, admin login, Stripe test checkout, email/push delivery and cron firing never proven live.
+
+## What is owner-gated (not code work)
+
+- Applying migrations 026–044 (each, in order, with preconditions) and verifying 001–025 in `supabase_migrations.schema_migrations`.
+- Live checks: `profiles.role` column, `pg_policies` for 017, one admin login attempt.
+- Stripe live keys + `STRIPE_LIVE_LAUNCHED=true` + price decision ($1 vs $4.99 vs $9.99) + live launch checklist. Premium $9.99/month is the **planned** price, not a live charge.
+- eBay keys + EPN + Growth Check + `ebay` row in the live `merchants` table.
+- Amazon Associates approval check for `smartbuy-20`; Skimlinks application (do NOT apply without explicit go-ahead — rejection blocks reapplying for 90 days).
+- `RESEND_API_KEY` + verified sender domain; VAPID key pair; `CRON_SECRET` + `SMART_HOME_WEBHOOK_SECRET` + `SUPABASE_SERVICE_ROLE_KEY` in Vercel; Upstash Redis vars; HF token, Sentry DSN, PostHog/GA4/Meta keys, WhatsApp/Telegram tokens, R2 keys, SerpAPI key.
+- cron-job.org: verify the 6h refresh job + 5-min uptime job exist/fire; decide the fate of the 4 unscheduled cron endpoints.
+- Search Console / Bing Webmaster verification; Supabase 2FA redo; adding `shahjahanaibuy-mobile` to the Muse GitHub App installation.
+- 50 verified products with images/GTIN/specs — real merchant data, never fake.
+
+## What is blocked (do NOT build)
+
+Agentic checkout, voice skills, native app (mobile repo is README-only; `/mobile-app` is waitlist-only), Recall Alerts, Review Summarizer (0 reviews — engine exists), Size & Fit, Photo Authenticity, Video Summaries, Family Shopper, scraping including Apify (`APIFY_API_TOKEN`/`APIFY_ACTOR_ID` must stay unset), inventing products/prices/reviews/statistics, Next.js major upgrade (13.5.9 → 15.x) as part of Section 17, applying migration 035 without a separate explicit review, applying the unnumbered `fix_anonymous_access_policies.sql` as-is.
+
+## Docs map
+
+- This file — project overview (start here).
+- `README.md` — entry point: setup, scripts, deployment, links.
+- `docs/DEPLOYMENT.md` — deployment, env vars, migrations, cron, Stripe live gate.
+- `API_DOCUMENTATION.md` + `docs/openapi.json` — API reference (181 routes).
+- `docs/rate-limits.md` — per-route rate limits. `docs/affiliate-engine.md`, `docs/performance-budgets.md`, `docs/pwa.md`, `docs/alerts-delivery-setup.md`, `docs/sentry-triage.md`, `docs/uptime.md`, `docs/seo.md`, `docs/security-hardening.md`, `docs/visual-search.md`, `docs/responsive-qa.md`, `docs/search-console.md`, `docs/design-system.md` — current topic docs.
+- Root July 2026 docs (`DATABASE_SCHEMA.md`, `LAUNCH_CHECKLIST.md`, `PROJECT_ARCHITECTURE.md`, `QA_REPORT.md`, `SECURITY_AUDIT.md`, `FINAL_DEPLOYMENT_REPORT.md`) + `DEPLOYMENT_PREP.md` + `phase5-summary.md` — **frozen historical snapshots, do not use for current numbers** (see the banner on each file).
+- Section audits: `~/workspace/section17-audit.md` (not in this repo), `~/workspace/section16-audit.md`, `~/workspace/section15-audit.md`.

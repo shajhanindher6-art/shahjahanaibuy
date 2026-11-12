@@ -1,0 +1,7453 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "SmartBuy AI API",
+    "version": "1.0.0",
+    "description": "SmartBuy AI public + authenticated API (v1). Generated from the route files under app/api/ on 2026-11-12 (Section 17 Stage I). Auth: Supabase session cookie for user endpoints; x-api-key header for /api/v1/public/* (tiers: anon 100/IP/day, Free 1,000, Premium/Family 10,000, Team 100,000 per day); Bearer CRON_SECRET for the 6 cron endpoints; Stripe webhook signature for /api/webhooks/stripe. All 181 routes enforce rate limiting (Upstash Redis when configured, in-memory fallback). This spec lists paths and methods only — request/response schemas are not yet machine-generated; see API_DOCUMENTATION.md for the curated guide."
+  },
+  "servers": [
+    {
+      "url": "https://shahjahanaibuy-b1zp.vercel.app"
+    }
+  ],
+  "paths": {
+    "/api/search": {
+      "get": {
+        "summary": "GET /api/search",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/account": {
+      "delete": {
+        "summary": "DELETE /api/v1/account",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/affiliate-clicks": {
+      "get": {
+        "summary": "GET /api/v1/admin/affiliate-clicks",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/analytics": {
+      "get": {
+        "summary": "GET /api/v1/admin/analytics",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/audit-logs": {
+      "get": {
+        "summary": "GET /api/v1/admin/audit-logs",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/community-deals/{id}": {
+      "patch": {
+        "summary": "PATCH /api/v1/admin/community-deals/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/community-deals": {
+      "get": {
+        "summary": "GET /api/v1/admin/community-deals",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ebay/preview": {
+      "post": {
+        "summary": "POST /api/v1/admin/ebay/preview",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/intake": {
+      "post": {
+        "summary": "POST /api/v1/admin/intake",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/merchants/{slug}/verify": {
+      "post": {
+        "summary": "POST /api/v1/admin/merchants/{slug}/verify",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/newsletter/send": {
+      "post": {
+        "summary": "POST /api/v1/admin/newsletter/send",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/sentry-test": {
+      "post": {
+        "summary": "POST /api/v1/admin/sentry-test",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "summary": "GET /api/v1/admin/users",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/visual-search-backfill": {
+      "post": {
+        "summary": "POST /api/v1/admin/visual-search-backfill",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/affiliate/click": {
+      "post": {
+        "summary": "POST /api/v1/affiliate/click",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/affiliate/geo-click": {
+      "post": {
+        "summary": "POST /api/v1/affiliate/geo-click",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/affiliate/links": {
+      "get": {
+        "summary": "GET /api/v1/affiliate/links",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/affiliate/transform": {
+      "post": {
+        "summary": "POST /api/v1/affiliate/transform",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/hunts/{id}": {
+      "patch": {
+        "summary": "PATCH /api/v1/agent/hunts/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/v1/agent/hunts/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/hunts": {
+      "get": {
+        "summary": "GET /api/v1/agent/hunts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/agent/hunts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/memory": {
+      "get": {
+        "summary": "GET /api/v1/agent/memory",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "put": {
+        "summary": "PUT /api/v1/agent/memory",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/v1/agent/memory",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/rules/{id}": {
+      "patch": {
+        "summary": "PATCH /api/v1/agent/rules/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/v1/agent/rules/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/rules": {
+      "get": {
+        "summary": "GET /api/v1/agent/rules",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/agent/rules",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/summary": {
+      "get": {
+        "summary": "GET /api/v1/agent/summary",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/ai-search": {
+      "post": {
+        "summary": "POST /api/v1/ai-search",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/ai-summary/{productId}": {
+      "get": {
+        "summary": "GET /api/v1/ai-summary/{productId}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts/{id}": {
+      "patch": {
+        "summary": "PATCH /api/v1/alerts/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/v1/alerts/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts/check": {
+      "post": {
+        "summary": "POST /api/v1/alerts/check",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts/guest": {
+      "post": {
+        "summary": "POST /api/v1/alerts/guest",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts/guest/unsubscribe": {
+      "get": {
+        "summary": "GET /api/v1/alerts/guest/unsubscribe",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/alerts/guest/unsubscribe",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts/history": {
+      "get": {
+        "summary": "GET /api/v1/alerts/history",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts": {
+      "get": {
+        "summary": "GET /api/v1/alerts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/alerts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/events": {
+      "post": {
+        "summary": "POST /api/v1/analytics/events",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics": {
+      "get": {
+        "summary": "GET /api/v1/analytics",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/brands/{slug}": {
+      "get": {
+        "summary": "GET /api/v1/brands/{slug}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/brands": {
+      "get": {
+        "summary": "GET /api/v1/brands",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/bundles": {
+      "get": {
+        "summary": "GET /api/v1/bundles",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/buy-list/{id}": {
+      "patch": {
+        "summary": "PATCH /api/v1/buy-list/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/v1/buy-list/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/buy-list": {
+      "get": {
+        "summary": "GET /api/v1/buy-list",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/buy-list",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/cashback": {
+      "get": {
+        "summary": "GET /api/v1/cashback",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/categories/{slug}": {
+      "get": {
+        "summary": "GET /api/v1/categories/{slug}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/categories": {
+      "get": {
+        "summary": "GET /api/v1/categories",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/category-inflation": {
+      "get": {
+        "summary": "GET /api/v1/category-inflation",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/chat/conversations": {
+      "get": {
+        "summary": "GET /api/v1/chat/conversations",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/chat/conversations",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/chat/messages": {
+      "get": {
+        "summary": "GET /api/v1/chat/messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/chat/messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/community-deals/{id}/vote": {
+      "post": {
+        "summary": "POST /api/v1/community-deals/{id}/vote",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/community-deals": {
+      "get": {
+        "summary": "GET /api/v1/community-deals",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/community-deals",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/comparison": {
+      "post": {
+        "summary": "POST /api/v1/comparison",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/coupons": {
+      "get": {
+        "summary": "GET /api/v1/coupons",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/creator-rewards/award": {
+      "post": {
+        "summary": "POST /api/v1/creator-rewards/award",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/creator-rewards/leaderboard": {
+      "get": {
+        "summary": "GET /api/v1/creator-rewards/leaderboard",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/creator-rewards/me": {
+      "get": {
+        "summary": "GET /api/v1/creator-rewards/me",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/creators/{slug}": {
+      "get": {
+        "summary": "GET /api/v1/creators/{slug}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/digest": {
+      "get": {
+        "summary": "GET /api/v1/dashboard/digest",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/drops-to-watch": {
+      "get": {
+        "summary": "GET /api/v1/dashboard/drops-to-watch",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/landed-cost": {
+      "get": {
+        "summary": "GET /api/v1/dashboard/landed-cost",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/tech-budget": {
+      "get": {
+        "summary": "GET /api/v1/dashboard/tech-budget",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/data/export": {
+      "get": {
+        "summary": "GET /api/v1/data/export",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/data/refresh": {
+      "post": {
+        "summary": "POST /api/v1/data/refresh",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/deal-finder": {
+      "post": {
+        "summary": "POST /api/v1/deal-finder",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/deal-hotspots": {
+      "get": {
+        "summary": "GET /api/v1/deal-hotspots",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/deals/ranked": {
+      "get": {
+        "summary": "GET /api/v1/deals/ranked",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/deals": {
+      "get": {
+        "summary": "GET /api/v1/deals",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/digests": {
+      "get": {
+        "summary": "GET /api/v1/digests",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/extension/coupons": {
+      "get": {
+        "summary": "GET /api/v1/extension/coupons",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/extension/price": {
+      "get": {
+        "summary": "GET /api/v1/extension/price",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/fact-check/{id}": {
+      "get": {
+        "summary": "GET /api/v1/fact-check/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "patch": {
+        "summary": "PATCH /api/v1/fact-check/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/fact-check/meaning": {
+      "get": {
+        "summary": "GET /api/v1/fact-check/meaning",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/fact-check": {
+      "get": {
+        "summary": "GET /api/v1/fact-check",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/fact-check",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/feature-flags": {
+      "get": {
+        "summary": "GET /api/v1/feature-flags",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/forecast/{productId}/backtest": {
+      "get": {
+        "summary": "GET /api/v1/forecast/{productId}/backtest",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/forecast/{productId}": {
+      "get": {
+        "summary": "GET /api/v1/forecast/{productId}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/fx-rates": {
+      "get": {
+        "summary": "GET /api/v1/fx-rates",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/gifts": {
+      "post": {
+        "summary": "POST /api/v1/gifts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/guided-finder": {
+      "get": {
+        "summary": "GET /api/v1/guided-finder",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "summary": "GET /api/v1/health",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/live-sessions/{slug}": {
+      "get": {
+        "summary": "GET /api/v1/live-sessions/{slug}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/live-sessions": {
+      "get": {
+        "summary": "GET /api/v1/live-sessions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/live-sessions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/merchants/{slug}/accuracy": {
+      "get": {
+        "summary": "GET /api/v1/merchants/{slug}/accuracy",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/merchants/{slug}/accuracy",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/merchants/{slug}": {
+      "get": {
+        "summary": "GET /api/v1/merchants/{slug}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/merchants/{slug}/trust": {
+      "get": {
+        "summary": "GET /api/v1/merchants/{slug}/trust",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/merchants": {
+      "get": {
+        "summary": "GET /api/v1/merchants",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/merchants/verified": {
+      "get": {
+        "summary": "GET /api/v1/merchants/verified",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile-app/waitlist": {
+      "post": {
+        "summary": "POST /api/v1/mobile-app/waitlist",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/monitoring/incidents": {
+      "get": {
+        "summary": "GET /api/v1/monitoring/incidents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/monitoring/providers": {
+      "get": {
+        "summary": "GET /api/v1/monitoring/providers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/monitoring": {
+      "get": {
+        "summary": "GET /api/v1/monitoring",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/monitoring/sync-history": {
+      "get": {
+        "summary": "GET /api/v1/monitoring/sync-history",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/monitoring/uptime/check": {
+      "post": {
+        "summary": "POST /api/v1/monitoring/uptime/check",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/monitoring/uptime": {
+      "get": {
+        "summary": "GET /api/v1/monitoring/uptime",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/newsletter/confirm": {
+      "get": {
+        "summary": "GET /api/v1/newsletter/confirm",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/newsletter/confirm",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/newsletter/subscribe": {
+      "post": {
+        "summary": "POST /api/v1/newsletter/subscribe",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/newsletter/unsubscribe": {
+      "get": {
+        "summary": "GET /api/v1/newsletter/unsubscribe",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/newsletter/unsubscribe",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/{id}": {
+      "patch": {
+        "summary": "PATCH /api/v1/notifications/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/digest": {
+      "post": {
+        "summary": "POST /api/v1/notifications/digest",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/process": {
+      "post": {
+        "summary": "POST /api/v1/notifications/process",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/read-all": {
+      "post": {
+        "summary": "POST /api/v1/notifications/read-all",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "summary": "GET /api/v1/notifications",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/platforms/ebay/search": {
+      "get": {
+        "summary": "GET /api/v1/platforms/ebay/search",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/platforms": {
+      "get": {
+        "summary": "GET /api/v1/platforms",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/pools/{id}/join": {
+      "post": {
+        "summary": "POST /api/v1/pools/{id}/join",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/pools/{id}": {
+      "get": {
+        "summary": "GET /api/v1/pools/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/pools": {
+      "get": {
+        "summary": "GET /api/v1/pools",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/pools",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/predictions/{productId}": {
+      "get": {
+        "summary": "GET /api/v1/predictions/{productId}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/predictions/accuracy": {
+      "get": {
+        "summary": "GET /api/v1/predictions/accuracy",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/predictions/outcomes": {
+      "get": {
+        "summary": "GET /api/v1/predictions/outcomes",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/predictions/outcomes",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/preferences": {
+      "get": {
+        "summary": "GET /api/v1/preferences",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "put": {
+        "summary": "PUT /api/v1/preferences",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/price-history/export": {
+      "get": {
+        "summary": "GET /api/v1/price-history/export",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/price-index/export": {
+      "get": {
+        "summary": "GET /api/v1/price-index/export",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/price-index": {
+      "get": {
+        "summary": "GET /api/v1/price-index",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/price-protection/{id}": {
+      "patch": {
+        "summary": "PATCH /api/v1/price-protection/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/v1/price-protection/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/price-protection": {
+      "get": {
+        "summary": "GET /api/v1/price-protection",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/price-protection",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/prices/refresh": {
+      "post": {
+        "summary": "POST /api/v1/prices/refresh",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/product-views": {
+      "get": {
+        "summary": "GET /api/v1/product-views",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/v1/product-views",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/product-views",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/products/{slug}/budget-alternative": {
+      "get": {
+        "summary": "GET /api/v1/products/{slug}/budget-alternative",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/products/{slug}/deals": {
+      "get": {
+        "summary": "GET /api/v1/products/{slug}/deals",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/products/{slug}/merchants": {
+      "get": {
+        "summary": "GET /api/v1/products/{slug}/merchants",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/products/{slug}/prices": {
+      "get": {
+        "summary": "GET /api/v1/products/{slug}/prices",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/products/{slug}/qa": {
+      "get": {
+        "summary": "GET /api/v1/products/{slug}/qa",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/products/{slug}/qa",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "patch": {
+        "summary": "PATCH /api/v1/products/{slug}/qa",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/products/{slug}/review-summary": {
+      "get": {
+        "summary": "GET /api/v1/products/{slug}/review-summary",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/products/{slug}/reviews": {
+      "get": {
+        "summary": "GET /api/v1/products/{slug}/reviews",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/products/{slug}/reviews",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/products/{slug}": {
+      "get": {
+        "summary": "GET /api/v1/products/{slug}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/products/{slug}/similar": {
+      "get": {
+        "summary": "GET /api/v1/products/{slug}/similar",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/products": {
+      "get": {
+        "summary": "GET /api/v1/products",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/public/deals": {
+      "get": {
+        "summary": "GET /api/v1/public/deals",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/public/keys/{keyId}": {
+      "delete": {
+        "summary": "DELETE /api/v1/public/keys/{keyId}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/public/keys": {
+      "get": {
+        "summary": "GET /api/v1/public/keys",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/public/keys",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/public/prices": {
+      "get": {
+        "summary": "GET /api/v1/public/prices",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/public/products/{slug}": {
+      "get": {
+        "summary": "GET /api/v1/public/products/{slug}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/public/products": {
+      "get": {
+        "summary": "GET /api/v1/public/products",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/push/subscribe": {
+      "post": {
+        "summary": "POST /api/v1/push/subscribe",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/v1/push/subscribe",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/push/test": {
+      "post": {
+        "summary": "POST /api/v1/push/test",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/push/vapid": {
+      "get": {
+        "summary": "GET /api/v1/push/vapid",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/recommendations": {
+      "get": {
+        "summary": "GET /api/v1/recommendations",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/referrals/attribute": {
+      "post": {
+        "summary": "POST /api/v1/referrals/attribute",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/referrals/click": {
+      "post": {
+        "summary": "POST /api/v1/referrals/click",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/referrals": {
+      "post": {
+        "summary": "POST /api/v1/referrals",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "get": {
+        "summary": "GET /api/v1/referrals",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/retailers": {
+      "get": {
+        "summary": "GET /api/v1/retailers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/saved-calculations": {
+      "get": {
+        "summary": "GET /api/v1/saved-calculations",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/saved-calculations",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/v1/saved-calculations",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/saved-searches": {
+      "get": {
+        "summary": "GET /api/v1/saved-searches",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/saved-searches",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "patch": {
+        "summary": "PATCH /api/v1/saved-searches",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/v1/saved-searches",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/savings": {
+      "get": {
+        "summary": "GET /api/v1/savings",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/savings",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/scan": {
+      "post": {
+        "summary": "POST /api/v1/scan",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/search-history": {
+      "get": {
+        "summary": "GET /api/v1/search-history",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/settings/webhooks": {
+      "get": {
+        "summary": "GET /api/v1/settings/webhooks",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/settings/webhooks",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/shared-wishlists/{id}": {
+      "get": {
+        "summary": "GET /api/v1/shared-wishlists/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/smart-deals": {
+      "get": {
+        "summary": "GET /api/v1/smart-deals",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/stores": {
+      "get": {
+        "summary": "GET /api/v1/stores",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/checkout": {
+      "post": {
+        "summary": "POST /api/v1/subscriptions/checkout",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/history": {
+      "get": {
+        "summary": "GET /api/v1/subscriptions/history",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/portal": {
+      "post": {
+        "summary": "POST /api/v1/subscriptions/portal",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions": {
+      "get": {
+        "summary": "GET /api/v1/subscriptions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/subscriptions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tech-budget": {
+      "get": {
+        "summary": "GET /api/v1/tech-budget",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/tech-budget",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tools/ai-qa": {
+      "post": {
+        "summary": "POST /api/v1/tools/ai-qa",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tools/best-time": {
+      "get": {
+        "summary": "GET /api/v1/tools/best-time",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tools/consumer-subscriptions": {
+      "get": {
+        "summary": "GET /api/v1/tools/consumer-subscriptions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/tools/consumer-subscriptions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "put": {
+        "summary": "PUT /api/v1/tools/consumer-subscriptions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/v1/tools/consumer-subscriptions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tools/digest": {
+      "get": {
+        "summary": "GET /api/v1/tools/digest",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/tools/digest",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tools/eco-coach": {
+      "get": {
+        "summary": "GET /api/v1/tools/eco-coach",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/tools/eco-coach",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tools/expenses": {
+      "get": {
+        "summary": "GET /api/v1/tools/expenses",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/tools/expenses",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tools/forecast-explainer": {
+      "get": {
+        "summary": "GET /api/v1/tools/forecast-explainer",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tools/future-you": {
+      "get": {
+        "summary": "GET /api/v1/tools/future-you",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/tools/future-you",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tools/list-optimizer": {
+      "get": {
+        "summary": "GET /api/v1/tools/list-optimizer",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/tools/list-optimizer",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tools/planner": {
+      "get": {
+        "summary": "GET /api/v1/tools/planner",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/tools/planner",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tools/price-history": {
+      "get": {
+        "summary": "GET /api/v1/tools/price-history",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tools/smart-home": {
+      "get": {
+        "summary": "GET /api/v1/tools/smart-home",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/tools/smart-home",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tools/smart-home/webhook": {
+      "post": {
+        "summary": "POST /api/v1/tools/smart-home/webhook",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tools/trade-in": {
+      "get": {
+        "summary": "GET /api/v1/tools/trade-in",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tools/warranty-claims": {
+      "get": {
+        "summary": "GET /api/v1/tools/warranty-claims",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/tools/warranty-claims",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/tracking": {
+      "get": {
+        "summary": "GET /api/v1/tracking",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/translations": {
+      "get": {
+        "summary": "GET /api/v1/translations",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/translations",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/vault/{id}": {
+      "patch": {
+        "summary": "PATCH /api/v1/vault/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/v1/vault/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/vault": {
+      "get": {
+        "summary": "GET /api/v1/vault",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/vault",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/visual-search": {
+      "post": {
+        "summary": "POST /api/v1/visual-search",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/warranty-plans": {
+      "get": {
+        "summary": "GET /api/v1/warranty-plans",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/warranty-plans",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/wishlist-polls/{id}/vote": {
+      "post": {
+        "summary": "POST /api/v1/wishlist-polls/{id}/vote",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/wishlist-polls": {
+      "get": {
+        "summary": "GET /api/v1/wishlist-polls",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/wishlist-polls",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/wishlists/{id}/items/{itemId}": {
+      "delete": {
+        "summary": "DELETE /api/v1/wishlists/{id}/items/{itemId}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/wishlists/{id}/items/external": {
+      "get": {
+        "summary": "GET /api/v1/wishlists/{id}/items/external",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/wishlists/{id}/items/external",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/wishlists/{id}/items": {
+      "get": {
+        "summary": "GET /api/v1/wishlists/{id}/items",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/wishlists/{id}/items",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/wishlists/{id}": {
+      "get": {
+        "summary": "GET /api/v1/wishlists/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "patch": {
+        "summary": "PATCH /api/v1/wishlists/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /api/v1/wishlists/{id}",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/v1/wishlists": {
+      "get": {
+        "summary": "GET /api/v1/wishlists",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /api/v1/wishlists",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    },
+    "/api/webhooks/stripe": {
+      "post": {
+        "summary": "POST /api/webhooks/stripe",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "500": {
+            "description": "Internal error"
+          },
+          "503": {
+            "description": "Service not configured (fail-closed)"
+          }
+        }
+      }
+    }
+  }
+}

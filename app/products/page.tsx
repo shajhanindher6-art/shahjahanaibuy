@@ -40,6 +40,7 @@ import {
   getBrands,
   getCategories,
   getLowestMerchantPrices,
+  type LowestMerchantPrice,
 } from '@/services/products';
 import { buildItemListJsonLd, toJsonLd } from '@/lib/json-ld';
 
@@ -139,7 +140,7 @@ export default async function ProductsIndexPage({
     getCategories(supabase),
   ]);
 
-  let lowest = new Map<string, { price: number; merchantCount: number }>();
+  let lowest = new Map<string, LowestMerchantPrice>();
   if (products.length > 0) {
     try {
       lowest = await getLowestMerchantPrices(
@@ -331,6 +332,13 @@ export default async function ProductsIndexPage({
                       description: product.description,
                       price: lowest.get(product.id)?.price ?? null,
                       merchantCount: lowest.get(product.id)?.merchantCount ?? 0,
+                      // Section 17, Stage C item 14: verification of
+                      // the cheapest listing rides with the card so
+                      // the short honest label can render under the
+                      // price (unverified until migration 045 lands
+                      // and a real fetch checks it).
+                      priceVerificationStatus:
+                        lowest.get(product.id)?.priceVerificationStatus ?? 'unverified',
                       // Section 16, item 9: recorded freshness rides
                       // with the card so the stale-price badge + age
                       // can render under the price.

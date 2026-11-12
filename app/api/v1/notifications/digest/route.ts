@@ -24,6 +24,7 @@ import type { NextRequest } from 'next/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { apiSuccess, unauthorized, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { isCronAuthorized } from '@/lib/api/cron-auth';
 import { generateWeeklyDigest, DIGEST_PLANS } from '@/services/notifications';
 import { logger } from '@/lib/config/logger';
 
@@ -38,14 +39,14 @@ export async function POST(request: NextRequest) {
   // Fail CLOSED (security fix 2026-11-05): the old `if (cronSecret)` check
   // let anyone call this endpoint when the secret was unset. Same pattern
   // as prices/refresh and alerts/check.
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) {
+  // Section 17, Stage G (§4 #11): timing-safe compare via
+  // lib/api/cron-auth.ts.
+  if (!process.env.CRON_SECRET) {
     return internalError(
       'CRON_SECRET is not configured; set it in the hosting dashboard before scheduling this endpoint'
     );
   }
-  const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${cronSecret}`) {
+  if (!isCronAuthorized(request)) {
     return unauthorized('Invalid cron secret');
   }
 

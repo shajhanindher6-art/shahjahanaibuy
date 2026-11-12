@@ -15,6 +15,13 @@ import { swrGet, cacheKey } from '@/lib/cache';
 import { logger } from '@/lib/config/logger';
 import { discountPercent } from '@/lib/deal-math';
 import type { Product, ProductImage } from '@/types';
+import {
+  normalizePriceVerificationStatus,
+  normalizeProductStatus,
+  PUBLISHED_PRODUCT_STATUS,
+  type PriceVerificationStatus,
+  type PriceSource,
+} from '@/services/price-verification';
 import type {
   ProductVariant,
   ProductAttribute,
@@ -57,6 +64,14 @@ export interface LowestMerchantPrice {
   merchantCount: number;
   compareAtPrice?: number | null;
   discountPercent?: number | null;
+  /**
+   * Section 17, Stage C item 14 (migration 045, unapplied): the
+   * cheapest listing's verification. Defaults to unverified /
+   * manual-intake when the columns are not there yet.
+   */
+  priceVerificationStatus?: PriceVerificationStatus;
+  priceSource?: PriceSource;
+  priceVerifiedAt?: string | null;
 }
 
 export interface ProductListResult {
@@ -84,6 +99,35 @@ interface ProductRow {
   data_freshness: string;
   created_at: string;
   updated_at: string;
+  /**
+   * Section 17, Stage C items 14–15 (migration 045, unapplied):
+   * optional on the row because a live table that predates the
+   * migration has no such column — see the 42703 retry below.
+   */
+  status?: string | null;
+  price_verification_status?: string | null;
+  price_verified_at?: string | null;
+}
+
+/**
+ * Section 17, Stage C items 14–15 — the product select, with and
+ * without the migration 045 columns. The public query path selects
+ * the new columns AND filters status = 'published'; when the live
+ * table predates 045, PostgREST answers 42703 (undefined_column)
+ * and the caller retries with the legacy column list and no
+ * status filter — pre-migration rows were already public, so
+ * they read as published + unverified (the normalizers below).
+ * Never a throw, never an empty catalog, over an unapplied
+ * migration.
+ */
+const PRODUCT_COLUMNS =
+  'id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at, status, price_verification_status, price_verified_at';
+const PRODUCT_COLUMNS_LEGACY =
+  'id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at';
+
+/** PostgREST/Postgres code for "column does not exist". */
+function isUndefinedColumnError(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === '42703';
 }
 
 function mapProduct(row: ProductRow): Product {
@@ -100,6 +144,11 @@ function mapProduct(row: ProductRow): Product {
     dataFreshness: row.data_freshness,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    status: normalizeProductStatus(row.status),
+    priceVerificationStatus: normalizePriceVerificationStatus(
+      row.price_verification_status
+    ),
+    priceVerifiedAt: row.price_verified_at ?? null,
   };
 }
 
@@ -205,19 +254,47 @@ export async function getLowestMerchantPrices(
   const ids = Array.from(new Set(productIds.filter(Boolean)));
   if (ids.length === 0) return prices;
   try {
-    const { data, error } = await supabase
-      .from('merchant_products')
-      .select('product_id, merchant_id, price, compare_at_price')
-      .in('product_id', ids)
-      .is('deleted_at', null)
-      .eq('in_stock', true)
-      .order('price', { ascending: true });
+    // Section 17, Stage C item 14: read the cheapest row's
+    // verification with the price; retry without the 045 columns
+    // on 42703 (migration unapplied) instead of failing the
+    // whole price lookup.
+    const fetchRows = async (withVerification: boolean) => {
+      // Plain string, not a literal union — the supabase-js
+      // .select() generic cannot parse a union of two lists. The
+      // awaited result is cast at this boundary (see getProducts).
+      const columns: string = withVerification
+        ? 'product_id, merchant_id, price, compare_at_price, price_verification_status, price_source, price_verified_at'
+        : 'product_id, merchant_id, price, compare_at_price';
+      const result = await supabase
+        .from('merchant_products')
+        .select(columns)
+        .in('product_id', ids)
+        .is('deleted_at', null)
+        .eq('in_stock', true)
+        .order('price', { ascending: true });
+      return result as unknown as {
+        data: Array<{
+          product_id: string;
+          merchant_id: string;
+          price: number | string;
+          compare_at_price?: number | string | null;
+          price_verification_status?: string | null;
+          price_source?: string | null;
+          price_verified_at?: string | null;
+        }> | null;
+        error: { code?: string; message: string } | null;
+      };
+    };
+    let { data, error } = await fetchRows(true);
+    if (error && isUndefinedColumnError(error)) {
+      ({ data, error } = await fetchRows(false));
+    }
     if (error || !data) {
       if (error) logger.warn('getLowestMerchantPrices: query failed', { error: error.message });
       return prices;
     }
     const merchantsByProduct = new Map<string, Set<string>>();
-    for (const row of data as Array<{ product_id: string; merchant_id: string; price: number | string; compare_at_price?: number | string | null }>) {
+    for (const row of data ?? []) {
       const price = parseFloat(String(row.price));
       if (!Number.isFinite(price)) continue;
       if (!prices.has(row.product_id)) {
@@ -236,6 +313,15 @@ export async function getLowestMerchantPrices(
             price,
             Number.isFinite(compareAt as number) ? (compareAt as number) : null
           ),
+          priceVerificationStatus: normalizePriceVerificationStatus(
+            row.price_verification_status
+          ),
+          priceSource:
+            row.price_source === 'ebay-browse-api' ||
+            row.price_source === 'merchant-feed'
+              ? row.price_source
+              : 'manual-intake',
+          priceVerifiedAt: row.price_verified_at ?? null,
         });
       }
       let merchants = merchantsByProduct.get(row.product_id);
@@ -283,47 +369,74 @@ export async function getProducts(
   const order = options.order ?? (sort === 'newest' ? 'desc' : 'asc');
 
   try {
-    let query = supabase
-      .from('products')
-      .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at', {
-        count: 'exact',
-      })
-      .is('deleted_at', null)
-      // Exclude the database health-check row ('sample-laptop'). Every
-      // other caller already excludes it (recommendations, bundles,
-      // gifts, sustainability); this was the one leak, surfacing it
-      // in the public products API and the /brands/* + /categories/*
-      // pages. Excluding in the query (not post-filtering) keeps the
-      // exact count / pagination honest. The row itself stays in the
-      // live database for health checks — it is never deleted here.
-      .neq('slug', 'sample-laptop')
-      .order(sort === 'name' ? 'name' : 'created_at', { ascending: order === 'asc' });
+    // Section 17, Stage C item 15: public surfaces list published
+    // products only — a pending intake row can never render here,
+    // in /api/v1/products, or on /brands/* + /categories/* (all
+    // read through this function). Built as a factory so a 42703
+    // (migration 045 unapplied) retries once without the new
+    // columns and without the status filter — pre-migration rows
+    // were already public.
+    const runListQuery = async (withNewColumns: boolean) => {
+      // Columns as a plain string (not a literal union): the
+      // supabase-js .select() generic cannot parse a union of two
+      // column lists, and this query needs both shapes. The
+      // awaited result is therefore cast at this boundary — the
+      // columns are exactly PRODUCT_COLUMNS / _LEGACY above.
+      const columns: string = withNewColumns ? PRODUCT_COLUMNS : PRODUCT_COLUMNS_LEGACY;
+      let query = supabase
+        .from('products')
+        .select(columns, {
+          count: 'exact',
+        })
+        .is('deleted_at', null)
+        // Exclude the database health-check row ('sample-laptop'). Every
+        // other caller already excludes it (recommendations, bundles,
+        // gifts, sustainability); this was the one leak, surfacing it
+        // in the public products API and the /brands/* + /categories/*
+        // pages. Excluding in the query (not post-filtering) keeps the
+        // exact count / pagination honest. The row itself stays in the
+        // live database for health checks — it is never deleted here.
+        .neq('slug', 'sample-laptop')
+        .order(sort === 'name' ? 'name' : 'created_at', { ascending: order === 'asc' });
 
-    if (options.search) {
-      // Search name, description, brand and category — not just name — so
-      // a term like "laptop" finds the laptop products instead of nothing.
-      const term = options.search.replace(/[%_,]/g, '');
-      query = query.or(
-        `name.ilike.%${term}%,description.ilike.%${term}%,brand.ilike.%${term}%,category.ilike.%${term}%`
-      );
-    }
-    if (options.category) {
-      query = query.eq('category', options.category);
-    }
-    if (options.brand) {
-      query = query.eq('brand', options.brand);
-    }
+      if (withNewColumns) {
+        query = query.eq('status', PUBLISHED_PRODUCT_STATUS);
+      }
 
-    // Price sort needs the merchant prices first: fetch the whole
-    // filtered set (capped at 100 rows, the pageSize max) unsliced,
-    // sort in memory, then slice the requested page below.
-    if (sort === 'price') {
-      query = query.range(0, 99);
-    } else {
-      query = query.range(offset, offset + pageSize - 1);
-    }
+      if (options.search) {
+        // Search name, description, brand and category — not just name — so
+        // a term like "laptop" finds the laptop products instead of nothing.
+        const term = options.search.replace(/[%_,]/g, '');
+        query = query.or(
+          `name.ilike.%${term}%,description.ilike.%${term}%,brand.ilike.%${term}%,category.ilike.%${term}%`
+        );
+      }
+      if (options.category) {
+        query = query.eq('category', options.category);
+      }
+      if (options.brand) {
+        query = query.eq('brand', options.brand);
+      }
 
-    const { data, error, count } = await query;
+      // Price sort needs the merchant prices first: fetch the whole
+      // filtered set (capped at 100 rows, the pageSize max) unsliced,
+      // sort in memory, then slice the requested page below.
+      if (sort === 'price') {
+        query = query.range(0, 99);
+      } else {
+        query = query.range(offset, offset + pageSize - 1);
+      }
+      return (await query) as unknown as {
+        data: ProductRow[] | null;
+        error: { code?: string; message: string } | null;
+        count: number | null;
+      };
+    };
+
+    let { data, error, count } = await runListQuery(true);
+    if (error && isUndefinedColumnError(error)) {
+      ({ data, error, count } = await runListQuery(false));
+    }
 
     if (error) {
       logger.warn('getProducts: query failed', { error: error.message });
@@ -370,20 +483,35 @@ export async function getProductById(
   id: string
 ): Promise<Product | null> {
   try {
-    const { data, error } = await supabase
-      .from('products')
-      .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at')
-      .eq('id', id)
-      .neq('slug', 'sample-laptop')
-      .is('deleted_at', null)
-      .maybeSingle();
+    // Section 17, Stage C item 15: a pending product is not a
+    // public product — same 42703 retry as getProducts. The
+    // awaited result is cast at this boundary (see getProducts).
+    const runSingleQuery = async (withNewColumns: boolean) => {
+      // Plain string, not a literal union — see getProducts.
+      const columns: string = withNewColumns ? PRODUCT_COLUMNS : PRODUCT_COLUMNS_LEGACY;
+      let query = supabase
+        .from('products')
+        .select(columns)
+        .eq('id', id)
+        .neq('slug', 'sample-laptop')
+        .is('deleted_at', null);
+      if (withNewColumns) query = query.eq('status', PUBLISHED_PRODUCT_STATUS);
+      return (await query.maybeSingle()) as unknown as {
+        data: ProductRow | null;
+        error: { code?: string; message: string } | null;
+      };
+    };
+    let { data, error } = await runSingleQuery(true);
+    if (error && isUndefinedColumnError(error)) {
+      ({ data, error } = await runSingleQuery(false));
+    }
 
     if (error || !data) {
       if (error) logger.warn('getProductById: query failed', { error: error.message });
       return null;
     }
 
-    return mapProduct(data as ProductRow);
+    return mapProduct(data);
   } catch (err) {
     logger.error('getProductById: unexpected error', { error: String(err) });
     return null;
@@ -405,20 +533,35 @@ export async function getProductBySlug(
   slug: string
 ): Promise<Product | null> {
   try {
-    const { data, error } = await supabase
-      .from('products')
-      .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at')
-      .eq('slug', slug)
-      .neq('slug', 'sample-laptop')
-      .is('deleted_at', null)
-      .maybeSingle();
+    // Section 17, Stage C item 15: a pending product is not a
+    // public product — same 42703 retry as getProducts. The
+    // awaited result is cast at this boundary (see getProducts).
+    const runSingleQuery = async (withNewColumns: boolean) => {
+      // Plain string, not a literal union — see getProducts.
+      const columns: string = withNewColumns ? PRODUCT_COLUMNS : PRODUCT_COLUMNS_LEGACY;
+      let query = supabase
+        .from('products')
+        .select(columns)
+        .eq('slug', slug)
+        .neq('slug', 'sample-laptop')
+        .is('deleted_at', null);
+      if (withNewColumns) query = query.eq('status', PUBLISHED_PRODUCT_STATUS);
+      return (await query.maybeSingle()) as unknown as {
+        data: ProductRow | null;
+        error: { code?: string; message: string } | null;
+      };
+    };
+    let { data, error } = await runSingleQuery(true);
+    if (error && isUndefinedColumnError(error)) {
+      ({ data, error } = await runSingleQuery(false));
+    }
 
     if (error || !data) {
       if (error) logger.warn('getProductBySlug: query failed', { error: error.message });
       return null;
     }
 
-    return mapProduct(data as ProductRow);
+    return mapProduct(data);
   } catch (err) {
     logger.error('getProductBySlug: unexpected error', { error: String(err) });
     return null;
@@ -581,12 +724,23 @@ export async function getCategories(
   supabase: AnySupabaseClient
 ): Promise<string[]> {
   try {
-    const { data, error } = await supabase
-      .from('products')
-      .select('slug, category')
-      .not('category', 'is', null)
-      .neq('slug', 'sample-laptop')
-      .is('deleted_at', null);
+    // Section 17, Stage C item 15: a pending product's category
+    // must not appear in the public facet list either (same 42703
+    // retry as getProducts — the facet is derived from products).
+    const buildQuery = (withStatus: boolean) => {
+      let query = supabase
+        .from('products')
+        .select('slug, category')
+        .not('category', 'is', null)
+        .neq('slug', 'sample-laptop')
+        .is('deleted_at', null);
+      if (withStatus) query = query.eq('status', PUBLISHED_PRODUCT_STATUS);
+      return query;
+    };
+    let { data, error } = await buildQuery(true);
+    if (error && isUndefinedColumnError(error)) {
+      ({ data, error } = await buildQuery(false));
+    }
 
     if (error || !data) {
       if (error) logger.warn('getCategories: query failed', { error: error.message });
@@ -613,12 +767,22 @@ export async function getBrands(
   supabase: AnySupabaseClient
 ): Promise<string[]> {
   try {
-    const { data, error } = await supabase
-      .from('products')
-      .select('slug, brand')
-      .not('brand', 'is', null)
-      .neq('slug', 'sample-laptop')
-      .is('deleted_at', null);
+    // Section 17, Stage C item 15: same published-only facet
+    // rule as getCategories (42703 retry while 045 is unapplied).
+    const buildQuery = (withStatus: boolean) => {
+      let query = supabase
+        .from('products')
+        .select('slug, brand')
+        .not('brand', 'is', null)
+        .neq('slug', 'sample-laptop')
+        .is('deleted_at', null);
+      if (withStatus) query = query.eq('status', PUBLISHED_PRODUCT_STATUS);
+      return query;
+    };
+    let { data, error } = await buildQuery(true);
+    if (error && isUndefinedColumnError(error)) {
+      ({ data, error } = await buildQuery(false));
+    }
 
     if (error || !data) {
       if (error) logger.warn('getBrands: query failed', { error: error.message });

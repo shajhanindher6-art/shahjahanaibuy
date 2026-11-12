@@ -138,6 +138,11 @@ export default function AdminPage() {
                 <Package className="mr-2 h-4 w-4" /> eBay Browse import — live listings &amp; review
               </Link>
             </Button>
+            <Button asChild variant="outline">
+              <Link href="/admin/refresh-runs">
+                <Activity className="mr-2 h-4 w-4" /> Price refresh runs — last refresh &amp; failed steps
+              </Link>
+            </Button>
           </div>
         </div>
 

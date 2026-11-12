@@ -1,5 +1,7 @@
 # PROJECT ARCHITECTURE — SmartBuy AI
 
+> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. Its stack/version numbers and route/page counts are stale (it predates Sections 9–17: 36 AI tools, 118 page routes, 181 API routes, middleware soft-404 handling, cron-job.org scheduling). Do not use it for current architecture decisions. Superseded by: `project-summary.md` (Stack + Architecture).
+
 **Version:** 1.0.0  
 **Date:** 2026-07-12
 

@@ -20,18 +20,13 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { apiSuccess, badRequest, internalError, unauthorized } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp, requireAdmin } from '@/lib/api/middleware';
+import { isCronAuthorized } from '@/lib/api/cron-auth';
 import { resolvePredictionOutcome } from '@/lib/prediction-accuracy';
 
 export const dynamic = 'force-dynamic';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function isCronAuthorized(request: NextRequest): boolean {
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return false;
-  return request.headers.get('authorization') === `Bearer ${cronSecret}`;
-}
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'predictions.outcomes' });

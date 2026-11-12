@@ -8,6 +8,10 @@ import { Badge } from '@/components/ui/badge';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
 import { StalePriceBadge } from '@/components/products/stale-price-badge';
 import { Price } from '@/components/region/price';
+import {
+  priceVerificationLabel,
+  normalizePriceVerificationStatus,
+} from '@/services/price-verification';
 import { cn } from '@/lib/utils';
 
 export interface ProductCardData {
@@ -35,6 +39,14 @@ export interface ProductCardData {
    * null/undefined renders no label, never a guessed age.
    */
   dataFreshness?: string | null;
+  /**
+   * Section 17, Stage C item 14 (migration 045, unapplied):
+   * verification of the shown price. When supplied, the card
+   * renders the short honest label under the price; when absent
+   * the card renders no verification claim at all — it never
+   * assumes a price is verified.
+   */
+  priceVerificationStatus?: import('@/services/price-verification').PriceVerificationStatus;
   matchScore?: number | null;
   reason?: string | null;
 }
@@ -141,6 +153,19 @@ export function ProductCard({ product, href, className, showReason }: ProductCar
             <div className="mt-1">
               <StalePriceBadge dataFreshness={product.dataFreshness} />
             </div>
+          )}
+          {/* Section 17, Stage C item 14: short honest verification
+              label under the price — only when the caller supplied
+              a status (the /products list does, from the cheapest
+              listing). Never claims "live"; the full label with
+              the check date lives on the product detail page. */}
+          {product.price != null && product.priceVerificationStatus && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {priceVerificationLabel(
+                normalizePriceVerificationStatus(product.priceVerificationStatus),
+                null
+              ).shortText}
+            </p>
           )}
           {/* Section 16, item 10: the withheld Deal Score note lives
               in the card body (not over the image, where the badge

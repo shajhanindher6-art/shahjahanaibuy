@@ -48,6 +48,13 @@ export async function getProductSeo(
       gtin: product.gtin,
       confidenceScore: product.confidenceScore,
       lowestPrice: cheapest ? cheapest.price : null,
+      // Section 17, Stage C item 14: verification of the shown
+      // lowest price — the cheapest listing's own status when a
+      // listing exists (it is the price the page shows), else the
+      // product-level rollup. Pre-migration both read 'unverified'.
+      priceVerificationStatus:
+        cheapest?.priceVerificationStatus ?? product.priceVerificationStatus ?? 'unverified',
+      priceVerifiedAt: cheapest?.priceVerifiedAt ?? product.priceVerifiedAt ?? null,
       // Section 15 P1-11: the recorded freshness timestamp travels
       // with the SEO facts so the page can render "Prices last
       // checked" server-side — no extra query, no client fetch.

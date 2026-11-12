@@ -19,6 +19,7 @@ import { getLatestPrices } from './price-history';
 import { predictPriceDrop } from './ai-predictions';
 import { dealScoreForDisplay } from '@/lib/deal-score';
 import { discountPercent } from '@/lib/deal-math';
+import { PUBLISHED_PRODUCT_STATUS } from '@/services/price-verification';
 import {
   FEW_SEARCH_RESULTS,
   levenshteinDistance,
@@ -697,6 +698,12 @@ export async function aiSearch(
           .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at')
           .is('deleted_at', null)
           .neq('slug', 'sample-laptop')
+          // Section 17, Stage C item 15: a pending product is not
+          // a compare candidate. On 42703 (migration 045
+          // unapplied) this select errors, data is null, and the
+          // pair stays empty — the normal search below (which
+          // retries without the filter) is the designed fallback.
+          .eq('status', PUBLISHED_PRODUCT_STATUS)
           .order('confidence_score', { ascending: false })
           .limit(50);
         const pair = resolveComparePair(
@@ -753,7 +760,7 @@ export async function aiSearch(
     // needs enriched data runs server-side below, and only then
     // is the requested page sliced out — so `total` is the
     // filtered count and page / pageSize / total agree.
-    const buildCandidateQuery = (matchTokens: string[]) => {
+    const buildCandidateQuery = (matchTokens: string[], withStatus = true) => {
       let candidateQuery = supabase
         .from('products')
         .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at', {
@@ -767,6 +774,13 @@ export async function aiSearch(
         // The row itself stays in the live database for health
         // checks — it is never deleted here.
         .neq('slug', 'sample-laptop');
+
+      // Section 17, Stage C item 15: public search lists published
+      // products only. `withStatus` is false on the 42703 retry
+      // (migration 045 unapplied) — see the await site below.
+      if (withStatus) {
+        candidateQuery = candidateQuery.eq('status', PUBLISHED_PRODUCT_STATUS);
+      }
 
       if (matchTokens.length > 0) {
         const tokenOr = matchTokens
@@ -802,9 +816,19 @@ export async function aiSearch(
         .limit(MAX_SEARCH_CANDIDATES);
     };
 
+    // Section 17, Stage C item 15: retry without the status
+    // filter when the live table predates migration 045 (42703) —
+    // pre-migration rows were already public. The fuzzy retry
+    // below reuses the same flag so it never re-tries a filter
+    // the table does not have.
+    let statusFilterWorks = true;
     let { data, error } = presetRows
       ? { data: presetRows, error: null }
-      : await buildCandidateQuery(tokens);
+      : await buildCandidateQuery(tokens, true);
+    if (!presetRows && error && (error as { code?: string }).code === '42703') {
+      statusFilterWorks = false;
+      ({ data, error } = await buildCandidateQuery(tokens, false));
+    }
 
     // Section 15, B10 — fuzzy fallback: the Levenshtein
     // did-you-mean used to exist only for zero results ON THE
@@ -827,7 +851,7 @@ export async function aiSearch(
         didYouMean = corrected;
         const correctedTokens = expandSearchTokens(tokenizeSearchTerms(corrected, parsedIntent));
         if (correctedTokens.length > 0 && correctedTokens.join(' ') !== tokens.join(' ')) {
-          const retry = await buildCandidateQuery(correctedTokens);
+          const retry = await buildCandidateQuery(correctedTokens, statusFilterWorks);
           if (!retry.error && (retry.data ?? []).length > 0) {
             data = retry.data;
             tokens = correctedTokens;

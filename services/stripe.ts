@@ -139,6 +139,131 @@ export async function syncSubscriptionFromStripe(
   }
 }
 
+/**
+ * Handle a failed invoice payment (Section 17, Stage G — code only,
+ * TEST mode; no live activation, no dunning email yet).
+ *
+ * Dunning / retry decision: rely on Stripe's automatic retries
+ * (Smart Retries) — do NOT cancel the subscription here and do NOT
+ * downgrade the plan. The local row is marked `past_due`, which
+ * suspends the paid quota (lib/api-quota.ts resolves `past_due` to
+ * free) until a later `invoice.paid` or
+ * `customer.subscription.updated` event restores `active` via
+ * syncSubscriptionFromStripe. The failure is logged with its retry
+ * context (attempt count, next attempt) and recorded as a
+ * zero-amount `billing_history` row, mirroring the `invoice.paid`
+ * audit trail — a failed payment moves no money, so `amount_paid`
+ * is 0 and the status is `payment_failed`. No dunning email is
+ * sent: the email templates cover paid invoices only, and inventing
+ * a payment-failure template is out of scope for this stage.
+ * Failures to mark past_due or to record history are logged, never
+ * thrown — the webhook event itself is already recorded, and
+ * throwing would make Stripe retry an event that was handled.
+ */
+export async function handleInvoicePaymentFailed(
+  supabase: AnySupabaseClient,
+  invoice: Record<string, unknown>
+): Promise<void> {
+  const customerId = typeof invoice.customer === 'string' ? invoice.customer : '';
+  const invoiceId = typeof invoice.id === 'string' ? invoice.id : '';
+  const subscriptionId =
+    typeof invoice.subscription === 'string' ? invoice.subscription : '';
+  const attemptCount =
+    typeof invoice.attempt_count === 'number' ? invoice.attempt_count : null;
+  const nextPaymentAttempt =
+    typeof invoice.next_payment_attempt === 'number'
+      ? new Date(invoice.next_payment_attempt * 1000).toISOString()
+      : null;
+  const amountDue = typeof invoice.amount_due === 'number' ? invoice.amount_due : null;
+  const currency = typeof invoice.currency === 'string' ? invoice.currency : null;
+
+  logger.warn('Stripe invoice payment failed', {
+    invoiceId,
+    customerId,
+    subscriptionId,
+    attemptCount,
+    nextPaymentAttempt,
+    amountDue,
+    currency,
+  });
+
+  if (!customerId) {
+    logger.warn('invoice.payment_failed without a customer id; nothing to mark past_due', {
+      invoiceId,
+    });
+    return;
+  }
+
+  // Authoritative status first when a subscription id is present:
+  // never trust the event payload alone (same rule as the other
+  // webhook handlers). No-op when Stripe is unconfigured (tests).
+  if (subscriptionId) {
+    await syncSubscriptionFromStripe(supabase, subscriptionId);
+  }
+
+  // Find the local row by Stripe customer id (same lookup as
+  // invoice.paid). No local row → nothing to mark, nothing to
+  // attribute the history row to.
+  const { data: sub } = await supabase
+    .from('subscriptions')
+    .select('user_id')
+    .eq('stripe_customer_id', customerId)
+    .maybeSingle();
+
+  if (!sub?.user_id) {
+    logger.warn('invoice.payment_failed for a customer with no local subscription row', {
+      invoiceId,
+      customerId,
+    });
+    return;
+  }
+
+  const { error: updateError } = await supabase
+    .from('subscriptions')
+    .update({ status: 'past_due' })
+    .eq('stripe_customer_id', customerId);
+  if (updateError) {
+    logger.warn('Failed to mark subscription past_due after payment failure', {
+      invoiceId,
+      customerId,
+      error: updateError.message,
+    });
+  }
+
+  const invoiceUrl =
+    typeof invoice.hosted_invoice_url === 'string' ? invoice.hosted_invoice_url : null;
+  const invoicePdf = typeof invoice.invoice_pdf === 'string' ? invoice.invoice_pdf : null;
+  const invoiceCharge = typeof invoice.charge === 'string' ? invoice.charge : null;
+  const periodStart =
+    typeof invoice.period_start === 'number'
+      ? new Date(invoice.period_start * 1000).toISOString()
+      : null;
+  const periodEnd =
+    typeof invoice.period_end === 'number'
+      ? new Date(invoice.period_end * 1000).toISOString()
+      : null;
+
+  const { error: historyError } = await supabase.from('billing_history').insert({
+    user_id: sub.user_id,
+    stripe_invoice_id: invoiceId,
+    stripe_charge_id: invoiceCharge,
+    amount_paid: 0,
+    currency,
+    status: 'payment_failed',
+    invoice_url: invoiceUrl,
+    invoice_pdf: invoicePdf,
+    period_start: periodStart,
+    period_end: periodEnd,
+  });
+  if (historyError) {
+    logger.warn('Failed to record failed-payment billing history', {
+      invoiceId,
+      customerId,
+      error: historyError.message,
+    });
+  }
+}
+
 export async function processWebhookEvent(
   supabase: AnySupabaseClient,
   event: { id: string; type: string; data: Record<string, unknown> }
@@ -171,9 +296,24 @@ export async function processWebhookEvent(
   const stripe = getStripe();
   if (!stripe) return;
 
+  // Event-shape normalization (ONE place, all handlers below use
+  // `payload`): the webhook route passes `event.data.object` as
+  // `data`, so `data` IS the Stripe object and its `object` field
+  // is just the type string ('checkout.session', 'subscription',
+  // 'invoice') — reading `event.data.object` as the payload made
+  // every handler silently no-op live (guarded undefined lookups).
+  // A fabricated/full Stripe event may instead carry the object
+  // under `data.object`; accept that shape too. A real Stripe
+  // object's `object` field is always a string, never the payload,
+  // so `typeof === 'object'` distinguishes the two shapes.
+  const payload =
+    typeof event.data?.object === 'object' && event.data.object !== null
+      ? (event.data.object as Record<string, unknown>)
+      : event.data;
+
   switch (event.type) {
     case 'checkout.session.completed': {
-      const session = event.data.object as Record<string, unknown>;
+      const session = payload;
       const subscriptionId = session.subscription as string;
       if (subscriptionId) {
         await syncSubscriptionFromStripe(supabase, subscriptionId);
@@ -200,14 +340,14 @@ export async function processWebhookEvent(
     }
 
     case 'customer.subscription.updated': {
-      const sub = event.data.object as Record<string, unknown>;
+      const sub = payload;
       const subId = sub.id as string;
       if (subId) await syncSubscriptionFromStripe(supabase, subId);
       break;
     }
 
     case 'customer.subscription.deleted': {
-      const sub = event.data.object as Record<string, unknown>;
+      const sub = payload;
       const subId = sub.id as string;
       if (subId) await syncSubscriptionFromStripe(supabase, subId);
 
@@ -219,7 +359,7 @@ export async function processWebhookEvent(
     }
 
     case 'invoice.paid': {
-      const invoice = event.data.object as Record<string, unknown>;
+      const invoice = payload;
       const customerId = invoice.customer as string;
       const amountPaid = invoice.amount_paid as number;
       const currency = invoice.currency as string;
@@ -274,6 +414,17 @@ export async function processWebhookEvent(
           }
         }
       }
+      break;
+    }
+
+    case 'invoice.payment_failed': {
+      // Section 17, Stage G: dunning/retry decision lives in
+      // handleInvoicePaymentFailed — mark past_due, log the retry
+      // context, record a zero-amount history row; Stripe's
+      // automatic retries keep running, nothing is cancelled here.
+      // Shape is already normalized to `payload` above (route
+      // shape and { object: invoice } both work).
+      await handleInvoicePaymentFailed(supabase, payload);
       break;
     }
 

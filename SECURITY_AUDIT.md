@@ -1,5 +1,7 @@
 # SECURITY AUDIT — SmartBuy AI
 
+> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. Its counts are stale (60 tables, 119 policies, score 9.5/10) and it predates the security findings that matter now: the `profiles.role` column does not exist in the migration chain (§4 #1), any signed-in user can set their own `role_id` to admin (§4 #2), and migration 010's 66 wide-open write policies are fixed by 017 in code but 017's live application is unverified (§4 #3). Do not cite it as the current security posture. Superseded by: `project-summary.md` (Database) and the Section 17 audit §4.
+
 **Date:** 2026-07-12  
 **Auditor:** Automated + Manual  
 **Overall Security Score:** 9.5/10

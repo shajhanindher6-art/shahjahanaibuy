@@ -26,6 +26,17 @@
  * `merchant_products` have no `source` column in the schema (none is
  * invented); provenance lives in the audit-log details JSONB.
  *
+ * Section 17, Stage C items 14–15 (migration 045, unapplied):
+ * approve inserts each product as `status: 'pending'` with its
+ * price-verification stamp (manual → 'unverified'; eBay Browse →
+ * 'verified' with verified_at = approve time) and flips it to
+ * 'published' only after the merchant listing is in — a row is
+ * never public because it was merely inserted. The public query
+ * path (services/products.ts) lists published rows only. Until
+ * migration 045 is applied, the inserts retry without the new
+ * columns (Postgres 42703) and the row is public as before —
+ * the approve never 500s over an unapplied migration.
+ *
  * Admin-only (migration 017: catalog writes are admin-only at the RLS
  * level too). Writes go through the service-role client after
  * requireAdmin; the session client is never used for writes.
@@ -58,6 +69,7 @@ import {
   type IntakeReviewedRow,
 } from '@/services/catalog-intake';
 import { EBAY_INTAKE_SOURCE } from '@/services/ebay-intake';
+import { priceVerificationForIntakeSource } from '@/services/price-verification';
 
 export const dynamic = 'force-dynamic';
 
@@ -113,6 +125,16 @@ export async function loadCatalogContext(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Section 17, Stage C items 14–15 — Postgres 42703
+ * ("column does not exist"): migration 045 unapplied. Callers
+ * retry the write without the new columns instead of failing
+ * the approve.
+ */
+function isUndefinedColumnError(error: { code?: string } | null | undefined): boolean {
+  return error?.code === '42703';
 }
 
 export async function POST(request: NextRequest) {
@@ -249,6 +271,11 @@ export async function POST(request: NextRequest) {
 
     const inserted: string[] = [];
     const skipped: Array<{ row: number; reason: string }> = [];
+    // Section 17, Stage C items 14–15: true when any row in this
+    // batch fell back to the pre-045 columns (migration unapplied)
+    // — recorded in the audit log and the response so the admin
+    // can see the batch went in legacy mode.
+    let legacyMode = false;
     // Section 15, P3-2: the approve-time check timestamp for eBay
     // rows — the "Live eBay asking price, checked <timestamp>"
     // label reads data_freshness, so it is stamped here, once per
@@ -256,24 +283,55 @@ export async function POST(request: NextRequest) {
     const approvedAt = new Date().toISOString();
 
     for (const plan of plans) {
-      const { data: product, error: productError } = await service
+      // Section 17, Stage C items 14–15: the product is born
+      // PENDING with its verification stamp — never public on
+      // insert. It flips to 'published' only after the merchant
+      // listing is in (the publish step below). Until migration
+      // 045 is applied the new columns do not exist: the insert
+      // retries without them (42703) and the row is public as
+      // before — the approve never fails over an unapplied
+      // migration.
+      const verification = priceVerificationForIntakeSource(
+        // Validated above to be one of the two known sources.
+        source as typeof INTAKE_SOURCE | typeof EBAY_INTAKE_SOURCE,
+        approvedAt
+      );
+      const productBase = {
+        name: plan.product.name,
+        slug: plan.product.slug,
+        brand: plan.product.brand,
+        category: plan.product.category,
+        ...(plan.product.description
+          ? { description: plan.product.description }
+          : {}),
+        ...(plan.product.image_url ? { image_url: plan.product.image_url } : {}),
+        ...(plan.product.gtin ? { gtin: plan.product.gtin } : {}),
+        ...(source === EBAY_INTAKE_SOURCE
+          ? { data_freshness: approvedAt }
+          : {}),
+      };
+      const productWithStatus = {
+        ...productBase,
+        status: 'pending',
+        price_verification_status: verification.priceVerificationStatus,
+        price_verified_at: verification.priceVerifiedAt,
+      };
+      let productRes = await service
         .from('products')
-        .insert({
-          name: plan.product.name,
-          slug: plan.product.slug,
-          brand: plan.product.brand,
-          category: plan.product.category,
-          ...(plan.product.description
-            ? { description: plan.product.description }
-            : {}),
-          ...(plan.product.image_url ? { image_url: plan.product.image_url } : {}),
-          ...(plan.product.gtin ? { gtin: plan.product.gtin } : {}),
-          ...(source === EBAY_INTAKE_SOURCE
-            ? { data_freshness: approvedAt }
-            : {}),
-        })
+        .insert(productWithStatus)
         .select('id')
         .single();
+      let legacyColumns = false;
+      if (productRes.error && isUndefinedColumnError(productRes.error)) {
+        legacyColumns = true;
+        legacyMode = true;
+        productRes = await service
+          .from('products')
+          .insert(productBase)
+          .select('id')
+          .single();
+      }
+      const { data: product, error: productError } = productRes;
 
       if (productError || !product) {
         skipped.push({
@@ -286,8 +344,9 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const { error: mpError } = await service.from('merchant_products').insert({
-        product_id: (product as { id: string }).id,
+      const productId = (product as { id: string }).id;
+      const mpBase = {
+        product_id: productId,
         merchant_id: plan.merchantProduct.merchantId,
         price: plan.merchantProduct.price,
         currency_id: plan.merchantProduct.currencyId,
@@ -296,7 +355,17 @@ export async function POST(request: NextRequest) {
         ...(plan.merchantProduct.merchantSku
           ? { merchant_sku: plan.merchantProduct.merchantSku }
           : {}),
+      };
+      let mpRes = await service.from('merchant_products').insert({
+        ...mpBase,
+        price_verification_status: verification.priceVerificationStatus,
+        price_source: verification.priceSource,
+        price_verified_at: verification.priceVerifiedAt,
       });
+      if (mpRes.error && isUndefinedColumnError(mpRes.error)) {
+        mpRes = await service.from('merchant_products').insert(mpBase);
+      }
+      const { error: mpError } = mpRes;
 
       if (mpError) {
         // Product exists but has no merchant listing; report it rather
@@ -306,6 +375,28 @@ export async function POST(request: NextRequest) {
           reason: `Merchant listing failed for "${plan.product.slug}": ${mpError.message}`,
         });
         continue;
+      }
+
+      // Publish flip: pending → published, only now that the
+      // listing exists. Skipped entirely in legacy mode (no status
+      // column — the row is already public as before). If the flip
+      // itself fails, the just-inserted row is removed so a
+      // half-published orphan can never sit invisible and
+      // un-approvable (a re-approve would hit the slug unique
+      // violation); the admin re-approves the batch to retry.
+      if (!legacyColumns) {
+        const { error: publishError } = await service
+          .from('products')
+          .update({ status: 'published' })
+          .eq('id', productId);
+        if (publishError) {
+          await service.from('products').delete().eq('id', productId);
+          skipped.push({
+            row: plan.rowNumber,
+            reason: `Publish failed for "${plan.product.slug}" — row removed, re-approve to retry: ${publishError.message}`,
+          });
+          continue;
+        }
       }
 
       inserted.push(plan.product.slug);
@@ -324,6 +415,10 @@ export async function POST(request: NextRequest) {
         inserted,
         skipped,
         reviewed: review.summary,
+        // Section 17, Stage C item 15: every row went through
+        // pending → published — unless legacyMode, where migration
+        // 045 is unapplied and the status column does not exist.
+        publication: legacyMode ? 'legacy-no-status-column' : 'pending-then-published',
       },
     });
     if (auditError) {
@@ -337,6 +432,7 @@ export async function POST(request: NextRequest) {
       inserted,
       skipped,
       summary: review.summary,
+      publication: legacyMode ? 'legacy-no-status-column' : 'pending-then-published',
       ...(source === EBAY_INTAKE_SOURCE
         ? {
             priceNote:

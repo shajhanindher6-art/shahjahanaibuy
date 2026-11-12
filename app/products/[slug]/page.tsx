@@ -38,6 +38,10 @@ import {
 } from '@/lib/product-seo';
 import { getProductSeo } from '@/lib/product-seo-server';
 import { formatLastChecked, isPriceStale } from '@/lib/price-freshness';
+import {
+  priceVerificationLabel,
+  normalizePriceVerificationStatus,
+} from '@/services/price-verification';
 import ProductDetailClient from '@/components/products/product-detail-client';
 
 export async function generateMetadata({
@@ -100,6 +104,17 @@ export default async function ProductPage({
   const lastCheckedLabel = formatLastChecked(seo.dataFreshness);
   const pricesStale = isPriceStale(seo.dataFreshness);
 
+  // Section 17, Stage C item 14: honest price-verification label
+  // for the shown lowest price — "Verified price — checked <date>"
+  // only when a real fetch checked it, "Unverified price —
+  // manually entered, not checked live" for manual intake. Never
+  // claims "live". Rendered only when a price is actually shown;
+  // a missing status reads as unverified, never as verified.
+  const verification = priceVerificationLabel(
+    normalizePriceVerificationStatus(seo.priceVerificationStatus),
+    formatLastChecked(seo.priceVerifiedAt)
+  );
+
   return (
     <>
       <script
@@ -119,6 +134,21 @@ export default async function ProductPage({
               </span>
             )}
           </p>
+          {seo.lowestPrice !== null && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {verification.tone === 'ok' ? (
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+                  {verification.text}
+                </span>
+              ) : verification.tone === 'warn' ? (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                  {verification.text}
+                </span>
+              ) : (
+                verification.text
+              )}
+            </p>
+          )}
         </div>
       )}
       {/* Section skeletons (Section 4, item 2): the hero renders from
