@@ -29,6 +29,21 @@ export interface UptimeSummary {
   firstCheckAt: string | null;
   lastCheckAt: string | null;
   hasData: boolean;
+  /**
+   * Whether the latest check inside the window was ok (null when
+   * there is none). Section 18, item 29: the counts-based summary
+   * needs this without the row — it is the "most recent check
+   * failed" signal the status page's degraded branch reads.
+   */
+  lastOk?: boolean | null;
+  /**
+   * The latest check's HTTP status and target URL, for the
+   * /status page's "Last verified" line. Optional — only the
+   * counts-based summary carries them (the row-based summary
+   * reads them from the last row directly).
+   */
+  lastStatusCode?: number | null;
+  lastTargetUrl?: string | null;
 }
 
 /** Default target: the live site. Override per call when checking more. */
@@ -64,6 +79,48 @@ export function summarizeUptime(
     firstCheckAt: inWindow[0]?.checked_at ?? null,
     lastCheckAt: inWindow[inWindow.length - 1]?.checked_at ?? null,
     hasData: inWindow.length > 0,
+    lastOk: inWindow.length > 0 ? inWindow[inWindow.length - 1].ok : null,
+    lastStatusCode: inWindow[inWindow.length - 1]?.status_code ?? null,
+    lastTargetUrl: inWindow[inWindow.length - 1]?.target_url ?? null,
+  };
+}
+
+/**
+ * Section 18, item 29 — the same summary, from DB-side counts
+ * instead of rows. The /status page used to pull up to 2,000
+ * `uptime_checks` rows per visit and aggregate in JS; the page now
+ * asks Postgres for two counts (total + ok inside the window) and
+ * the first/last check rows, and this builds the identical summary
+ * from those numbers. `lastOk` is the ok flag of the latest check
+ * inside the window — the same check `summarizeUptime` would have
+ * read as the latest row (the newest check overall is always
+ * inside the window whenever any in-window check exists).
+ */
+export function summarizeUptimeFromCounts(input: {
+  totalChecks: number;
+  okChecks: number;
+  firstCheckAt: string | null;
+  lastCheckAt: string | null;
+  lastOk: boolean | null;
+  windowDays: number;
+  lastStatusCode?: number | null;
+  lastTargetUrl?: string | null;
+}): UptimeSummary {
+  const { totalChecks, okChecks } = input;
+  return {
+    totalChecks,
+    okChecks,
+    uptimePercent:
+      totalChecks === 0
+        ? null
+        : Math.round((okChecks / totalChecks) * 1000) / 10,
+    windowDays: input.windowDays,
+    firstCheckAt: input.firstCheckAt,
+    lastCheckAt: input.lastCheckAt,
+    hasData: totalChecks > 0,
+    lastOk: input.lastOk,
+    lastStatusCode: input.lastStatusCode ?? null,
+    lastTargetUrl: input.lastTargetUrl ?? null,
   };
 }
 

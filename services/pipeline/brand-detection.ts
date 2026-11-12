@@ -10,6 +10,12 @@ export interface BrandDetectionResult {
   brandId: string | null;
   detected: boolean;
   created: boolean;
+  /**
+   * Section 18, item 23: the resolved brand's canonical name —
+   * the text `products.brand` value that keeps text-based reads
+   * working. Non-null exactly when brandId is non-null.
+   */
+  name: string | null;
 }
 
 function slugifyBrand(name: string): string {
@@ -27,7 +33,7 @@ export async function detectBrand(
   brandName: string | null
 ): Promise<BrandDetectionResult> {
   if (!brandName || brandName.trim().length === 0) {
-    return { brandId: null, detected: false, created: false };
+    return { brandId: null, detected: false, created: false, name: null };
   }
 
   const trimmed = brandName.trim();
@@ -36,25 +42,35 @@ export async function detectBrand(
   // Try exact slug match first
   const { data: existing } = await supabase
     .from('brands')
-    .select('id')
+    .select('id, name')
     .eq('slug', slug)
     .is('deleted_at', null)
     .maybeSingle();
 
   if (existing?.id) {
-    return { brandId: existing.id, detected: true, created: false };
+    return {
+      brandId: existing.id,
+      detected: true,
+      created: false,
+      name: (existing as { name?: string }).name ?? trimmed,
+    };
   }
 
   // Try case-insensitive name match
   const { data: byName } = await supabase
     .from('brands')
-    .select('id')
+    .select('id, name')
     .ilike('name', trimmed)
     .is('deleted_at', null)
     .maybeSingle();
 
   if (byName?.id) {
-    return { brandId: byName.id, detected: true, created: false };
+    return {
+      brandId: byName.id,
+      detected: true,
+      created: false,
+      name: (byName as { name?: string }).name ?? trimmed,
+    };
   }
 
   // Create new brand
@@ -70,12 +86,12 @@ export async function detectBrand(
 
   if (newBrand?.id) {
     logger.debug('Brand: created new', { name: trimmed, slug, id: newBrand.id });
-    return { brandId: newBrand.id, detected: true, created: true };
+    return { brandId: newBrand.id, detected: true, created: true, name: trimmed };
   }
 
   if (error) {
     logger.warn('Brand: insert failed', { error: error.message });
   }
 
-  return { brandId: null, detected: false, created: false };
+  return { brandId: null, detected: false, created: false, name: null };
 }

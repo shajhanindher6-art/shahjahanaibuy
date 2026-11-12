@@ -169,9 +169,11 @@ async function getCachedSummary(
   return swrGet<AISummary | null>(
     key,
     async () => {
+      // Section 18, item 30 — explicit columns (was select('*')):
+      // exactly the fields the cached-summary return below reads.
       const { data } = await supabase
         .from('ai_summaries')
-        .select('*')
+        .select('id, product_id, summary, pros, cons, alternatives, created_at, expires_at')
         .eq('product_id', productId)
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false })

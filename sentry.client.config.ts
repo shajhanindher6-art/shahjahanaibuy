@@ -6,11 +6,14 @@
 // (app/error.tsx) and this client init together report real errors.
 // tracesSampleRate 0.1 keeps free-tier event volume low.
 import * as Sentry from '@sentry/nextjs';
+import { getSentryRelease, getSentryEnvironment } from '@/lib/sentry-config';
 
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 if (dsn) {
   Sentry.init({
     dsn,
+    release: getSentryRelease(),
+    environment: getSentryEnvironment(),
     tracesSampleRate: 0.1,
     debug: false,
   });

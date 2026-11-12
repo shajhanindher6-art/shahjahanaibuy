@@ -43,7 +43,6 @@ async function getServiceClient() {
 async function processProductFetch(
   job: JobDefinition
 ): Promise<JobResult> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = job.data as any;
   const query: string = data.query;
   const retailerSlug: string | undefined = data.retailerSlug;
@@ -90,7 +89,6 @@ async function processProductFetch(
 async function processProductSearch(
   job: JobDefinition
 ): Promise<JobResult> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = job.data as any;
   const query: string = data.query;
   const retailerSlug: string | undefined = data.retailerSlug;
@@ -124,7 +122,6 @@ async function processProductSearch(
 async function processPriceUpdate(
   job: JobDefinition
 ): Promise<JobResult> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = job.data as any;
 
   const supabase = await getServiceClient();
@@ -156,7 +153,6 @@ async function processPriceUpdate(
 async function processPriceRefresh(
   job: JobDefinition
 ): Promise<JobResult> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = job.data as any;
   const productId: string = data.productId;
   const retailerId: string | undefined = data.retailerId;
@@ -253,7 +249,6 @@ async function processPriceRefresh(
 async function processProductValidate(
   job: JobDefinition
 ): Promise<JobResult> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = job.data as any;
   const productId: string | undefined = data.productId;
   const batchSize: number = data.batchSize ?? 100;
@@ -312,7 +307,6 @@ async function processProductValidate(
 async function processCacheInvalidate(
   job: JobDefinition
 ): Promise<JobResult> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = job.data as any;
   const pattern: string = data.pattern;
 
@@ -341,7 +335,6 @@ async function processCacheInvalidate(
 async function processDataSync(
   job: JobDefinition
 ): Promise<JobResult> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = job.data as any;
   const dataSourceId: string = data.dataSourceId;
 
@@ -387,7 +380,6 @@ async function processDataSync(
 async function processImageProcess(
   job: JobDefinition
 ): Promise<JobResult> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = job.data as any;
   const productId: string = data.productId;
   const imageUrls: string[] | undefined = data.imageUrls;
@@ -415,6 +407,11 @@ async function processImageProcess(
 
   // Placeholder: actual image processing (resize, dedupe, validate) is
   // implemented in the pipeline's image-processing module.
+  // Section 18, item 40 — this processor does NO work yet, so it
+  // must not report any: `processed` is 0 (it used to report
+  // `urls.length`, claiming success for work that never happened).
+  // `success: true` means only "the placeholder ran without
+  // error"; `placeholder: true` says no processing happened.
   logger.info('image.process: processing requested (placeholder)', {
     productId,
     count: urls.length,
@@ -422,7 +419,7 @@ async function processImageProcess(
 
   return {
     success: true,
-    processed: urls.length,
+    processed: 0,
     metadata: { productId, placeholder: true },
   };
 }

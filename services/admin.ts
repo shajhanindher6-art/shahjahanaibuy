@@ -127,6 +127,12 @@ export async function getAdminAuditLogs(
   }
 }
 
+/**
+ * Section 18, item 14 — audit-logging contract: this helper NEVER
+ * throws. An insert failure or unexpected error is recorded via the
+ * logger and swallowed, so callers can `await` it inline in an admin
+ * mutation without any risk of failing the action itself.
+ */
 export async function recordAdminAction(
   supabase: AnySupabaseClient,
   adminId: string,

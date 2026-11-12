@@ -149,7 +149,15 @@ async function createNewProduct(
       name: normalized.name,
       slug,
       description: normalized.description,
+      // Section 18, item 23: write BOTH representations. The FK
+      // ids alone left the product invisible to the text-based
+      // brand/category reads (services/products.ts filters on the
+      // text columns); the text values come from the resolved
+      // brand/category rows, never invented. When resolution
+      // failed (null id) the text stays null, as before.
+      brand: brandResult.name ?? null,
       brand_id: brandResult.brandId,
+      category: catResult.name ?? null,
       category_id: catResult.categoryId,
       image_url: processedImages[0]?.url ?? normalized.imageUrl,
       gtin: normalized.gtin,
@@ -205,12 +213,18 @@ async function updateExistingProduct(
   if (normalized.brand) {
     const brandResult = await detectBrand(supabase, normalized.brand);
     if (brandResult.brandId) updateData.brand_id = brandResult.brandId;
+    // Section 18, item 23: keep the text column in step with the
+    // FK id, from the resolved brand row.
+    if (brandResult.name) updateData.brand = brandResult.name;
     brandCreated = brandResult.created;
   }
 
   if (normalized.category) {
     const catResult = await assignCategory(supabase, normalized.category);
     if (catResult.categoryId) updateData.category_id = catResult.categoryId;
+    // Section 18, item 23: keep the text column in step with the
+    // FK id, from the resolved category row.
+    if (catResult.name) updateData.category = catResult.name;
     categoryCreated = catResult.created;
   }
 

@@ -91,6 +91,39 @@ export function getDeadLetterQueue(): DeadLetterEntry[] {
 }
 
 // ---------------------------------------------------------------------------
+// Last job results — Section 18, item 41
+// ---------------------------------------------------------------------------
+
+/**
+ * The most recent outcome per job id, so the caller that enqueued a
+ * job synchronously can report what actually happened instead of
+ * "queued". Bounded to the last 100 results (oldest evicted first)
+ * — this is in-memory, per-instance state, like the DLQ above.
+ * Only the SynchronousQueue records here: a BullMQ job runs
+ * asynchronously elsewhere, so its result is never present and the
+ * caller honestly keeps the 202 'queued' response.
+ */
+const lastJobResults = new Map<string, JobResult>();
+const MAX_JOB_RESULTS = 100;
+
+function recordJobResult(jobId: string, result: JobResult): void {
+  lastJobResults.set(jobId, result);
+  if (lastJobResults.size > MAX_JOB_RESULTS) {
+    const oldest = lastJobResults.keys().next();
+    if (!oldest.done) lastJobResults.delete(oldest.value);
+  }
+}
+
+/**
+ * The recorded outcome of a synchronously-run job, or undefined
+ * when the job has not finished (yet) on this instance — e.g. a
+ * delayed job, or a job handed to BullMQ.
+ */
+export function getJobResult(jobId: string): JobResult | undefined {
+  return lastJobResults.get(jobId);
+}
+
+// ---------------------------------------------------------------------------
 // Idempotency tracking — prevent duplicate processing
 // ---------------------------------------------------------------------------
 
@@ -192,6 +225,11 @@ class SynchronousQueue implements QueueAdapter {
     const processor = processors[job.type];
     if (!processor) {
       logger.error('Sync queue: no processor for job type', { type: job.type });
+      recordJobResult(jobId, {
+        success: false,
+        processed: 0,
+        errors: [`No processor registered for type: ${job.type}`],
+      });
       recordDeadLetter({
         id: jobId,
         type: job.type,
@@ -214,6 +252,9 @@ class SynchronousQueue implements QueueAdapter {
       try {
         const result = await processor(job as JobDefinition);
         recordCompletion(result.success);
+        // Section 18, item 41 — record the outcome so the enqueuing
+        // caller can report the real result (see getJobResult).
+        recordJobResult(jobId, result);
         logger.info('Sync job complete', {
           type: job.type,
           jobId,
@@ -240,6 +281,11 @@ class SynchronousQueue implements QueueAdapter {
     }
 
     // Exhausted retries → dead-letter queue.
+    recordJobResult(jobId, {
+      success: false,
+      processed: 0,
+      errors: [lastError || 'job failed'],
+    });
     recordDeadLetter({
       id: jobId,
       type: job.type,
@@ -279,25 +325,23 @@ class SynchronousQueue implements QueueAdapter {
 // ---------------------------------------------------------------------------
 
 class BullMQQueue implements QueueAdapter {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private queues = new Map<string, any>();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private workers = new Map<string, any>();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private dlq: any = null;
   private connection: unknown;
   private redisAvailable = false;
 
   constructor(redisUrl: string) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const mod: any = eval('require')('bullmq');
       if (!mod || !mod.Queue) {
         throw new Error('bullmq module missing Queue export');
       }
       this.connection = { connection: { url: redisUrl } };
       this.redisAvailable = true;
-      logger.info('BullMQ queue: initialized with Redis', { url: redisUrl });
+      // Section 18, item 43 — never log the Redis URL: it carries
+      // credentials. Log only that a URL was configured.
+      logger.info('BullMQ queue: initialized with Redis', { redisConfigured: true });
     } catch (err) {
       logger.warn('BullMQ: bullmq package not installed, falling back to synchronous', {
         error: err instanceof Error ? err.message : 'unknown',
@@ -311,7 +355,6 @@ class BullMQQueue implements QueueAdapter {
       throw new Error('BullMQ not available');
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { Queue } = eval('require')('bullmq') as any;
     let queue = this.queues.get(job.type);
     if (!queue) {
@@ -338,7 +381,6 @@ class BullMQQueue implements QueueAdapter {
   process() {
     if (!this.redisAvailable) return;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { Worker, Queue: DLQQueue } = eval('require')('bullmq') as any;
 
     // Set up the dead-letter queue once.

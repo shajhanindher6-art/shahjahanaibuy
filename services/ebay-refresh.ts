@@ -342,7 +342,11 @@ async function refreshEbayPricesInner(
         outcome: 'failed',
       });
       try {
-        await markProductRefreshFailed(supabase, product.id);
+        await markProductRefreshFailed(supabase, product.id, {
+          reason: `refreshEbayPrices failed: ${String(err)}`,
+          productName: product.name,
+          productSlug: product.slug,
+        });
       } catch {
         // Freshness bookkeeping must never fail the product.
       }
@@ -410,7 +414,13 @@ async function refreshOneProduct(
   if (!search || !search.ok) {
     result.failed += 1;
     try {
-      await markProductRefreshFailed(supabase, product.id);
+      await markProductRefreshFailed(supabase, product.id, {
+        reason: search
+          ? `eBay search failed (${search.reason}) after ${MAX_ATTEMPTS} attempts`
+          : 'eBay search failed (no result)',
+        productName: product.name,
+        productSlug: product.slug,
+      });
     } catch {
       // Freshness bookkeeping must never fail the product.
     }
@@ -476,7 +486,11 @@ async function refreshOneProduct(
         error: error.message,
       });
       try {
-        await markProductRefreshFailed(supabase, product.id);
+        await markProductRefreshFailed(supabase, product.id, {
+          reason: `merchant_products update failed: ${error.message}`,
+          productName: product.name,
+          productSlug: product.slug,
+        });
       } catch {
         // Freshness bookkeeping must never fail the product.
       }
@@ -501,7 +515,11 @@ async function refreshOneProduct(
         error: error.message,
       });
       try {
-        await markProductRefreshFailed(supabase, product.id);
+        await markProductRefreshFailed(supabase, product.id, {
+          reason: `merchant_products insert failed: ${error.message}`,
+          productName: product.name,
+          productSlug: product.slug,
+        });
       } catch {
         // Freshness bookkeeping must never fail the product.
       }

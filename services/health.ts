@@ -38,12 +38,18 @@ export async function checkHealth(
     checks.database = { status: 'down' };
   }
 
-  // Auth check — verify auth service responds
+  // Auth check — verify auth service responds. The error AND the
+  // user are both inspected: an anonymous getUser() returns
+  // user:null WITHOUT throwing, so "no throw" alone cannot mean
+  // "up". Auth is down when the call errors or no user comes back.
+  // (Called without a session this reports down by design — the
+  // endpoint is a deep check, not an anonymous liveness probe.)
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    // Auth service is up if the call succeeds (user may be null)
-    checks.auth = { status: 'up' };
-    void user; // unused
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    checks.auth = authError || !user ? { status: 'down' } : { status: 'up' };
   } catch {
     checks.auth = { status: 'down' };
   }
@@ -67,11 +73,13 @@ export async function checkHealth(
     checks.stripe = { status: 'not_configured' };
   }
 
-  // Overall status
+  // Overall status. Stripe-down DOES count toward degraded:
+  // only 'not_configured' is neutral. Resend, eBay, Upstash and
+  // the cron jobs are deliberately NOT checked here — no health
+  // probe exists for them yet (audit §1 #33); their absence must
+  // not be read as "up".
   const allDown = Object.values(checks).every((c) => c.status === 'down');
-  const anyDown = Object.values(checks).some(
-    (c) => c.status === 'down' && c !== checks.stripe
-  );
+  const anyDown = Object.values(checks).some((c) => c.status === 'down');
 
   const status: HealthStatus['status'] = allDown
     ? 'unhealthy'

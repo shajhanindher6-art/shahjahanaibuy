@@ -13,6 +13,7 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import { insertErrorLogRow } from '@/services/error-log-admin';
 
 export type RefreshPriority = 1 | 2 | 3 | 4 | 5;
 export type RefreshStatus = 'idle' | 'queued' | 'processing' | 'failed';
@@ -109,9 +110,33 @@ export async function markProductRefreshed(
     .eq('id', productId);
 }
 
+/** What a failed refresh knows about the failure (Section 18, item 47). */
+export interface ProductRefreshFailure {
+  /** Why the refresh failed (DB error, eBay search reason, …). */
+  reason?: string;
+  /** Product name/slug when the caller knows them — shown on /admin/refresh-runs. */
+  productName?: string;
+  productSlug?: string;
+}
+
+/**
+ * Mark a product's refresh as failed and store the reason.
+ *
+ * The status row still carries only `refresh_status='failed'` +
+ * `next_refresh_at=+15min` (no new column — that would need a
+ * migration); the REASON is persisted as an `error_log` row
+ * (`route='prices.refresh'`, `meta.productId` + `meta.reason`) via
+ * the shared best-effort writer, and surfaced as the failed-
+ * products list on /admin/refresh-runs (`listRefreshFailures`).
+ * Best-effort like everything in this module: the error_log
+ * insert tolerates the table being missing (migration 048
+ * unapplied) and never throws — freshness bookkeeping must never
+ * fail the product.
+ */
 export async function markProductRefreshFailed(
   supabase: AnySupabaseClient,
-  productId: string
+  productId: string,
+  failure?: ProductRefreshFailure
 ): Promise<void> {
   const nextRefresh = new Date(Date.now() + 15 * 60 * 1000); // retry in 15 min
   await supabase
@@ -121,7 +146,21 @@ export async function markProductRefreshFailed(
       next_refresh_at: nextRefresh.toISOString(),
     })
     .eq('id', productId);
-  logger.warn('Product refresh failed', { productId });
+  logger.warn('Product refresh failed', {
+    productId,
+    ...(failure?.reason ? { reason: failure.reason } : {}),
+  });
+  await insertErrorLogRow(supabase, {
+    level: 'error',
+    message: 'Product refresh failed',
+    route: 'prices.refresh',
+    meta: {
+      productId,
+      ...(failure?.reason ? { reason: failure.reason } : {}),
+      ...(failure?.productName ? { productName: failure.productName } : {}),
+      ...(failure?.productSlug ? { productSlug: failure.productSlug } : {}),
+    },
+  });
 }
 
 export async function updateProductPriority(

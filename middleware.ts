@@ -2,6 +2,7 @@ import { updateSession } from '@/lib/supabase/middleware';
 import { getRegionByCountry, languageForCountry } from '@/lib/region';
 import { buildCsp } from '@/lib/csp';
 import { resolveSlugRequest } from '@/lib/middleware/slug-exists';
+import { ensureRequestId, REQUEST_ID_HEADER } from '@/lib/api/request-id';
 import { NextResponse, type NextRequest } from 'next/server';
 
 /**
@@ -30,6 +31,15 @@ export async function middleware(request: NextRequest) {
   const nonce = crypto.randomUUID();
   request.headers.set('x-nonce', nonce);
 
+  // Section 18, Phase 0 (audit §1 #37, §12 item 52): one request
+  // id per request. Generated (or reused from an inbound header)
+  // here — the single generation site — stamped onto the request
+  // so logApiRequest / logApiError read the same value, and echoed
+  // back on every response as `x-request-id` so a reported error
+  // can be found in the logs / Sentry by id. Set BEFORE
+  // updateSession, which builds its response from this request.
+  const requestId = ensureRequestId(request);
+
   // Soft-404 (2026-11-12): the [slug]/layout.tsx existence checks
   // cannot produce HTTP 404 live — the root app/loading.tsx streams
   // its shell with 200 before any async notFound() runs (proven in
@@ -55,6 +65,7 @@ export async function middleware(request: NextRequest) {
       new URL('/__smartbuy_not_found__', request.url)
     );
     gone.headers.set('Content-Security-Policy', buildCsp(nonce));
+    gone.headers.set(REQUEST_ID_HEADER, requestId);
     return gone;
   }
 
@@ -63,6 +74,7 @@ export async function middleware(request: NextRequest) {
   // The CSP header lives here now (per-request nonce), NOT in
   // next.config.js — a static header there cannot carry a nonce.
   response.headers.set('Content-Security-Policy', buildCsp(nonce));
+  response.headers.set(REQUEST_ID_HEADER, requestId);
 
   const saved = request.cookies.get('sb-country')?.value;
   if (!saved) {

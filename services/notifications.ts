@@ -184,6 +184,48 @@ export async function markNotificationSent(
   }
 }
 
+/**
+ * Persist one per-user digest failure (Section 18, item 50;
+ * migration 050 adds the `digest_failures` table).
+ *
+ * The digest endpoint used to count per-user failures in `failed`
+ * and log one line, but the failed user_id / reason was stored
+ * nowhere — a user whose digest failed every week was invisible
+ * after the response body scrolled away. (Contrast: notification
+ * dispatch IS persistent — notification_queue status='failed',
+ * last_error, retry_count.)
+ *
+ * Best-effort by design, never throws: when 050 is unapplied the
+ * table does not exist and the insert fails (42P01 / PGRST205) —
+ * that is logged and the digest continues, because failing the
+ * whole digest run over one failure record would lose every other
+ * user's digest. Callers must await this (not fire-and-forget) so
+ * a test can observe the write, but its failure never changes the
+ * caller's return value.
+ */
+export async function recordDigestFailure(
+  supabase: AnySupabaseClient,
+  userId: string,
+  reason: string
+): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('digest_failures')
+      .insert({ user_id: userId, reason });
+    if (error) {
+      logger.warn('recordDigestFailure: digest failure not persisted', {
+        userId,
+        error: error.message,
+      });
+    }
+  } catch (err) {
+    logger.warn('recordDigestFailure: digest failure not persisted', {
+      userId,
+      error: String(err),
+    });
+  }
+}
+
 export async function generateWeeklyDigest(
   supabase: AnySupabaseClient,
   userId: string
@@ -242,6 +284,15 @@ export async function generateWeeklyDigest(
         userId,
         error: digestError.message,
       });
+      // Section 18, item 50: persist the failure — the digest
+      // endpoint's `failed` count alone forgets which user failed
+      // and why. A missing digest_failures table (050 unapplied)
+      // logs and continues; the digest still returns null.
+      await recordDigestFailure(
+        supabase,
+        userId,
+        `weekly_digests insert failed: ${digestError.message}`
+      );
       return null;
     }
 
@@ -260,6 +311,8 @@ export async function generateWeeklyDigest(
     return { topDeals, priceDrops, searchSummary };
   } catch (err) {
     logger.error('generateWeeklyDigest: unexpected error', { error: String(err) });
+    // Section 18, item 50: persist the failure (see above).
+    await recordDigestFailure(supabase, userId, `unexpected error: ${String(err)}`);
     return null;
   }
 }

@@ -24,9 +24,11 @@ export async function recordProviderHealth(
   supabase: AnySupabaseClient,
   update: ProviderHealthUpdate
 ): Promise<void> {
+  // Section 18, item 30 — explicit columns (was select('*')):
+  // only the counters the upsert below reads back.
   const existing = await supabase
     .from('provider_health')
-    .select('*')
+    .select('provider_key, success_count, failure_count, consecutive_failures, avg_response_ms')
     .eq('provider_key', update.providerKey)
     .maybeSingle();
 
@@ -69,7 +71,7 @@ export async function getProviderHealth(
 ): Promise<Array<{ providerKey: string; status: string; successCount: number; failureCount: number; consecutiveFailures: number; lastSuccessAt: string | null; lastFailureAt: string | null; avgResponseMs: number | null }>> {
   const { data } = await supabase
     .from('provider_health')
-    .select('*')
+    .select('provider_key, status, success_count, failure_count, consecutive_failures, last_success_at, last_failure_at, avg_response_ms')
     .order('provider_key')
     .limit(100);
 
@@ -128,7 +130,7 @@ export async function getSyncHistory(
 ): Promise<Array<{ id: string; providerKey: string; syncType: string; status: string; recordsFetched: number; recordsInserted: number; recordsUpdated: number; recordsRejected: number; errorMessage: string | null; durationMs: number | null; startedAt: string; completedAt: string | null }>> {
   const { data } = await supabase
     .from('sync_history')
-    .select('*')
+    .select('id, provider_key, sync_type, status, records_fetched, records_inserted, records_updated, records_rejected, error_message, duration_ms, started_at, completed_at')
     .order('started_at', { ascending: false })
     .limit(limit);
 
@@ -186,7 +188,7 @@ export async function getQueueMetrics(
 ): Promise<Array<{ queueName: string; waitingCount: number; activeCount: number; completedCount: number; failedCount: number; throughputPerMin: number; avgLatencyMs: number | null; recordedAt: string }>> {
   const { data } = await supabase
     .from('queue_metrics')
-    .select('*')
+    .select('queue_name, waiting_count, active_count, completed_count, failed_count, throughput_per_min, avg_latency_ms, recorded_at')
     .order('recorded_at', { ascending: false })
     .limit(limit);
 

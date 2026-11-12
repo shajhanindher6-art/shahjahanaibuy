@@ -11,6 +11,7 @@
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
+import { swrGet, cacheKey } from '@/lib/cache';
 import { logger } from '@/lib/config/logger';
 import { normalizePriceVerificationStatus } from '@/services/price-verification';
 import type {
@@ -352,6 +353,29 @@ export async function getMerchantProducts(
     logger.error('getMerchantProducts: unexpected error', { error: String(err) });
     return [];
   }
+}
+
+/**
+ * Section 18, item 26 — cached merchant listings for the product
+ * page. `getProductSeo` is called twice per request
+ * (`generateMetadata` + the page body); without a cache the
+ * merchant + review queries ran 2× (the product row itself was
+ * already deduped by `getCachedProductBySlug`'s SWR cache). This
+ * wrapper serves the second call from the first call's result
+ * (60s fresh / 5min stale — listings change slowly enough that a
+ * one-minute-old cheapest price is what the page already showed;
+ * the client-side "where to buy" block re-fetches live anyway).
+ * Other callers (bundles, merchants route, visual search) keep
+ * calling `getMerchantProducts` directly — uncached, as before.
+ */
+export async function getCachedMerchantProducts(
+  supabase: AnySupabaseClient,
+  productId: string
+): Promise<MerchantProduct[]> {
+  return swrGet<MerchantProduct[]>(
+    cacheKey('merchant-products', productId),
+    () => getMerchantProducts(supabase, productId)
+  );
 }
 
 // ---------------------------------------------------------------------------

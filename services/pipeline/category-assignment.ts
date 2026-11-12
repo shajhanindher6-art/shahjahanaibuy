@@ -12,6 +12,13 @@ export interface CategoryAssignmentResult {
   categoryId: string | null;
   assigned: boolean;
   created: boolean;
+  /**
+   * Section 18, item 23: the resolved (leaf) category's canonical
+   * name — the text `products.category` value that keeps
+   * text-based reads working. Non-null exactly when categoryId is
+   * non-null.
+   */
+  name: string | null;
 }
 
 function parseCategoryPath(category: string): string[] {
@@ -36,12 +43,12 @@ export async function assignCategory(
   categoryString: string | null
 ): Promise<CategoryAssignmentResult> {
   if (!categoryString) {
-    return { categoryId: null, assigned: false, created: false };
+    return { categoryId: null, assigned: false, created: false, name: null };
   }
 
   const parts = parseCategoryPath(categoryString);
   if (parts.length === 0) {
-    return { categoryId: null, assigned: false, created: false };
+    return { categoryId: null, assigned: false, created: false, name: null };
   }
 
   let parentId: string | null = null;
@@ -80,5 +87,15 @@ export async function assignCategory(
     }
   }
 
-  return { categoryId: parentId, assigned: parentId !== null, created };
+  // The resolved leaf category's name is the last path part: the
+  // row is matched by that part's slug (or created with that part
+  // as its name), so the text column value is the canonical name
+  // of the resolved row, not the raw provider path.
+  const leafName = parts[parts.length - 1];
+  return {
+    categoryId: parentId,
+    assigned: parentId !== null,
+    created,
+    name: parentId !== null ? leafName : null,
+  };
 }

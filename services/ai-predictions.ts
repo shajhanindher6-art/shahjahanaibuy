@@ -249,9 +249,11 @@ async function getCachedPrediction(
   return swrGet<PricePredictionResult | null>(
     key,
     async () => {
+      // Section 18, item 30 — explicit columns (was select('*')):
+      // exactly the fields the cached-prediction return below reads.
       const { data } = await supabase
         .from('ai_predictions')
-        .select('*')
+        .select('product_id, discount_probability, expected_sale_date, expected_lowest_price, confidence_score, explanation, price_data_range')
         .eq('product_id', productId)
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false })

@@ -61,7 +61,11 @@ export async function sendEmail(
   type: EmailType = 'welcome'
 ): Promise<EmailResult> {
   if (!env.resendApiKey) {
-    logger.info('Email not sent (RESEND_API_KEY not set)', { to: message.to, type });
+    // Section 18, Phase 2 — item 51 (audit §1 #36): the key is
+    // `toEmail`, not `to` — `toEmail` contains `email`, so the
+    // logger's SENSITIVE_KEYS mask redacts the recipient address
+    // instead of writing it to Vercel logs in plaintext.
+    logger.info('Email not sent (RESEND_API_KEY not set)', { toEmail: message.to, type });
     return { success: false, error: 'Email provider not configured' };
   }
 

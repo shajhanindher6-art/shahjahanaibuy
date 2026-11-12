@@ -6,7 +6,8 @@
  * with no checks recorded yet.
  */
 
-import { summarizeUptime, type UptimeCheckRow, type UptimeSummary } from '@/lib/uptime';
+import { summarizeUptime, summarizeUptimeFromCounts, type UptimeCheckRow, type UptimeSummary } from '@/lib/uptime';
+import type { AnySupabaseClient } from '@/lib/supabase/types';
 
 export type OverallStatus = 'operational' | 'degraded' | 'outage' | 'unknown';
 
@@ -46,15 +47,25 @@ export function buildStatusSummary(
   now = new Date()
 ): StatusSummary {
   const uptime = summarizeUptime(checks, windowDays, now);
+  return buildStatusSummaryFromUptime(uptime, incidents);
+}
+
+/**
+ * The overall-status + message decision, from an already-computed
+ * uptime summary. `buildStatusSummary` is the row-based entry
+ * point; the /status page uses this one with the counts-based
+ * summary from `fetchStatusUptime` (Section 18, item 29) — the
+ * decision is identical either way. `lastOk` is the latest check's
+ * ok flag: the newest check overall is always the newest in-window
+ * check whenever any in-window check exists, so the row-based
+ * `latestCheck?.ok` and the counts-based `uptime.lastOk` agree.
+ */
+export function buildStatusSummaryFromUptime(
+  uptime: UptimeSummary,
+  incidents: StatusIncident[]
+): StatusSummary {
   const openIncidents = incidents.filter((i) => i.status !== 'resolved');
   const hasData = uptime.hasData;
-
-  // Latest recorded check, regardless of the order the caller passed
-  // rows in (API/page queries return newest-first; tests may not).
-  const sorted = [...checks].sort(
-    (a, b) => new Date(a.checked_at).getTime() - new Date(b.checked_at).getTime()
-  );
-  const latestCheck = sorted[sorted.length - 1] ?? null;
 
   let overall: OverallStatus;
   let message: string;
@@ -69,7 +80,7 @@ export function buildStatusSummary(
   } else if (openIncidents.length > 0) {
     overall = 'degraded';
     message = `${openIncidents.length} incident${openIncidents.length === 1 ? '' : 's'} being monitored.`;
-  } else if (!uptime.lastCheckAt || !latestCheck?.ok) {
+  } else if (!uptime.lastCheckAt || !uptime.lastOk) {
     // Last recorded check failed but no incident was opened yet.
     overall = 'degraded';
     message = 'The most recent check failed. No incident has been opened yet.';
@@ -87,4 +98,73 @@ export function buildStatusSummary(
     hasData,
     message,
   };
+}
+
+/**
+ * Section 18, item 29 — DB-side uptime summary for the /status
+ * page. Four small queries instead of pulling up to 2,000 rows per
+ * visit: total checks in the window, ok checks in the window (both
+ * `head: true` counts — zero rows transferred), and the first/last
+ * check rows (one row each). Returns null on any read failure —
+ * the page then renders the same "no data yet" state as before,
+ * never a 500.
+ */
+export async function fetchStatusUptime(
+  supabase: AnySupabaseClient,
+  windowDays = 90,
+  now = new Date()
+): Promise<UptimeSummary | null> {
+  const cutoff = new Date(
+    now.getTime() - windowDays * 24 * 60 * 60 * 1000
+  ).toISOString();
+  try {
+    const [totalRes, okRes, firstRes, lastRes] = await Promise.all([
+      supabase
+        .from('uptime_checks')
+        .select('checked_at', { count: 'exact', head: true })
+        .gte('checked_at', cutoff),
+      supabase
+        .from('uptime_checks')
+        .select('checked_at', { count: 'exact', head: true })
+        .eq('ok', true)
+        .gte('checked_at', cutoff),
+      supabase
+        .from('uptime_checks')
+        .select('checked_at')
+        .gte('checked_at', cutoff)
+        .order('checked_at', { ascending: true })
+        .limit(1),
+      supabase
+        .from('uptime_checks')
+        .select('checked_at, ok, status_code, target_url')
+        .gte('checked_at', cutoff)
+        .order('checked_at', { ascending: false })
+        .limit(1),
+    ]);
+    if (totalRes.error || okRes.error || firstRes.error || lastRes.error) {
+      return null;
+    }
+    const firstRow = (firstRes.data as Array<{ checked_at: string }> | null)?.[0] ?? null;
+    const lastRow =
+      (
+        lastRes.data as Array<{
+          checked_at: string;
+          ok: boolean;
+          status_code: number | null;
+          target_url: string | null;
+        }> | null
+      )?.[0] ?? null;
+    return summarizeUptimeFromCounts({
+      totalChecks: totalRes.count ?? 0,
+      okChecks: okRes.count ?? 0,
+      firstCheckAt: firstRow?.checked_at ?? null,
+      lastCheckAt: lastRow?.checked_at ?? null,
+      lastOk: lastRow ? lastRow.ok : null,
+      lastStatusCode: lastRow?.status_code ?? null,
+      lastTargetUrl: lastRow?.target_url ?? null,
+      windowDays,
+    });
+  } catch {
+    return null;
+  }
 }

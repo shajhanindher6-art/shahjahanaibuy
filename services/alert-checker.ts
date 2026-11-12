@@ -70,45 +70,85 @@ interface ProductInfo {
 // Price lookup
 // ---------------------------------------------------------------------------
 
-async function getCurrentPrice(
+interface CurrentPrice {
+  price: number | null;
+  availability: string | null;
+}
+
+/**
+ * Section 18, item 17 — batched current-price lookup, mirroring
+ * the guest-alert path (app/api/v1/prices/refresh/route.ts
+ * `priceByProduct`): ONE price_history query for every alert
+ * product, then ONE merchant_products query for the products with
+ * no price history, instead of 1–2 sequential queries per alert
+ * (up to ~1000–2000 queries per check run).
+ *
+ * Latest price_history row wins per product (ordered by
+ * recorded_at desc, first row kept); the fallback is the cheapest
+ * in-stock merchant listing per product (ordered by price asc,
+ * first row kept). A product with neither has no price — never a
+ * guessed one.
+ */
+async function getCurrentPrices(
   supabase: AnySupabaseClient,
-  productId: string
-): Promise<{ price: number | null; availability: string | null }> {
-  // Latest price_history point first.
+  productIds: string[]
+): Promise<Map<string, CurrentPrice>> {
+  const prices = new Map<string, CurrentPrice>();
+  const ids = [...new Set(productIds.filter(Boolean))];
+  if (ids.length === 0) return prices;
+
   const { data: latest } = await supabase
     .from('price_history')
-    .select('price, availability')
-    .eq('product_id', productId)
+    .select('product_id, price, availability, recorded_at')
+    .in('product_id', ids)
     .order('recorded_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1000);
 
-  if (latest && latest.price !== null && latest.price !== undefined) {
-    return {
-      price: parseFloat(String(latest.price)),
-      availability: (latest.availability as string | null) ?? null,
-    };
+  for (const row of (latest ?? []) as Array<{
+    product_id: string;
+    price: number | string | null;
+    availability: string | null;
+  }>) {
+    if (prices.has(row.product_id)) continue;
+    if (row.price === null || row.price === undefined) continue;
+    const price = parseFloat(String(row.price));
+    if (!Number.isFinite(price)) continue;
+    prices.set(row.product_id, {
+      price,
+      availability: row.availability ?? null,
+    });
   }
 
-  // Fallback: lowest in-stock merchant listing.
-  const { data: listing } = await supabase
+  // Fallback: lowest in-stock merchant listing, for the products
+  // with no usable price history.
+  const missing = ids.filter((id) => !prices.has(id));
+  if (missing.length === 0) return prices;
+
+  const { data: listings } = await supabase
     .from('merchant_products')
-    .select('price, in_stock')
-    .eq('product_id', productId)
+    .select('product_id, price, in_stock')
+    .in('product_id', missing)
     .is('deleted_at', null)
     .eq('in_stock', true)
     .order('price', { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .limit(1000);
 
-  if (listing && listing.price !== null && listing.price !== undefined) {
-    return {
-      price: parseFloat(String(listing.price)),
-      availability: listing.in_stock ? 'in_stock' : 'out_of_stock',
-    };
+  for (const row of (listings ?? []) as Array<{
+    product_id: string;
+    price: number | string | null;
+    in_stock: boolean;
+  }>) {
+    if (prices.has(row.product_id)) continue;
+    if (row.price === null || row.price === undefined) continue;
+    const price = parseFloat(String(row.price));
+    if (!Number.isFinite(price)) continue;
+    prices.set(row.product_id, {
+      price,
+      availability: row.in_stock ? 'in_stock' : 'out_of_stock',
+    });
   }
 
-  return { price: null, availability: null };
+  return prices;
 }
 
 async function hasActiveDeal(
@@ -196,6 +236,12 @@ export async function checkPriceAlerts(
     }
   }
 
+  // Section 18, item 17: current prices for ALL alert products
+  // in two queries total (price_history, then the merchant
+  // fallback for products without history) — not one or two
+  // queries per alert.
+  const priceMap = await getCurrentPrices(supabase, productIds);
+
   for (const row of alerts as unknown as AlertRow[]) {
     result.checked++;
 
@@ -211,10 +257,10 @@ export async function checkPriceAlerts(
           ? parseFloat(String(row.condition_value))
           : null;
 
-      const { price, availability } = await getCurrentPrice(
-        supabase,
-        row.product_id
-      );
+      const { price, availability } = priceMap.get(row.product_id) ?? {
+        price: null,
+        availability: null,
+      };
 
       let shouldTrigger = false;
       let subject = '';

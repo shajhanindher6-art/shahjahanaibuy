@@ -39,9 +39,14 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  // Section 18, item 76: ESLint used to be skipped at build
+  // (`eslint: { ignoreDuringBuilds: true }`) and no workflow ran
+  // `npm run lint`, so lint errors shipped silently — including
+  // two conditional-hook bugs and 15 stale disable comments for a
+  // rule that does not exist in this config. All 18 errors were
+  // fixed (2026-11-12) and `npm run lint` now exits 0, so the
+  // build runs lint again. 16 warnings remain (10× no-img-element,
+  // 6× exhaustive-deps) — warnings do not fail the build.
   images: {
     formats: ['image/avif', 'image/webp'],
     remotePatterns: [

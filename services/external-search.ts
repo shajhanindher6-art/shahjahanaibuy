@@ -53,6 +53,14 @@ export interface WebSearchOutcome {
   fromCache: boolean;
   /** True when SERPAPI_API_KEY is not configured. */
   disabled: boolean;
+  /**
+   * Section 18, item 34 — when the results were fetched from
+   * SerpAPI (ISO timestamp). The cache entry's timestamp for
+   * cached results, the live fetch time for fresh results, null
+   * when disabled/failed or when the age is genuinely unknown
+   * (a cache row written before this field existed).
+   */
+  fetchedAt: string | null;
 }
 
 const SERPAPI_ENDPOINT = 'https://serpapi.com/search.json';
@@ -62,6 +70,12 @@ const MEMORY_TTL_MS = 24 * 60 * 60 * 1000; // 24h per-instance memory cache
 interface MemoryEntry {
   results: WebSearchResult[];
   expiresAt: number;
+  /**
+   * When the results were fetched from SerpAPI (ISO timestamp),
+   * or null when the age is genuinely unknown (a DB row written
+   * before Section 18) — never invented.
+   */
+  fetchedAt: string | null;
 }
 
 const memoryCache = new Map<string, MemoryEntry>();
@@ -124,11 +138,11 @@ function normalizeShoppingRow(row: Record<string, unknown>): WebSearchResult | n
 async function readDbCache(
   supabase: AnySupabaseClient,
   key: string
-): Promise<WebSearchResult[] | null> {
+): Promise<{ results: WebSearchResult[]; fetchedAt: string | null } | null> {
   try {
     const { data, error } = await supabase
       .from('external_search_cache')
-      .select('results, expires_at')
+      .select('results, expires_at, fetched_at')
       .eq('query_key', key)
       .gt('expires_at', new Date().toISOString())
       .order('fetched_at', { ascending: false })
@@ -136,7 +150,14 @@ async function readDbCache(
       .maybeSingle();
     if (error || !data) return null;
     const results = (data as Record<string, unknown>).results;
-    return Array.isArray(results) ? (results as WebSearchResult[]) : null;
+    if (!Array.isArray(results)) return null;
+    // Rows written before Section 18 carry no fetched_at — the
+    // age is then genuinely unknown (null), never invented.
+    const fetchedAt =
+      typeof (data as Record<string, unknown>).fetched_at === 'string'
+        ? ((data as Record<string, unknown>).fetched_at as string)
+        : null;
+    return { results: results as WebSearchResult[], fetchedAt };
   } catch {
     // Table not migrated yet, or RLS denied — cache is optional.
     return null;
@@ -190,21 +211,32 @@ export async function searchWebProducts(
   // 1. In-memory cache (fastest, no quota, no DB round trip).
   const mem = memoryCache.get(key);
   if (mem && Date.now() < mem.expiresAt) {
-    return { results: mem.results, fromCache: true, disabled: false };
+    return { results: mem.results, fromCache: true, disabled: false, fetchedAt: mem.fetchedAt };
   }
 
   // 2. Persistent DB cache (survives redeploys / new instances).
   const dbCached = await readDbCache(supabase, key);
   if (dbCached) {
-    memoryCache.set(key, { results: dbCached, expiresAt: Date.now() + MEMORY_TTL_MS });
-    return { results: dbCached, fromCache: true, disabled: false };
+    // Rows written before Section 18 carry no fetched_at on the
+    // individual results — stamp the entry's timestamp on any
+    // result that lacks one, so the page can still show the age.
+    const results = dbCached.results.map((r) => ({
+      ...r,
+      fetched_at: r.fetched_at ?? dbCached.fetchedAt,
+    }));
+    memoryCache.set(key, {
+      results,
+      expiresAt: Date.now() + MEMORY_TTL_MS,
+      fetchedAt: dbCached.fetchedAt,
+    });
+    return { results, fromCache: true, disabled: false, fetchedAt: dbCached.fetchedAt };
   }
 
   // 3. Live SerpAPI call — only if a key is configured.
   const apiKey = env.serpApiKey;
   if (!apiKey || apiKey.trim() === '') {
     logger.warn('searchWebProducts: SERPAPI_API_KEY not configured, web fallback disabled');
-    return { results: [], fromCache: false, disabled: true };
+    return { results: [], fromCache: false, disabled: true, fetchedAt: null };
   }
 
   try {
@@ -219,7 +251,7 @@ export async function searchWebProducts(
     const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10000) });
     if (!res.ok) {
       logger.warn('searchWebProducts: SerpAPI request failed', { status: res.status });
-      return { results: [], fromCache: false, disabled: false };
+      return { results: [], fromCache: false, disabled: false, fetchedAt: null };
     }
     const data = (await res.json()) as Record<string, unknown>;
     const rows = Array.isArray(data.shopping_results) ? data.shopping_results : [];
@@ -237,13 +269,17 @@ export async function searchWebProducts(
       if (results.length >= safeLimit) break;
     }
 
-    memoryCache.set(key, { results, expiresAt: Date.now() + MEMORY_TTL_MS });
-    if (results.length > 0) {
-      await writeDbCache(supabase, key, query, results);
+    // Section 18, item 34 — stamp the live fetch time on every
+    // result so the age is known even after the row is cached.
+    const fetchedAt = new Date().toISOString();
+    const stamped = results.map((r) => ({ ...r, fetched_at: fetchedAt }));
+    memoryCache.set(key, { results: stamped, expiresAt: Date.now() + MEMORY_TTL_MS, fetchedAt });
+    if (stamped.length > 0) {
+      await writeDbCache(supabase, key, query, stamped);
     }
-    return { results, fromCache: false, disabled: false };
+    return { results: stamped, fromCache: false, disabled: false, fetchedAt };
   } catch (err) {
     logger.warn('searchWebProducts: SerpAPI request error', { error: String(err) });
-    return { results: [], fromCache: false, disabled: false };
+    return { results: [], fromCache: false, disabled: false, fetchedAt: null };
   }
 }

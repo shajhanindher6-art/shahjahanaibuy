@@ -43,9 +43,11 @@ export async function getRankedDeals(
   const limit = Math.min(50, Math.max(1, options.limit ?? 20));
 
   try {
+    // Section 18, item 30 — explicit columns (was select('*')):
+    // exactly the fields the ranking map below reads.
     let query = supabase
       .from('deal_rankings')
-      .select('*')
+      .select('id, deal_id, product_id, deal_type, ai_score, discount_percentage, savings_amount, is_featured, ranked_at')
       .order('ai_score', { ascending: false })
       .order('ranked_at', { ascending: false })
       .limit(limit);

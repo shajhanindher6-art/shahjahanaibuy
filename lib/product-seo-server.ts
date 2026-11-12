@@ -9,14 +9,17 @@
  * where `cache` from 'react' does not exist yet. generateMetadata
  * and the page each call getProductSeo once per request; the product
  * row itself is deduped by the service's own SWR cache
- * (getCachedProductBySlug, 60s fresh / 5min stale), and the merchant
- * + review queries are cheap indexed selects.
+ * (getCachedProductBySlug, 60s fresh / 5min stale), and — since
+ * Section 18, item 26 — so are the merchant listings
+ * (getCachedMerchantProducts) and the review summary
+ * (getCachedReviewSummary): the second call serves the first
+ * call's cached results instead of re-querying.
  */
 
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getCachedProductBySlug } from '@/services/products';
-import { getMerchantProducts } from '@/services/commerce';
-import { getReviewSummary } from '@/services/reviews';
+import { getCachedMerchantProducts } from '@/services/commerce';
+import { getCachedReviewSummary } from '@/services/reviews';
 import { deriveOfferPriceValidUntil } from '@/lib/product-seo';
 import type { ProductSeoData } from '@/lib/product-seo';
 
@@ -33,9 +36,12 @@ export async function getProductSeo(
     if (!product) return null;
 
     // Cheapest first (the service orders by price ascending).
-    const listings = await getMerchantProducts(supabase, product.id);
+    // Cached (Section 18, item 26): generateMetadata and the page
+    // body each call getProductSeo per request — the second call
+    // hits these SWR caches instead of re-querying.
+    const listings = await getCachedMerchantProducts(supabase, product.id);
     const cheapest = listings[0] ?? null;
-    const summary = await getReviewSummary(supabase, product.id);
+    const summary = await getCachedReviewSummary(supabase, product.id);
 
     return {
       id: product.id,
