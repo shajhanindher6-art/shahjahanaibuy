@@ -129,9 +129,14 @@ describe('buildOwnerOverview — pure aggregation', () => {
 describe('owner dashboard wiring', () => {
   it('layout enforces the admin-only guard (same pattern as /admin)', () => {
     const src = readSource('app/owner/layout.tsx');
-    expect(src).toContain("redirect('/sign-in')");
+    expect(src).toContain("redirect('/sign-in?reason=session-expired')");
     expect(src).toContain("redirect('/dashboard')");
-    expect(src).toContain("select('role')");
+    // Section 18, Phase 0 (audit §1 #1): the role is resolved via
+    // fetchProfileRoleName (role_id → roles.name) — the old
+    // `.select('role')` read a column that does not exist in the
+    // migration chain and redirected every admin to /dashboard.
+    expect(src).toContain('fetchProfileRoleName');
+    expect(src).not.toContain(".select('role')");
     expect(src).toContain("export const dynamic = 'force-dynamic'");
     expect(src).toContain('index: false');
   });
@@ -143,11 +148,24 @@ describe('owner dashboard wiring', () => {
     expect(src).not.toMatch(/revenue.*\*|priceLabel|getTier/);
   });
 
-  it('page has honest empty states for missing tables and no error-log store', () => {
+  it('page has honest empty states for missing tables and an error-log section backed by the error-log store', () => {
     const src = readSource('app/owner/page.tsx');
     expect(src).toContain('has not been applied');
-    expect(src).toContain('no error-log store in the app');
+    // Section 18, item 45 BUILT the error-log store (migration
+    // 048 + services/error-log-admin.ts), so the old "no error-log
+    // store in the app" premise is superseded BY DESIGN. The page
+    // now renders an Error logs section from listRecentErrors,
+    // with honest empty states: 048-not-applied (errors still
+    // surface in the Vercel deployment logs) and an empty table
+    // ("No errors recorded yet").
+    expect(src).toContain('Error logs');
+    expect(src).toContain('listRecentErrors');
+    expect(src).toContain('error-log-admin');
+    expect(src).toContain('migration 048');
+    expect(src).toContain('has not been applied');
+    expect(src).toContain('No errors recorded yet');
     expect(src).toContain('Vercel deployment logs');
+    expect(src).not.toContain('no error-log store in the app');
   });
 
   it('has a loading state and is disallowed in robots.txt', () => {

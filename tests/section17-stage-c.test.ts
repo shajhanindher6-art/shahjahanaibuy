@@ -653,7 +653,7 @@ describe('pipeline refresh wrapper (item 17)', () => {
     const route = readRepo('app/api/v1/prices/refresh/route.ts');
     expect(route).toContain('refreshPricesViaPipeline');
     expect(route).toContain('pipeline-refresh');
-    expect(route).toContain('pipeline: summarizeStep(pipeline)');
+    expect(route).toContain('pipeline: summarizeStep(pipeline, {');
     // Ingestion is still NOT wired — the step re-fetches prices,
     // it never creates products.
     expect(route).not.toContain('ingestBatch');

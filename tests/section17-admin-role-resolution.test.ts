@@ -150,11 +150,19 @@ describe('getAllUsers role mapping', () => {
 
 describe('item 7 file assertions', () => {
   it('no server code selects a bare profiles.role column anymore', () => {
-    for (const rel of ['lib/api/middleware.ts', 'app/admin/layout.tsx', 'services/admin.ts']) {
+    for (const rel of [
+      'lib/api/middleware.ts',
+      'app/admin/layout.tsx',
+      'services/admin.ts',
+      // Section 18, Phase 0 (audit §1 #1): /owner was the last
+      // remaining `.select('role')` read.
+      'app/owner/layout.tsx',
+    ]) {
       expect(read(rel)).not.toContain(".select('role')");
     }
     expect(read('lib/api/middleware.ts')).toContain('PROFILE_ROLE_SELECT');
     expect(read('app/admin/layout.tsx')).toContain('fetchProfileRoleName');
+    expect(read('app/owner/layout.tsx')).toContain('fetchProfileRoleName');
     expect(read('services/admin.ts')).toContain('roles ( name )');
   });
 
