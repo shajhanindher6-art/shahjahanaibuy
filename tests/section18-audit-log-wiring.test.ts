@@ -459,12 +459,56 @@ describe('POST /api/v1/admin/visual-search-backfill — audit wiring', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Item 14 — intake: audit-insert failure is visible via the logger,
-// while the request still succeeds (behaviour unchanged).
+// Item 14 + Section 20, §12 #98 — intake approve audits via
+// recordAdminAction (uniform schema + IP capture), not the old
+// direct insert. The helper never throws, so an audit failure can
+// never fail the batch that was already approved.
 // ---------------------------------------------------------------------------
 
-describe('POST /api/v1/admin/intake approve — audit loss is visible', () => {
-  it('still returns 200 with the insert, but logs the audit failure', async () => {
+describe('POST /api/v1/admin/intake approve — audit via recordAdminAction (§12 #98)', () => {
+  it('audits the approve through recordAdminAction and returns 200 with the insert', async () => {
+    const { POST } = await import('@/app/api/v1/admin/intake/route');
+    const res = await POST(
+      apiRequest('POST', 'http://localhost/api/v1/admin/intake', {
+        action: 'approve',
+        rows: [
+          {
+            rowNumber: 2,
+            name: 'MacBook Air 13',
+            slug: 'macbook-air-13',
+            brand: 'Apple',
+            category: 'Laptops',
+            price: '999',
+            currency: 'USD',
+            merchant: 'amazon',
+          },
+        ],
+        includeRowNumbers: [],
+      })
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect((json.data as Record<string, unknown>).inserted).toEqual(['macbook-air-13']);
+    expect(auditSpy).toHaveBeenCalledTimes(1);
+    const call = auditSpy.mock.calls[0] as unknown[];
+    expect(call[1]).toBe('admin-1');
+    expect(call[2]).toBe('catalog_intake_approve');
+    expect(call[3]).toBe('products');
+    expect(call[4]).toBeNull();
+    expect(call[5]).toMatchObject({
+      source: 'manual-intake',
+      inserted: ['macbook-air-13'],
+    });
+    expect(call[6]).toBe('1.2.3.4');
+  });
+
+  it('an audit-insert failure does not break the approve — 200 + insert still returned', async () => {
+    // The old direct-insert path logged 'catalog intake: audit log
+    // insert failed' here. That path is gone: the approve now goes
+    // through recordAdminAction, which swallows an insert failure
+    // itself (see the `recordAdminAction` block below) — so even
+    // with the underlying insert errored, the batch succeeds and
+    // the audit call is still made.
     fakeDb.auditInsertError = { message: 'audit insert boom' };
     const { POST } = await import('@/app/api/v1/admin/intake/route');
     const res = await POST(
@@ -488,9 +532,11 @@ describe('POST /api/v1/admin/intake approve — audit loss is visible', () => {
     expect(res.status).toBe(200);
     const json = (await res.json()) as Record<string, unknown>;
     expect((json.data as Record<string, unknown>).inserted).toEqual(['macbook-air-13']);
-    expect(loggerSpies.error).toHaveBeenCalledWith(
+    expect(auditSpy).toHaveBeenCalledTimes(1);
+    expect(auditSpy.mock.calls[0]?.[2]).toBe('catalog_intake_approve');
+    expect(loggerSpies.error).not.toHaveBeenCalledWith(
       'catalog intake: audit log insert failed',
-      expect.objectContaining({ source: 'manual-intake', insertedCount: 1 })
+      expect.anything()
     );
   });
 });

@@ -10,6 +10,10 @@ import type {
  * Mock data provider that returns a fixed catalog of realistic-looking products.
  * Always available — used as a fallback when no real providers are configured
  * and for local development / testing.
+ *
+ * NOTE (Section 20, §12 #31): the GTINs below are check-digit-valid
+ * GS1 values (lib/gtin.ts) — mock data must pass the same pipeline
+ * validation as real provider data, or mock ingestion rejects it.
  */
 const MOCK_PRODUCTS: RawProductData[] = [
   {
@@ -20,7 +24,7 @@ const MOCK_PRODUCTS: RawProductData[] = [
       'Industry-leading noise cancellation with two processors controlling eight microphones. Up to 30 hours of battery life and quick charging.',
     brand: 'Sony',
     category: 'Electronics > Headphones',
-    gtin: '027242920918',
+    gtin: '027242920910',
     images: [
       'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800',
       'https://images.unsplash.com/photo-1583394838336-acd977736f90?w=800',
@@ -39,7 +43,7 @@ const MOCK_PRODUCTS: RawProductData[] = [
       'Up to 2x more Active Noise Cancellation. Adaptive Transparency. Personalized Spatial Audio with dynamic head tracking.',
     brand: 'Apple',
     category: 'Electronics > Earbuds',
-    gtin: '194253403870',
+    gtin: '194253403876',
     images: [
       'https://images.unsplash.com/photo-1606220588913-b3aacb4d2f46?w=800',
       'https://images.unsplash.com/photo-1600294037681-c80b4cb5b434?w=800',
@@ -76,7 +80,7 @@ const MOCK_PRODUCTS: RawProductData[] = [
       'Laser detects microscopic dust. LCD screen shows scientific proof of a deep clean. 60 minutes of fade-free power.',
     brand: 'Dyson',
     category: 'Home > Vacuums',
-    gtin: '886601020683',
+    gtin: '886601020681',
     images: [
       'https://images.unsplash.com/photo-1558317374-067fb5f30001?w=800',
     ],
@@ -94,7 +98,7 @@ const MOCK_PRODUCTS: RawProductData[] = [
       '1.62" AMOLED display, 24-hour heart rate monitoring, SpO2 measurement, and up to 14 days of battery life on a single charge.',
     brand: 'Xiaomi',
     category: 'Electronics > Wearables',
-    gtin: '6934177779335',
+    gtin: '6934177779336',
     images: [
       'https://images.unsplash.com/photo-1575311373937-040b8e1fd5b6?w=800',
     ],

@@ -21,9 +21,14 @@
 --     retailer prices. Replace them with a real merchant feed (or
 --     manual updates) before presenting them as live prices.
 --   * Merchants and merchant_products are idempotent (ON CONFLICT).
---     price_history, deals, coupons and cashback rows are NOT
---     deduplicated: running this twice will insert duplicates, so
---     run it once, then check the counts at the bottom.
+--     price_history, deals and cashback rows are deduplicated with
+--     NOT EXISTS guards (Section 20, #11): re-running this file
+--     inserts zero new rows for them (a matching row already
+--     exists), so the seed is safe to re-run — it will not
+--     duplicate price points, deals, or cashback offers. Coupons
+--     are idempotent via ON CONFLICT (code). Run it once, then
+--     check the counts at the bottom; a second run must change
+--     nothing.
 --   * Product rows are looked up by slug, so this works with the
 --     existing seeded catalog regardless of its UUIDs.
 -- =====================================================================
@@ -145,7 +150,20 @@ CROSS JOIN (VALUES
   (interval '30 days', 1.05), (interval '14 days', 1.02),
   (interval '7 days', 1.00), (interval '0 days', 1.00)
 ) AS f(ago, factor)
-WHERE r.slug = 'amazon';
+WHERE r.slug = 'amazon'
+  -- Section 20, #11: idempotency guard — a re-run inserts nothing.
+  -- A matching (product, retailer, price) row already exists after
+  -- the first run (the two factor-1.00 points share a price, so the
+  -- guard keys on price, not recorded_at — recorded_at differs on
+  -- every run because it is computed from now()). Within one run
+  -- the SELECT snapshot does not see the rows the same statement
+  -- inserts, so the first run still writes all 40 points.
+  AND NOT EXISTS (
+    SELECT 1 FROM price_history ph
+    WHERE ph.product_id = p.id
+      AND ph.retailer_id = r.id
+      AND ph.price = ROUND(base.price * f.factor, 2)
+  );
 
 -- 4. Deals (active, end in 30 days) ------------------------------------
 INSERT INTO deals
@@ -163,7 +181,14 @@ FROM (
 ) AS d(slug, title, description, deal_type, discount_value)
 JOIN products p ON p.slug = d.slug
 CROSS JOIN merchants m
-WHERE m.slug = 'amazon';
+WHERE m.slug = 'amazon'
+  -- Section 20, #11: idempotency guard — a re-run inserts nothing.
+  AND NOT EXISTS (
+    SELECT 1 FROM deals x
+    WHERE x.product_id = p.id
+      AND x.merchant_id = m.id
+      AND x.title = d.title
+  );
 
 -- 5. Coupons (merchant-wide; the coupons API shows these on all products)
 INSERT INTO coupons (code, merchant_id, description, discount_type, discount_value, valid_until, active)
@@ -186,7 +211,14 @@ CROSS JOIN merchants m
 WHERE m.slug = 'amazon'
   AND p.slug IN ('macbook-air-13','galaxy-s24-ultra','sony-wh-1000xm5','dell-xps-13',
                  'lenovo-thinkpad-x1','bose-quietcomfort-ultra','canon-eos-r10',
-                 'gopro-hero12','garmin-venu-3','logitech-mx-master-3s');
+                 'gopro-hero12','garmin-venu-3','logitech-mx-master-3s')
+  -- Section 20, #11: idempotency guard — a re-run inserts nothing.
+  AND NOT EXISTS (
+    SELECT 1 FROM cashback_offers x
+    WHERE x.merchant_id = m.id
+      AND x.product_id = p.id
+      AND x.title = '5% cashback at Amazon'
+  );
 
 -- 7. Verify counts (run these after the inserts) -----------------------
 -- SELECT 'merchants', count(*) FROM merchants;

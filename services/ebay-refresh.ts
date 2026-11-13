@@ -59,6 +59,8 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import { logApiError } from '@/lib/api/error-logging';
+import { reportAiProviderHealth } from '@/services/ai-engine/health-report';
 import {
   searchEbayListings,
   type EbaySearchResult,
@@ -217,8 +219,29 @@ export async function refreshEbayPrices(
     ...ZERO_RESULT,
     products: [],
   };
+  const startedAt = Date.now();
   try {
-    return await refreshEbayPricesInner(supabase, result, options);
+    const inner = await refreshEbayPricesInner(supabase, result, options);
+    // Section 20, §12 #52 — provider_health is written live for
+    // the eBay adapter (best-effort; a missing provider_health
+    // table never fails the run). Only real attempts are
+    // recorded: 'ok' with at least one product checked is a
+    // success; 'unavailable' is a failure. 'not-configured',
+    // 'merchant-missing' and 'budget-exhausted' are config/cap
+    // states, not provider health, and are not recorded.
+    if (inner.checked > 0 && inner.status === 'ok') {
+      await reportAiProviderHealth(supabase, 'ebay', {
+        success: true,
+        responseMs: Date.now() - startedAt,
+      });
+    } else if (inner.status === 'unavailable') {
+      await reportAiProviderHealth(supabase, 'ebay', {
+        success: false,
+        responseMs: Date.now() - startedAt,
+        ...(inner.error ? { error: inner.error.slice(0, 200) } : {}),
+      });
+    }
+    return inner;
   } catch (err) {
     // The step never throws: an unexpected failure degrades the
     // run instead of failing it (the refresh route reports this
@@ -226,10 +249,66 @@ export async function refreshEbayPrices(
     logger.warn('refreshEbayPrices: unexpected failure', {
       error: String(err),
     });
+    // Section 20, §12 #53 — an unexpected refresh failure is a
+    // server error: it belongs in error_log, not just the warn log.
+    logApiError(err, {
+      route: 'ebay-refresh',
+      status: 500,
+      context: { phase: 'unexpected-failure' },
+    });
+    await reportAiProviderHealth(supabase, 'ebay', {
+      success: false,
+      responseMs: Date.now() - startedAt,
+      error: String(err).slice(0, 200),
+    });
     result.status = 'unavailable';
     result.error = err instanceof Error ? err.message : String(err);
     return result;
   }
+}
+
+/** True when the error means "column does not exist" (Postgres 42703). */
+function isUndefinedColumnError(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === '42703';
+}
+
+/**
+ * Section 20, §12 #25 — the verification stamp for a live-checked
+ * eBay row (migration 045 columns on merchant_products). A row
+ * written by a real Browse check reads 'verified' /
+ * 'ebay-browse-api' with the check time — never the
+ * 'unverified' / 'manual-intake' defaults a pre-045 row carries.
+ */
+function ebayVerificationStamp(nowIso: string): {
+  price_verification_status: 'verified';
+  price_source: 'ebay-browse-api';
+  price_verified_at: string;
+  last_synced_at: string;
+} {
+  return {
+    price_verification_status: 'verified',
+    price_source: 'ebay-browse-api',
+    price_verified_at: nowIso,
+    last_synced_at: nowIso,
+  };
+}
+
+/**
+ * Run a merchant_products write with the 045 stamp, retrying
+ * WITHOUT the stamped columns on 42703 (migration 045 unapplied)
+ * — the same fail-safe pattern as services/products.ts:115-130.
+ * Any other error is returned as-is; the caller decides.
+ */
+async function writeEbayMerchantRow(
+  write: (withStamp: boolean) => Promise<{
+    error: { code?: string; message: string } | null;
+  }>
+): Promise<{ error: { code?: string; message: string } | null }> {
+  const first = await write(true);
+  if (first.error && isUndefinedColumnError(first.error)) {
+    return write(false);
+  }
+  return first;
 }
 
 async function refreshEbayPricesInner(
@@ -413,6 +492,14 @@ async function refreshOneProduct(
   }
   if (!search || !search.ok) {
     result.failed += 1;
+    // Section 20, §12 #53 — a failed live fetch after all
+    // retries is a server error: it belongs in error_log.
+    logApiError(
+      new Error(
+        `eBay search failed (${search ? search.reason : 'no result'}) after ${MAX_ATTEMPTS} attempts`
+      ),
+      { route: 'ebay-refresh', status: 502, context: { productId: product.id } }
+    );
     try {
       await markProductRefreshFailed(supabase, product.id, {
         reason: search
@@ -467,9 +554,11 @@ async function refreshOneProduct(
     .maybeSingle();
 
   if (existing) {
-    const { error } = await supabase
-      .from('merchant_products')
-      .update({
+    // Section 20, §12 #25 — the live check stamps the 045
+    // verification columns; the 42703 retry keeps the row
+    // writable while migration 045 is unapplied.
+    const { error } = await writeEbayMerchantRow(async (withStamp) => {
+      const patch: Record<string, unknown> = {
         price,
         currency_id: currencyId,
         url: match.itemWebUrl,
@@ -477,13 +566,25 @@ async function refreshOneProduct(
         availability: 'in_stock',
         in_stock: true,
         updated_at: nowIso,
-      })
-      .eq('id', (existing as { id: string }).id);
+        ...(withStamp ? ebayVerificationStamp(nowIso) : {}),
+      };
+      const res = await supabase
+        .from('merchant_products')
+        .update(patch)
+        .eq('id', (existing as { id: string }).id);
+      return { error: res.error as { code?: string; message: string } | null };
+    });
     if (error) {
       result.failed += 1;
       logger.warn('refreshEbayPrices: merchant_products update failed', {
         productId: product.id,
         error: error.message,
+      });
+      // Section 20, §12 #53 — a failed DB write is a server error.
+      logApiError(new Error(`merchant_products update failed: ${error.message}`), {
+        route: 'ebay-refresh',
+        status: 500,
+        context: { productId: product.id, operation: 'update' },
       });
       try {
         await markProductRefreshFailed(supabase, product.id, {
@@ -498,21 +599,32 @@ async function refreshOneProduct(
     }
     result.updated += 1;
   } else {
-    const { error } = await supabase.from('merchant_products').insert({
-      product_id: product.id,
-      merchant_id: ebayMerchantId,
-      price,
-      currency_id: currencyId,
-      url: match.itemWebUrl,
-      merchant_sku: match.itemId,
-      availability: 'in_stock',
-      in_stock: true,
+    const { error } = await writeEbayMerchantRow(async (withStamp) => {
+      const row: Record<string, unknown> = {
+        product_id: product.id,
+        merchant_id: ebayMerchantId,
+        price,
+        currency_id: currencyId,
+        url: match.itemWebUrl,
+        merchant_sku: match.itemId,
+        availability: 'in_stock',
+        in_stock: true,
+        ...(withStamp ? ebayVerificationStamp(nowIso) : {}),
+      };
+      const res = await supabase.from('merchant_products').insert(row);
+      return { error: res.error as { code?: string; message: string } | null };
     });
     if (error) {
       result.failed += 1;
       logger.warn('refreshEbayPrices: merchant_products insert failed', {
         productId: product.id,
         error: error.message,
+      });
+      // Section 20, §12 #53 — a failed DB write is a server error.
+      logApiError(new Error(`merchant_products insert failed: ${error.message}`), {
+        route: 'ebay-refresh',
+        status: 500,
+        context: { productId: product.id, operation: 'insert' },
       });
       try {
         await markProductRefreshFailed(supabase, product.id, {

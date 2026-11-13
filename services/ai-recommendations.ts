@@ -10,6 +10,7 @@ import type { Product } from '@/types';
 import type { Recommendation, RecommendationContext } from '@/types/ai';
 import { getDismissedProductIds } from '@/services/recommendation-feedback';
 import { getPersonalizationOptOut } from '@/services/personalization-consent';
+import { normalizePriceVerificationStatus } from '@/services/price-verification';
 
 export async function getRecommendations(
   supabase: AnySupabaseClient,
@@ -128,8 +129,15 @@ export async function getRecommendations(
     // 50) so in-budget products beyond the top-confidence few still
     // get a chance — the budget filter below runs after the query,
     // and a narrow pool could leave nothing in budget.
+    // Section 20, §12 #67 — recommendations are NOT ordered by
+    // confidence_score. That column is a field-presence completeness
+    // count (name +15, GTIN +20…), floored at 50 — completeness is
+    // not product quality, and ordering by it promoted the most
+    // complete rows as if they were the best products. Order by
+    // recorded views instead (what shoppers actually looked at);
+    // the score in buildRecommendation ranks on real signals
+    // (brand/category match, budget) after the fetch.
     query = query
-      .order('confidence_score', { ascending: false })
       .order('view_count', { ascending: false })
       .limit(budgetMax !== null ? 50 : maxLimit);
 
@@ -170,6 +178,11 @@ export async function getRecommendations(
           seedBrands,
           seedCategories,
           priceUsd,
+          // Section 20, §12 #83 — whether ANY personal signal
+          // exists for this user (searches, wishlist, views, or
+          // preferences). buildRecommendation uses it so a cold
+          // user never reads "based on your activity".
+          hasActivity: basedOn !== 'trending',
           budgetMin,
           budgetMax,
           overBudgetByUsd,
@@ -209,6 +222,8 @@ function buildRecommendation(
     budgetMin: number | null;
     budgetMax: number | null;
     overBudgetByUsd: number | null;
+    /** True when the user has any personal signal (see call site). */
+    hasActivity: boolean;
   }
 ): Recommendation {
   let score = 50;
@@ -244,7 +259,19 @@ function buildRecommendation(
       reasons.push(`within your $${input.budgetMax.toFixed(2)} budget`);
     }
   }
-  if (reasons.length === 0) reasons.push('recommended based on your activity');
+  // Section 20, §12 #83 — the old fallback claimed "recommended
+  // based on your activity" even for cold users with no searches,
+  // wishlist, views, or preferences — activity that never happened.
+  // Cold users get an honest catalog-pick reason; users WITH
+  // activity but no matching signal get a plain "recommended for
+  // you" (no false activity claim either way).
+  if (reasons.length === 0) {
+    reasons.push(
+      input.hasActivity
+        ? 'Recommended for you'
+        : 'Catalog pick — no activity recorded for your account yet'
+    );
+  }
 
   return {
     productId: product.id,
@@ -263,18 +290,26 @@ async function getTrendingRecommendations(
 ): Promise<Recommendation[]> {
   const { data: trending } = await supabase
     .from('products')
-    .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at')
+    .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, view_count, created_at, updated_at')
     .is('deleted_at', null)
     .neq('slug', 'sample-laptop')
     .order('view_count', { ascending: false })
     .limit(maxLimit);
 
   const trendingProducts = (trending ?? []) as unknown as Array<Record<string, unknown>>;
+  // Section 20, §12 #83 — "popular with other shoppers" is only
+  // said when the product actually has recorded views. Live view
+  // counts are ~0, so an unqualified popularity claim would be an
+  // assertion from no evidence; view-less rows get the honest
+  // catalog-pick reason instead.
   return trendingProducts.map((row) => ({
     productId: row.id as string,
     product: mapProductRow(row),
     score: 50,
-    reason: 'Trending product popular with other shoppers',
+    reason:
+      typeof row.view_count === 'number' && row.view_count > 0
+        ? 'Trending product popular with other shoppers'
+        : 'Trending product — catalog pick (no views recorded yet)',
   }));
 }
 
@@ -317,6 +352,12 @@ function mapProductRow(row: Record<string, unknown>): Product {
     imageUrl: row.image_url as string | null,
     gtin: row.gtin as string | null,
     confidenceScore: row.confidence_score as number,
+    // Section 20, §12 #82 — populate the verification rollup (see
+    // ai-deals.ts: the 045 column is not selected yet, so this reads
+    // 'unverified' until 045 applies and the select grows).
+    priceVerificationStatus: normalizePriceVerificationStatus(
+      row.price_verification_status
+    ),
     dataFreshness: row.data_freshness as string,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,

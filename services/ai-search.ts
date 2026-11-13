@@ -19,7 +19,7 @@ import { getLatestPrices } from './price-history';
 import { predictPriceDrop } from './ai-predictions';
 import { dealScoreForDisplay } from '@/lib/deal-score';
 import { discountPercent } from '@/lib/deal-math';
-import { PUBLISHED_PRODUCT_STATUS } from '@/services/price-verification';
+import { PUBLISHED_PRODUCT_STATUS, normalizePriceVerificationStatus } from '@/services/price-verification';
 import {
   FEW_SEARCH_RESULTS,
   levenshteinDistance,
@@ -878,6 +878,11 @@ export async function aiSearch(
         imageUrl: row.image_url as string | null,
         gtin: row.gtin as string | null,
         confidenceScore: row.confidence_score as number,
+        // Section 20, §12 #82 — populate the verification rollup
+        // (same 045 note as ai-deals.ts).
+        priceVerificationStatus: normalizePriceVerificationStatus(
+          row.price_verification_status
+        ),
         dataFreshness: row.data_freshness as string,
         createdAt: row.created_at as string,
         updatedAt: row.updated_at as string,

@@ -25,6 +25,33 @@ import { findDuplicate, resolveUniqueSlug, type DeduplicationResult } from './de
 import { assignCategory } from './category-assignment';
 import { detectBrand } from './brand-detection';
 import { processImages } from './image-processing';
+import {
+  assessPriceChange,
+  insertPriceHistoryRow,
+  type PriceHistoryPoint,
+} from '@/services/price-history-quality';
+
+/**
+ * Section 20, §12 #16 — the minimum-confidence gate for
+ * CREATING a product through the pipeline. A score below this
+ * is a product with (at most) a name and a price and nothing
+ * else worth recording — name-only scores 15, name + price +
+ * known availability scores 30, which is the floor: a new
+ * product must at least be priced and availability-known. The
+ * gate applies to CREATES only: updating an already-catalogued
+ * product (matched by GTIN/slug) is not an insertion, and the
+ * refresh/update path must not be blocked because the incoming
+ * feed row is thin. Price 0 is rejected on the same gate — no
+ * free-price flag exists anywhere, so a $0 product is never
+ * created (a price-0 UPDATE to an existing product is left to
+ * the update path, as before).
+ */
+export const PIPELINE_MIN_CONFIDENCE_SCORE = 30;
+
+/** PostgREST/Postgres code for "column does not exist". */
+function isUndefinedColumnError(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === '42703';
+}
 
 export interface IngestionResult {
   success: boolean;
@@ -62,14 +89,52 @@ async function recordPriceHistory(
   retailerId: string,
   normalized: NormalizedProduct
 ): Promise<void> {
-  await supabase.from('price_history').insert({
+  // Section 20, §12 #39/#42/#44 — assess the new point against
+  // the retailer's recorded history BEFORE inserting, and store
+  // the flag + provenance with the row. The history read is
+  // best-effort: a failed read assesses against an empty history
+  // (no spike can be computed) rather than failing the insert.
+  // Source is 'merchant-feed': the point arrived through a
+  // provider fetch, not typed in by an admin. The insert itself
+  // retries without the migration-057 columns when they do not
+  // exist yet (42703, inside insertPriceHistoryRow).
+  let history: PriceHistoryPoint[] = [];
+  try {
+    const { data } = await supabase
+      .from('price_history')
+      .select('price, recorded_at')
+      .eq('product_id', productId)
+      .eq('retailer_id', retailerId)
+      .order('recorded_at', { ascending: false })
+      .limit(30);
+    history = ((data ?? []) as Array<{ price: number | string; recorded_at: string }>)
+      .map((row) => ({
+        price: parseFloat(String(row.price)),
+        recordedAt: row.recorded_at,
+      }))
+      .filter((p) => Number.isFinite(p.price));
+  } catch {
+    history = [];
+  }
+  const nowIso = new Date().toISOString();
+  const assessment = assessPriceChange(history, normalized.price, nowIso);
+  if (assessment.suspicious) {
+    logger.warn('Ingestion: suspicious price change flagged', {
+      productId,
+      reasons: assessment.reasons,
+    });
+  }
+  await insertPriceHistoryRow(supabase, {
     product_id: productId,
     retailer_id: retailerId,
     price: normalized.price,
     currency: normalized.currency,
     availability: normalized.availability,
     url: normalized.url,
-    recorded_at: new Date().toISOString(),
+    recorded_at: nowIso,
+    source: 'merchant-feed',
+    observed_at: nowIso,
+    suspicious_change: assessment.suspicious,
   });
 }
 
@@ -143,32 +208,55 @@ async function createNewProduct(
   // Image processing
   const processedImages = await processImages(normalized.images);
 
-  const { data, error } = await supabase
+  // Section 20, §12 #26 — born-pending per the migration 045
+  // design (the same shape as the intake approve path): a
+  // pipeline-created product is never public merely because it
+  // was inserted, and its price is 'unverified' until a real
+  // fetch checks it. Until 045 is applied the columns do not
+  // exist: the insert retries without them (42703) and the row
+  // is public as before — ingestion never fails over an
+  // unapplied migration.
+  const productBase = {
+    name: normalized.name,
+    slug,
+    description: normalized.description,
+    // Section 18, item 23: write BOTH representations. The FK
+    // ids alone left the product invisible to the text-based
+    // brand/category reads (services/products.ts filters on the
+    // text columns); the text values come from the resolved
+    // brand/category rows, never invented. When resolution
+    // failed (null id) the text stays null, as before.
+    brand: brandResult.name ?? null,
+    brand_id: brandResult.brandId,
+    category: catResult.name ?? null,
+    category_id: catResult.categoryId,
+    image_url: processedImages[0]?.url ?? normalized.imageUrl,
+    gtin: normalized.gtin,
+    confidence_score: normalized.confidenceScore,
+    data_freshness: new Date().toISOString(),
+    next_refresh_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    refresh_status: 'idle',
+    refresh_priority: 3,
+  };
+  const productWithStatus = {
+    ...productBase,
+    status: 'pending',
+    price_verification_status: 'unverified',
+  };
+
+  let { data, error } = await supabase
     .from('products')
-    .insert({
-      name: normalized.name,
-      slug,
-      description: normalized.description,
-      // Section 18, item 23: write BOTH representations. The FK
-      // ids alone left the product invisible to the text-based
-      // brand/category reads (services/products.ts filters on the
-      // text columns); the text values come from the resolved
-      // brand/category rows, never invented. When resolution
-      // failed (null id) the text stays null, as before.
-      brand: brandResult.name ?? null,
-      brand_id: brandResult.brandId,
-      category: catResult.name ?? null,
-      category_id: catResult.categoryId,
-      image_url: processedImages[0]?.url ?? normalized.imageUrl,
-      gtin: normalized.gtin,
-      confidence_score: normalized.confidenceScore,
-      data_freshness: new Date().toISOString(),
-      next_refresh_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      refresh_status: 'idle',
-      refresh_priority: 3,
-    })
+    .insert(productWithStatus)
     .select('id')
     .single();
+
+  if (error && isUndefinedColumnError(error)) {
+    ({ data, error } = await supabase
+      .from('products')
+      .insert(productBase)
+      .select('id')
+      .single());
+  }
 
   if (error || !data) {
     throw new Error(`Failed to insert product: ${error?.message ?? 'unknown'}`);
@@ -200,9 +288,16 @@ async function updateExistingProduct(
   providerKey: string,
   matchedBy: DeduplicationResult['matchedBy']
 ): Promise<{ brandCreated: boolean; categoryCreated: boolean }> {
+  // Section 20, §12 #66 — NO floor on the score. The old
+  // `Math.max(score, 50)` made every ingested product read "50%"
+  // regardless of completeness (audit §1 P0-5); the stored value
+  // is now the computed presence count as-is. It is still a
+  // completeness count, not a data-quality score — the transparent
+  // multi-dimension score lives in services/product-quality-score.ts
+  // and is computed on read.
   const updateData: Record<string, unknown> = {
     data_freshness: new Date().toISOString(),
-    confidence_score: Math.max(normalized.confidenceScore, 50),
+    confidence_score: normalized.confidenceScore,
     next_refresh_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     refresh_status: 'idle',
   };
@@ -298,7 +393,36 @@ export async function ingestProduct(
       };
     }
 
-    // 6. Create new
+    // 6. Create new — Section 20, §12 #16/#26: the ingest gate.
+    // A new product must clear the minimum confidence bar AND
+    // carry a real price (> 0). A thin feed row (name only,
+    // price 0) used to be inserted as a published product; it is
+    // now rejected before any write. The UPDATE branch above is
+    // deliberately ungated — an existing product's price update
+    // is not an insertion.
+    if (
+      normalized.confidenceScore < PIPELINE_MIN_CONFIDENCE_SCORE ||
+      !(normalized.price > 0)
+    ) {
+      const reasons: string[] = [];
+      if (normalized.confidenceScore < PIPELINE_MIN_CONFIDENCE_SCORE) {
+        reasons.push(
+          `confidence score ${normalized.confidenceScore} is below the minimum ${PIPELINE_MIN_CONFIDENCE_SCORE}`
+        );
+      }
+      if (!(normalized.price > 0)) {
+        reasons.push('price must be greater than 0 (no free-price flag exists)');
+      }
+      logger.warn('Ingestion: confidence gate rejected new product', {
+        name: normalized.name,
+        reasons,
+      });
+      return {
+        success: false,
+        action: 'rejected',
+        errors: reasons.map((r) => `Ingest gate: ${r}`),
+      };
+    }
     const result = await createNewProduct(supabase, normalized, retailerId, providerKey);
     logger.info('Ingestion: created new product', { id: result.id });
     return {

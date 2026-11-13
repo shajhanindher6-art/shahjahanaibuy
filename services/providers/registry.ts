@@ -2,6 +2,9 @@ import { logger } from '@/lib/config/logger';
 import type { DataProvider, ProviderCategory } from './types';
 import { MockProvider } from './mock-provider';
 import { ApifyProvider } from './apify-provider';
+import { CsvProvider } from './csv-provider';
+import { AmazonProvider } from './amazon-provider';
+import { BestBuyProvider } from './bestbuy-provider';
 
 /**
  * Priority ordering for provider categories. Lower index = higher priority.
@@ -135,8 +138,15 @@ let registrySingleton: ProviderRegistry | null = null;
 /**
  * Singleton factory. Returns the shared ProviderRegistry instance, registering
  * the ApifyProvider on first call (plus the MockProvider outside production).
- * Additional providers (e.g. CsvProvider, affiliate feeds) can be registered
- * on the returned instance.
+ *
+ * Section 20, §12 #57 + #58 — the registry also holds the CSV provider
+ * (from CSV_SOURCE_URL; unavailable until the owner configures a source)
+ * and the Amazon / Best Buy adapter scaffolding (fail-closed until their
+ * keys exist AND a real client is built). Registering an unavailable
+ * provider changes nothing about selection: getAvailable() /
+ * getPreferred() only ever return providers whose isAvailable() is true,
+ * so with no source configured the pipeline still reports
+ * "no available provider" honestly.
  *
  * SECURITY (2026-11-05): the MockProvider is NEVER registered in production.
  * It was always available and, with no real provider configured, became the
@@ -165,6 +175,29 @@ export function getProviderRegistry(): ProviderRegistry {
   // set, that is an owner decision outside this codebase — do not
   // set them here, in tests, in fixtures, or in .env.example.
   registrySingleton.register(new ApifyProvider());
+
+  // Section 20, §12 #58 — CsvProvider, registered from env config.
+  // With CSV_SOURCE_URL unset (the default) isAvailable() is false
+  // and the provider is inert: nothing fetches, nothing ingests.
+  // The owner configures a real CSV source by setting
+  // CSV_SOURCE_URL in the hosting dashboard; see
+  // services/data-sources.ts (ensureCsvDataSource) for the
+  // data_sources row that records the configured source.
+  registrySingleton.register(
+    new CsvProvider({ csvUrl: process.env.CSV_SOURCE_URL?.trim() || undefined })
+  );
+
+  // Section 20, §12 #57 — Amazon / Best Buy adapter scaffolding.
+  // Both are fail-closed stubs (see amazon-provider.ts /
+  // bestbuy-provider.ts): no live price client exists for either,
+  // so they are never available until their keys exist AND a real
+  // client is built. The retailer overrides only matter once a
+  // provider IS available; until then getForRetailer falls back
+  // to the global ordering, exactly as before.
+  registrySingleton.register(new AmazonProvider());
+  registrySingleton.register(new BestBuyProvider());
+  registrySingleton.setRetailerOverride('amazon', 'amazon');
+  registrySingleton.setRetailerOverride('bestbuy', 'bestbuy');
 
   logger.info('ProviderRegistry initialized', {
     providers: registrySingleton.getAll().map((p) => p.key),

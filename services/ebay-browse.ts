@@ -31,6 +31,7 @@
  */
 
 import { logger } from '@/lib/config/logger';
+import { logApiError } from '@/lib/api/error-logging';
 
 export interface EbayListing {
   itemId: string;
@@ -226,6 +227,16 @@ async function getEbayAccessToken(
       logger.warn('ebay-browse: token request failed', {
         status: response.status,
       });
+      // Section 20, §12 #53 — a 5xx from the token endpoint is a
+      // server error: it belongs in error_log. A 429 is transient
+      // throttling, not a server error, and stays warn-only.
+      if (response.status >= 500) {
+        logApiError(new Error(`eBay token request failed (HTTP ${response.status})`), {
+          route: 'ebay-browse.token',
+          status: 502,
+          context: { status: response.status },
+        });
+      }
       return null;
     }
     const data: unknown = await response.json().catch(() => null);
@@ -244,6 +255,8 @@ async function getEbayAccessToken(
   } catch (err) {
     // Section 15, P3-4: a throwing token fetch used to be silent.
     logger.warn('ebay-browse: token request threw', { error: String(err) });
+    // Section 20, §12 #53 — a throwing token fetch is a server error.
+    logApiError(err, { route: 'ebay-browse.token', status: 502 });
     return null;
   }
 }
@@ -311,6 +324,16 @@ export async function searchEbayListings(
       const status =
         typeof response.status === 'number' ? response.status : 0;
       logger.warn('ebay-browse: search request failed', { status, query });
+      // Section 20, §12 #53 — a 5xx from Browse is a server
+      // error: it belongs in error_log. A 429 stays warn-only
+      // (transient throttling, not a server error).
+      if (status >= 500) {
+        logApiError(new Error(`eBay search request failed (HTTP ${status})`), {
+          route: 'ebay-browse.search',
+          status: 502,
+          context: { status, query },
+        });
+      }
       return {
         ok: false,
         reason: status === 429 ? 'rate-limited' : 'api-error',
@@ -321,6 +344,13 @@ export async function searchEbayListings(
     if (!data || typeof data !== 'object') {
       // Malformed JSON: an upstream failure, never a fake listing.
       logger.warn('ebay-browse: search response was not JSON', { query });
+      // Section 20, §12 #53 — a malformed upstream response is a
+      // server error.
+      logApiError(new Error('eBay search response was not JSON'), {
+        route: 'ebay-browse.search',
+        status: 502,
+        context: { query, reason: 'non-json-response' },
+      });
       return { ok: false, reason: 'api-error', listings: [] };
     }
     const summaries = (data as Record<string, unknown>).itemSummaries;
@@ -341,6 +371,8 @@ export async function searchEbayListings(
       query,
       error: String(err),
     });
+    // Section 20, §12 #53 — a throwing search is a server error.
+    logApiError(err, { route: 'ebay-browse.search', status: 502, context: { query } });
     return { ok: false, reason: 'api-error', listings: [] };
   }
 }

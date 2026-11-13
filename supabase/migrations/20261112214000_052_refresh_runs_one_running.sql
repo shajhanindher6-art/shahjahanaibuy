@@ -4,8 +4,9 @@
 -- applied. Applying it is an OWNER step (run once in the Supabase
 -- dashboard SQL editor). Until it is applied, the guard keeps its
 -- current behaviour exactly (SELECT-then-INSERT in
--- services/refresh-run.ts, fail-open on any error) — nothing 500s
--- because this file is unapplied.
+-- services/refresh-run.ts, fail-open ONLY when the table is missing
+-- — 42P01/PGRST205 — and fail-safe on any other guard error,
+-- Section 18 item 35) — nothing 500s because this file is unapplied.
 --
 --   * The guard today is NOT atomic: tryStartRefreshRun() SELECTs
 --     for a `running` row and then INSERTs, with no unique partial
@@ -27,12 +28,12 @@
 --     minutes is still marked `failed` by the next trigger before
 --     the new row is inserted (services/refresh-run.ts), so the
 --     index never blocks a legitimate run after a crash.
---   * No code change ships in this item: how the guard reacts to
---     a 23505 on insert (treat as run-in-progress instead of
---     failing open) is item 35, owned by the performance worker.
---     Until that lands, a duplicate trigger that hits 23505 logs
---     "run insert failed — running unguarded" and proceeds — the
---     same fail-open as today, not a new failure mode.
+--   * No code change ships in this item, and the guard's reaction
+--     to a 23505 on insert is already settled (Section 18, item
+--     35): an insert failure fails SAFE — the run is NOT started
+--     (reason 'guard-error'), it does not proceed unguarded.
+--     Treating a 23505 as "run-in-progress" instead is a possible
+--     future refinement, not current behaviour.
 --   * If the live table somehow holds TWO `running` rows already
 --     (a past duplicate run), index creation fails: the owner
 --     must first mark all but the newest `running` row `failed`.

@@ -26,13 +26,23 @@ describe('computeForecast', () => {
     expect(FORECAST_HORIZONS).toEqual([7, 30, 90]);
   });
 
-  it('fewer than 2 points → not-enough-history, no forecasts', () => {
+  it('fewer than 5 points → not-enough-history, no forecasts (Section 20, §12 #46: minimum unified at 5)', () => {
     expect(computeForecast([]).status).toBe('not-enough-history');
     expect(computeForecast([]).forecasts).toEqual([]);
     const one = computeForecast([point(100, 0)]);
     expect(one.status).toBe('not-enough-history');
     expect(one.currentPrice).toBe(100);
     expect(one.forecasts).toEqual([]);
+    // 4 points is thin history now — no forecast at all.
+    const four = computeForecast([
+      point(100, 0),
+      point(100, 10),
+      point(100, 20),
+      point(100, 30),
+    ]);
+    expect(four.status).toBe('not-enough-history');
+    expect(four.pointsUsed).toBe(4);
+    expect(four.forecasts).toEqual([]);
   });
 
   it('flat series: centre equals the price, direction flat, range contains it', () => {
@@ -41,11 +51,12 @@ describe('computeForecast', () => {
       point(100, 10),
       point(100, 20),
       point(100, 30),
+      point(100, 40),
     ]);
     expect(result.status).toBe('ok');
     expect(result.currentPrice).toBe(100);
-    expect(result.pointsUsed).toBe(4);
-    expect(result.historyDays).toBe(30);
+    expect(result.pointsUsed).toBe(5);
+    expect(result.historyDays).toBe(40);
     for (const f of result.forecasts) {
       expect(f.central).toBe(100);
       expect(f.low).toBeLessThan(100);
@@ -55,13 +66,14 @@ describe('computeForecast', () => {
       expect(f.confidencePct).toBeLessThanOrEqual(FORECAST_MAX_CONFIDENCE_PCT);
     }
     // 7d confidence (Section 19, Phase 3): a flat series carries no
-    // directional evidence (R² counted as 0) and thin history caps
-    // confidence at 25% — 15 + 0 + 6 (4 points) − 0 = 21. The old
-    // formula rewarded perfect flatness (R² = 1) and scored 76.
-    expect(result.forecasts[0].confidencePct).toBe(21);
-    // 30d: 21 − 5 = 16; 90d: 21 − 12 = 9 — all low band.
-    expect(result.forecasts[1].confidencePct).toBe(16);
-    expect(result.forecasts[2].confidencePct).toBe(9);
+    // directional evidence (R² counted as 0), and at the 5-point
+    // minimum there is no point-count bonus — 15 + 0 + 0 − 0 = 15.
+    // The old 4-point figures (21 / 16 / 9) no longer occur: below
+    // 5 points there is no forecast at all (Section 20, §12 #46).
+    expect(result.forecasts[0].confidencePct).toBe(15);
+    // 30d: 15 − 5 = 10; 90d: 15 − 12 = 3, clamped to the 5% floor.
+    expect(result.forecasts[1].confidencePct).toBe(10);
+    expect(result.forecasts[2].confidencePct).toBe(5);
     // 7d half-width: 1.96 × (2% of 100) × sqrt(1 + 7/90) ≈ 4.07.
     expect(result.forecasts[0].low).toBeCloseTo(95.93, 2);
     expect(result.forecasts[0].high).toBeCloseTo(104.07, 2);
@@ -73,18 +85,19 @@ describe('computeForecast', () => {
       point(95, 10),
       point(90, 20),
       point(85, 30),
+      point(80, 40),
     ]);
     expect(result.status).toBe('ok');
     const f30 = result.forecasts.find((f) => f.horizonDays === 30)!;
-    // Slope is exactly −0.5/day: centre at day 60 = 100 − 0.5×60 = 70.
-    expect(f30.central).toBe(70);
+    // Slope is exactly −0.5/day: centre at day 70 = 100 − 0.5×70 = 65.
+    expect(f30.central).toBe(65);
     expect(f30.direction).toBe('down');
     expect(f30.low).toBeGreaterThan(0);
     expect(f30.low).toBeLessThan(f30.central);
     expect(f30.high).toBeGreaterThan(f30.central);
-    // Half-width: 1.96 × (2% of 92.5) × sqrt(1 + 30/90) ≈ 4.19.
-    expect(f30.low).toBeCloseTo(65.81, 2);
-    expect(f30.high).toBeCloseTo(74.19, 2);
+    // Half-width: 1.96 × (2% of 90) × sqrt(1 + 30/90) ≈ 4.07.
+    expect(f30.low).toBeCloseTo(60.93, 2);
+    expect(f30.high).toBeCloseTo(69.07, 2);
   });
 
   it('rising series: direction up', () => {
@@ -93,23 +106,21 @@ describe('computeForecast', () => {
       point(90, 10),
       point(100, 20),
       point(110, 30),
+      point(120, 40),
     ]);
     expect(result.forecasts.every((f) => f.direction === 'up')).toBe(true);
-    expect(result.forecasts[0].central).toBeGreaterThan(110);
+    expect(result.forecasts[0].central).toBeGreaterThan(120);
   });
 
-  it('2-point series: range is non-degenerate and confidence is capped', () => {
+  it('2-point series → not-enough-history (Section 20, §12 #46: below 5 points there is no forecast)', () => {
     const result = computeForecast([point(100, 0), point(90, 10)]);
-    expect(result.status).toBe('ok');
-    const f7 = result.forecasts[0];
-    // Slope −1/day: centre at day 17 = 100 − 17 = 83.
-    expect(f7.central).toBe(83);
-    // The 2% floor stops the exact 2-point fit producing a zero-width range.
-    expect(f7.low).toBeLessThan(f7.central);
-    expect(f7.high).toBeGreaterThan(f7.central);
-    expect(f7.confidencePct).toBeLessThanOrEqual(FORECAST_MAX_CONFIDENCE_PCT);
-    // Longer horizons are less confident than shorter ones.
-    expect(result.forecasts[2].confidencePct).toBeLessThan(f7.confidencePct);
+    expect(result.status).toBe('not-enough-history');
+    expect(result.pointsUsed).toBe(2);
+    expect(result.forecasts).toEqual([]);
+    // The 2% sigma floor that kept the old 2-point range
+    // non-degenerate is still exercised by the 5-point exact-fit
+    // series above (flat / declining) — their ranges are
+    // non-degenerate with zero residual spread.
   });
 
   it('drops invalid rows and sorts unsorted input', () => {
@@ -121,10 +132,12 @@ describe('computeForecast', () => {
       { price: 100, recordedAt: 'not-a-date' },
       point(100, 0),
       point(95, 10),
+      point(85, 30),
+      point(80, 40),
     ]);
     expect(result.status).toBe('ok');
-    expect(result.pointsUsed).toBe(3);
-    expect(result.currentPrice).toBe(90);
+    expect(result.pointsUsed).toBe(5);
+    expect(result.currentPrice).toBe(80);
   });
 
   it('confidence never exceeds 90, even for a perfect long fit', () => {
@@ -144,11 +157,13 @@ describe('backtestForecast', () => {
     // would drop the synthetic points after 2026-11-10.
     const points = Array.from({ length: 13 }, (_, i) => point(120 - i * 5, i * 5));
     const report = backtestForecast(points, 7, new Date(day(61)).getTime());
-    // Splits at days 5..50 have a recorded price at/after +7d; the
-    // day-55 split does not (no point ≥ day 62). 10 trials, all hits.
+    // The walk-forward fit needs at least 5 points (Section 20,
+    // §12 #46), so splits start at day 20 (5 points) through day
+    // 50; the day-55 split has no recorded price at/after +7d.
+    // 7 trials, all hits.
     expect(report.status).toBe('ok');
-    expect(report.trials).toBe(10);
-    expect(report.hits).toBe(10);
+    expect(report.trials).toBe(7);
+    expect(report.hits).toBe(7);
     expect(report.accuracyPct).toBe(100);
     for (const e of report.entries) {
       expect(e.actualPrice).toBeGreaterThanOrEqual(e.low);

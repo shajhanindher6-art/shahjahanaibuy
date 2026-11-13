@@ -8,6 +8,7 @@
  */
 
 import { logger } from '@/lib/config/logger';
+import { validateImageUrl } from '@/lib/image-url';
 
 export interface ProcessedImage {
   url: string;
@@ -25,12 +26,16 @@ export async function processImages(
 ): Promise<ProcessedImage[]> {
   const maxImages = options.maxImages ?? 20;
 
-  // Deduplicate URLs
+  // Deduplicate URLs. Section 20, §12 #94 — a URL is kept only
+  // when it passes review-time image validation (http(s) only,
+  // no data:/javascript:, length cap, host sanity). The old
+  // startsWith('http') check let data: and credential-bearing
+  // URLs through; validation drops them instead of storing them.
   const seen = new Set<string>();
   const unique: string[] = [];
   for (const url of images) {
     const normalized = url.trim();
-    if (!seen.has(normalized) && normalized.startsWith('http')) {
+    if (!seen.has(normalized) && validateImageUrl(normalized).valid) {
       seen.add(normalized);
       unique.push(normalized);
     }

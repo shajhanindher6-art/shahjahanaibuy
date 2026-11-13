@@ -45,6 +45,34 @@ export type AIProviderKind = 'deterministic' | 'live';
  */
 export type AIProviderAvailability = 'available' | 'available-unverified' | 'disabled';
 
+/**
+ * Typed engine input (Section 20, §12 #82). The engine used to
+ * take a bare `Record<string, unknown>`, so no AI call could tell
+ * a verified price from an unverified one — `priceVerificationStatus`
+ * had zero hits in any AI service. Every AI input that carries a
+ * product price SHOULD carry these two fields; adapters must read
+ * them (not a bare record) when they qualify price copy. The index
+ * signature keeps existing adapter call sites compiling — the typed
+ * fields are additive, not a breaking change.
+ */
+export interface AIEngineInput extends Record<string, unknown> {
+  /**
+   * Price-verification rollup for the product(s) behind this call
+   * (types/index.ts Product.priceVerificationStatus). 'unverified'
+   * is the honest default: until migration 045 is applied no
+   * verified stamp can exist in the database at all.
+   */
+  priceVerificationStatus?: import('@/services/price-verification').PriceVerificationStatus;
+  /**
+   * Last recorded price check for the product(s) behind this call
+   * (products.data_freshness). Lets adapters qualify "current"
+   * copy with the real staleness instead of assuming fresh.
+   */
+  dataFreshness?: string | null;
+  /** Product id(s) the call is about, when known. */
+  productId?: string;
+}
+
 export interface AIProvider {
   /** Stable key, e.g. 'ai-search', 'serpapi', 'huggingface-clip'. Unique in the registry. */
   key: string;
@@ -69,15 +97,17 @@ export interface AIProvider {
   /** The honest availability label (see AIProviderAvailability). */
   availability(): AIProviderAvailability;
   /**
-   * Serve one capability. `input` is a plain record; each adapter
-   * validates/casts the fields it needs. Throw to let the engine
-   * fall back to the next provider; throw `ProviderSkippedError`
-   * to decline without counting as a failure (e.g. CLIP embeddings
-   * not set up for this request). Adapters for deterministic
-   * services delegate to the existing service function — they do
-   * NOT reimplement it.
+   * Serve one capability. `input` is a typed engine input
+   * (AIEngineInput — Section 20, §12 #82): adapters read
+   * `priceVerificationStatus` / `dataFreshness` from it when they
+   * qualify price copy, instead of treating every recorded price
+   * as verified. Throw to let the engine fall back to the next
+   * provider; throw `ProviderSkippedError` to decline without
+   * counting as a failure (e.g. CLIP embeddings not set up for
+   * this request). Adapters for deterministic services delegate
+   * to the existing service function — they do NOT reimplement it.
    */
-  invoke?(capability: AICapability, input: Record<string, unknown>): Promise<unknown>;
+  invoke?(capability: AICapability, input: AIEngineInput): Promise<unknown>;
 }
 
 /** Thrown by a provider to decline a call without it counting as a failure. */

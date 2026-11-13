@@ -13,8 +13,10 @@
  * label helpers below never emit the word "live" for a price.
  */
 
-import { INTAKE_SOURCE } from './catalog-intake';
-import { EBAY_INTAKE_SOURCE } from './ebay-intake';
+import { INTAKE_SOURCE, EBAY_INTAKE_SOURCE } from '@/lib/intake-sources';
+import { STALE_PRICE_DAYS, getPriceAgeDays } from '@/lib/price-freshness';
+import type { AnySupabaseClient } from '@/lib/supabase/types';
+import { logger } from '@/lib/config/logger';
 
 /** Migration 045 CHECK values for products.status. */
 export const PRODUCT_STATUSES = ['pending', 'published', 'rejected'] as const;
@@ -124,4 +126,106 @@ export function priceVerificationLabel(
     shortText: 'Unverified price',
     tone: 'muted',
   };
+}
+
+// ---------------------------------------------------------------------------
+// Section 20, §12 #68 — verified → stale transition.
+//
+// The 'stale' value existed in the enum but nothing ever wrote it
+// (audit §1 #9): a price verified in November would read
+// "Verified" forever. The refresh chain now flips it: a row whose
+// status is 'verified' and whose price_verified_at is older than
+// STALE_PRICE_DAYS becomes 'stale' — on BOTH the products rollup
+// and the merchant_products rows, so the two never disagree.
+//
+// Fail-safe: migration 045 (the columns) is unapplied live, so the
+// update answers 42703 / PGRST205 — that returns
+// `{ columnsMissing: true }`, never a throw, and the refresh chain
+// carries on. Any other error is reported in `error` and also
+// never throws: staleness bookkeeping must never fail a refresh.
+// ---------------------------------------------------------------------------
+
+/** Pure predicate: should this verified price flip to 'stale'? */
+export function shouldFlipVerifiedToStale(
+  status: PriceVerificationStatus | string | null | undefined,
+  verifiedAt: string | null | undefined,
+  now: Date = new Date()
+): boolean {
+  if (status !== 'verified') return false;
+  const age = getPriceAgeDays(verifiedAt, now);
+  return age !== null && age > STALE_PRICE_DAYS;
+}
+
+export interface FlipStaleVerificationResult {
+  flippedProducts: number;
+  flippedMerchantRows: number;
+  /** True when the 045 columns do not exist yet (42703/PGRST205). */
+  columnsMissing: boolean;
+  error?: string;
+}
+
+/** True when the error means "this column/table does not exist (yet)". */
+function isMissingColumnOrTableError(error: { code?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === '42703' || error.code === '42P01' || error.code === 'PGRST205';
+}
+
+/**
+ * Flip every verified price older than STALE_PRICE_DAYS to 'stale'.
+ * Best-effort and never throwing — callers (the refresh chain)
+ * await it inline. Returns the counts flipped, or
+ * `columnsMissing: true` while migration 045 is unapplied.
+ */
+export async function flipStaleVerificationStatuses(
+  supabase: AnySupabaseClient,
+  now: Date = new Date()
+): Promise<FlipStaleVerificationResult> {
+  const cutoff = new Date(now.getTime() - STALE_PRICE_DAYS * 86_400_000).toISOString();
+  const result: FlipStaleVerificationResult = {
+    flippedProducts: 0,
+    flippedMerchantRows: 0,
+    columnsMissing: false,
+  };
+  try {
+    const { data: products, error: productsError } = await supabase
+      .from('products')
+      .update({ price_verification_status: 'stale' })
+      .eq('price_verification_status', 'verified')
+      .lt('price_verified_at', cutoff)
+      .select('id');
+    if (productsError) {
+      if (isMissingColumnOrTableError(productsError)) {
+        return { ...result, columnsMissing: true };
+      }
+      logger.warn('flipStaleVerificationStatuses: products update failed', {
+        error: productsError.message,
+      });
+      return { ...result, error: productsError.message };
+    }
+    result.flippedProducts = (products ?? []).length;
+
+    const { data: merchantRows, error: merchantError } = await supabase
+      .from('merchant_products')
+      .update({ price_verification_status: 'stale' })
+      .eq('price_verification_status', 'verified')
+      .lt('price_verified_at', cutoff)
+      .is('deleted_at', null)
+      .select('id');
+    if (merchantError) {
+      if (isMissingColumnOrTableError(merchantError)) {
+        return { ...result, columnsMissing: true };
+      }
+      logger.warn('flipStaleVerificationStatuses: merchant_products update failed', {
+        error: merchantError.message,
+      });
+      return { ...result, error: merchantError.message };
+    }
+    result.flippedMerchantRows = (merchantRows ?? []).length;
+    return result;
+  } catch (err) {
+    logger.warn('flipStaleVerificationStatuses: unexpected error', {
+      error: String(err),
+    });
+    return { ...result, error: String(err) };
+  }
 }

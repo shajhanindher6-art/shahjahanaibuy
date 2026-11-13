@@ -58,14 +58,18 @@ describe('describePlatformStatus', () => {
     expect(byId('amazon').status).toBe('search-links-only');
     expect(byId('ebay').status).toBe('not-configured');
     expect(byId('skimlinks').status).toBe('not-configured');
-    expect(byId('best-buy').status).toBe('live');
+    // Section 20, §12 #51 — Best Buy is recorded rows only, never
+    // 'live' (no adapter, credential, or verified call exists).
+    expect(byId('best-buy').status).toBe('recorded-prices-only');
     expect(byId('local-stores').status).toBe('live');
   });
 
-  it('marks Amazon configured only when its tag is set, and never leaks the tag', () => {
+  it('marks Amazon tag-only only when its tag is set, and never leaks the tag', () => {
     clearAll();
     setEnv({ [AMAZON_TAG]: 'smartbuy-20' });
-    expect(byId('amazon').status).toBe('configured');
+    // Section 20, §12 #51 — a set tag is 'tag-only', never
+    // 'configured': no Amazon integration works behind the tag.
+    expect(byId('amazon').status).toBe('tag-only');
     expect(byId('amazon').coverage).toContain('US');
     expect(JSON.stringify(describePlatformStatus())).not.toContain('smartbuy-20');
   });

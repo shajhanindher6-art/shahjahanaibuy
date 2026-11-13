@@ -3,22 +3,31 @@
  *
  * HONESTY RULES (do not weaken them):
  * - Input is ONLY the product's real recorded price_history points.
- * - A recommendation needs at least 2 points. With < 2 points the only
- *   output is "not enough price history to predict" — no verdict, no %.
+ * - A recommendation needs at least 5 points (Section 20, §12 #46
+ *   — unified with the forecast minimum; was 2). With < 5 points
+ *   the only output is "not enough price history to predict" — no
+ *   verdict, no %.
  * - Confidence comes from the STATED formula below and is CAPPED LOW
  *   when history is thin (<= 4 points -> at most 25%). It is an
- *   estimate, never a guarantee.
+ *   estimate, never a guarantee. Section 20, §12 #46: the thin cap
+ *   is now subsumed by the 5-point minimum (no verdict is issued
+ *   below 5 points at all), but it stays as a defence-in-depth
+ *   floor for the confidence formula itself.
  * - Seasonality is claimed ONLY when the history actually supports it:
  *   at least 12 points spanning at least 90 days. Otherwise the UI
  *   must say "not enough history for seasonal analysis".
  * - This engine NEVER outputs an exact future price or an exact future
  *   date. Older prediction displays that did so are retired, not reused.
  * - Section 19, Phase 3 (§12 #32): the verdict set also includes
- *   'track_price' (near the recorded low on thin history — no strong
- *   buy or wait signal yet, so track the price) and
- *   'compare_alternatives' (a cheaper alternative exists — compare
- *   before buying). Both need their stated inputs; without them the
- *   engine behaves exactly as before.
+ *   'track_price' (near the recorded low on low-confidence history
+ *   — 5–11 points, confidence ≤ 45% — no strong buy or wait signal
+ *   yet, so track the price) and 'compare_alternatives' (a cheaper
+ *   alternative exists — compare before buying). Both need their
+ *   stated inputs; without them the engine behaves exactly as
+ *   before. (Section 20: the old track_price trigger was thin
+ *   history ≤ 4 points, which the unified 5-point minimum made
+ *   unreachable — the trigger is redefined to the 5–11-point
+ *   low-confidence tier instead of retiring the verdict.)
  * - Section 19, Phase 3 (§12 #33): an optional budget input. When
  *   the current price is above the budget the verdict NEVER says
  *   buy_now — it says wait (or track) and states the gap
@@ -68,9 +77,22 @@ export interface BuyWaitOptions {
 /**
  * TRACK PRICE when the price is near — but not at — its recorded
  * low: within 5% above the lowest recorded price. (At the low is
- * buy_now; further above it is wait territory.)
+ * buy_now; further above it is wait territory.) Section 20: the
+ * trigger is low confidence, not thin history — the 5–11-point
+ * tier (confidence 45, or 35 when volatile), since the unified
+ * 5-point minimum made the old ≤ 4-point trigger unreachable.
+ * A clearly rising trend (slope > 2%, the same bar the wait
+ * branch uses) is a wait signal, not a track signal — track
+ * fires only when there is no strong signal either way.
  */
 export const TRACK_PRICE_NEAR_LOW_FACTOR = 1.05;
+/**
+ * TRACK PRICE only fires while the verdict confidence is at most
+ * this — the 5–11-point tier (45, or 35 when volatile). On deeper
+ * history (12+ points, confidence ≥ 60) the same near-low shape
+ * resolves to wait instead: the signal is strong enough to judge.
+ */
+export const TRACK_PRICE_MAX_CONFIDENCE = 45;
 /**
  * COMPARE ALTERNATIVES when the alternative is at least 5%
  * cheaper than the current price — a smaller gap is noise, not a
@@ -90,11 +112,11 @@ export interface BuyWaitPrediction {
   currentPrice: number | null;
   lowestPrice: number | null;
   averagePrice: number | null;
-  /** Whole-percent slope of a least-squares fit over the span (null when < 2 points). */
+  /** Whole-percent slope of a least-squares fit over the span (null when < 5 points — no verdict is issued below the minimum). */
   slopePct: number | null;
   dropCount: number;
   daysSinceLastDrop: number | null;
-  /** True when history is thin (<= 4 points): the UI must show the low-confidence label. */
+  /** True when history is thin (<= 4 points): the UI must show the low-confidence label. Unreachable since §12 #46 (no verdict below 5 points); kept as a defence-in-depth flag. */
   lowConfidence: boolean;
   /**
    * True when the latest recorded price is older than
@@ -103,7 +125,7 @@ export interface BuyWaitPrediction {
    * (Section 19, Phase 3, §12 #20 note).
    */
   priceStale: boolean;
-  /** Whole days since the latest recorded price (null when < 2 points). */
+  /** Whole days since the latest recorded price (null when < 5 points — no verdict is issued below the minimum). */
   daysSinceLastPrice: number | null;
   /**
    * Current price minus budget in USD, when a budget was supplied
@@ -113,7 +135,8 @@ export interface BuyWaitPrediction {
   budgetGapUsd: number | null;
 }
 
-/** Seasonality needs a real seasonal signal: 12+ points over 90+ days. */
+/** Minimum recorded points for any verdict (Section 20, §12 #46: unified at 5 with the forecast minimum). */
+export const BUY_WAIT_MIN_POINTS = 5;
 export const SEASONAL_MIN_POINTS = 12;
 export const SEASONAL_MIN_SPAN_DAYS = 90;
 /** Confidence is never presented above this: estimates are not guarantees. */
@@ -152,7 +175,7 @@ export function predictBuyVsWait(
     budgetGapUsd: null as number | null,
   };
 
-  if (valid.length < 2) {
+  if (valid.length < BUY_WAIT_MIN_POINTS) {
     return {
       ...base,
       recommendation: 'not_enough_data',
@@ -160,7 +183,7 @@ export function predictBuyVsWait(
       reason:
         valid.length === 0
           ? 'Not enough price history to predict — no recorded prices yet.'
-          : 'Not enough price history to predict — only one recorded price so far.',
+          : `Not enough price history to predict — only ${valid.length} recorded price${valid.length === 1 ? '' : 's'} so far (at least ${BUY_WAIT_MIN_POINTS} are needed).`,
     };
   }
 
@@ -201,7 +224,9 @@ export function predictBuyVsWait(
     valid.length >= SEASONAL_MIN_POINTS && spanDays >= SEASONAL_MIN_SPAN_DAYS;
 
   // Confidence formula (stated, capped):
-  //   base by point count: 2-4 -> 25, 5-11 -> 45, 12-29 -> 60, 30+ -> 75
+  //   base by point count: 5-11 -> 45, 12-29 -> 60, 30+ -> 75
+  //   (the 2-4 -> 25 tier is unreachable since §12 #46 raised the
+  //   minimum to 5; it stays as a defence-in-depth floor).
   //   minus 10 when prices are highly volatile (stddev/mean > 0.20)
   //   then capped at 85 overall, and at 25 when history is thin.
   let confidence = valid.length <= 4 ? 25 : valid.length <= 11 ? 45 : valid.length <= 29 ? 60 : 75;
@@ -219,8 +244,10 @@ export function predictBuyVsWait(
   //   1. OVER BUDGET → wait, with the gap stated (never buy_now
   //      above budget).   2. CHEAPER ALTERNATIVE (≥ 5% cheaper)
   //      → compare_alternatives.   3. AT/NEAR LOW or BELOW AVERAGE
-  //      → buy_now.   4. THIN HISTORY + NEAR LOW (within 5% above
-  //      the low, not at it) → track_price: no strong signal yet.
+  //      → buy_now.   4. LOW CONFIDENCE + NEAR LOW (within 5% above
+  //      the low, not at it; confidence ≤ 45, i.e. the 5–11-point
+  //      tier; no clearly rising trend) → track_price: no strong
+  //      signal yet.
   //   5. Otherwise wait — the price has room to fall back toward
   //      its history and has dropped before.
   // With no budget and no alternative supplied, rules 1–2 never
@@ -278,11 +305,12 @@ export function predictBuyVsWait(
     recommendation = 'buy_now';
     reason = `Buy Now — the current price ($${current.toFixed(2)}) is below the recorded average ($${average.toFixed(2)}), based on ${valid.length} recorded points.`;
   } else if (
-    lowConfidence &&
-    current <= lowest * TRACK_PRICE_NEAR_LOW_FACTOR
+    confidence <= TRACK_PRICE_MAX_CONFIDENCE &&
+    current <= lowest * TRACK_PRICE_NEAR_LOW_FACTOR &&
+    !(slopePct !== null && slopePct > 2)
   ) {
     recommendation = 'track_price';
-    reason = `Track the price — the current price ($${current.toFixed(2)}) is near the lowest recorded price ($${lowest.toFixed(2)}) but the history is thin (${valid.length} recorded points, low confidence), so there is no strong buy or wait signal yet. Set a price alert and decide once more prices are recorded.`;
+    reason = `Track the price — the current price ($${current.toFixed(2)}) is near the lowest recorded price ($${lowest.toFixed(2)}) but confidence is low (only ${valid.length} recorded points, ${confidence}% confidence), so there is no strong buy or wait signal yet. Set a price alert and decide once more prices are recorded.`;
   } else if (aboveAverage && drops > 0) {
     recommendation = 'wait';
     reason = `Wait — the current price ($${current.toFixed(2)}) is above the recorded average ($${average.toFixed(2)}) and this product has dropped ${drops} time${drops === 1 ? '' : 's'} before, based on ${valid.length} recorded points.`;

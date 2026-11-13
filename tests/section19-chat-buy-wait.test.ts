@@ -149,15 +149,19 @@ const MERCHANT_PRODUCTS: Row[] = [
 
 // MacBook: falls to its recorded low (Buy Now). Dell: rises (Wait).
 // Mystery Gadget: a single point (not enough data).
+// 5 points each for MacBook/Dell — the Section 20 (§12 #46)
+// buy-wait minimum: 4 points would return "Not enough data".
 const PRICE_HISTORY: Row[] = [
   { product_id: 'p1', price: 1099, recorded_at: '2026-10-01T00:00:00.000Z' },
   { product_id: 'p1', price: 1049, recorded_at: '2026-10-15T00:00:00.000Z' },
   { product_id: 'p1', price: 999, recorded_at: '2026-11-02T00:00:00.000Z' },
   { product_id: 'p1', price: 999, recorded_at: '2026-11-10T00:00:00.000Z' },
+  { product_id: 'p1', price: 999, recorded_at: '2026-11-11T00:00:00.000Z' },
   { product_id: 'p2', price: 999, recorded_at: '2026-10-01T00:00:00.000Z' },
   { product_id: 'p2', price: 1049, recorded_at: '2026-10-15T00:00:00.000Z' },
   { product_id: 'p2', price: 1099, recorded_at: '2026-11-02T00:00:00.000Z' },
   { product_id: 'p2', price: 1099, recorded_at: '2026-11-10T00:00:00.000Z' },
+  { product_id: 'p2', price: 1099, recorded_at: '2026-11-11T00:00:00.000Z' },
   { product_id: 'p3', price: 50, recorded_at: '2026-11-10T00:00:00.000Z' },
 ];
 
@@ -182,8 +186,11 @@ describe('buyWaitAssistant — verdict from recorded price history', () => {
     );
     expect(answer.content).toContain('Verdict for MacBook Air 13: Buy Now');
     expect(answer.content).toContain('at or near the lowest recorded price');
-    expect(answer.content).toContain('Confidence: 25%');
-    expect(answer.content).toContain('low — only 4 recorded prices');
+    // 5 recorded points → the 5–11-point confidence tier (45%),
+    // no longer the thin-history 25% / "low — only 4 recorded
+    // prices" label of the old 4-point fixture.
+    expect(answer.content).toContain('Confidence: 45%');
+    expect(answer.content).not.toContain('low — only');
     expect(answer.content).toContain('not a guarantee');
     expect(answer.content).toContain('Current: $999.00');
     expect(answer.content).toContain('Lowest recorded: $999.00');
@@ -213,7 +220,7 @@ describe('buyWaitAssistant — verdict from recorded price history', () => {
     );
     expect(answer.content).toContain('Verdict for Mystery Gadget: Not enough data');
     expect(answer.content).toContain('Not enough price history to predict');
-    expect(answer.content).toContain('only one recorded price');
+    expect(answer.content).toContain('only 1 recorded price so far (at least 5 are needed)');
     expect(answer.content).not.toContain('Confidence:');
   });
 

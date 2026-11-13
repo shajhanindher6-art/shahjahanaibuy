@@ -36,7 +36,7 @@
  * provider works; the label says so.
  */
 
-import type { AIEngineResult, AICapability, AIProviderStatus } from './types';
+import type { AIEngineResult, AICapability, AIProviderStatus, AIEngineInput } from './types';
 import { NoAiProviderAvailableError, ProviderSkippedError } from './types';
 import type { AIEngineRegistry } from './registry';
 import { isAiCircuitOpen, recordAiCapabilityCall } from './usage';
@@ -60,7 +60,7 @@ export class AIEngine {
    */
   async invoke<T>(
     capability: AICapability,
-    input: Record<string, unknown>
+    input: AIEngineInput
   ): Promise<AIEngineResult<T>> {
     const candidates = this.registry
       .getByCapability(capability)

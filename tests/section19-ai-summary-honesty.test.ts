@@ -162,7 +162,12 @@ describe('getAISummary — honest fallbacks with no data', () => {
     expect(summary).not.toBeNull();
     expect(summary!.summary).toContain('from Acme');
     expect(summary!.summary).toContain('average rating of 4.5 stars from 2 reviews');
-    expect(summary!.pros).toContain('From established brand: Acme');
+    // Section 20, §12 #83: the old "From established brand: Acme"
+    // pro is REMOVED — a brand name alone is not evidence of
+    // quality, so it must never appear as a reason to buy. The
+    // real brand is still named in the summary prose above.
+    expect(summary!.pros).not.toContain('From established brand: Acme');
+    expect(summary!.pros).not.toContain('established brand');
     expect(summary!.pros).toContain('High customer satisfaction (4.5 stars)');
     expect(summary!.pros).not.toContain('Not enough data to assess quality');
     expect(summary!.summary).not.toContain('reputable brand');

@@ -63,10 +63,12 @@ import {
   type IntakeReviewedRow,
   type IntakeRowInput,
 } from './catalog-intake';
+import { validateImageUrl } from '@/lib/image-url';
+import { EBAY_INTAKE_SOURCE } from '@/lib/intake-sources';
 import type { EbayListing } from './ebay-browse';
 
 /** Stored in admin_audit_logs.details for every eBay intake batch. */
-export const EBAY_INTAKE_SOURCE = 'ebay-browse-api';
+export { EBAY_INTAKE_SOURCE };
 
 /** Merchant slug the intake rows are filed under (never auto-created). */
 export const EBAY_MERCHANT_SLUG = 'ebay';
@@ -104,6 +106,15 @@ export function mapEbayListingToIntakeRow(
   rowNumber: number,
   fields: EbayIntakeFieldOverrides
 ): IntakeRowInput {
+  // Section 20, §12 #94 — the listing image is merchant data, not
+  // admin-typed, so an invalid image URL is DROPPED here (the
+  // product falls back to the honest placeholder) instead of
+  // failing the whole row: the admin cannot fix a merchant URL,
+  // and a bad URL must never be stored. The shared review
+  // (reviewIntakeRows) still validates any image URL that does
+  // reach it, so this is a second layer, not the only one.
+  const imageCheck = listing.imageUrl ? validateImageUrl(listing.imageUrl) : null;
+  const imageUrl = imageCheck?.valid ? (imageCheck.normalized ?? undefined) : undefined;
   return {
     rowNumber,
     name: listing.title,
@@ -114,7 +125,7 @@ export function mapEbayListingToIntakeRow(
     currency: listing.currency ?? '',
     merchant: EBAY_MERCHANT_SLUG,
     ...(fields.description ? { description: fields.description } : {}),
-    ...(listing.imageUrl ? { imageUrl: listing.imageUrl } : {}),
+    ...(imageUrl ? { imageUrl } : {}),
     sku: listing.itemId,
   };
 }

@@ -95,6 +95,13 @@ interface ProductRow {
   category: string | null;
   image_url: string | null;
   gtin: string | null;
+  /**
+   * Section 20, #6 (migration 055, unapplied): optional on the
+   * row because a live table that predates the migration has no
+   * such column — see the 42703 retry below (same pattern as
+   * the 045 columns).
+   */
+  model_number?: string | null;
   confidence_score: number;
   data_freshness: string;
   created_at: string;
@@ -119,9 +126,13 @@ interface ProductRow {
  * they read as published + unverified (the normalizers below).
  * Never a throw, never an empty catalog, over an unapplied
  * migration.
+ *
+ * Section 20, #6: `model_number` (migration 055, unapplied) rides
+ * the same retry — the legacy list has no model_number either, so
+ * a pre-055 table reads modelNumber as null (honest empty state).
  */
 const PRODUCT_COLUMNS =
-  'id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at, status, price_verification_status, price_verified_at';
+  'id, name, slug, description, brand, category, image_url, gtin, model_number, confidence_score, data_freshness, created_at, updated_at, status, price_verification_status, price_verified_at';
 const PRODUCT_COLUMNS_LEGACY =
   'id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at';
 
@@ -140,6 +151,9 @@ function mapProduct(row: ProductRow): Product {
     category: row.category,
     imageUrl: row.image_url,
     gtin: row.gtin,
+    // Section 20, #6: null when the column is absent (055
+    // unapplied) or the product has no recorded model number.
+    modelNumber: row.model_number ?? null,
     confidenceScore: row.confidence_score,
     dataFreshness: row.data_freshness,
     createdAt: row.created_at,

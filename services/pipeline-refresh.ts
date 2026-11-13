@@ -24,8 +24,10 @@
  *  - The provider registry (`services/providers/registry.ts`)
  *    registers only ApifyProvider (fail-closed: vars unset by
  *    design) plus MockProvider outside production; CsvProvider
- *    is exported but never registered; eBay lives OUTSIDE the
- *    registry (services/ebay-*). The seed creates zero
+ *    is registered from CSV_SOURCE_URL (Section 20, §12 #58)
+ *    and the Amazon/Best Buy adapters are registered as
+ *    fail-closed scaffolding (Section 20, §12 #57); eBay lives
+ *    OUTSIDE the registry (services/ebay-*). The seed creates zero
  *    `product_sources` rows.
  *
  * DECISION — do NOT wire the refresh chain to pipeline
@@ -84,6 +86,8 @@ import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { getProviderRegistry } from '@/services/providers';
 import { processors } from '@/lib/workers/processors';
 import { logger } from '@/lib/config/logger';
+import { logApiError } from '@/lib/api/error-logging';
+import { markProductRefreshed } from '@/services/freshness';
 import { PUBLISHED_PRODUCT_STATUS } from '@/services/price-verification';
 import type { JobDefinition } from '@/lib/workers/types';
 
@@ -145,13 +149,20 @@ export async function refreshPricesViaPipeline(
   try {
     registry = getProviderRegistry();
   } catch (err) {
+    // Section 20, §12 #53 — a registry that cannot even be built
+    // is a server error: it belongs in error_log.
+    logApiError(err, {
+      route: 'pipeline-refresh',
+      status: 500,
+      context: { reason: 'registry-unavailable' },
+    });
     return UNAVAILABLE('registry-unavailable', [String(err)]);
   }
   if (registry.getAvailable().length === 0) {
     return UNAVAILABLE(
       'no-available-provider',
       [
-        'No provider is available (Apify is fail-closed without its vars; Mock is never registered in production; CsvProvider is not registered; eBay lives outside the registry).',
+        'No provider is available (CsvProvider needs CSV_SOURCE_URL; Amazon/Best Buy need their keys; Apify is fail-closed without its vars; Mock is never registered in production; eBay lives outside the registry).',
       ]
     );
   }
@@ -180,6 +191,12 @@ export async function refreshPricesViaPipeline(
     logger.warn('refreshPricesViaPipeline: due-products query failed', {
       error: dueError?.message,
     });
+    // Section 20, §12 #53 — a failed due-products read is a
+    // server error: it belongs in error_log.
+    logApiError(
+      new Error(`due-products query failed: ${dueError?.message ?? 'no rows returned'}`),
+      { route: 'pipeline-refresh', status: 500, context: { reason: 'due-products-unreadable' } }
+    );
     return UNAVAILABLE('due-products-unreadable', [
       dueError?.message ?? 'due-products query returned no rows',
     ]);
@@ -209,6 +226,17 @@ export async function refreshPricesViaPipeline(
       const jobResult = await processor(job);
       if (jobResult.success && jobResult.processed > 0) {
         result.refreshed++;
+        // Section 20, §12 #43 — this leg IS a live check: the
+        // processor re-fetched the price from the product's
+        // provider and recorded a fresh point, so the freshness
+        // stamp moves here. Contrast services/price-refresh.ts,
+        // which only re-reads the database and must NOT stamp.
+        // Best-effort: a stamp failure never fails the product.
+        try {
+          await markProductRefreshed(supabase, productId);
+        } catch {
+          // Freshness bookkeeping must never fail the product.
+        }
       } else {
         result.failed++;
         for (const e of jobResult.errors ?? ['price.refresh reported no fresh price']) {

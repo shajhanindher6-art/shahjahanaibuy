@@ -15,7 +15,9 @@
  * - `enrichProducts` (services/personal-assistant.ts) turns catalog
  *   rows into priced candidates: it DROPS the demo/health-check row
  *   ('sample-laptop') and every product with no resolvable merchant
- *   price. Candidates here therefore always carry a verified price.
+ *   price. Candidates here therefore always carry a recorded price
+ *   (Section 20, §12 #82 — recorded, not verified: no live check
+ *   stands behind it).
  * - `getProducts` (services/products.ts) is the catalog read path —
  *   it already excludes 'sample-laptop' in the query. Raw Supabase
  *   product rows are never read here.

@@ -16,9 +16,11 @@
  */
 
 import { parseCsvDocument } from './providers/csv-provider';
+import { validateGtin } from '@/lib/gtin';
+import { validateImageUrl } from '@/lib/image-url';
 
 /** Stored in the audit-log details for every approved intake batch. */
-export const INTAKE_SOURCE = 'manual-intake';
+export { INTAKE_SOURCE } from '@/lib/intake-sources';
 
 export const INTAKE_REQUIRED_COLUMNS = [
   'name',
@@ -30,7 +32,7 @@ export const INTAKE_REQUIRED_COLUMNS = [
   'merchant',
 ] as const;
 
-export const INTAKE_OPTIONAL_COLUMNS = ['description', 'image_url', 'image', 'gtin', 'sku'] as const;
+export const INTAKE_OPTIONAL_COLUMNS = ['description', 'image_url', 'image', 'gtin', 'sku', 'model_number'] as const;
 
 /** A row the admin pasted/uploaded, keyed by lower-cased header name. */
 export interface IntakeRowInput {
@@ -46,6 +48,13 @@ export interface IntakeRowInput {
   imageUrl?: string;
   gtin?: string;
   sku?: string;
+  /**
+   * Section 20, #6: manufacturer model number, recorded verbatim
+   * from the CSV `model_number` column. Optional — 0/10 live
+   * products have one, and a missing value is an honest empty
+   * state, never a guessed value.
+   */
+  modelNumber?: string;
 }
 
 export interface IntakeRowError {
@@ -66,6 +75,14 @@ export interface IntakeReviewedRow {
   duplicateOf?: string;
   /** Slug of the existing product with the same name + brand, if any. */
   nearDuplicateOf?: string;
+  /**
+   * Section 20, #9: plain-language reason when the row was held
+   * as a near-duplicate for a reason other than name + brand —
+   * e.g. the same GTIN already exists under a different slug.
+   * The admin UI shows this verbatim so the reviewer knows what
+   * to check before ticking "Include anyway".
+   */
+  duplicateDetail?: string;
   /** Validated, parsed values. Null unless the row is usable. */
   data: {
     name: string;
@@ -81,6 +98,7 @@ export interface IntakeReviewedRow {
     imageUrl?: string;
     gtin?: string;
     sku?: string;
+    modelNumber?: string;
   } | null;
   /**
    * Admin's explicit per-row choice on a near-duplicate: include it in
@@ -107,6 +125,15 @@ export interface IntakeCatalogContext {
   existingSlugs: Set<string>;
   /** Normalized `name|brand` key -> slug of the existing product. */
   existingNameBrands: Map<string, string>;
+  /**
+   * Section 20, #9: normalized GTIN -> slug of the existing
+   * product carrying it. Optional so contexts built by older
+   * callers/tests (which predate the field) keep working — a
+   * missing map simply means "no GTIN check available", and the
+   * review treats it as empty. loadCatalogContext always fills
+   * it from the live catalog.
+   */
+  existingGtins?: Map<string, string>;
   /** Normalized merchant slug OR name -> merchant id. */
   knownMerchants: Map<string, string>;
   /** Upper-case currency code -> currency id. */
@@ -122,6 +149,7 @@ export interface IntakeInsertPlan {
     category: string;
     image_url?: string;
     gtin?: string;
+    model_number?: string;
   };
   merchantProduct: {
     merchantId: string;
@@ -146,6 +174,16 @@ export function normalizeIntakeKey(value: string): string {
 
 export function intakeNameBrandKey(name: string, brand: string): string {
   return `${normalizeIntakeKey(name)}|${normalizeIntakeKey(brand)}`;
+}
+
+/**
+ * Section 20, #9 — GTIN normalization for dedupe: strip spaces
+ * and hyphens, upper-case. "978-0-123" and "9780123" are the same
+ * GTIN; without this, the same product under a different slug
+ * would pass intake as 'valid' on a formatting difference alone.
+ */
+export function normalizeGtin(value: string): string {
+  return value.replace(/[^a-z0-9]/gi, '').toUpperCase();
 }
 
 function getField(row: Record<string, string>, keys: string[]): string {
@@ -217,6 +255,7 @@ export function parseIntakeCsv(csv: string): {
     imageUrl: getField(row, ['image_url', 'image']) || undefined,
     gtin: getField(row, ['gtin']) || undefined,
     sku: getField(row, ['sku']) || undefined,
+    modelNumber: getField(row, ['model_number']) || undefined,
   }));
 
   return { rows, headerErrors };
@@ -230,10 +269,13 @@ export function parseIntakeCsv(csv: string): {
  * Per row, in order:
  *  1. required-field / format errors (one error per bad field),
  *  2. slug already in the catalog, or repeated in this file → 'duplicate',
- *  3. same normalized name + brand already in the catalog, or repeated
+ *  3. same GTIN already in the catalog under a different slug, or
+ *     repeated in this file → 'near-duplicate' (Section 20, #9:
+ *     held for manual review, never silently inserted),
+ *  4. same normalized name + brand already in the catalog, or repeated
  *     in this file → 'near-duplicate' (flagged for review, not inserted
  *     unless the admin explicitly includes the row at approve time),
- *  4. otherwise 'valid'.
+ *  5. otherwise 'valid'.
  */
 export function reviewIntakeRows(
   rows: IntakeRowInput[],
@@ -241,6 +283,8 @@ export function reviewIntakeRows(
 ): IntakeReview {
   const seenSlugs = new Set<string>();
   const seenNameBrands = new Map<string, number>();
+  // Section 20, #9: normalized GTIN -> first row number carrying it.
+  const seenGtins = new Map<string, number>();
   const reviewed: IntakeReviewedRow[] = [];
 
   for (const input of rows) {
@@ -315,6 +359,41 @@ export function reviewIntakeRows(
       }
     }
 
+    // Section 20, §12 #31 / #94 — review-time validation for the
+    // two optional fields that used to pass through untouched:
+    // a present GTIN must be a GS1-valid GTIN (check digit), and
+    // a present image URL must be a valid http(s) URL (no data: /
+    // javascript:, length cap, host sanity). Either failure is a
+    // per-row error, never a silently dropped or rewritten value.
+    // eBay intake shares this review (services/ebay-intake.ts),
+    // so the same gate applies to eBay listings.
+    let normalizedGtin: string | undefined;
+    if (input.gtin) {
+      const gtinCheck = validateGtin(input.gtin);
+      if (!gtinCheck.valid) {
+        errors.push({
+          row,
+          field: 'gtin',
+          reason: gtinCheck.reason ?? 'Invalid GTIN',
+        });
+      } else {
+        normalizedGtin = gtinCheck.normalized ?? undefined;
+      }
+    }
+    let normalizedImageUrl: string | undefined;
+    if (input.imageUrl) {
+      const imageCheck = validateImageUrl(input.imageUrl);
+      if (!imageCheck.valid) {
+        errors.push({
+          row,
+          field: 'image_url',
+          reason: imageCheck.reason ?? 'Invalid image URL',
+        });
+      } else {
+        normalizedImageUrl = imageCheck.normalized ?? undefined;
+      }
+    }
+
     const slug = input.slug.toLowerCase();
     const nameBrandKey =
       input.name && input.brand ? intakeNameBrandKey(input.name, input.brand) : '';
@@ -322,12 +401,40 @@ export function reviewIntakeRows(
     let status: IntakeRowStatus;
     let duplicateOf: string | undefined;
     let nearDuplicateOf: string | undefined;
+    let duplicateDetail: string | undefined;
+
+    // Section 20, #9 — same GTIN under a different slug is a
+    // duplicate candidate, held for manual review. Before this
+    // leg, intake checked only the slug and the normalized
+    // name+brand, so a row carrying an existing product's GTIN
+    // under a fresh slug passed as 'valid' and would have
+    // created a second catalog row for the same physical
+    // product. It is 'near-duplicate' (not 'duplicate') so an
+    // admin who has genuinely checked — e.g. a GTIN reused
+    // across a variant family — can still include it explicitly.
+    const gtinKey = input.gtin ? normalizeGtin(input.gtin) : '';
+    const existingGtinSlug = gtinKey
+      ? (context.existingGtins?.get(gtinKey) ?? undefined)
+      : undefined;
+    const seenGtinRow = gtinKey ? seenGtins.get(gtinKey) : undefined;
 
     if (errors.length > 0) {
       status = 'error';
     } else if (context.existingSlugs.has(slug) || seenSlugs.has(slug)) {
       status = 'duplicate';
       duplicateOf = context.existingSlugs.has(slug) ? slug : slug;
+    } else if (existingGtinSlug) {
+      status = 'near-duplicate';
+      nearDuplicateOf = existingGtinSlug;
+      duplicateDetail =
+        `Same GTIN (${input.gtin}) as "${existingGtinSlug}" — the same product under a different slug. ` +
+        `Check before including; a second catalog row for the same GTIN is a duplicate.`;
+    } else if (seenGtinRow !== undefined && seenGtinRow !== row) {
+      status = 'near-duplicate';
+      nearDuplicateOf = `row ${seenGtinRow} in this file`;
+      duplicateDetail =
+        `Same GTIN (${input.gtin}) as row ${seenGtinRow} in this file. ` +
+        `Check before including; a second catalog row for the same GTIN is a duplicate.`;
     } else if (nameBrandKey) {
       const existing = context.existingNameBrands.get(nameBrandKey);
       const seenInFile = seenNameBrands.get(nameBrandKey);
@@ -349,6 +456,9 @@ export function reviewIntakeRows(
       if (nameBrandKey && !seenNameBrands.has(nameBrandKey)) {
         seenNameBrands.set(nameBrandKey, row);
       }
+      if (gtinKey && !seenGtins.has(gtinKey)) {
+        seenGtins.set(gtinKey, row);
+      }
     }
 
     reviewed.push({
@@ -357,6 +467,7 @@ export function reviewIntakeRows(
       errors,
       ...(duplicateOf ? { duplicateOf } : {}),
       ...(nearDuplicateOf ? { nearDuplicateOf } : {}),
+      ...(duplicateDetail ? { duplicateDetail } : {}),
       data:
         status === 'valid' || status === 'near-duplicate'
           ? {
@@ -370,9 +481,13 @@ export function reviewIntakeRows(
               merchant: input.merchant,
               merchantId: merchantId as string,
               ...(input.description ? { description: input.description } : {}),
-              ...(input.imageUrl ? { imageUrl: input.imageUrl } : {}),
-              ...(input.gtin ? { gtin: input.gtin } : {}),
+              // Section 20, §12 #31/#94 — store the validated,
+              // normalized values (digits-only GTIN, trimmed image
+              // URL), never the raw input.
+              ...(normalizedImageUrl ? { imageUrl: normalizedImageUrl } : {}),
+              ...(normalizedGtin ? { gtin: normalizedGtin } : {}),
               ...(input.sku ? { sku: input.sku } : {}),
+              ...(input.modelNumber ? { modelNumber: input.modelNumber } : {}),
             }
           : null,
     });
@@ -425,6 +540,10 @@ export function planIntakeInsert(reviewedRows: IntakeReviewedRow[]): IntakeInser
         ...(d.description ? { description: d.description } : {}),
         ...(d.imageUrl ? { image_url: d.imageUrl } : {}),
         ...(d.gtin ? { gtin: d.gtin } : {}),
+        // Section 20, #6: stored only when the column exists —
+        // the intake route retries without it on 42703 (055
+        // unapplied) instead of failing the batch.
+        ...(d.modelNumber ? { model_number: d.modelNumber } : {}),
       },
       merchantProduct: {
         merchantId: d.merchantId,

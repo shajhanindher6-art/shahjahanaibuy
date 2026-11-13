@@ -99,6 +99,15 @@ export async function markProductRefreshed(
   productId: string,
   priority?: RefreshPriority
 ): Promise<void> {
+  // Section 20, §12 #43 — LIVE CHECK ONLY. Call this only after
+  // a real live check (today: the eBay Browse leg in
+  // services/ebay-refresh.ts, or a successful provider re-fetch
+  // via services/pipeline-refresh.ts). A DB re-read
+  // (services/price-refresh.ts) must NOT call this: re-reading
+  // a stored price is not a live check, and stamping
+  // data_freshness / next_refresh_at for it would present an
+  // 11-day-old seed price as freshly checked. Re-reads use
+  // markProductRechecked below instead.
   const nextRefresh = calculateNextRefresh(priority ?? 3);
   await supabase
     .from('products')
@@ -110,8 +119,29 @@ export async function markProductRefreshed(
     .eq('id', productId);
 }
 
-/** What a failed refresh knows about the failure (Section 18, item 47). */
-export interface ProductRefreshFailure {
+/**
+ * Section 20, §12 #43 — the DB re-read stamp. A refresh step
+ * that only re-read stored merchant prices (no live check, no
+ * new external observation) records that the product was
+ * re-checked by clearing a failed status — and NOTHING ELSE.
+ * `data_freshness` and `next_refresh_at` deliberately do NOT
+ * move: moving them would claim the price was freshly checked
+ * when it was only re-read from the database, and the product
+ * correctly stays due for its next real (live) check.
+ */
+export async function markProductRechecked(
+  supabase: AnySupabaseClient,
+  productId: string
+): Promise<void> {
+  await supabase
+    .from('products')
+    .update({
+      refresh_status: 'idle',
+    })
+    .eq('id', productId);
+}
+
+/** What a failed refresh knows about the failure (Section 18, item 47). */export interface ProductRefreshFailure {
   /** Why the refresh failed (DB error, eBay search reason, …). */
   reason?: string;
   /** Product name/slug when the caller knows them — shown on /admin/refresh-runs. */

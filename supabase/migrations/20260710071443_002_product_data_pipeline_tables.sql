@@ -19,7 +19,7 @@ and source mappings for deduplication and provider management.
 - Central product catalog — normalized across all providers
 - `id` (uuid PK), `name`, `slug` (unique), `description`, `brand`, `category`, `image_url`
 - `gtin` (Global Trade Item Number — for deduplication across providers)
-- `confidence_score` (0-100, data quality indicator)
+- `confidence_score` (0-100, field-presence completeness count — NOT a data-quality score: it counts which fields are filled in, and measures neither freshness nor source reliability)
 - `data_freshness` (timestamptz — last time data was validated)
 - `created_at`, `updated_at` (maintained via trigger)
 - Indexed on `slug`, `gtin`, `category`, `brand`
@@ -75,7 +75,7 @@ and source mappings for deduplication and provider management.
 ## 5. Important Notes
 1. Product writes are server-side only (service role) — RLS denies all client writes
 2. `gtin` is the primary deduplication key across providers
-3. `confidence_score` reflects data quality (completeness, freshness, source reliability)
+3. `confidence_score` counts field completeness only (name, description, brand, category, GTIN, images, price, URL, availability) — it does NOT measure freshness or source reliability, despite what this comment used to claim (Section 20, §12 #67). Never treat it as product quality, and never feed it into deal ranking.
 4. `data_freshness` tracks when product data was last validated/refreshed
 5. `price_history` is append-only — never updated or deleted
 6. `product_sources.raw` stores the original provider response for debugging

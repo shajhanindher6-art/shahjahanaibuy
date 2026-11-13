@@ -3,9 +3,11 @@
  *
  * formatForecastBasis (lib/forecast.ts) labels every forecast range
  * with the history behind it: "Based on N recorded price points ·
- * X% confidence (low/medium/high)". The live catalog's 4-point
+ * X% confidence (low/medium/high)". The live catalog's 5-point
  * forecasts land in "low" — the UI must now say so instead of
- * showing a bare percentage.
+ * showing a bare percentage. (Section 20, §12 #46: below 5 points
+ * there is no forecast at all, so the old 4-point live case no
+ * longer exists.)
  *
  * The label is rendered by the product-page forecast card
  * (components/forecast/forecast-card.tsx) and by
@@ -26,9 +28,9 @@ import {
 } from '@/lib/forecast';
 
 describe('formatForecastBasis — label text', () => {
-  it('4 points at 21% confidence reads low (the live-catalog case)', () => {
-    expect(formatForecastBasis(4, 21)).toBe(
-      'Based on 4 recorded price points · 21% confidence (low)'
+  it('5 points at 15% confidence reads low (the live-catalog case)', () => {
+    expect(formatForecastBasis(5, 15)).toBe(
+      'Based on 5 recorded price points · 15% confidence (low)'
     );
   });
 
@@ -60,26 +62,26 @@ describe('forecastConfidenceLabel — band boundaries', () => {
 });
 
 describe('formatForecastBasis — built from a real computeForecast run', () => {
-  /** 4 recorded points, 10 days apart, mildly noisy prices. */
-  function fourPointHistory(): ForecastPoint[] {
+  /** 5 recorded points, 10 days apart, mildly noisy prices. */
+  function fivePointHistory(): ForecastPoint[] {
     const start = new Date('2026-10-01T00:00:00Z').getTime();
     const day = 86_400_000;
-    return [1000, 990, 1010, 995].map((price, i) => ({
+    return [1000, 990, 1010, 995, 1005].map((price, i) => ({
       price,
       recordedAt: new Date(start + i * 10 * day).toISOString(),
     }));
   }
 
-  it('a 4-point forecast labels itself with 4 points and its real band', () => {
-    const forecast = computeForecast(fourPointHistory());
+  it('a 5-point forecast labels itself with 5 points and its real band', () => {
+    const forecast = computeForecast(fivePointHistory());
     expect(forecast.status).toBe('ok');
-    expect(forecast.pointsUsed).toBe(4);
+    expect(forecast.pointsUsed).toBe(5);
     for (const horizon of forecast.forecasts) {
       const label = formatForecastBasis(
         horizon.pointsUsed,
         horizon.confidencePct
       );
-      expect(label).toContain('Based on 4 recorded price points');
+      expect(label).toContain('Based on 5 recorded price points');
       expect(label).toContain(
         `(${forecastConfidenceLabel(horizon.confidencePct)})`
       );

@@ -182,12 +182,18 @@ describe('ai-summary — no invented spec, review, or price (#82)', () => {
     expect(summary).not.toBeNull();
     const joined = [summary!.summary, ...summary!.pros, ...summary!.cons].join(' ');
     expect(joined).toContain('RAM: 16GB');
+    // Section 20, §12 #83: the recorded spec IS still named — in
+    // the summary prose ("Key specifications include RAM: 16GB."),
+    // where attributes are FACTS. It is no longer listed as a pro
+    // line: merely having a recorded spec is not a reason to buy.
+    expect(summary!.summary).toContain('Key specifications include RAM: 16GB.');
     for (const invented of ['Storage', 'Battery', 'Camera', 'Processor', 'Display', 'Weight', 'Screen', 'Bluetooth', 'Wi-Fi']) {
       expect(joined).not.toContain(invented);
     }
-    // Exactly one "key: value" spec line — the recorded one.
+    // No "key: value" spec line anywhere in the pros — pros carry
+    // no spec lines at all.
     const specLines = summary!.pros.filter((p) => /^[A-Za-z][A-Za-z /]*: \S/.test(p));
-    expect(specLines).toEqual(['RAM: 16GB']);
+    expect(specLines).toEqual([]);
   });
 
   it('stale price history → the output never prints a price at all, invented or real', async () => {
@@ -302,8 +308,10 @@ describe('ai-deals — prices and percentages come only from recorded rows (#82)
     expect(row.currentPrice).toBeNull();
     expect(row.discountPercentage).toBeNull();
     // 50 base + 0 (null % contributes nothing) + 0 flash + 0
-    // (value < $30) + 10 (confidence 80) + 0 (no history) = 60.
-    expect(row.aiScore).toBe(60);
+    // (value < $30) + 0 (no history) = 50. Section 20, §12 #67:
+    // the old +10 confidence term is REMOVED — confidence_score
+    // is field-presence completeness, not quality.
+    expect(row.aiScore).toBe(50);
     expect(row.isFeatured).toBe(false);
   });
 });
@@ -443,7 +451,11 @@ describe('assistant — empty catalog means an honest no-match, never an invente
     expect(answer.content).not.toContain('🏆 Best pick');
     expect(answer.content).not.toContain('MacBook');
     expect(answer.content).not.toContain('Dell');
-    expect(answer.content).toContain('verified price');
+    // Section 20, §12 #82: the honest wording is "recorded price"
+    // — no price in this catalog is verified, so the answer must
+    // never call it a verified price.
+    expect(answer.content).toContain('recorded price');
+    expect(answer.content).not.toContain('verified price');
     expect(answer.metadata).toBeNull();
   });
 });

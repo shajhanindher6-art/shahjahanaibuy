@@ -1,4 +1,5 @@
 import { logger } from '@/lib/config/logger';
+import { isSafePublicImageUrl } from '@/services/visual-search';
 import type {
   DataProvider,
   ProviderSearchRequest,
@@ -214,7 +215,9 @@ export class CsvProvider implements DataProvider {
     defaultRetailerSlug?: string;
   }) {
     this.csvData = options.csv;
-    this.csvUrl = options.csvUrl;
+    // Section 20, §12 #58 — a blank URL is no source at all:
+    // trim so whitespace-only config stays unavailable.
+    this.csvUrl = options.csvUrl?.trim() || undefined;
     this.defaultRetailerSlug = options.defaultRetailerSlug ?? 'unknown';
   }
 
@@ -228,6 +231,16 @@ export class CsvProvider implements DataProvider {
     let csv = this.csvData;
 
     if (!csv && this.csvUrl) {
+      // Section 20, §12 #99 — a configured CSV URL is fetched
+      // server-side, so it must pass the same SSRF guard as any
+      // other user/config-supplied URL: http(s) only, and every
+      // address it resolves to must be public. A private target
+      // is refused before any fetch happens.
+      if (!(await isSafePublicImageUrl(this.csvUrl))) {
+        logger.error('CsvProvider.loadProducts — CSV URL failed the public-URL (SSRF) guard, refusing to fetch');
+        this.cachedProducts = [];
+        return [];
+      }
       try {
         const response = await fetch(this.csvUrl);
         if (!response.ok) {

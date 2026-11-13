@@ -38,12 +38,34 @@ const LIVE_SHAPE = [
   point(888, 30),
 ];
 
+/** The same shape extended to the 5-point minimum (Section 20, §12 #46). */
+const FIVE_POINT_SHAPE = [...LIVE_SHAPE, point(888, 40)];
+
+/** 7 points over 60 days — the 7-day backtest has 2 real trials on it. */
+const SEVEN_POINT_SHAPE = [
+  point(999, 0),
+  point(949, 10),
+  point(888, 20),
+  point(888, 30),
+  point(888, 40),
+  point(888, 50),
+  point(888, 60),
+];
+
 describe('forecast explainer — thin-history honesty', () => {
-  it('4 points still produce a forecast, labelled by point count', () => {
+  it('4 points → not-enough-history: no forecast from thin history (Section 20, §12 #46)', () => {
     const result = computeForecast(LIVE_SHAPE);
-    expect(result.status).toBe('ok');
+    expect(result.status).toBe('not-enough-history');
     expect(result.pointsUsed).toBe(4);
-    expect(result.historyDays).toBe(30);
+    expect(result.forecasts).toEqual([]);
+    expect(result.note).toMatch(/at least 5 recorded prices/);
+  });
+
+  it('5 points produce a forecast, labelled by point count', () => {
+    const result = computeForecast(FIVE_POINT_SHAPE);
+    expect(result.status).toBe('ok');
+    expect(result.pointsUsed).toBe(5);
+    expect(result.historyDays).toBe(40);
     expect(result.forecasts).toHaveLength(FORECAST_HORIZONS.length);
     for (const f of result.forecasts) {
       // A range, never a single promised price.
@@ -67,8 +89,14 @@ describe('forecast explainer — thin-history honesty', () => {
     }
   });
 
-  it('the 7-day backtest on the same 4 points has 2 real trials', () => {
-    const report = backtestForecast(LIVE_SHAPE, 7);
+  it('the 7-day backtest on a 7-point history has 2 real trials', () => {
+    // Below 6 points a backtest has no trials at all (it needs a
+    // 5-point fit plus a later recorded price), so the 4-point
+    // live shape cannot backtest — this 7-point extension of the
+    // same shape is the smallest history with 2 real trials.
+    // nowMs is pinned past the last point: the default (real now)
+    // would drop the synthetic points dated after 2026-11-13.
+    const report = backtestForecast(SEVEN_POINT_SHAPE, 7, new Date(day(61)).getTime());
     expect(report.trials).toBe(2);
     expect(report.accuracyPct).not.toBeNull();
     expect(report.entries).toHaveLength(2);
@@ -98,8 +126,9 @@ describe('forecast explainer — thin-history honesty', () => {
     }
   });
 
-  it('fewer than 2 points → no forecast and no backtest', () => {
+  it('fewer than 5 points → no forecast and no backtest', () => {
     expect(computeForecast([point(100, 0)]).status).toBe('not-enough-history');
+    expect(computeForecast(LIVE_SHAPE).status).toBe('not-enough-history');
     const report = backtestForecast([point(100, 0)], 30);
     expect(report.trials).toBe(0);
     expect(report.accuracyPct).toBeNull();

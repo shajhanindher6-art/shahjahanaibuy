@@ -55,7 +55,7 @@ describe('sendGenericWebhook (2xx only = sent)', () => {
     };
     const secretHash = hashGenericWebhookSecret('my-shared-secret-1234');
     const result = await sendGenericWebhook(
-      'https://example.com/hook',
+      'https://8.8.8.8/hook',
       secretHash,
       message,
       fakeFetch as never
@@ -76,7 +76,7 @@ describe('sendGenericWebhook (2xx only = sent)', () => {
       capturedHeaders = init.headers;
       return { ok: true, status: 200 };
     };
-    const result = await sendGenericWebhook('https://example.com/hook', null, message, fakeFetch as never);
+    const result = await sendGenericWebhook('https://8.8.8.8/hook', null, message, fakeFetch as never);
     expect(result.status).toBe('sent');
     expect(capturedHeaders[GENERIC_WEBHOOK_SIGNATURE_HEADER]).toBeUndefined();
   });
@@ -84,7 +84,7 @@ describe('sendGenericWebhook (2xx only = sent)', () => {
   it('returns failed — never sent — on a non-2xx response', async () => {
     const fakeFetch = async () => ({ ok: false, status: 500 });
     const result = await sendGenericWebhook(
-      'https://example.com/hook',
+      'https://8.8.8.8/hook',
       null,
       message,
       fakeFetch as never
@@ -97,7 +97,7 @@ describe('sendGenericWebhook (2xx only = sent)', () => {
       throw new Error('network down');
     };
     const result = await sendGenericWebhook(
-      'https://example.com/hook',
+      'https://8.8.8.8/hook',
       null,
       message,
       fakeFetch as never

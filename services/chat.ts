@@ -18,7 +18,8 @@ import {
   recommendAssistant,
 } from './personal-assistant';
 import { resolveFollowUpQuery } from '@/lib/deal-finder-stream';
-import { appendSourceLabel, verifiedDataLabel } from '@/lib/ai-source-label';
+import { appendSourceLabel, recordedDataLabel, verifiedDataLabel } from '@/lib/ai-source-label';
+import { getFreshnessStatus } from '@/lib/price-freshness';
 
 export interface ChatMessage {
   id: string;
@@ -288,11 +289,17 @@ function isSessionFollowUp(message: string): boolean {
 
 /**
  * Append the source label to a successful assistant answer
- * (Section 19, Phase 5, §12 #55). Every answer is computed from
- * verified recorded data, so the label reads as verified-data —
- * with the product's real freshness timestamp when the answer is
- * about a single product. Error/apology answers carry no label:
- * there is no answer to source.
+ * (Section 19, Phase 5, §12 #55; Section 20, §12 #82).
+ *
+ * The "verified recorded data" label is earned, not default: it is
+ * used ONLY when every product behind the answer is
+ * price_verification_status = 'verified' AND its price is fresh
+ * (checked within STALE_PRICE_DAYS). Everything else — unverified,
+ * stale, unknown, or no product at all — gets the recorded-data
+ * label, which says the prices are recorded, not checked live.
+ * (Live, every catalog price is unverified + stale, so the recorded
+ * label is the honest one today.) Error/apology answers carry no
+ * label: there is no answer to source.
  */
 async function withSourceLabel(
   supabase: AnySupabaseClient,
@@ -300,20 +307,43 @@ async function withSourceLabel(
 ): Promise<{ content: string; metadata: ChatMetadata | null }> {
   if (answer.content.startsWith('Sorry,')) return answer;
   let asOf: string | null = null;
+  let allVerifiedAndFresh = false;
   const products = answer.metadata?.products;
-  if (products && products.length === 1) {
+  if (products && products.length > 0) {
     try {
       const { data } = await supabase
         .from('products')
-        .select('data_freshness')
-        .eq('id', products[0].id)
-        .maybeSingle();
-      asOf = ((data as Record<string, unknown> | null)?.data_freshness as string | null) ?? null;
+        .select('data_freshness, price_verification_status')
+        .in(
+          'id',
+          products.map((p) => p.id)
+        );
+      const rows = (data ?? []) as Array<Record<string, unknown>>;
+      if (rows.length > 0) {
+        // Oldest freshness across the answer's products.
+        const times = rows
+          .map((r) => new Date(String(r.data_freshness ?? '')).getTime())
+          .filter((t) => Number.isFinite(t));
+        asOf =
+          times.length > 0
+            ? new Date(Math.min(...times)).toISOString()
+            : null;
+        allVerifiedAndFresh =
+          rows.length === products.length &&
+          rows.every(
+            (r) =>
+              r.price_verification_status === 'verified' &&
+              getFreshnessStatus(r.data_freshness as string | null).status === 'fresh'
+          );
+      }
     } catch {
       asOf = null;
     }
   }
-  return { ...answer, content: appendSourceLabel(answer.content, verifiedDataLabel(asOf)) };
+  const label = allVerifiedAndFresh
+    ? verifiedDataLabel(asOf)
+    : recordedDataLabel(asOf);
+  return { ...answer, content: appendSourceLabel(answer.content, label) };
 }
 
 /**

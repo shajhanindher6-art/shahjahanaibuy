@@ -28,7 +28,17 @@ export type PlatformStatus =
   | 'live'
   | 'configured'
   | 'not-configured'
-  | 'search-links-only';
+  | 'search-links-only'
+  /**
+   * Section 20, §12 #51 — two honest statuses that replace the
+   * overstated ones. 'recorded-prices-only' means the merchant has
+   * recorded price rows in our database and NO live integration
+   * (no adapter, no credential, no verified call) — it must never
+   * read as 'live'. 'tag-only' means only an affiliate tag env var
+   * is set — no price/stock integration works behind it.
+   */
+  | 'recorded-prices-only'
+  | 'tag-only';
 
 export interface PlatformStatusEntry {
   id: string;
@@ -60,10 +70,13 @@ export function describePlatformStatus(): PlatformStatusEntry[] {
       id: 'amazon',
       name: 'Amazon',
       kind: 'priced-merchant',
-      status: amazonLocales.length > 0 ? 'configured' : 'search-links-only',
+      // Section 20, §12 #51 — was 'configured': a set affiliate tag
+      // is not an integration. 'tag-only' says exactly what exists
+      // (a tag env var); there is no Amazon price/stock API behind it.
+      status: amazonLocales.length > 0 ? 'tag-only' : 'search-links-only',
       coverage:
         amazonLocales.length > 0
-          ? `Affiliate tag configured for: ${amazonLocales.join(', ')}`
+          ? `Affiliate tag set for: ${amazonLocales.join(', ')}`
           : 'Search links in every region; priced rows from recorded listings',
       whatYouGet:
         amazonLocales.length > 0
@@ -74,10 +87,13 @@ export function describePlatformStatus(): PlatformStatusEntry[] {
       id: 'best-buy',
       name: 'Best Buy',
       kind: 'priced-merchant',
-      status: 'live',
-      coverage: 'US / CA priced rows',
+      // Section 20, §12 #51 — was 'live': there is no Best Buy
+      // adapter, credential, or verified call. 'recorded-prices-only'
+      // says the truth — seeded recorded price rows exist, nothing live.
+      status: 'recorded-prices-only',
+      coverage: 'US / CA recorded price rows',
       whatYouGet:
-        'Recorded prices with price history and Deal Score; outbound links are plain retailer links.',
+        'Recorded prices with price history and Deal Score; outbound links are plain retailer links. No live Best Buy integration exists — prices are recorded rows, not live checks.',
     },
     {
       id: 'ebay',

@@ -134,12 +134,16 @@ export class ApifyProvider implements DataProvider {
       return [];
     }
 
-    const runUrl = `${this.baseUrl}/acts/${this.actorId}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}`;
+    // Section 20, §12 #99 — the token travels as an Authorization
+    // header, never as a `?token=` URL query param (a query param
+    // lands in access logs). Apify's API accepts Bearer auth.
+    const runUrl = `${this.baseUrl}/acts/${this.actorId}/run-sync-get-dataset-items`;
 
     try {
       const response = await fetch(runUrl, {
         method: 'POST',
         headers: {
+          Authorization: `Bearer ${this.token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(input),

@@ -10,6 +10,7 @@ import type { DealRanking } from '@/types/ai';
 import type { Deal } from '@/types/catalog';
 import type { Product } from '@/types';
 import { getLatestPrices } from './price-history';
+import { normalizePriceVerificationStatus } from './price-verification';
 import {
   validateDealDiscount,
   fetchDealHistoryByProduct,
@@ -69,7 +70,7 @@ function deriveDiscountPercentage(
  * read path so both consume the SAME honest percentage. A null
  * percentage contributes 0 — it never becomes a fabricated
  * number, and a deal can still reach "featured" on its flash /
- * value / confidence terms alone.
+ * value terms alone (Section 20, §12 #67: no confidence term).
  *
  * WEIGHTS (documented — §12 #59 value ranking, Phase 2):
  *   base 50
@@ -77,7 +78,6 @@ function deriveDiscountPercentage(
  *     Phase 0 derivation for fixed deals; null → 0)
  *   + 20 flash (ends < 24h)
  *   + 15 discountValue ≥ $30
- *   + 10 product confidenceScore ≥ 70
  *   + VALUE TERM (Phase 2, §12 #59): +10 when the current
  *     recorded price is at or within 5% above the lowest recorded
  *     price, +5 when within 15% above it, 0 otherwise — and 0
@@ -85,6 +85,13 @@ function deriveDiscountPercentage(
  *     a 40%-off claim on a just-inflated compare-at price scores
  *     the claim, but a price genuinely at its recorded low scores
  *     the reality. No history → 0, never a guessed value.
+ *
+ * NO CONFIDENCE TERM (Section 20, §12 #67): the old "+10 when
+ * product confidenceScore ≥ 70" is REMOVED. confidence_score is a
+ * field-presence completeness count (name +15, GTIN +20…), floored
+ * at 50 — completeness is not product quality, and a complete
+ * listing is not a better deal. A deal's rank must come from its
+ * price evidence, never from how many fields the product row has.
  *
  * FEATURED GATE (§12 #23/#60, Phase 2): isFeatured requires
  * aiScore ≥ 75 AND a `validated` discount validation — no
@@ -106,7 +113,9 @@ function scoreDeal(
   aiScore += (discountPercentage ?? 0) * 0.5;
   if (isFlash) aiScore += 20;
   if (deal.discountValue >= 30) aiScore += 15;
-  if (product && product.confidenceScore >= 70) aiScore += 10;
+  // Section 20, §12 #67 — NO confidence term: product
+  // confidenceScore is field-presence completeness, not quality,
+  // and must not move a deal's rank (see the WEIGHTS comment above).
   // Value term (§12 #59): actual value from recorded prices.
   const currentPrice = value?.currentPrice ?? null;
   const lowestPrice = value?.lowestPrice ?? null;
@@ -476,6 +485,14 @@ async function fetchProducts(
       imageUrl: row.image_url as string | null,
       gtin: row.gtin as string | null,
       confidenceScore: row.confidence_score as number,
+      // Section 20, §12 #82 — populate the verification rollup.
+      // The select above does not read price_verification_status
+      // (migration 045 unapplied: the column does not exist yet),
+      // so normalize() returns 'unverified' — the honest value
+      // until 045 applies and the column is selected here.
+      priceVerificationStatus: normalizePriceVerificationStatus(
+        row.price_verification_status
+      ),
       dataFreshness: row.data_freshness as string,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,

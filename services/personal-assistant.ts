@@ -9,14 +9,14 @@
  *
  * 1. NO DEMO / UNPRICED RECOMMENDATIONS. The "Sample Laptop" row
  *    (slug `sample-laptop`, a database health-check row) and any
- *    product without a verified price are dropped from EVERY
+ *    product without a recorded price are dropped from EVERY
  *    recommendation path. A product counts as priced only when it
  *    has a merchant listing AND a resolvable price (latest
  *    price_history record, falling back to its merchant listing
  *    price). When filtering leaves zero products, the answer says
  *    so honestly — it never fills the gap with a demo item.
  * 2. BUDGET IS A HARD FILTER for recommendations. Only products
- *    with verified price <= budget are recommended; over-budget
+ *    with recorded price <= budget are recommended; over-budget
  *    products never appear as recommendations (the /search page
  *    may still list them — this module is the assistant, not
  *    search).
@@ -33,8 +33,9 @@
  *    (cashback_offers table) are shown when they exist, with the
  *    honest note that codes apply at the retailer's checkout,
  *    not inside SmartBuy.
- * 6. HONEST EXPLANATIONS. The "why" lines cite only verified
- *    data (price, budget, retailer, coupon, history position).
+ * 6. HONEST EXPLANATIONS. The "why" lines cite only recorded
+ *    data (price, budget, retailer, coupon, history position) —
+ *    recorded, not verified (Section 20, §12 #82).
  *    Specs are never invented and 0 reviews are stated as
  *    "no reviews yet (abhi reviews nahi)", never a fake rating.
  */
@@ -106,7 +107,14 @@ export interface EnrichedProduct {
   category: string | null;
   imageUrl: string | null;
   confidenceScore: number;
-  /** Verified USD price — always present (unpriced rows are dropped). */
+  /**
+   * Section 20, §12 #82 — verification rollup for the shown price.
+   * Always 'unverified' here: the assistant's price is a recorded
+   * merchant listing / price_history value, never a live-checked
+   * price, and the 045 column is not read on this path.
+   */
+  priceVerificationStatus: 'unverified';
+  /** Recorded USD price — always present (unpriced rows are dropped). Recorded, not live-checked. */
   price: number;
   bestRetailer: AssistantRetailer;
   history: AssistantHistory | null;
@@ -147,7 +155,7 @@ interface BasicProductRow {
 }
 
 // ---------------------------------------------------------------------------
-// Enrichment: verified price + best retailer + savings + reviews
+// Enrichment: recorded price + best retailer + savings + reviews
 // ---------------------------------------------------------------------------
 
 function parseNum(value: unknown): number | null {
@@ -273,14 +281,14 @@ export async function enrichProducts(
   const enriched: EnrichedProduct[] = [];
   for (const row of candidates) {
     const listings = listingsByProduct.get(row.id) ?? [];
-    // No merchant listing -> no verified store price -> never recommended.
+    // No merchant listing -> no recorded store price -> never recommended.
     if (listings.length === 0) continue;
     const inStock = listings.filter((l) => l.in_stock);
     const pool = inStock.length > 0 ? inStock : listings;
     const bestListing = [...pool].sort(
       (a, b) => (parseNum(a.price) ?? Infinity) - (parseNum(b.price) ?? Infinity)
     )[0];
-    // Verified price: latest recorded price_history value first
+    // Recorded price: latest recorded price_history value first
     // (consistent with search), merchant listing price as fallback.
     const price = latestPrices.get(row.id) ?? parseNum(bestListing.price);
     if (price === null) continue;
@@ -304,6 +312,7 @@ export async function enrichProducts(
       category: row.category,
       imageUrl: row.image_url,
       confidenceScore: row.confidence_score ?? 50,
+      priceVerificationStatus: 'unverified',
       price,
       bestRetailer,
       history: null,
@@ -442,7 +451,7 @@ function whyText(
   const reasons: string[] = [];
   if (ctx.budget !== null) reasons.push(`within your ${ctx.budgetText} budget`);
   if (ctx.lowestAmong !== null && ctx.lowestAmong > 1) {
-    reasons.push(`the lowest verified price among ${ctx.lowestAmong} matching products`);
+    reasons.push(`the lowest recorded price among ${ctx.lowestAmong} matching products`);
   }
   reasons.push(
     `best price at ${product.bestRetailer.name} (${retailerDomain(product.bestRetailer, region)})` +
@@ -479,7 +488,7 @@ function noMatchAnswer(intent: ParsedSearchIntent): AssistantAnswer {
   return {
     content:
       `I couldn't find a priced product matching ${scopeText(intent)}. ` +
-      `I only recommend products with a verified price — demo items and products without a listed price are never shown as recommendations. ` +
+      `I only recommend products with a recorded price — demo items and products without a listed price are never shown as recommendations. ` +
       `Try a different category, brand, or a higher budget.`,
     metadata: null,
   };
@@ -519,7 +528,7 @@ export async function recommendAssistant(
     }
 
     const { data, error } = await query
-      .order('confidence_score', { ascending: false })
+      .order('view_count', { ascending: false }) // Section 20, §12 #67: NOT confidence_score (completeness, not quality)
       .limit(12);
 
     if (error || !data || data.length === 0) return noMatchAnswer(intent);
@@ -532,11 +541,13 @@ export async function recommendAssistant(
     }
     if (products.length === 0) return noMatchAnswer(intent);
 
-    // Best = lowest verified price when the visitor asked for
-    // best / cheap / budget, otherwise highest confidence first.
-    const priceLed = intent.budget !== null || ['best', 'top', 'cheap', 'budget', 'affordable'].includes(intent.intent);
+    // Best = lowest recorded price when the visitor asked for
+    // best / cheap / budget, otherwise lowest price first too —
+    // Section 20, §12 #67: the old "highest confidence first"
+    // ranked by confidence_score, a completeness count, not
+    // quality. Name breaks ties deterministically.
     products.sort((a, b) =>
-      priceLed ? a.price - b.price || b.confidenceScore - a.confidenceScore : b.confidenceScore - a.confidenceScore || a.price - b.price
+      a.price - b.price || a.name.localeCompare(b.name)
     );
 
     const top = products[0];
@@ -574,7 +585,11 @@ export async function recommendAssistant(
     }
 
     lines.push('');
-    lines.push('Open a product card below for full specs, price history, and to set a price alert.');
+    // Section 20, §12 #83 — was "full specs": the catalog has 0
+    // recorded specs live, so no product card can promise "full
+    // specs". The card shows recorded specifications (or the honest
+    // empty state when there are none).
+    lines.push('Open a product card below for recorded specifications, price history, and to set a price alert.');
 
     return {
       content: lines.join('\n'),
@@ -632,6 +647,56 @@ function matchProductsByName(message: string, rows: BasicProductRow[]): BasicPro
   return scored.slice(0, 3).map((s) => s.row);
 }
 
+/**
+ * Section 20, §12 #84 follow-up — was the product actually NAMED
+ * in the message, or did it only match on a bare number token?
+ * matchProductsByName scores "13" for both "MacBook Air 13" and
+ * "Dell XPS 13", so a Dell-only question ("should I buy the Dell
+ * XPS 13 now or wait?") also "matches" the MacBook — and the
+ * buy-wait alternative logic then turned a single-product Wait
+ * into a Compare Alternatives verdict citing a product the visitor
+ * never mentioned. A product counts as named only when the message
+ * contains one of its letter tokens (name part of length ≥ 3, or
+ * its brand), ignoring generic tokens — the same token rule the
+ * matcher uses, minus pure numbers. Used ONLY by
+ * buyWaitAssistant's cheaper-alternative candidate: the shared
+ * matcher itself is untouched.
+ */
+function isProductNamedInMessage(message: string, row: BasicProductRow): boolean {
+  const lower = message.toLowerCase();
+  const tokens = new Set<string>();
+  for (const part of row.name.toLowerCase().split(/[^a-z0-9]+/)) {
+    // Letter tokens only: a bare number ("13") is shared by many
+    // models and does not name a product.
+    if (part.length >= 3 && /[a-z]/.test(part)) tokens.add(part);
+  }
+  if (row.brand) tokens.add(row.brand.toLowerCase());
+  for (const token of tokens) {
+    if (GENERIC_TOKENS.has(token)) continue;
+    if (new RegExp(`\\b${escapeRegExp(token)}\\b`).test(lower)) return true;
+  }
+  return false;
+}
+
+/**
+ * Section 20, §12 #84 — parse a stated budget from a chat message
+ * ("my budget is $1000", "under $500", "up to $800", "below 1200").
+ * Returns null when no budget phrase is present or the amount is
+ * not a finite positive number — the engine then behaves exactly
+ * as before (no budget rule). Only the FIRST budget phrase counts;
+ * a bare "$999" with no budget word is a price mention, not a
+ * budget, and is ignored.
+ */
+export function parseBudgetFromMessage(message: string): number | null {
+  const match =
+    /(?:budget|under|below|up to|at most|no more than|max(?:imum)?)\s*(?:is\s*)?(?:of\s*)?\$?\s*([\d,]+(?:\.\d{1,2})?)/i.exec(
+      message
+    );
+  if (!match) return null;
+  const value = parseFloat(match[1].replace(/,/g, ''));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 export async function compareAssistant(
   supabase: AnySupabaseClient,
   message: string,
@@ -644,7 +709,7 @@ export async function compareAssistant(
       .select('id, name, slug, brand, category, image_url, confidence_score')
       .is('deleted_at', null)
       .neq('slug', 'sample-laptop')
-      .order('confidence_score', { ascending: false })
+      .order('view_count', { ascending: false }) // Section 20, §12 #67: NOT confidence_score (completeness, not quality)
       .limit(50);
 
     if (error || !data || data.length === 0) {
@@ -680,7 +745,7 @@ export async function compareAssistant(
     if (products.length < 2) {
       const reasons: string[] = [];
       if (droppedUnpriced.length > 0) {
-        reasons.push(`${droppedUnpriced.map((p) => p.name).join(', ')} has no verified price`);
+        reasons.push(`${droppedUnpriced.map((p) => p.name).join(', ')} has no recorded price`);
       }
       if (droppedOverBudget.length > 0) {
         reasons.push(
@@ -691,14 +756,14 @@ export async function compareAssistant(
       return {
         content:
           `I couldn't build a fair comparison: ${reasons.join('; ') || 'not enough priced products matched'}. ` +
-          `Only products with a verified price${intent.budget !== null ? ' within your budget' : ''} are compared — demo and unpriced items are never included.`,
+          `Only products with a recorded price${intent.budget !== null ? ' within your budget' : ''} are compared — demo and unpriced items are never included.`,
         metadata: null,
       };
     }
 
     const pick = [...products].sort((a, b) => a.price - b.price)[0];
     const lines: string[] = [];
-    lines.push(`Here's how they compare (verified prices, lowest first):`);
+    lines.push(`Here's how they compare (recorded prices, lowest first):`);
     lines.push('');
     for (const p of [...products].sort((a, b) => a.price - b.price)) {
       lines.push(
@@ -773,7 +838,7 @@ export async function buyWaitAssistant(
       .select('id, name, slug, brand, category, image_url, confidence_score')
       .is('deleted_at', null)
       .neq('slug', 'sample-laptop')
-      .order('confidence_score', { ascending: false })
+      .order('view_count', { ascending: false }) // Section 20, §12 #67: NOT confidence_score (completeness, not quality)
       .limit(50);
 
     if (error || !data || data.length === 0) {
@@ -809,9 +874,29 @@ export async function buyWaitAssistant(
       }))
       .filter((p) => Number.isFinite(p.price) && p.price > 0);
 
-    const prediction = predictBuyVsWait(points);
+    // Section 20, §12 #84 — the buy-wait budget / alternative
+    // options were unreachable from chat: predictBuyVsWait was
+    // always called with no options. Parse a stated budget from
+    // the message ("budget $1000", "under $500", "up to $800") and
+    // use a second named product as the cheaper-alternative
+    // candidate (the engine only fires compare_alternatives when
+    // it is ≥ 5% cheaper, so a pricier second product is ignored).
+    const budgetUsd = parseBudgetFromMessage(message);
+    let cheaperAlternativePrice: number | null = null;
+    // Only a second product the visitor actually NAMED counts as
+    // the alternative candidate — a bare-number token match (e.g.
+    // "13" matching MacBook Air 13 in a Dell-only question) is not
+    // a named product (see isProductNamedInMessage).
+    if (matched.length > 1 && isProductNamedInMessage(message, matched[1])) {
+      const altEnriched = await enrichProducts(supabase, [matched[1]]);
+      if (altEnriched.length > 0) cheaperAlternativePrice = altEnriched[0].price;
+    }
+    const prediction = predictBuyVsWait(points, {
+      budgetUsd,
+      cheaperAlternativePrice,
+    });
 
-    // The product card (verified merchant price) when the product
+    // The product card (recorded merchant price) when the product
     // has one — enrichProducts drops unpriced rows, and a dropped
     // row must not lose the verdict, which stands on history alone.
     const enriched = await enrichProducts(supabase, [row]);
@@ -842,8 +927,15 @@ export async function buyWaitAssistant(
           : '');
       lines.push(`${confidenceLine}. This is an estimate from recorded price history, not a guarantee.`);
       if (prediction.currentPrice !== null && prediction.lowestPrice !== null && prediction.averagePrice !== null) {
+        // Section 20, §12 #84 — "Current:" claimed the price was
+        // current. On a stale price the line says when it was last
+        // recorded instead (the reason already carries the same
+        // staleness note; the label must not contradict it).
+        const currentLabel = prediction.priceStale
+          ? `Current (last recorded ${prediction.daysSinceLastPrice} day${prediction.daysSinceLastPrice === 1 ? '' : 's'} ago)`
+          : 'Current';
         lines.push(
-          `Current: ${formatPriceText(prediction.currentPrice, region)} · ` +
+          `${currentLabel}: ${formatPriceText(prediction.currentPrice, region)} · ` +
             `Lowest recorded: ${formatPriceText(prediction.lowestPrice, region)} · ` +
             `Average: ${formatPriceText(prediction.averagePrice, region)}`
         );
@@ -892,7 +984,7 @@ export async function competitivenessAssistant(
       .select('id, name, slug, brand, category, image_url, confidence_score, data_freshness')
       .is('deleted_at', null)
       .neq('slug', 'sample-laptop')
-      .order('confidence_score', { ascending: false })
+      .order('view_count', { ascending: false }) // Section 20, §12 #67: NOT confidence_score (completeness, not quality)
       .limit(50);
 
     if (error || !data || data.length === 0) {
@@ -922,8 +1014,8 @@ export async function competitivenessAssistant(
     if (!product) {
       return {
         content:
-          `I couldn't find a verified price for ${row.name}, so I cannot judge whether its price is competitive — ` +
-          `I only assess products with a verified price. Try naming a product from the catalog.`,
+          `I couldn't find a recorded price for ${row.name}, so I cannot judge whether its price is competitive — ` +
+          `I only assess products with a recorded price. Try naming a product from the catalog.`,
         metadata: null,
       };
     }
@@ -954,7 +1046,7 @@ export async function competitivenessAssistant(
     const lines: string[] = [];
     lines.push(`💰 Is the price of ${row.name} competitive?`);
     lines.push(
-      `Current verified price: ${formatPriceText(product.price, region)} at ${product.bestRetailer.name} ` +
+      `Current recorded price: ${formatPriceText(product.price, region)} at ${product.bestRetailer.name} ` +
         `(${retailerDomain(product.bestRetailer, region)}).`
     );
 
@@ -971,15 +1063,27 @@ export async function competitivenessAssistant(
     }
 
     const h = product.history;
-    // A verdict needs at least 2 recorded points: with a single
-    // point, lowest = average = highest = current, so "at its
-    // lowest" would be vacuous. Below 2 points the honest answer
-    // is not enough data (same bar as the buy-vs-wait engine).
-    if (!h || h.points < 2) {
-      lines.push(
-        'I don\'t have enough recorded price history to judge whether this price is competitive — ' +
-          'no price history is recorded for this product yet, so there is no low or average to compare against.'
-      );
+    // A verdict needs at least 5 recorded points (Section 20,
+    // §12 #46 — same bar as the buy-vs-wait engine, unified at 5):
+    // with too few points, lowest = average = highest = current,
+    // so "at its lowest" would be vacuous. Below 5 points the
+    // honest answer is not enough data.
+    if (!h || h.points < 5) {
+      // Section 20, §12 #46 — the ≥5 bar is the honest one, but
+      // the wording must match the evidence: with 1–4 recorded
+      // points there IS history, just not enough to judge; only
+      // 0 points means "no price history is recorded".
+      if (!h || h.points === 0) {
+        lines.push(
+          'I don\'t have enough recorded price history to judge whether this price is competitive — ' +
+            'no price history is recorded for this product yet, so there is no low or average to compare against.'
+        );
+      } else {
+        lines.push(
+          'I don\'t have enough recorded price history to judge whether this price is competitive — ' +
+            `only ${h.points} recorded price point${h.points === 1 ? '' : 's'} so far (at least 5 are needed to judge).`
+        );
+      }
     } else {
       lines.push(
         `Recorded price history (${h.points} point${h.points === 1 ? '' : 's'}): ` +
@@ -1058,7 +1162,7 @@ export async function prosConsAssistant(
       )
       .is('deleted_at', null)
       .neq('slug', 'sample-laptop')
-      .order('confidence_score', { ascending: false })
+      .order('view_count', { ascending: false }) // Section 20, §12 #67: NOT confidence_score (completeness, not quality)
       .limit(50);
 
     if (error || !data || data.length === 0) {
@@ -1232,7 +1336,7 @@ export async function couponsAssistant(
       .select('id, name, slug, brand, category, image_url, confidence_score')
       .is('deleted_at', null)
       .neq('slug', 'sample-laptop')
-      .order('confidence_score', { ascending: false })
+      .order('view_count', { ascending: false }) // Section 20, §12 #67: NOT confidence_score (completeness, not quality)
       .limit(50);
 
     if (error || !data) {
@@ -1257,7 +1361,7 @@ export async function couponsAssistant(
         return {
           content:
             `I couldn't find a priced product matching that name, so I can't check its coupons — ` +
-            `I only show coupons for products with a verified price. Try naming a product from the catalog.`,
+            `I only show coupons for products with a recorded price. Try naming a product from the catalog.`,
           metadata: null,
         };
       }
@@ -1416,12 +1520,27 @@ export async function dealsAssistant(
       };
     }
 
-    const lines = ["Here are today's best deals (verified prices only):", ''];
+    const lines = ["Here are today's best deals (recorded prices only):", ''];
     for (const { deal, product } of listed) {
-      const discount = `${deal.discount_value}${deal.discount_type === 'percentage' ? '%' : '$'}`;
+      // Section 20, §12 #83 — the merchant discount_value is
+      // printed ONLY when it is a plausible number: finite, > 0,
+      // and ≤ 100 for a percentage (a 150% "discount" is bad data,
+      // not a deal). An implausible value is omitted, never printed
+      // — the line still names the deal and the recorded price.
+      const discountValue = parseFloat(String(deal.discount_value));
+      const discountLabel =
+        Number.isFinite(discountValue) && discountValue > 0
+          ? deal.discount_type === 'percentage'
+            ? discountValue <= 100
+              ? `${discountValue}%`
+              : null
+            : `$${discountValue}`
+          : null;
       const coupon = deal.coupon_code ? ` (Code: ${deal.coupon_code})` : '';
       lines.push(
-        `• ${deal.title as string} — ${discount} off${coupon} — ${product.name} at ` +
+        `• ${deal.title as string}` +
+          (discountLabel !== null ? ` — ${discountLabel} off${coupon}` : '') +
+          ` — ${product.name} at ` +
           `${formatPriceText(product.price, region)} from ${product.bestRetailer.name} ` +
           `(${retailerDomain(product.bestRetailer, region)}).`
       );

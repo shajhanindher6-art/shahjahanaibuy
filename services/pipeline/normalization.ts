@@ -3,6 +3,7 @@
  */
 
 import type { ValidatedRawProduct } from './validation';
+import { normalizeGtin } from '@/lib/gtin';
 
 export interface NormalizedProduct {
   name: string;
@@ -64,7 +65,9 @@ export function normalizeProduct(data: ValidatedRawProduct): NormalizedProduct {
     brand: data.brand ?? null,
     category: normalizeCategory(data.category),
     imageUrl: data.images?.[0] ?? null,
-    gtin: data.gtin ?? null,
+    // Section 20, §12 #31 — store the canonical digits-only
+    // GTIN (spaces/hyphens stripped); an absent GTIN stays null.
+    gtin: normalizeGtin(data.gtin),
     confidenceScore: calculateConfidenceScore(data),
     images: data.images ?? [],
     price: data.price,

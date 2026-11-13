@@ -22,7 +22,9 @@ const atLow: PlannerItemInput = {
   productName: 'Laptop A',
   currentPrice: 999,
   lowest30dPrice: 999,
-  prediction: predictBuyVsWait(points([1099, 1049, 999])),
+  // 5 points: the Section 20 (§12 #46) buy-wait minimum — the
+  // old 3-point fixture returned not_enough_data.
+  prediction: predictBuyVsWait(points([1099, 1049, 999, 999, 999])),
 };
 
 const aboveAverage: PlannerItemInput = {

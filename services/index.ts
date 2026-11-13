@@ -181,6 +181,7 @@ export {
   markProductQueued,
   markProductProcessing,
   markProductRefreshed,
+  markProductRechecked,
   markProductRefreshFailed,
   updateProductPriority,
   incrementProductViewCount,

@@ -51,6 +51,7 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import { getFreshnessStatus } from '@/lib/price-freshness';
 import { appConfig } from '@/lib/config/app';
 import { queueNotification } from '@/services/notifications';
 import { recordAlertTrigger } from '@/services/alert-history';
@@ -84,6 +85,14 @@ export interface AlertCheckResult {
   wishlistChecked: number;
   wishlistTriggered: number;
   wishlistQueued: number;
+  /**
+   * Section 20, §12 #81 — alerts that WOULD have fired but were
+   * suppressed because the triggering price (or back-in-stock
+   * transition) is stale: recorded more than STALE_PRICE_DAYS ago.
+   * A stale price must never fire an "is now $Y!" alert as if
+   * current; suppression is the gate, and this count proves it.
+   */
+  skippedStale: number;
 }
 
 interface AlertRow {
@@ -113,6 +122,33 @@ interface ProductInfo {
 interface CurrentPrice {
   price: number | null;
   availability: string | null;
+  /**
+   * Section 20, §12 #81 — recorded_at of the latest price_history
+   * row behind this price (null for the merchant-listing fallback,
+   * which carries no check date). The checker gates "is now $Y!"
+   * triggers on this date: stale (> STALE_PRICE_DAYS) never fires.
+   */
+  recordedAt: string | null;
+}
+
+/**
+ * Section 20, §12 #81 — the freshness gate for "is now" alert
+ * triggers. Returns 'stale' when the triggering record is older
+ * than STALE_PRICE_DAYS, 'unknown' when no check date exists, and
+ * 'fresh' otherwise. Callers SUPPRESS stale triggers and QUALIFY
+ * unknown-age ones (the price may be out of date) — never present
+ * either as a current price.
+ */
+export function alertPriceFreshness(
+  recordedAt: string | null | undefined,
+  now: Date = new Date()
+): 'fresh' | 'stale' | 'unknown' {
+  return getFreshnessStatus(recordedAt, now).status;
+}
+
+/** Staleness note appended to a trigger body whose price age is unknown. */
+export function alertUnknownAgeNote(): string {
+  return ' Price age unknown — this price was not recorded with a check date, so it may be out of date.';
 }
 
 /**
@@ -148,6 +184,7 @@ async function getCurrentPrices(
     product_id: string;
     price: number | string | null;
     availability: string | null;
+    recorded_at: string | null;
   }>) {
     if (prices.has(row.product_id)) continue;
     if (row.price === null || row.price === undefined) continue;
@@ -156,6 +193,7 @@ async function getCurrentPrices(
     prices.set(row.product_id, {
       price,
       availability: row.availability ?? null,
+      recordedAt: row.recorded_at ?? null,
     });
   }
 
@@ -185,6 +223,9 @@ async function getCurrentPrices(
     prices.set(row.product_id, {
       price,
       availability: row.in_stock ? 'in_stock' : 'out_of_stock',
+      // Merchant-listing fallback: no recorded check date exists
+      // for this price, so its age is unknown (§12 #81).
+      recordedAt: null,
     });
   }
 
@@ -496,6 +537,7 @@ export async function checkPriceAlerts(
     wishlistChecked: 0,
     wishlistTriggered: 0,
     wishlistQueued: 0,
+    skippedStale: 0,
   };
 
   const { data: alerts, error } = await supabase
@@ -612,14 +654,23 @@ export async function checkPriceAlerts(
           ? parseFloat(String(row.condition_value))
           : null;
 
-      const { price, availability } = priceMap.get(row.product_id) ?? {
+      const { price, availability, recordedAt } = priceMap.get(row.product_id) ?? {
         price: null,
         availability: null,
+        recordedAt: null,
       };
 
       let shouldTrigger = false;
       let subject = '';
       let body = '';
+      /**
+       * Section 20, §12 #81 — the check date behind THIS trigger,
+       * for the stale gate below. `undefined` = this alert type
+       * makes no "is now" claim and is not gated (deal, trend,
+       * opportunity); null = a gated trigger with unknown age
+       * (qualify, don't suppress); a date = gate on its age.
+       */
+      let gateRecordedAt: string | null | undefined;
       // Evidence for the queued notification. New alert types
       // must NOT pass their condition_value as `targetPrice` —
       // for significant_drop that value is a % threshold, and
@@ -631,6 +682,7 @@ export async function checkPriceAlerts(
       if (row.alert_type === 'price_drop') {
         if (target !== null && price !== null && price <= target) {
           shouldTrigger = true;
+          gateRecordedAt = recordedAt;
           subject = `Price drop alert: ${product.name} is now $${price.toFixed(2)}!`;
           body = `Great news! ${product.name} dropped to $${price.toFixed(2)} (your target was $${target.toFixed(2)}). View it at ${productUrl}`;
         }
@@ -643,6 +695,7 @@ export async function checkPriceAlerts(
         const transition = transitionsByProduct.get(row.product_id);
         if (transition?.transition) {
           shouldTrigger = true;
+          gateRecordedAt = transition.transitionAt;
           queueExtra = {
             alertType: 'back_in_stock',
             transitionAt: transition.transitionAt,
@@ -672,6 +725,7 @@ export async function checkPriceAlerts(
         const drop = evaluateSignificantDrop(history, threshold);
         if (drop.fires && drop.newPrice !== null && drop.oldPrice !== null) {
           shouldTrigger = true;
+          gateRecordedAt = drop.newRecordedAt;
           queueTargetPrice = null;
           queueExtra = {
             alertType: 'significant_drop',
@@ -709,6 +763,14 @@ export async function checkPriceAlerts(
             `${product.name} is trending ${direction}: ${trend.changePct}% over the last ${trend.windowDays} days ` +
             `(${trend.points} recorded prices, ${trend.startPrice !== null ? `$${trend.startPrice.toFixed(2)}` : 'no start price'} → $${trend.endPrice.toFixed(2)}). ` +
             `This is a recorded trend, not a forecast — the price can move either way. View it at ${productUrl}`;
+          // Section 20, §12 #81 — a trend whose latest price is
+          // stale is history, not news: qualify it in the body.
+          const trendFreshness = getFreshnessStatus(trend.endRecordedAt);
+          if (trendFreshness.status === 'stale') {
+            body += ` Note: the latest price behind this trend was recorded ${trendFreshness.ageDays} day${trendFreshness.ageDays === 1 ? '' : 's'} ago — it may be out of date.`;
+          } else if (trendFreshness.status === 'unknown') {
+            body += alertUnknownAgeNote();
+          }
         }
       } else if (row.alert_type === 'opportunity') {
         // §12 #64: the Phase 2 composite, reused — fires only
@@ -746,6 +808,30 @@ export async function checkPriceAlerts(
       }
 
       if (!shouldTrigger) continue;
+
+      // Section 20, §12 #81 — stale gate for "is now" triggers.
+      // price_drop / back_in_stock / significant_drop announce a
+      // CURRENT event, so a triggering record older than
+      // STALE_PRICE_DAYS (7) suppresses the alert entirely — it is
+      // counted in skippedStale, never queued, never recorded as a
+      // trigger. An unknown age does not suppress (the price may be
+      // fresh) but the body is qualified so it never reads as a
+      // confirmed current price. trend / opportunity / deal make no
+      // "is now" claim (opportunity already requires fresh; trend
+      // carries its own recorded timestamps, qualified below), so
+      // they are not gated here. NOTE: there is no 'price_below'
+      // alert type in this checker — price_drop is the only
+      // target-price trigger, and it is gated above.
+      if (gateRecordedAt !== undefined) {
+        const freshness = alertPriceFreshness(gateRecordedAt);
+        if (freshness === 'stale') {
+          result.skippedStale++;
+          continue;
+        }
+        if (freshness === 'unknown') {
+          body += alertUnknownAgeNote();
+        }
+      }
 
       // Section 19, Phase 0 (§12 #65): honour the master switch
       // BEFORE queueing — an opted-out user gets no queued alert,
@@ -873,9 +959,10 @@ export async function checkPriceAlerts(
         }
         result.wishlistChecked++;
 
-        const { price, availability } = priceMap.get(item.productId) ?? {
+        const { price, availability, recordedAt } = priceMap.get(item.productId) ?? {
           price: null,
           availability: null,
+          recordedAt: null,
         };
         const history = historyByProduct.get(item.productId) ?? [];
         const transition = transitionsByProduct.get(item.productId);
@@ -893,6 +980,23 @@ export async function checkPriceAlerts(
         });
 
         for (const trigger of triggers) {
+          // Section 20, §12 #81 — same stale gate as stored
+          // alerts: a wishlist "is now $Y" / back-in-stock trigger
+          // on a record older than STALE_PRICE_DAYS never fires.
+          const triggerRecordedAt =
+            trigger.kind === 'back_in_stock'
+              ? trigger.transitionAt
+              : trigger.kind === 'significant_drop'
+                ? (history[0]?.recordedAt ?? null)
+                : recordedAt;
+          if (
+            triggerRecordedAt !== null &&
+            alertPriceFreshness(triggerRecordedAt) === 'stale'
+          ) {
+            result.skippedStale++;
+            continue;
+          }
+
           const dedupeKey = `${item.userId}|${trigger.triggerKey}`;
           if (queuedKeys.has(dedupeKey)) {
             result.skippedDuplicate++;
@@ -931,6 +1035,10 @@ export async function checkPriceAlerts(
                 ? `${triggerLabel}: ${product.name}`
                 : `${triggerLabel}: ${product.name} is now $${(trigger.triggerPrice ?? 0).toFixed(2)}`;
           const body = `${trigger.evidence} View it at ${productUrl}`;
+          // Section 20, §12 #81 — unknown-age wishlist trigger:
+          // qualify, don't suppress.
+          const wishlistBody =
+            triggerRecordedAt === null ? body + alertUnknownAgeNote() : body;
 
           const queued = await queueNotification(
             supabase,
@@ -938,7 +1046,7 @@ export async function checkPriceAlerts(
             'price_alert',
             effectiveChannel,
             subject,
-            body,
+            wishlistBody,
             {
               productName: product.name,
               productSlug: product.slug,

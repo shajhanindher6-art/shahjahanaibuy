@@ -12,6 +12,7 @@ import {
 } from '@/lib/price-freshness';
 import type { AISummary } from '@/types/ai';
 import type { Product } from '@/types';
+import { normalizePriceVerificationStatus } from '@/services/price-verification';
 
 export async function getAISummary(
   supabase: AnySupabaseClient,
@@ -137,11 +138,15 @@ function generatePros(
 
   if (reviews.avgRating >= 4) pros.push(`High customer satisfaction (${reviews.avgRating.toFixed(1)} stars)`);
   if (reviews.count >= 50) pros.push(`Well-reviewed by ${reviews.count} customers`);
-  if (product.brand) pros.push(`From established brand: ${product.brand}`);
-
-  for (const attr of attributes.slice(0, 5)) {
-    pros.push(`${attr.key}: ${attr.value}`);
-  }
+  // Section 20, §12 #83 — the old "From established brand: {brand}"
+  // pro is REMOVED. A brand name alone is not evidence of quality:
+  // no brand-reputation data exists anywhere in the catalog, so a
+  // brand string must never be presented as a reason to buy.
+  // Likewise, recorded attributes are FACTS, not pros — listing
+  // every attribute verbatim as a "pro" praised the product for
+  // merely having a recorded spec. Attributes already appear in
+  // the summary prose (generateSummary) and on the Specs tab;
+  // they do not belong in the pros list.
 
   if (priceStats.current && priceStats.lowest && priceStats.current <= priceStats.lowest * 1.05) {
     // Section 19, Phase 2 (§12 #20): the near-low pro is an
@@ -189,7 +194,19 @@ function generateCons(
     priceStats.current >= priceStats.highest * 0.95 &&
     (!priceStats.lowest || priceStats.current > priceStats.lowest * 1.05)
   ) {
-    cons.push('Currently priced near its historical high');
+    // Section 20, §12 #83 — the near-high con is an interpretive
+    // verdict too: on a stale (or age-unknown) price it carries the
+    // staleness with it, exactly like the near-low pro above. The
+    // old unqualified "Currently priced near its historical high"
+    // read as a current signal on an 11-day-old price.
+    const { status, ageDays } = getFreshnessStatus(product.dataFreshness);
+    cons.push(
+      status === 'fresh'
+        ? 'Currently priced near its historical high'
+        : status === 'stale'
+          ? `Currently priced near its historical high (price last checked ${ageDays} day${ageDays === 1 ? '' : 's'} ago — may be out of date)`
+          : 'Currently priced near its historical high (price age unknown — may be out of date)'
+    );
   }
   if (!product.description) cons.push('Limited product description available');
 
@@ -226,9 +243,19 @@ async function findAlternatives(
     query = query.eq('brand', product.brand);
   }
 
-  const { data } = await query.order('confidence_score', { ascending: false });
+  const { data } = await query.order('view_count', { ascending: false });
 
-  return (data ?? []) as unknown as Product[];
+  // Section 20, §12 #82 — populate the verification rollup on
+  // alternatives too (same 045 note as ai-deals.ts: unselected
+  // column reads 'unverified' until 045 applies).
+  return ((data ?? []) as unknown as Array<Record<string, unknown>>).map(
+    (row) => ({
+      ...(row as unknown as Product),
+      priceVerificationStatus: normalizePriceVerificationStatus(
+        row.price_verification_status
+      ),
+    })
+  );
 }
 
 async function getCachedSummary(
@@ -262,10 +289,18 @@ async function getCachedSummary(
       // which is the regenerated correct one.
       const cachedPros = (row.pros as string[]) ?? [];
       const cachedCons = (row.cons as string[]) ?? [];
-      if (
-        cachedPros.includes('Currently near its lowest recorded price') &&
-        cachedCons.includes('Currently priced near its historical high')
-      ) {
+      // Section 20, §12 #83 — the invalidation is extended beyond
+      // the near-low + near-high contradiction: pre–Section 20
+      // cached rows also carry the removed "From established brand"
+      // pro and the UNQUALIFIED near-low pro / near-high con, which
+      // read as current signals on a stale price. Any of those
+      // patterns discards the row so it regenerates with the fixed
+      // copy instead of being served until its 7-day expiry.
+      const hasStaleCopy =
+        cachedPros.some((p) => p.startsWith('From established brand:')) ||
+        cachedPros.includes('Currently near its lowest recorded price') ||
+        cachedCons.includes('Currently priced near its historical high');
+      if (hasStaleCopy) {
         try {
           await supabase.from('ai_summaries').delete().eq('id', row.id as string);
         } catch {

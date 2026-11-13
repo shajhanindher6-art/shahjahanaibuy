@@ -344,7 +344,21 @@ describe('getRankedDeals — featured evidence gate + value term (§12 #59/#60)'
     const supabase = createStubSupabase(
       {
         deal_rankings: [],
-        deals: [dealRow()],
+        // Section 20, §12 #67: the old +10 confidence term is gone,
+        // so the old 25% fixture now scores 72.5 — below the 75
+        // featured bar. The fixture, not the bar, is fixed: a $30
+        // fixed discount on the $999 recorded price is a real,
+        // history-validating deal — 50 + 3.0*0.5 (derived %: 30/999)
+        // + 15 ($30 value) + 10 (value: $999 at recorded low $999)
+        // = 76.5 — above the 75 bar — and the history is clean,
+        // so the deal IS featured.
+        deals: [
+          dealRow({
+            discount_type: 'fixed',
+            discount_value: 30,
+            title: 'Save $30 on Test Widget',
+          }),
+        ],
         products: [PRODUCT],
         price_history: historyRows(),
       },
@@ -353,10 +367,9 @@ describe('getRankedDeals — featured evidence gate + value term (§12 #59/#60)'
     const result = await getRankedDeals(supabase, { limit: 10 });
     expect(result.deals).toHaveLength(1);
     const ranked = result.deals[0];
-    // 50 + 25*0.5 + 10 (confidence) + 10 (value: $999 at recorded
-    // low $999) = 82.5 — above the 75 bar — and the history is
-    // clean, so the deal IS featured.
-    expect(ranked.aiScore).toBeCloseTo(82.5, 5);
+    expect(ranked.discountPercentage).toBe(3);
+    expect(ranked.savingsAmount).toBe(30);
+    expect(ranked.aiScore).toBeCloseTo(76.5, 5);
     expect(ranked.discountValidation?.status).toBe('validated');
     expect(ranked.isFeatured).toBe(true);
   });
@@ -366,7 +379,19 @@ describe('getRankedDeals — featured evidence gate + value term (§12 #59/#60)'
     const supabase = createStubSupabase(
       {
         deal_rankings: [],
-        deals: [dealRow()],
+        // Section 20, §12 #67: the old +10 confidence term is gone,
+        // so the old fixture scores 67.5 — no longer "high". The
+        // fixture, not the bar, is fixed: the deal ends within 24h,
+        // a legitimate +20 flash term — 50 + 25*0.5 + 20 (flash)
+        // + 5 (value: $999 within 15% of the recorded low $900)
+        // = 87.5, a genuinely high score on a flagged history.
+        // The end is relative to now so the flash term never
+        // expires out from under the test.
+        deals: [
+          dealRow({
+            end_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+          }),
+        ],
         products: [PRODUCT],
         price_history: [
           { product_id: 'p-val', price: 900, recorded_at: '2026-10-23T00:00:00.000Z' },
@@ -379,6 +404,7 @@ describe('getRankedDeals — featured evidence gate + value term (§12 #59/#60)'
     const result = await getRankedDeals(supabase, { limit: 10 });
     expect(result.deals).toHaveLength(1);
     const ranked = result.deals[0];
+    expect(ranked.aiScore).toBeCloseTo(87.5, 5);
     expect(ranked.aiScore).toBeGreaterThanOrEqual(75);
     expect(ranked.discountValidation?.status).toBe('flagged');
     expect(ranked.isFeatured).toBe(false);

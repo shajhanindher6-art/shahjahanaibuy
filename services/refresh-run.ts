@@ -48,6 +48,7 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import { logApiError } from '@/lib/api/error-logging';
 
 // ---------------------------------------------------------------------------
 // Per-step isolation (P1-1)
@@ -268,6 +269,12 @@ export async function tryStartRefreshRun(
       logger.warn('tryStartRefreshRun: guard read failed — run NOT started', {
         error: error.message,
       });
+      // Section 20, §12 #53 — a guard read failure is a server error.
+      logApiError(new Error(`refresh guard read failed: ${error.message}`), {
+        route: 'refresh-run-guard',
+        status: 500,
+        context: { phase: 'guard-read' },
+      });
       return { started: false, runId: null, reason: 'guard-error', error: error.message };
     }
     running = (data ?? []) as Array<{ id: string; started_at: string }>;
@@ -278,6 +285,12 @@ export async function tryStartRefreshRun(
     }
     logger.warn('tryStartRefreshRun: guard read threw — run NOT started', {
       error: String(err),
+    });
+    // Section 20, §12 #53 — a guard read failure is a server error.
+    logApiError(err, {
+      route: 'refresh-run-guard',
+      status: 500,
+      context: { phase: 'guard-read' },
     });
     return {
       started: false,
@@ -335,6 +348,12 @@ export async function tryStartRefreshRun(
       logger.warn('tryStartRefreshRun: run insert failed — run NOT started', {
         error: error?.message,
       });
+      // Section 20, §12 #53 — a guard insert failure is a server error.
+      logApiError(new Error(`refresh run insert failed: ${error?.message ?? 'run insert failed'}`), {
+        route: 'refresh-run-guard',
+        status: 500,
+        context: { phase: 'guard-insert' },
+      });
       return {
         started: false,
         runId: null,
@@ -350,6 +369,12 @@ export async function tryStartRefreshRun(
     }
     logger.warn('tryStartRefreshRun: run insert threw — run NOT started', {
       error: String(err),
+    });
+    // Section 20, §12 #53 — a guard insert failure is a server error.
+    logApiError(err, {
+      route: 'refresh-run-guard',
+      status: 500,
+      context: { phase: 'guard-insert' },
     });
     return {
       started: false,
