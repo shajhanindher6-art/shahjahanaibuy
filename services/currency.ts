@@ -606,3 +606,48 @@ export function formatOriginalAmount(amount: number): string {
     ? amount.toLocaleString('en-US')
     : amount.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
+
+// ---------------------------------------------------------------------------
+// Section 21–25, Stage H (H-P2-9) — the catalog price currency, carried
+// explicitly instead of assumed.
+//
+// No merchant listing records a currency: `currency_id` is NULL on
+// every merchant_products row, and the refresh path defaults to
+// 'USD' when it is NULL. USD is therefore the catalog default — but
+// a default that is never written down is a silent assumption, and
+// every price surface printed a bare "$X" with no currency at all.
+// CATALOG_PRICE_CURRENCY states the default in one place; payloads
+// (AISearchResult.currency, SmartDeal.currency) carry it, and text
+// surfaces render it via formatRecordedPrice() — "$999.00 USD" —
+// instead of a bare "$999.00". When a listing ever records a real
+// currency, the stored code replaces this default at the read site;
+// nothing here invents one.
+// ---------------------------------------------------------------------------
+
+/** The currency catalog prices are recorded in (see the note above). */
+export const CATALOG_PRICE_CURRENCY = 'USD' as const;
+
+/**
+ * A recorded catalog price as display text, currency included:
+ * "$999.00 USD". The code is appended (not just a "$" symbol) so a
+ * reader never has to guess which dollars these are. Pass the
+ * listing's own recorded currency when one exists; the catalog
+ * default (USD) applies otherwise.
+ */
+export function formatRecordedPrice(
+  price: number,
+  currency: string = CATALOG_PRICE_CURRENCY
+): string {
+  const code = (currency || CATALOG_PRICE_CURRENCY).toUpperCase();
+  try {
+    const formatted = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(price);
+    return `${formatted} ${code}`;
+  } catch {
+    return `$${price.toFixed(2)} ${code}`;
+  }
+}

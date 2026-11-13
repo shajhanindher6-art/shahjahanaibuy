@@ -71,7 +71,8 @@ import {
   markProductRefreshFailed,
   type RefreshPriority,
 } from './freshness';
-import { reserveEbayDailyCall } from './ebay-budget';
+import { reserveEbayDailyCall, refundEbayDailyCall } from './ebay-budget';
+import { markProductSuccessfullyUpdated } from './last-successful-update';
 
 type FetchFn = typeof fetch;
 
@@ -106,8 +107,22 @@ export interface EbayRefreshResult {
   skippedMismatch: number;
   skippedNoListing: number;
   skippedUnknownCurrency: number;
+  /**
+   * Sections 21–25, Stage D — the unknown currency codes behind
+   * `skippedUnknownCurrency`. An unknown-currency listing is
+   * skipped explicitly (never recorded as USD); the codes are
+   * listed here so the admin can see WHAT was skipped, not just
+   * how many.
+   */
+  skippedUnknownCurrencyCurrencies: string[];
   failed: number;
   budgetExhausted: boolean;
+  /**
+   * Sections 21–25, Stage D — budget units refunded this run
+   * for calls that ultimately failed (see `refreshOneProduct`).
+   * A failed call must not consume daily budget.
+   */
+  budgetRefunded: number;
   error?: string;
   products: EbayRefreshProductResult[];
 }
@@ -201,8 +216,10 @@ const ZERO_RESULT: EbayRefreshResult = {
   skippedMismatch: 0,
   skippedNoListing: 0,
   skippedUnknownCurrency: 0,
+  skippedUnknownCurrencyCurrencies: [],
   failed: 0,
   budgetExhausted: false,
+  budgetRefunded: 0,
   products: [],
 };
 
@@ -473,15 +490,40 @@ async function refreshOneProduct(
 
   // Search cheapest-first for the product name. One call per
   // attempt; every attempt reserves from the daily budget first.
+  // Sections 21–25, Stage D — a reservation is REFUNDED when
+  // the call it paid for ultimately fails: a failed eBay call
+  // must not consume daily budget. `reservedUnits` counts the
+  // reservations spent on this product's attempts; every early
+  // return that means "no successful call happened" refunds
+  // them (search failed after retries, not-configured before
+  // any call ran, budget-exhausted on a later attempt after an
+  // earlier attempt failed). A successful search keeps its
+  // reservation — the call reached eBay.
   let search: EbaySearchResult | null = null;
+  let reservedUnits = 0;
+  const refundReserved = async (): Promise<void> => {
+    if (reservedUnits <= 0) return;
+    try {
+      const refund = await refundEbayDailyCall(supabase, { units: reservedUnits });
+      if (refund.refunded) result.budgetRefunded += reservedUnits;
+    } catch {
+      // Best-effort: a failed refund never fails the product.
+    }
+    reservedUnits = 0;
+  };
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const budget = await reserveEbayDailyCall(supabase);
     if (!budget.allowed) {
+      await refundReserved();
       return 'budget-exhausted';
     }
+    reservedUnits += 1;
     search = await searchFn(product.name, { limit: SEARCH_LIMIT });
     if (search.ok) break;
-    if (search.reason === 'not-configured') return 'not-configured';
+    if (search.reason === 'not-configured') {
+      await refundReserved();
+      return 'not-configured';
+    }
     // Transient only: 429 / 5xx surface as 'rate-limited' /
     // 'api-error'. Retry twice, then treat the product as failed.
     if (attempt < MAX_ATTEMPTS - 1) {
@@ -491,6 +533,7 @@ async function refreshOneProduct(
     }
   }
   if (!search || !search.ok) {
+    await refundReserved();
     result.failed += 1;
     // Section 20, §12 #53 — a failed live fetch after all
     // retries is a server error: it belongs in error_log.
@@ -533,11 +576,18 @@ async function refreshOneProduct(
   const currencyId = currencyIdByCode.get(currency);
   if (!currencyId) {
     result.skippedUnknownCurrency += 1;
+    // Sections 21–25, Stage D — the skip is explicit, not
+    // silent: the unknown code is recorded on the per-product
+    // entry AND in the run-level list, so the admin sees what
+    // was skipped. The listing is never recorded as USD.
+    if (!result.skippedUnknownCurrencyCurrencies.includes(currency)) {
+      result.skippedUnknownCurrencyCurrencies.push(currency);
+    }
     logger.warn('refreshEbayPrices: unknown currency on eBay listing', {
       productId: product.id,
       currency,
     });
-    return push('skipped-unknown-currency');
+    return push('skipped-unknown-currency', undefined, currency);
   }
 
   const price = match.price as number;
@@ -649,6 +699,16 @@ async function refreshOneProduct(
       product.id,
       product.refresh_priority as RefreshPriority
     );
+  } catch {
+    // Freshness bookkeeping must never fail the product.
+  }
+  // Sections 21–25, Stage D — a real provider response was
+  // validated and saved (the merchant row above), so this is a
+  // successful update, not just a check. Best-effort: the
+  // writer never throws and reports column-missing until
+  // migration 066 is applied.
+  try {
+    await markProductSuccessfullyUpdated(supabase, product.id, nowIso);
   } catch {
     // Freshness bookkeeping must never fail the product.
   }

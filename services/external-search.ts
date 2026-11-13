@@ -51,8 +51,8 @@ import type { WebSearchResult } from '@/types/ai';
 import { withAiRetry, isRetryableStatus } from '@/services/ai-engine/retry';
 import {
   recordAiCall,
-  spendProviderBudget,
-  isProviderBudgetExhausted,
+  spendProviderBudgetAsync,
+  isProviderBudgetExhaustedAsync,
 } from '@/services/ai-engine/usage';
 import { reportAiProviderHealth } from '@/services/ai-engine/health-report';
 
@@ -263,13 +263,13 @@ export async function searchWebProducts(
   // the catalog fallback with an honest label (see
   // `budgetExhausted`). Cache hits above already returned without
   // spending, so this only binds genuinely new queries.
-  if (isProviderBudgetExhausted('serpapi')) {
+  if (await isProviderBudgetExhaustedAsync('serpapi')) {
     logger.warn('searchWebProducts: daily SerpAPI budget exhausted, serving catalog fallback');
     return { results: [], fromCache: false, disabled: false, fetchedAt: null, budgetExhausted: true };
   }
   // A live attempt spends one unit of the daily budget whether it
   // succeeds or not — SerpAPI bills per request, not per success.
-  spendProviderBudget('serpapi');
+  await spendProviderBudgetAsync('serpapi');
 
   const callStart = Date.now();
   try {

@@ -61,15 +61,20 @@ export function normalizeProductStatus(value: unknown): ProductStatus {
  *    'unverified', no verified_at. The UI renders this as
  *    "Unverified price — manually entered, not checked live".
  *  - 'ebay-browse-api': fetched from the eBay Browse API at
- *    approve time — 'verified' with verified_at = the approve
- *    timestamp. The UI renders "Verified — checked <date>".
+ *    PREVIEW time — 'verified' with verified_at = the preview
+ *    fetch time (Sections 21–25, Stage D, R2: stamping the
+ *    approve time used to claim the price was checked at approve
+ *    time, when the check happened at preview). When the preview
+ *    time was not carried into the approve call, verified_at is
+ *    null — "verified, check time not recorded" — never the
+ *    approve time.
  * Any other source is rejected by the caller (the intake route
  * already rejects unknown sources); this function throws so a
  * new source cannot silently slip in as verified.
  */
 export function priceVerificationForIntakeSource(
   source: typeof INTAKE_SOURCE | typeof EBAY_INTAKE_SOURCE,
-  verifiedAt: string
+  verifiedAt: string | null
 ): {
   priceVerificationStatus: PriceVerificationStatus;
   priceSource: PriceSource;

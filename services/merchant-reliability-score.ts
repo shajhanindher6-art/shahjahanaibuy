@@ -39,6 +39,24 @@
  * Pure scorer + fail-safe DB reader. The DB reader never throws:
  * a missing table (PGRST205 / 42P01), a failed query, or an
  * empty history all degrade to the insufficient-data state.
+ *
+ * Sections 21–25, Stage B (A10) — CANONICAL-SCORER NOTE, READ
+ * BEFORE DELETING THIS FILE: the Stage A audit called this scorer
+ * dead code (zero callers), but that premise was stale by build
+ * time — Stage E wired it into services/ai-deals.ts
+ * (fetchMerchantSyncReliability → scoreDeal), where it is the
+ * freshness dimension for deal ranking. Deleting it would break
+ * that surface. So BOTH scorers now have production callers and
+ * NEITHER is deleted:
+ *   - services/merchant-reliability.ts (policy/trust/directory
+ *     signals) is the CANONICAL scorer for the admin merchant
+ *     surfaces — wired into the /admin/ai provider-health panel
+ *     (services/provider-status.ts) and consumed by
+ *     services/ai-comparison.ts;
+ *   - this file (sync/freshness signals) stays the deal-ranking
+ *     freshness dimension in services/ai-deals.ts.
+ * Do NOT add a third scorer. If the two ever need merging, that
+ * is a Stage E decision, not a deletion.
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';

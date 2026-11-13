@@ -4,6 +4,8 @@
 
 import type { ValidatedRawProduct } from './validation';
 import { normalizeGtin } from '@/lib/gtin';
+import type { SpecEntryInput } from '@/lib/spec-templates';
+import type { ProductVariantInput } from './variants';
 
 export interface NormalizedProduct {
   name: string;
@@ -22,6 +24,10 @@ export interface NormalizedProduct {
   externalId: string;
   retailerSlug: string;
   raw: Record<string, unknown> | undefined;
+  /** Specs the feed carried (validated against the template at write time). */
+  specs: SpecEntryInput[];
+  /** Variants the feed carried (matched/created at write time). */
+  variants: ProductVariantInput[];
 }
 
 function generateSlug(name: string): string {
@@ -77,5 +83,19 @@ export function normalizeProduct(data: ValidatedRawProduct): NormalizedProduct {
     externalId: data.externalId,
     retailerSlug: data.retailerSlug,
     raw: data.raw,
+    specs: (data.specs ?? []).map((s) => ({
+      key: s.key,
+      value: s.value,
+      ...(s.unit ? { unit: s.unit } : {}),
+    })),
+    variants: (data.variants ?? []).map((v) => ({
+      name: v.name,
+      ...(v.attributes ? { attributes: v.attributes } : {}),
+      ...(v.sku ? { sku: v.sku } : {}),
+      ...(v.gtin ? { gtin: v.gtin } : {}),
+      ...(v.imageUrl ? { imageUrl: v.imageUrl } : {}),
+      ...(v.inStock !== undefined ? { inStock: v.inStock } : {}),
+      ...(v.sortOrder !== undefined ? { sortOrder: v.sortOrder } : {}),
+    })),
   };
 }

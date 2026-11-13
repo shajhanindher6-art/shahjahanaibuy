@@ -143,7 +143,11 @@ export function describePlatformStatus(): PlatformStatusEntry[] {
       id: 'local-stores',
       name: 'Local stores directory',
       kind: 'directory',
-      status: 'live',
+      // Sections 21–25, Stage B (B7) — was 'live': a static
+      // search-link directory is not a live integration. It is
+      // search links only — the same honesty as every other
+      // directory entry.
+      status: 'search-links-only',
       coverage: `${LOCAL_STORES.length} stores in ${countCountriesWithLocalStores()} countries / ${REGIONS.length} regions`,
       whatYouGet:
         'Your country\u2019s stores first, then international retailers — always as search links to the store\u2019s own results. No local price, stock, deal, or partnership is ever claimed; stores are added only after their search pattern is verified.',
@@ -152,7 +156,9 @@ export function describePlatformStatus(): PlatformStatusEntry[] {
       id: 'global-fallback',
       name: 'International retailers',
       kind: 'directory',
-      status: 'live',
+      // Sections 21–25, Stage B (B7) — was 'live': same static
+      // search-link directory, same honest status.
+      status: 'search-links-only',
       coverage: `${GLOBAL_STORES.map((s) => s.name).join(', ')}`,
       whatYouGet:
         'Worldwide retailers shown separately after your local stores, so a visitor always sees international options too — as search links, never as SmartBuy prices.',

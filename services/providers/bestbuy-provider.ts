@@ -1,4 +1,5 @@
 import { logger } from '@/lib/config/logger';
+import { ProviderNotConfiguredError } from './errors';
 import type {
   DataProvider,
   ProviderFetchRequest,
@@ -33,21 +34,32 @@ export class BestBuyProvider implements DataProvider {
   }
 
   /** Plain-language reason the adapter cannot fetch prices today. */
-  getNotConfiguredReason(): string {
+  getNotConfiguredReason(): string | null {
+    if (this.isAvailable()) {
+      // A set key still means no client: the reason stands, with
+      // the key-presence nuance spelled out.
+      return 'Best Buy has no live price integration: the API key is set but no Best Buy Products API client exists yet, so the key alone fetches nothing.';
+    }
     return BESTBUY_NOT_CONFIGURED_REASON;
   }
 
+  /**
+   * Sections 21–25, Stage B (B1) — was a silent `[]` / `null`:
+   * callers read "no results" as if Best Buy had been checked.
+   * There is no client, so search/fetch throw a typed
+   * NOT_CONFIGURED error naming the reason.
+   */
   async search(_request: ProviderSearchRequest): Promise<RawProductData[]> {
     logger.warn(
-      'BestBuyProvider.search — no Best Buy API client exists yet; returning empty, never fake rows'
+      'BestBuyProvider.search — no Best Buy API client exists yet; throwing NOT_CONFIGURED, never fake rows'
     );
-    return [];
+    throw new ProviderNotConfiguredError('bestbuy', this.getNotConfiguredReason() ?? BESTBUY_NOT_CONFIGURED_REASON);
   }
 
   async fetch(_request: ProviderFetchRequest): Promise<RawProductData | null> {
     logger.warn(
-      'BestBuyProvider.fetch — no Best Buy API client exists yet; returning null'
+      'BestBuyProvider.fetch — no Best Buy API client exists yet; throwing NOT_CONFIGURED'
     );
-    return null;
+    throw new ProviderNotConfiguredError('bestbuy', this.getNotConfiguredReason() ?? BESTBUY_NOT_CONFIGURED_REASON);
   }
 }

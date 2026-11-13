@@ -63,6 +63,7 @@ import {
   type PriceHistoryPoint,
 } from '@/services/price-history-quality';
 import { flipStaleVerificationStatuses } from './price-verification';
+import { resolveListingCurrency } from '@/services/refresh-currency';
 
 export interface PriceRefreshResult {
   tracked: number;
@@ -71,6 +72,15 @@ export interface PriceRefreshResult {
   skippedNoRetailer: number;
   skippedNoPrice: number;
   failed: number;
+  /**
+   * Sections 21–25, Stage D (item 4) — price rows recorded with
+   * the currency explicitly assumed as USD because the merchant
+   * row carried no resolvable currency_id (NULL on every seeded
+   * row). The assumption is counted here, never silent.
+   */
+  currencyAssumedUsd: number;
+  /** Distinct non-USD currencies recorded on this run's rows (never converted — see services/refresh-currency.ts). */
+  nonUsdCurrencies: string[];
   /**
    * Section 15, P1-8: true when a source LOAD failed (alerts /
    * wishlist / merchant_products / price_history select returned an
@@ -102,6 +112,14 @@ interface MerchantProductRow {
    *  every seeded row (the seed never recorded one); the insert
    *  below defaults explicitly to 'USD' when it is NULL. */
   currency_id: string | null;
+  /**
+   * Sections 21–25, Stage D (R3) — when this merchant price was
+   * last written (the last time the value was observed by
+   * whatever wrote it). A re-read records THIS as the row's
+   * `observed_at`, never "now": re-reading a stored price does
+   * not observe it again.
+   */
+  updated_at: string | null;
 }
 
 export interface PriceHistorySharedRow {
@@ -210,7 +228,7 @@ export async function buildRefreshSharedReads(
 
     const { data: merchantRows, error: merchantError } = await supabase
       .from('merchant_products')
-      .select('product_id, merchant_id, price, availability, url, in_stock, currency_id')
+      .select('product_id, merchant_id, price, availability, url, in_stock, currency_id, updated_at')
       .in('product_id', stockIdsCapped)
       .is('deleted_at', null)
       .order('price', { ascending: true });
@@ -253,6 +271,8 @@ export async function refreshTrackedPrices(
     skippedNoRetailer: 0,
     skippedNoPrice: 0,
     failed: 0,
+    currencyAssumedUsd: 0,
+    nonUsdCurrencies: [],
     loadFailed: false,
     staleFlipped: 0,
   };
@@ -347,7 +367,7 @@ export async function refreshTrackedPrices(
   } else {
     const { data: merchantData, error: merchantError } = await supabase
       .from('merchant_products')
-      .select('product_id, merchant_id, price, availability, url, in_stock, currency_id')
+      .select('product_id, merchant_id, price, availability, url, in_stock, currency_id, updated_at')
       .in('product_id', ids)
       .is('deleted_at', null)
       .eq('in_stock', true)
@@ -500,13 +520,19 @@ export async function refreshTrackedPrices(
         continue;
       }
       // Section 20, §12 #41 — the row's own currency, resolved
-      // from its currency_id. NULL / unknown ids default
-      // explicitly to 'USD' (the seed never recorded a currency);
-      // a non-USD listing is never silently recorded as USD
-      // when its currency IS known.
-      const currency = lowest.currency_id
-        ? (currencyCodeById.get(lowest.currency_id) ?? 'USD')
-        : 'USD';
+      // from its currency_id. Sections 21–25, Stage D (item 4) —
+      // the resolution now goes through the shared helper, and a
+      // NULL / unresolvable id is COUNTED as assumed-USD
+      // (`currencyAssumedUsd`) instead of only commented. A
+      // non-USD listing is never silently recorded as USD when
+      // its currency IS known, and no FX conversion is ever
+      // applied (see services/refresh-currency.ts).
+      const resolvedCurrency = resolveListingCurrency(lowest.currency_id, currencyCodeById);
+      const currency = resolvedCurrency.code;
+      if (resolvedCurrency.assumedUsd) result.currencyAssumedUsd += 1;
+      else if (currency !== 'USD' && !result.nonUsdCurrencies.includes(currency)) {
+        result.nonUsdCurrencies.push(currency);
+      }
       // Section 20, §12 #42/#44 — assess the changed price
       // against this retailer’s recorded history BEFORE
       // inserting. The spike / fake-sale / inflation detectors
@@ -529,6 +555,17 @@ export async function refreshTrackedPrices(
       // row re-records a stored merchant price whose origin is
       // not tracked — claiming 'seed' or 'manual-intake' for it
       // would invent provenance.
+      // Sections 21–25, Stage D (R3) — `observed_at` is the
+      // merchant row's last write time (the last time this price
+      // value was observed by whatever wrote it), NEVER "now":
+      // re-reading a stored price does not observe it again.
+      // When even that is unknown the value is NULL (unknown),
+      // not now — `insertPriceHistoryRow` preserves an explicit
+      // null instead of defaulting it to recorded_at.
+      const observedAt =
+        typeof lowest.updated_at === 'string' && lowest.updated_at.trim()
+          ? lowest.updated_at
+          : null;
       const { error } = await insertPriceHistoryRow(supabase, {
         product_id: productId,
         retailer_id: retailerId,
@@ -538,7 +575,7 @@ export async function refreshTrackedPrices(
         url: lowest.url ?? null,
         recorded_at: nowIso,
         source: null,
-        observed_at: nowIso,
+        observed_at: observedAt,
         suspicious_change: assessment.suspicious,
       });
       if (error) {

@@ -5,6 +5,7 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import { nearMissSimilarity, NEAR_MISS_THRESHOLD } from '@/lib/fuzzy-match';
 
 export interface BrandDetectionResult {
   brandId: string | null;
@@ -16,6 +17,13 @@ export interface BrandDetectionResult {
    * working. Non-null exactly when brandId is non-null.
    */
   name: string | null;
+  /**
+   * Section 21–25, Stage C (B6): how the brand was resolved.
+   * 'fuzzy' means the incoming name was a near-miss of an existing
+   * brand (similarity ≥ 0.75) and was matched to it instead of
+   * creating a duplicate brand row.
+   */
+  matchedBy?: 'exact' | 'fuzzy';
 }
 
 function slugifyBrand(name: string): string {
@@ -71,6 +79,48 @@ export async function detectBrand(
       created: false,
       name: (byName as { name?: string }).name ?? trimmed,
     };
+  }
+
+  // Section 21–25, Stage C (B6) — fuzzy leg: a near-miss brand
+  // ("Sonyy", "Soni") used to silently create a duplicate brand
+  // row. Before creating, scan the existing brands and match the
+  // closest one at similarity ≥ 0.75 (token Jaccard or bigram
+  // Dice — lib/fuzzy-match.ts). A failed list read degrades to
+  // "no match" (create as before) rather than blocking ingestion.
+  try {
+    const { data: allBrands, error } = await supabase
+      .from('brands')
+      .select('id, name, slug')
+      .is('deleted_at', null)
+      .limit(200);
+    if (!error && allBrands) {
+      let best: { id: string; name: string; similarity: number } | null = null;
+      for (const row of allBrands as Array<{ id: string; name: string; slug?: string }>) {
+        const similarity = Math.max(
+          nearMissSimilarity(trimmed, row.name ?? ''),
+          nearMissSimilarity(slug, row.slug ?? '')
+        );
+        if (similarity >= NEAR_MISS_THRESHOLD && (!best || similarity > best.similarity)) {
+          best = { id: row.id, name: row.name, similarity };
+        }
+      }
+      if (best) {
+        logger.debug('Brand: fuzzy-matched near-miss brand instead of creating', {
+          name: trimmed,
+          matched: best.name,
+          similarity: best.similarity,
+        });
+        return {
+          brandId: best.id,
+          detected: true,
+          created: false,
+          name: best.name,
+          matchedBy: 'fuzzy',
+        };
+      }
+    }
+  } catch (err) {
+    logger.warn('Brand: fuzzy match failed, continuing to create', { error: String(err) });
   }
 
   // Create new brand

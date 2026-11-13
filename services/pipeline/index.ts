@@ -11,4 +11,4 @@ export type { BrandDetectionResult } from './brand-detection';
 export { processImages } from './image-processing';
 export type { ProcessedImage, ImageProcessingOptions } from './image-processing';
 export { ingestProduct, ingestBatch } from './ingestion';
-export type { IngestionResult } from './ingestion';
+export type { IngestionResult, IngestOptions } from './ingestion';

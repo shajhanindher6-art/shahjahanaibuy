@@ -7,6 +7,7 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import { nearMissSimilarity, NEAR_MISS_THRESHOLD } from '@/lib/fuzzy-match';
 
 export interface CategoryAssignmentResult {
   categoryId: string | null;
@@ -19,6 +20,13 @@ export interface CategoryAssignmentResult {
    * non-null.
    */
   name: string | null;
+  /**
+   * Section 21–25, Stage C (B6): present only when the category
+   * was resolved by the fuzzy leg — the incoming part was a
+   * near-miss of an existing category (similarity ≥ 0.75) and was
+   * matched to it instead of creating a duplicate category row.
+   */
+  matchedBy?: 'exact' | 'fuzzy';
 }
 
 function parseCategoryPath(category: string): string[] {
@@ -53,6 +61,9 @@ export async function assignCategory(
 
   let parentId: string | null = null;
   let created = false;
+  let fuzzyMatched = false;
+  /** Canonical name of the leaf row when it was fuzzy-matched. */
+  let fuzzyLeafName: string | null = null;
 
   for (const part of parts) {
     const slug = slugify(part);
@@ -65,6 +76,51 @@ export async function assignCategory(
     if (data?.id) {
       parentId = data.id;
     } else {
+      // Section 21–25, Stage C (B6) — fuzzy leg: a near-miss
+      // category part ("Headphone", "Smart Phone") used to
+      // silently create a duplicate category row. Before creating,
+      // scan the existing categories and match the closest one at
+      // similarity ≥ 0.75. A failed list read degrades to "no
+      // match" (create as before) rather than blocking ingestion.
+      let fuzzyId: string | null = null;
+      try {
+        const { data: allCategories, error } = await supabase
+          .from('categories')
+          .select('id, name, slug')
+          .limit(200);
+        if (!error && allCategories) {
+          let best: { id: string; name: string; similarity: number } | null = null;
+          for (const row of allCategories as Array<{ id: string; name?: string; slug?: string }>) {
+            const similarity = Math.max(
+              nearMissSimilarity(part, row.name ?? ''),
+              nearMissSimilarity(slug, row.slug ?? '')
+            );
+            if (similarity >= NEAR_MISS_THRESHOLD && (!best || similarity > best.similarity)) {
+              best = { id: row.id, name: row.name ?? part, similarity };
+            }
+          }
+          fuzzyId = best?.id ?? null;
+          if (fuzzyId) {
+            fuzzyMatched = true;
+            // The text column must carry the RESOLVED row's
+            // canonical name ("Headphones"), not the near-miss
+            // part the feed sent ("Headphone").
+            fuzzyLeafName = best?.name ?? null;
+            logger.debug('Category: fuzzy-matched near-miss category instead of creating', {
+              part,
+              similarity: best?.similarity,
+            });
+          }
+        }
+      } catch (err) {
+        logger.warn('Category: fuzzy match failed, continuing to create', {
+          error: String(err),
+        });
+      }
+      if (fuzzyId) {
+        parentId = fuzzyId;
+        continue;
+      }
       const insertData: Record<string, unknown> = {
         name: part,
         slug,
@@ -96,6 +152,7 @@ export async function assignCategory(
     categoryId: parentId,
     assigned: parentId !== null,
     created,
-    name: parentId !== null ? leafName : null,
+    name: parentId !== null ? (fuzzyLeafName ?? leafName) : null,
+    ...(fuzzyMatched && !created ? { matchedBy: 'fuzzy' as const } : {}),
   };
 }

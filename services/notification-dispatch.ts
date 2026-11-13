@@ -102,10 +102,77 @@ interface QueuedNotification {
   scheduled_for: string;
 }
 
+/** One pending queue-status write, collected during the dispatch loop and flushed in bulk afterwards. */
+export interface PendingNotificationStatusUpdate {
+  id: string;
+  patch: Record<string, unknown>;
+}
+
+/** The generic last_error stored for rows that can never deliver (no provider / no address / no subscription). */
+export const NOTIFICATION_PERMANENT_FAILURE_ERROR =
+  'Delivery unavailable: provider not configured, no email address, or no push subscription. In-app notification retained.';
+
+/**
+ * Section 21–25, Stage J, J-P2-1 (notification-dispatch part) —
+ * flush collected status updates in bulk. Rows sharing the exact
+ * same patch are written with ONE update + `.in('id', ids)` instead
+ * of one UPDATE per queued notification, so a 50-row batch costs a
+ * handful of writes instead of 50. Retry rows group by
+ * `retry_count` (the delay is a function of it), so each distinct
+ * retry count is one write. A flush failure is logged, never
+ * thrown: the rows stay `pending` and the next run retries them.
+ */
+export async function flushNotificationStatusUpdates(
+  supabase: AnySupabaseClient,
+  pending: PendingNotificationStatusUpdate[]
+): Promise<void> {
+  if (pending.length === 0) return;
+  const groups = new Map<string, { patch: Record<string, unknown>; ids: string[] }>();
+  for (const { id, patch } of pending) {
+    const key = JSON.stringify(patch);
+    const group = groups.get(key);
+    if (group) group.ids.push(id);
+    else groups.set(key, { patch, ids: [id] });
+  }
+  for (const { patch, ids } of groups.values()) {
+    try {
+      const { error } = await supabase
+        .from('notification_queue')
+        .update(patch)
+        .in('id', ids);
+      if (error) {
+        logger.warn('flushNotificationStatusUpdates: batch update failed', {
+          count: ids.length,
+          error: error.message,
+        });
+      }
+    } catch (err) {
+      logger.warn('flushNotificationStatusUpdates: batch update threw', {
+        count: ids.length,
+        error: String(err),
+      });
+    }
+  }
+}
+
+export interface NotificationQueueResult {
+  processed: number;
+  sent: number;
+  failed: number;
+  /**
+   * Sections 21–25, Stage F (F7) — rows where at least one leg
+   * was delivered but another leg can never deliver (permanently
+   * unavailable, or retries exhausted). Terminal, never retried,
+   * never counted as `sent`: a row is `sent` only when every
+   * requested leg succeeded.
+   */
+  partial: number;
+}
+
 export async function processNotificationQueue(
   supabase: AnySupabaseClient,
   batchSize = 50
-): Promise<{ processed: number; sent: number; failed: number }> {
+): Promise<NotificationQueueResult> {
   const now = new Date().toISOString();
 
   // Fetch pending notifications due now
@@ -118,21 +185,38 @@ export async function processNotificationQueue(
     .limit(batchSize);
 
   if (error || !data || data.length === 0) {
-    return { processed: 0, sent: 0, failed: 0 };
+    return { processed: 0, sent: 0, failed: 0, partial: 0 };
   }
 
   let sent = 0;
   let failed = 0;
+  let partial = 0;
+
+  // Section 21–25, Stage J, J-P2-1 — status writes are COLLECTED
+  // here and flushed in bulk after the loop (see
+  // flushNotificationStatusUpdates): the old code did one UPDATE
+  // per notification inside the loop. If the process dies
+  // mid-loop the unflushed rows simply stay `pending` and the next
+  // run retries them — the dispatch itself is unchanged.
+  // One shared timestamp per batch: per-row timestamps would make
+  // every patch JSON-distinct and defeat the grouping in the flush.
+  const batchNowMs = Date.now();
+  const batchSentAt = new Date(batchNowMs).toISOString();
+  const pendingUpdates: PendingNotificationStatusUpdate[] = [];
 
   for (const notif of data as QueuedNotification[]) {
     const result = await dispatchNotification(supabase, notif);
 
     if (result.delivered) {
-      await supabase
-        .from('notification_queue')
-        .update({ status: 'sent', sent_at: new Date().toISOString() })
-        .eq('id', notif.id);
-      sent++;
+      pendingUpdates.push({
+        id: notif.id,
+        patch: { status: 'sent', sent_at: batchSentAt },
+      });
+      // Sections 21–25, Stage F (F7) — a partially delivered row
+      // leaves the queue (re-sending would duplicate the delivered
+      // leg) but is counted in `partial`, never in `sent`.
+      if (result.partial) partial++;
+      else sent++;
     } else if (result.permanent) {
       // Delivery can never succeed for this row: a required provider
       // is unconfigured, the user has no email address, or the user
@@ -141,41 +225,42 @@ export async function processNotificationQueue(
       // immediately (retry_count untouched) and rely on the in-app
       // notification row created at queue time so the alert is never
       // silently lost.
-      await supabase
-        .from('notification_queue')
-        .update({
+      pendingUpdates.push({
+        id: notif.id,
+        patch: {
           status: 'failed',
-          last_error:
-            'Delivery unavailable: provider not configured, no email address, or no push subscription. In-app notification retained.',
-        })
-        .eq('id', notif.id);
+          last_error: NOTIFICATION_PERMANENT_FAILURE_ERROR,
+        },
+      });
       failed++;
     } else {
       const nextRetry = notif.retry_count + 1;
       if (nextRetry >= notif.max_retries) {
-        await supabase
-          .from('notification_queue')
-          .update({ status: 'failed', retry_count: nextRetry, last_error: 'Max retries exceeded' })
-          .eq('id', notif.id);
+        pendingUpdates.push({
+          id: notif.id,
+          patch: { status: 'failed', retry_count: nextRetry, last_error: 'Max retries exceeded' },
+        });
       } else {
         const delay = Math.pow(2, nextRetry) * 60 * 1000;
-        const nextRetryAt = new Date(Date.now() + delay).toISOString();
-        await supabase
-          .from('notification_queue')
-          .update({
+        const nextRetryAt = new Date(batchNowMs + delay).toISOString();
+        pendingUpdates.push({
+          id: notif.id,
+          patch: {
             retry_count: nextRetry,
             next_retry_at: nextRetryAt,
             scheduled_for: nextRetryAt,
             last_error: 'Send failed, will retry',
-          })
-          .eq('id', notif.id);
+          },
+        });
       }
       failed++;
     }
   }
 
-  logger.info('Notification queue processed', { processed: data.length, sent, failed });
-  return { processed: data.length, sent, failed };
+  await flushNotificationStatusUpdates(supabase, pendingUpdates);
+
+  logger.info('Notification queue processed', { processed: data.length, sent, failed, partial });
+  return { processed: data.length, sent, failed, partial };
 }
 
 interface DispatchOutcome {
@@ -188,6 +273,14 @@ interface DispatchOutcome {
    * errors are NOT permanent — those keep the existing retry path.
    */
   permanent: boolean;
+  /**
+   * Sections 21–25, Stage F (F7) — true when at least one wanted
+   * leg was delivered but another wanted leg is permanently
+   * unavailable and can never deliver. The row is terminal (never
+   * retried — retrying would duplicate the delivered leg) but must
+   * never be counted as fully `sent`.
+   */
+  partial: boolean;
   /**
    * Generic webhook leg outcome (Section 6, item 16): 'sent' only
    * on an HTTP 2xx from the user's endpoint, 'failed' on a
@@ -228,7 +321,7 @@ async function dispatchNotification(
           notifId: notif.id,
           userId: notif.user_id,
         });
-        return { delivered: false, permanent: true };
+        return { delivered: false, permanent: true, partial: false };
       }
     }
 
@@ -275,7 +368,7 @@ async function dispatchNotification(
       } else {
         logger.warn('Unknown notification channel', { channel: notif.channel });
       }
-      return { delivered: false, permanent: true };
+      return { delivered: false, permanent: true, partial: false };
     }
 
     let emailOk = false;
@@ -453,10 +546,21 @@ async function dispatchNotification(
       (!wantsWhatsApp || whatsappPermanent) &&
       (!wantsTelegram || telegramPermanent) &&
       (!wantsGeneric || genericPermanent);
+    // Sections 21–25, Stage F (F7) — partial delivery: at least
+    // one leg got through, but another wanted leg can never
+    // deliver. The row is terminal (the delivered leg must not be
+    // re-sent) yet it is NOT a full send.
+    const partial =
+      delivered &&
+      ((wantsEmail && emailPermanent) ||
+        (wantsPush && pushPermanent) ||
+        (wantsWhatsApp && whatsappPermanent) ||
+        (wantsTelegram && telegramPermanent) ||
+        (wantsGeneric && genericPermanent));
 
-    return { delivered, permanent, genericWebhook: genericStatus };
+    return { delivered, permanent, partial, genericWebhook: genericStatus };
   } catch (err) {
     logger.error('dispatchNotification failed', { error: String(err), notifId: notif.id });
-    return { delivered: false, permanent: false };
+    return { delivered: false, permanent: false, partial: false };
   }
 }

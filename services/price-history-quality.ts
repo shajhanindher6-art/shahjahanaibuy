@@ -230,8 +230,14 @@ export interface PriceHistoryInsert {
   recorded_at?: string;
   /** Migration 057 provenance — null claims none (see module header). */
   source?: PriceHistorySource | null;
-  /** Migration 057: when the price was observed (defaults to recorded_at). */
-  observed_at?: string;
+  /**
+   * Migration 057: when the price was observed. `undefined`
+   * defaults to recorded_at (the old behaviour); an explicit
+   * `null` is preserved as NULL — "observation time unknown" —
+   * and must never be silently replaced with "now" (Sections
+   * 21–25, Stage D, R3: a DB re-read is not an observation).
+   */
+  observed_at?: string | null;
   /** Migration 057 flag from `assessPriceChange`. */
   suspicious_change?: boolean;
 }
@@ -258,7 +264,11 @@ export async function insertPriceHistoryRow(
     url: row.url ?? null,
     recorded_at: recordedAt,
     source: row.source ?? null,
-    observed_at: row.observed_at ?? recordedAt,
+    // Sections 21–25, Stage D (R3): only `undefined` defaults
+    // to recorded_at. An explicit null means "observation time
+    // unknown" and is stored as NULL — a re-read must never
+    // claim it observed the price "now".
+    observed_at: row.observed_at === undefined ? recordedAt : row.observed_at,
     suspicious_change: row.suspicious_change ?? false,
   };
   const { error } = (await supabase.from('price_history').insert(fullRow)) as {

@@ -109,7 +109,7 @@ export async function sendWelcomeEmail(
       to: email,
       subject: `Welcome to ${appConfig.name}!`,
       html: welcomeTemplate(email),
-      text: `Welcome to ${appConfig.name}! Start finding the best deals with AI-powered search and price tracking.`,
+      text: `Welcome to ${appConfig.name}! Start finding the best deals with search and recorded-price tracking.`,
     },
     'welcome'
   );
@@ -217,7 +217,7 @@ function emailShell(title: string, bodyHtml: string): string {
 function welcomeTemplate(_email: string): string {
   return emailShell(
     'Welcome aboard!',
-    `<p style="color:#475569;line-height:1.6">Thanks for joining ${appConfig.name}. You now have access to AI-powered product search, price tracking, and deal alerts.</p>
+    `<p style="color:#475569;line-height:1.6">Thanks for joining ${appConfig.name}. You now have access to product search, recorded-price tracking, and deal alerts.</p>
     <div style="margin:24px 0;padding:16px;background:#eff6ff;border-radius:8px">
       <p style="margin:0;color:#1e40af;font-weight:600">Quick start:</p>
       <ul style="margin:8px 0 0;padding-left:20px;color:#475569">

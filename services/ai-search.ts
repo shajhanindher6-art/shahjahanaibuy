@@ -1089,9 +1089,11 @@ export async function aiSearch(
         // search still showed $1,099+ products — a budget the user
         // can see being ignored).
       } else {
-        // 'budget' is only added here, with a verified price — the
-        // search page's "In budget" badge therefore only ever
-        // appears on products actually at or under budget.
+        // 'budget' is only added here, with a recorded price at
+        // or under budget — the price is recorded, never verified
+        // (no live price check runs on this path), and the search
+        // page's "In budget" badge therefore only ever appears on
+        // products actually at or under budget.
         result.matchedAttributes.push('budget');
         result.aiExplanation = `${result.aiExplanation.replace(/\.$/, '')}, within your ${budgetDisplay(parsedIntent, budget)} budget.`;
       }
@@ -1304,7 +1306,8 @@ function buildSearchExplanation(
   // fetched (see the price-check loop above), and claiming it
   // from intent alone produced the false "~$71 budget" line for a
   // flagship phone. The budget phrase is appended there, only
-  // when the price is verified.
+  // when the recorded price is at or under budget — never
+  // "verified": no live price check runs on this path.
   if (intent.intent !== 'general') parts.push(`suited for "${intent.intent}"`);
   if (parts.length === 0) parts.push('matches your search query');
   return `This product ${parts.join(', ')}.`;

@@ -115,6 +115,134 @@ export function dataQualityGrade(score: number): DataQualityGrade {
   return 'poor';
 }
 
+// ---------------------------------------------------------------------------
+// Section 21–25, Stage H (H-P2-2) — the 5-state data-quality taxonomy.
+//
+// THE single label system for a product's data, used identically on
+// the public product page and the admin surfaces (admin data-quality
+// panel, /admin/products list + detail). Before this, no such system
+// existed: "Partially verified" / "Missing information" had 0 hits
+// anywhere, and each surface invented its own wording ("Verified"
+// badges meant different things on different surfaces).
+//
+// The states describe the VERIFICATION of the record, not its
+// completeness — completeness is the 7-dimension score above. Rules,
+// in priority order (first match wins):
+//   missing    — no price is recorded at all (no check timestamp AND
+//                no merchant listing), so there is nothing to verify.
+//   stale      — the price was verified once, but the check has aged
+//                past STALE_PRICE_DAYS (7), or its age cannot be
+//                proven (verified stamp, no check date recorded).
+//   verified   — status 'verified' AND the last check is fresh
+//                (age <= STALE_PRICE_DAYS). A price is only ever
+//                called verified when a real fetch checked it
+//                (services/price-verification.ts).
+//   partial    — the price itself is unverified, but part of the
+//                record IS independently checkable: a GS1-valid GTIN
+//                or a recorded price source.
+//   unverified — the default: a price is recorded, but it was never
+//                checked by a real fetch and nothing else about the
+//                record is independently checkable.
+// Every state carries a `reason` so a surface can say WHY, not just
+// which label — a bare label without its rule is how the old
+// "verified" badges went wrong.
+// ---------------------------------------------------------------------------
+
+export type DataQualityState =
+  | 'verified'
+  | 'partial'
+  | 'unverified'
+  | 'stale'
+  | 'missing';
+
+/** Display label for each taxonomy state (one wording, everywhere). */
+export const DATA_QUALITY_STATE_LABELS: Record<DataQualityState, string> = {
+  verified: 'Verified',
+  partial: 'Partially verified',
+  unverified: 'Unverified',
+  stale: 'Stale',
+  missing: 'Missing information',
+};
+
+export interface DataQualityStateResult {
+  state: DataQualityState;
+  /** DATA_QUALITY_STATE_LABELS[state] — the label to render. */
+  label: string;
+  /** Plain-language rule that produced this state (render it). */
+  reason: string;
+}
+
+export function getDataQualityState(input: {
+  priceVerificationStatus: PriceVerificationStatus | string | null;
+  /** Age in whole days of the last price check, or null (unknown). */
+  priceAgeDays: number | null;
+  /** merchant_products rows for the product (null = not read). */
+  merchantCount: number | null;
+  /** GTIN present AND GS1 check digit valid. */
+  hasValidGtin: boolean;
+  /** A price source is recorded for the cheapest listing. */
+  hasPriceSource: boolean;
+}): DataQualityStateResult {
+  const status: PriceVerificationStatus =
+    input.priceVerificationStatus === 'verified' ||
+    input.priceVerificationStatus === 'stale'
+      ? input.priceVerificationStatus
+      : 'unverified';
+  const age = input.priceAgeDays;
+  const hasRecordedPrice = age !== null || (input.merchantCount ?? 0) > 0;
+
+  if (!hasRecordedPrice) {
+    return {
+      state: 'missing',
+      label: DATA_QUALITY_STATE_LABELS.missing,
+      reason: 'No price is recorded for this product, so there is nothing to verify.',
+    };
+  }
+  if (status === 'stale') {
+    return {
+      state: 'stale',
+      label: DATA_QUALITY_STATE_LABELS.stale,
+      reason:
+        'The price was verified once, but the check is older than 7 days, so the verification has expired.',
+    };
+  }
+  if (status === 'verified') {
+    if (age !== null && age <= STALE_PRICE_DAYS) {
+      return {
+        state: 'verified',
+        label: DATA_QUALITY_STATE_LABELS.verified,
+        reason: `The price was checked against merchant data by a real fetch and is current (last checked ${age} day${age === 1 ? '' : 's'} ago).`,
+      };
+    }
+    return {
+      state: 'stale',
+      label: DATA_QUALITY_STATE_LABELS.stale,
+      reason:
+        age !== null
+          ? `The price was verified, but the check is ${age} days old — older than 7 days, so the verification has expired.`
+          : 'The price carries a verified stamp, but no check date is recorded, so its currency cannot be confirmed.',
+    };
+  }
+  if (input.hasValidGtin || input.hasPriceSource) {
+    const checkable = [
+      input.hasValidGtin ? 'a valid GTIN' : null,
+      input.hasPriceSource ? 'a recorded price source' : null,
+    ]
+      .filter(Boolean)
+      .join(' and ');
+    return {
+      state: 'partial',
+      label: DATA_QUALITY_STATE_LABELS.partial,
+      reason: `Part of the record is independently checkable (${checkable}), but the price itself was never checked by a real fetch.`,
+    };
+  }
+  return {
+    state: 'unverified',
+    label: DATA_QUALITY_STATE_LABELS.unverified,
+    reason: 'The price was never checked by a real fetch.',
+  };
+}
+
 /**
  * GS1 check-digit validation for GTIN-8 / GTIN-12 / GTIN-13 /
  * GTIN-14. Spaces and hyphens are ignored; anything else (letters,

@@ -215,9 +215,12 @@ export interface SessionContext {
  * Extract the session context from conversation history. Primary
  * source: the last assistant message's metadata.products (the
  * dashboard chat persists them). Fallback: parse the product names
- * out of the last assistant answer's own lines ("Best pick for you:
- * X", "• X (Brand) — ...") — the deal-finder route passes history
- * with metadata null, so its follow-ups resolve from the text the
+ * out of the last assistant answer's own lines ("Lowest price pick
+ * for you: X" — Section 21, Stage E, E-P2-3 renamed the old
+ * "Best pick for you:" label; the regex below still matches the
+ * old label so follow-ups on older turns keep resolving — "• X
+ * (Brand) — ...") — the deal-finder route passes history with
+ * metadata null, so its follow-ups resolve from the text the
  * engine itself wrote, never from a guess.
  */
 export function extractSessionContext(history: ChatMessage[]): SessionContext {
@@ -241,7 +244,7 @@ export function extractSessionContext(history: ChatMessage[]): SessionContext {
   if (productNames.length === 0) {
     const lastAssistant = [...history].reverse().find((m) => m.role === 'assistant');
     if (lastAssistant) {
-      const pick = /Best pick for you: ([^\n(]+)/.exec(lastAssistant.content);
+      const pick = /(?:Best pick|Lowest price pick) for you: ([^\n(]+)/.exec(lastAssistant.content);
       if (pick) productNames.push(pick[1].trim());
       const bulletWithBrand = /^• ([^(—\n]+?) \(/gm;
       const bulletPlain = /^• ([^—\n]+?) — /gm;

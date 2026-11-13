@@ -82,17 +82,34 @@ function mapAlert(row: AlertRow): Alert {
 
 /**
  * List all alerts belonging to a user, ordered by creation date (newest first).
+ *
+ * Section 21–25, Stage J, J-P2-5 — capped: the query used to have
+ * no `.limit()` at all, so a user with a large alert history read
+ * the whole table on every alerts-page load and digest build.
+ * Default 100, hard cap 500 (far above the highest tier cap — the
+ * free tier allows 5 alerts, paid tiers are uncapped — so no
+ * legitimate list is truncated; a caller that genuinely needs more
+ * must page explicitly, which this signature does not yet offer).
  */
+export const GET_ALERTS_DEFAULT_LIMIT = 100;
+export const GET_ALERTS_MAX_LIMIT = 500;
+
 export async function getAlerts(
   supabase: AnySupabaseClient,
-  userId: string
+  userId: string,
+  limit: number = GET_ALERTS_DEFAULT_LIMIT
 ): Promise<Alert[]> {
+  const cappedLimit = Math.min(
+    GET_ALERTS_MAX_LIMIT,
+    Math.max(1, Math.floor(limit) || GET_ALERTS_DEFAULT_LIMIT)
+  );
   try {
     const { data, error } = await supabase
       .from('alerts')
       .select('id, user_id, product_id, alert_type, condition_value, channel, active, last_triggered_at, trigger_count, created_at, updated_at')
       .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(cappedLimit);
 
     if (error || !data) {
       if (error) logger.warn('getAlerts: query failed', { error: error.message });

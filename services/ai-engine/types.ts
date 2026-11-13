@@ -155,6 +155,22 @@ export interface AIEngineResult<T> {
   attemptedProviders: string[];
   /** Wall-clock ms of the serving provider call (excludes earlier failed attempts). */
   latencyMs: number;
+  /**
+   * Section 21, Stage E (E-P2-1) — the freshness/verification
+   * verdict of the INPUT this result was computed from
+   * (`describeEngineInputFreshness`, services/ai-engine/
+   * input-freshness.ts), computed by the engine on every call.
+   * A label, not a score: callers qualify price copy with
+   * `inputFreshness.basisLabel` ("Recorded prices, unverified,
+   * last checked 11 days ago (stale).") and check
+   * `priceStale` / `priceVerificationStatus` before presenting
+   * a result as current. The engine itself does NOT withhold or
+   * downgrade on stale input — no capability defines a
+   * withholding policy, and inventing one here would silently
+   * change every AI surface. Adapters that do qualify output
+   * (ai-summary, predict-price-drop) read the same helper.
+   */
+  inputFreshness?: import('./input-freshness').EngineInputFreshness;
 }
 
 export interface AIProviderStatus {

@@ -200,8 +200,39 @@ export {
   getQueueMetrics,
   recordCacheMetrics,
   getMonitoringSummary,
+  isProviderCircuitOpen,
+  getProviderBreakerState,
+  resetProviderBreakers,
+  PROVIDER_CIRCUIT_BREAKER_THRESHOLD,
+  type ProviderBreakerState,
   type MonitoringSummary,
 } from './monitoring';
+
+// Sections 21–25, Stage B — provider truthfulness: config
+// validation (B10), per-provider budgets (B12), the admin
+// provider-health panel (B2/B13/A10).
+export {
+  validateProviderConfig,
+  logProviderConfigIssues,
+  type ProviderConfigIssue,
+} from './provider-config';
+export {
+  getProviderBudgetUsage,
+  checkProviderBudget,
+  reserveProviderBudgetCall,
+  resetProviderBudgets,
+  PROVIDER_DEFAULT_DAILY_BUDGET,
+  type ProviderBudgetState,
+} from './provider-budget';
+export {
+  describeProviderStatuses,
+  getProviderHealthPanel,
+  type ProviderStatusEntry,
+  type ProviderHealthEntry,
+  type ProviderSyncEntry,
+  type MerchantReliabilityEntry,
+  type ProviderHealthPanel,
+} from './provider-status';
 
 // Phase 3: AI search
 export {

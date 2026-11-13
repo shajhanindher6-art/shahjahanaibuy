@@ -5,6 +5,10 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import {
+  getAlertDeliverySettingsByUser,
+  DEFAULT_ALERT_DELIVERY_SETTINGS,
+} from './settings';
 
 export interface NotificationItem {
   id: string;
@@ -339,6 +343,13 @@ export interface WeeklyDigestRunResult {
   failed: number;
   /** Active Premium subscribers considered. */
   total: number;
+  /**
+   * Sections 21–25, Stage F (F2) — premium subscribers skipped
+   * because they turned email off (`email_notifications = false`).
+   * Present only when > 0. No settings row / read error means
+   * opted-in (fail-open), so only an explicit opt-out skips.
+   */
+  skippedOptedOut?: number;
   /** Present only when the step was skipped or failed. */
   skipped?: string;
   /** Present only on a non-missing-table load failure. */
@@ -401,11 +412,29 @@ export async function generateWeeklyDigestsForPremiumUsers(
       failed: 0,
       total: (subs as Array<{ user_id: string }>).length,
     };
+    // Sections 21–25, Stage F (F2) — the digest is an EMAIL: a
+    // premium subscriber who turned email off must not get one.
+    // The dispatch already refuses the send (channel switch), but
+    // generation used to build + store + queue the digest anyway.
+    // One batched settings read up front; fail-open (no row / read
+    // error = opted-in, same as the checker) so only an explicit
+    // opt-out skips. Skipped users are counted, never failed.
+    const settingsByUser = await getAlertDeliverySettingsByUser(
+      supabase,
+      (subs as Array<{ user_id: string }>).map((s) => s.user_id)
+    );
+    let skippedOptedOut = 0;
     for (const sub of subs as Array<{ user_id: string }>) {
+      const settings = settingsByUser.get(sub.user_id) ?? DEFAULT_ALERT_DELIVERY_SETTINGS;
+      if (!settings.emailNotifications) {
+        skippedOptedOut++;
+        continue;
+      }
       const digest = await generateWeeklyDigest(supabase, sub.user_id);
       if (digest) result.generated++;
       else result.failed++;
     }
+    if (skippedOptedOut > 0) result.skippedOptedOut = skippedOptedOut;
     return result;
   } catch (err) {
     logger.error('generateWeeklyDigests: unexpected error', { error: String(err) });
@@ -421,7 +450,7 @@ export function buildDigestEmail(deals: unknown[], priceDrops: unknown[], search
   if (deals.length > 0) {
     parts.push(`Top Deals This Week (${deals.length}):`);
     for (const deal of deals as Array<Record<string, unknown>>) {
-      parts.push(`- ${deal.title}: ${deal.discount_value}${deal.discount_type === 'percentage' ? '% off' : '$ off'}`);
+      parts.push(`- ${deal.title}: ${deal.discount_value}${deal.discount_type === 'percentage' ? '% off vs list price' : '$ off vs list price'}`);
     }
     parts.push('');
   }

@@ -30,6 +30,21 @@
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
+import { assertAdminServiceAccess } from '@/lib/admin-role';
+
+/**
+ * Sections 21–25, Stage G, G-P1-4 — defense-in-depth options.
+ * Pass `adminUserId` (the already-authenticated user id) and the
+ * READ services re-check the admin role before touching
+ * `error_log`. Optional ONLY so existing unit tests without an
+ * auth context keep compiling; every production caller passes it.
+ * The WRITER (`insertErrorLogRow`) takes no guard: it is called
+ * from error paths all over the app, not from admin callers, and
+ * it only ever inserts rows via the service-role client.
+ */
+export interface AdminServiceOptions {
+  adminUserId?: string;
+}
 
 const ERROR_LOG_TABLE = 'error_log';
 
@@ -107,8 +122,12 @@ export interface ListRecentErrorsResult {
  */
 export async function listRecentErrors(
   supabase: AnySupabaseClient,
-  limit = 20
+  limit = 20,
+  opts: AdminServiceOptions = {}
 ): Promise<ListRecentErrorsResult> {
+  if (opts.adminUserId !== undefined) {
+    await assertAdminServiceAccess(supabase, opts.adminUserId);
+  }
   try {
     const { data, error } = await supabase
       .from(ERROR_LOG_TABLE)
@@ -161,8 +180,12 @@ export interface ListRefreshFailuresResult {
  */
 export async function listRefreshFailures(
   supabase: AnySupabaseClient,
-  limit = 20
+  limit = 20,
+  opts: AdminServiceOptions = {}
 ): Promise<ListRefreshFailuresResult> {
+  if (opts.adminUserId !== undefined) {
+    await assertAdminServiceAccess(supabase, opts.adminUserId);
+  }
   try {
     const { data, error } = await supabase
       .from(ERROR_LOG_TABLE)
@@ -193,6 +216,80 @@ export async function listRefreshFailures(
         productSlug: typeof row.meta?.productSlug === 'string' ? (row.meta.productSlug as string) : null,
         reason: typeof row.meta?.reason === 'string' ? (row.meta.reason as string) : null,
       }));
+    return { failures, tableMissing: false };
+  } catch (err) {
+    return {
+      failures: [],
+      tableMissing: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/** One dead-lettered job, as persisted in `error_log` (Sections 21–25, Stage D, item 2). */
+export interface DeadLetterFailureRow {
+  id: string;
+  created_at: string;
+  message: string;
+  jobId: string;
+  jobType: string | null;
+  attempts: number | null;
+  error: string | null;
+  failedAt: string | null;
+  data: unknown;
+}
+
+export interface ListDeadLetterFailuresResult {
+  failures: DeadLetterFailureRow[];
+  /** True when the error_log table does not exist yet (migration 048 unapplied). */
+  tableMissing: boolean;
+  /** Non-missing-table read error message, when the read failed for another reason. */
+  error?: string;
+}
+
+/**
+ * Most recent dead-lettered jobs, newest first — the persisted
+ * half of the DLQ for GET /api/v1/admin/jobs/dead-letter.
+ * Reads the rows `persistDeadLetterEntry` (lib/workers/queue.ts)
+ * wrote to `error_log` with `route = 'queue.dlq'`. Same
+ * missing-table contract as listRecentErrors: migration 048
+ * unapplied → `{ tableMissing: true }` and the admin surface
+ * renders "persisted DLQ not yet active" instead of an empty
+ * list pretending no job ever failed.
+ */
+export async function listDeadLetterFailures(
+  supabase: AnySupabaseClient,
+  limit = 50
+): Promise<ListDeadLetterFailuresResult> {
+  try {
+    const { data, error } = await supabase
+      .from(ERROR_LOG_TABLE)
+      .select('id, created_at, message, meta')
+      .eq('route', 'queue.dlq')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) {
+      if (isMissingTableError(error)) {
+        return { failures: [], tableMissing: true };
+      }
+      return { failures: [], tableMissing: false, error: error.message ?? 'Dead-letter failures could not be read.' };
+    }
+    const failures: DeadLetterFailureRow[] = ((data ?? []) as unknown as Array<{
+      id: string;
+      created_at: string;
+      message: string;
+      meta: Record<string, unknown> | null;
+    }>).map((row) => ({
+      id: row.id,
+      created_at: row.created_at,
+      message: row.message,
+      jobId: typeof row.meta?.jobId === 'string' ? (row.meta.jobId as string) : row.id,
+      jobType: typeof row.meta?.jobType === 'string' ? (row.meta.jobType as string) : null,
+      attempts: typeof row.meta?.attempts === 'number' ? (row.meta.attempts as number) : null,
+      error: typeof row.meta?.error === 'string' ? (row.meta.error as string) : null,
+      failedAt: typeof row.meta?.failedAt === 'string' ? (row.meta.failedAt as string) : null,
+      data: row.meta?.data ?? null,
+    }));
     return { failures, tableMissing: false };
   } catch (err) {
     return {
@@ -276,8 +373,12 @@ export function isAiErrorRow(row: {
  */
 export async function getAiErrorBreakdown(
   supabase: AnySupabaseClient,
-  limit = 200
+  limit = 200,
+  opts: AdminServiceOptions = {}
 ): Promise<AiErrorBreakdown> {
+  if (opts.adminUserId !== undefined) {
+    await assertAdminServiceAccess(supabase, opts.adminUserId);
+  }
   const empty: AiErrorBreakdown = {
     tableMissing: false,
     total: 0,

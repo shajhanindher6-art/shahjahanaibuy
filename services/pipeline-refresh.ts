@@ -159,10 +159,20 @@ export async function refreshPricesViaPipeline(
     return UNAVAILABLE('registry-unavailable', [String(err)]);
   }
   if (registry.getAvailable().length === 0) {
+    // Sections 21–25, Stage B (B2) — the one function that
+    // explains WHY a provider is not configured is wired in
+    // here: the unavailable reason names every registered
+    // provider's reason, so the refresh run record says why
+    // nothing could be fetched instead of just "no provider".
+    const reasons = registry
+      .getAll()
+      .map((p) => `${p.name}: ${p.getNotConfiguredReason() ?? 'available'}`)
+      .join(' | ');
     return UNAVAILABLE(
       'no-available-provider',
       [
         'No provider is available (CsvProvider needs CSV_SOURCE_URL; Amazon/Best Buy need their keys; Apify is fail-closed without its vars; Mock is never registered in production; eBay lives outside the registry).',
+        reasons,
       ]
     );
   }

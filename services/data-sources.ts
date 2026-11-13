@@ -34,6 +34,72 @@ import { logger } from '@/lib/config/logger';
 
 export type EnsureCsvDataSourceResult = 'created' | 'exists' | 'skipped';
 
+export type RecordDataSourceSyncResult = 'updated' | 'skipped';
+
+export interface DataSourceSyncOutcome {
+  /** 'success' when the provider call returned usable data, 'failed' otherwise. */
+  status: 'success' | 'failed';
+  /** Plain-language failure reason (never a secret). Shown in data_sources.last_sync_error. */
+  error?: string;
+  /** Rows fetched in this sync (0 when unknown). */
+  recordsFetched?: number;
+}
+
+/**
+ * Sections 21–25, Stage B (B4) — the missing writer for
+ * `data_sources.last_sync_at` / `last_sync_status` /
+ * `last_sync_error`. Nothing ever wrote those columns: a source
+ * row stayed frozen at its insert values forever. Call this after
+ * a real provider call, best-effort.
+ *
+ * Fail-open, never throws: a missing `providers` row (no row was
+ * ever created for this provider key), a missing `data_sources`
+ * table, or any DB error returns 'skipped' with a warn log. The
+ * sync that called it is never failed by this bookkeeping.
+ */
+export async function recordDataSourceSync(
+  supabase: AnySupabaseClient,
+  providerKey: string,
+  outcome: DataSourceSyncOutcome
+): Promise<RecordDataSourceSyncResult> {
+  try {
+    const { data: provider, error: providerError } = await supabase
+      .from('providers')
+      .select('id')
+      .eq('key', providerKey)
+      .maybeSingle();
+    if (providerError || !provider) {
+      logger.warn('recordDataSourceSync: no providers row for key — skipping sync stamp', {
+        provider: providerKey,
+      });
+      return 'skipped';
+    }
+    const providerId = (provider as { id: string }).id;
+    const { error: updateError } = await supabase
+      .from('data_sources')
+      .update({
+        last_sync_at: new Date().toISOString(),
+        last_sync_status: outcome.status,
+        last_sync_error: outcome.status === 'failed' ? (outcome.error ?? 'provider call failed').slice(0, 500) : null,
+      })
+      .eq('provider_id', providerId);
+    if (updateError) {
+      logger.warn('recordDataSourceSync: data_sources update failed', {
+        provider: providerKey,
+        error: updateError.message,
+      });
+      return 'skipped';
+    }
+    return 'updated';
+  } catch (err) {
+    logger.warn('recordDataSourceSync: unexpected failure', {
+      provider: providerKey,
+      error: String(err),
+    });
+    return 'skipped';
+  }
+}
+
 export interface CsvDataSourceConfig {
   /** Public CSV file URL (the same value as CSV_SOURCE_URL). */
   sourceUrl: string;

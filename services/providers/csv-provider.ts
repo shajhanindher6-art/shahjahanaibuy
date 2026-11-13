@@ -1,5 +1,9 @@
 import { logger } from '@/lib/config/logger';
 import { isSafePublicImageUrl } from '@/services/visual-search';
+import {
+  ProviderFetchError,
+  ProviderNotConfiguredError,
+} from './errors';
 import type {
   DataProvider,
   ProviderSearchRequest,
@@ -74,6 +78,14 @@ function splitCsvLines(csv: string): Array<{ text: string; lineNumber: number }>
 
   return lines;
 }
+
+export const CSV_NOT_CONFIGURED_REASON =
+  'CSV provider has no source configured: set CSV_SOURCE_URL in the hosting dashboard to point at a public CSV feed. CSV data is unverified by definition even when configured.';
+
+/** Sections 21–25, Stage B (B6) — same shape as eBay: 10s timeout. */
+export const CSV_FETCH_TIMEOUT_MS = 10_000;
+/** Sections 21–25, Stage B (B6) — size cap on a fetched CSV document (5 MB). */
+export const CSV_MAX_BYTES = 5 * 1024 * 1024;
 
 export interface CsvDocumentRow {
   /** 1-based line number of the data row in the original CSV (header is line 1). */
@@ -225,6 +237,11 @@ export class CsvProvider implements DataProvider {
     return Boolean(this.csvData || this.csvUrl);
   }
 
+  /** Sections 21–25, Stage B (B2) — why the CSV provider cannot fetch. Null when available. */
+  getNotConfiguredReason(): string | null {
+    return this.isAvailable() ? null : CSV_NOT_CONFIGURED_REASON;
+  }
+
   private async loadProducts(): Promise<RawProductData[]> {
     if (this.cachedProducts) return this.cachedProducts;
 
@@ -236,32 +253,47 @@ export class CsvProvider implements DataProvider {
       // other user/config-supplied URL: http(s) only, and every
       // address it resolves to must be public. A private target
       // is refused before any fetch happens.
+      //
+      // Sections 21–25, Stage B (B1 + B6) — a refused or failed
+      // fetch used to return [] (cached as a successful empty
+      // parse), so callers read "no products" as if the feed had
+      // been checked. It now THROWS a typed error, with a 10s
+      // timeout and a 5 MB size cap on the response. Only a
+      // successfully parsed document is cached.
       if (!(await isSafePublicImageUrl(this.csvUrl))) {
-        logger.error('CsvProvider.loadProducts — CSV URL failed the public-URL (SSRF) guard, refusing to fetch');
-        this.cachedProducts = [];
-        return [];
+        throw new ProviderFetchError(
+          'csv',
+          `CSV URL failed the public-URL (SSRF) guard, refusing to fetch: ${this.csvUrl}`
+        );
       }
+      let response: Response;
       try {
-        const response = await fetch(this.csvUrl);
-        if (!response.ok) {
-          logger.error('CsvProvider.loadProducts — fetch failed', {
-            status: response.status,
-            statusText: response.statusText,
-          });
-          this.cachedProducts = [];
-          return [];
-        }
-        csv = await response.text();
+        response = await fetch(this.csvUrl, {
+          signal: AbortSignal.timeout(CSV_FETCH_TIMEOUT_MS),
+        });
       } catch (error) {
-        logger.error('CsvProvider.loadProducts — fetch error', { error: String(error) });
-        this.cachedProducts = [];
-        return [];
+        throw new ProviderFetchError(
+          'csv',
+          `CSV fetch failed (network error or 10s timeout): ${String(error)}`
+        );
+      }
+      if (!response.ok) {
+        throw new ProviderFetchError(
+          'csv',
+          `CSV fetch failed: HTTP ${response.status} ${response.statusText}`
+        );
+      }
+      csv = await response.text();
+      if (new TextEncoder().encode(csv).length > CSV_MAX_BYTES) {
+        throw new ProviderFetchError(
+          'csv',
+          `CSV feed exceeds the ${CSV_MAX_BYTES / 1024 / 1024} MB size cap — refusing to parse`
+        );
       }
     }
 
     if (!csv) {
-      this.cachedProducts = [];
-      return [];
+      throw new ProviderNotConfiguredError('csv', CSV_NOT_CONFIGURED_REASON);
     }
 
     const rows = parseCsv(csv);
@@ -279,9 +311,10 @@ export class CsvProvider implements DataProvider {
   }
 
   async search(request: ProviderSearchRequest): Promise<RawProductData[]> {
+    // Sections 21–25, Stage B (B1) — was a silent [] when
+    // unconfigured. Throwing names the missing source instead.
     if (!this.isAvailable()) {
-      logger.debug('CsvProvider.search — provider unavailable, returning empty');
-      return [];
+      throw new ProviderNotConfiguredError('csv', CSV_NOT_CONFIGURED_REASON);
     }
 
     const products = await this.loadProducts();
@@ -314,9 +347,10 @@ export class CsvProvider implements DataProvider {
   }
 
   async fetch(request: ProviderFetchRequest): Promise<RawProductData | null> {
+    // Sections 21–25, Stage B (B1) — was a silent null when
+    // unconfigured. Throwing names the missing source instead.
     if (!this.isAvailable()) {
-      logger.debug('CsvProvider.fetch — provider unavailable, returning null');
-      return null;
+      throw new ProviderNotConfiguredError('csv', CSV_NOT_CONFIGURED_REASON);
     }
 
     const products = await this.loadProducts();

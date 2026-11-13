@@ -1,6 +1,13 @@
 /**
  * Audit log service.
  * Records security-relevant actions for compliance and monitoring.
+ *
+ * Section 21–25, Stage J, J-P2-7 — this helper had ZERO callers
+ * (the audit's finding) while `services/pipeline/ingestion.ts`
+ * wrote the same `audit_logs` table directly. The pipeline is now
+ * wired through here, so this is the single writer for
+ * `audit_logs`; admin actions keep their separate trail
+ * (`recordAdminAction` / `admin_audit_logs`).
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';

@@ -39,6 +39,19 @@
  * Pure scorer + fail-safe DB reader. The DB reader never throws:
  * a missing merchant, missing 028 columns, or a failed query all
  * degrade to the not-enough-data state.
+ *
+ * LIVE WIRING (Sections 21–25, Stage A item A10 — the audit's
+ * "both scorers dead code" premise is FALSE for this file):
+ * `scoreMerchantReliability` is live via `getMerchantReliability`,
+ * called from services/ai-comparison.ts (per-merchant reliability
+ * on comparison rows) and services/provider-status.ts (the /admin/ai
+ * provider-health panel). It is the POLICY scorer — directory +
+ * website + verified badge + trust grade + listing depth.
+ * The SYNC scorer (services/merchant-reliability-score.ts) is a
+ * different dimension — refresh-run health + fresh-listing share —
+ * and is live in services/ai-deals.ts deal ranking. The two are
+ * NOT duplicates to merge: one scores recorded policy, the other
+ * scores sync behaviour. Do NOT add a third scorer.
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';

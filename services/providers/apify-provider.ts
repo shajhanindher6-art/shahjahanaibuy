@@ -1,4 +1,8 @@
 import { logger } from '@/lib/config/logger';
+import {
+  ProviderFetchError,
+  ProviderNotConfiguredError,
+} from './errors';
 import type {
   DataProvider,
   ProviderSearchRequest,
@@ -107,8 +111,25 @@ function mapApifyItem(item: ApifyActorItem, retailerSlug: string): RawProductDat
 }
 
 /**
+ * Sections 21–25, Stage B (B8) — Apify is REJECTED / BANNED, never
+ * an approved provider. The standing no-scraping rule bans it; the
+ * old "Approved data collection provider" copy (lib/config/
+ * providers.ts) said the opposite. The vars MUST stay unset. This
+ * reason is the single source of truth for every surface that
+ * mentions Apify.
+ */
+export const APIFY_NOT_CONFIGURED_REASON =
+  'Apify is rejected: scraping is banned by the standing no-scraping rule, so APIFY_API_TOKEN / APIFY_ACTOR_ID must stay unset. Apify is never a data source for SmartBuy.';
+
+/** Sections 21–25, Stage B (B6) — same shape as eBay: 10s timeout. */
+export const APIFY_FETCH_TIMEOUT_MS = 10_000;
+
+/**
  * Data provider backed by Apify's Actor run API.
  * Available only when both APIFY_API_TOKEN and APIFY_ACTOR_ID env vars are set.
+ * BANNED in practice: the standing no-scraping rule means the vars
+ * must stay unset (see APIFY_NOT_CONFIGURED_REASON). The provider
+ * stays registered only so the fail-closed path is testable.
  */
 export class ApifyProvider implements DataProvider {
   readonly key = 'apify';
@@ -129,9 +150,14 @@ export class ApifyProvider implements DataProvider {
     return Boolean(this.token && this.actorId);
   }
 
+  /** Sections 21–25, Stage B (B2) — Apify is banned, never merely unconfigured. */
+  getNotConfiguredReason(): string | null {
+    return this.isAvailable() ? null : APIFY_NOT_CONFIGURED_REASON;
+  }
+
   private async runActor(input: Record<string, unknown>): Promise<ApifyActorItem[]> {
     if (!this.isAvailable() || !this.token || !this.actorId) {
-      return [];
+      throw new ProviderNotConfiguredError('apify', APIFY_NOT_CONFIGURED_REASON);
     }
 
     // Section 20, §12 #99 — the token travels as an Authorization
@@ -139,36 +165,47 @@ export class ApifyProvider implements DataProvider {
     // lands in access logs). Apify's API accepts Bearer auth.
     const runUrl = `${this.baseUrl}/acts/${this.actorId}/run-sync-get-dataset-items`;
 
+    let response: Response;
     try {
-      const response = await fetch(runUrl, {
+      response = await fetch(runUrl, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(input),
+        // Sections 21–25, Stage B (B6) — 10s timeout, same as eBay.
+        signal: AbortSignal.timeout(APIFY_FETCH_TIMEOUT_MS),
       });
-
-      if (!response.ok) {
-        logger.error('ApifyProvider.runActor — non-OK response', {
-          status: response.status,
-          statusText: response.statusText,
-        });
-        return [];
-      }
-
-      const json = (await response.json()) as ApifyActorRunResponse;
-      return json.items ?? json.data?.items ?? [];
     } catch (error) {
       logger.error('ApifyProvider.runActor — request failed', { error: String(error) });
-      return [];
+      throw new ProviderFetchError('apify', `Apify actor call failed: ${String(error)}`);
     }
+
+    if (!response.ok) {
+      logger.error('ApifyProvider.runActor — non-OK response', {
+        status: response.status,
+        statusText: response.statusText,
+      });
+      throw new ProviderFetchError(
+        'apify',
+        `Apify actor call failed: HTTP ${response.status} ${response.statusText}`
+      );
+    }
+
+    const json = (await response.json()) as ApifyActorRunResponse;
+    // Sections 21–25, Stage B (B6) — size cap: never accept more
+    // items than asked for.
+    const items = json.items ?? json.data?.items ?? [];
+    const maxItems = typeof input.maxItems === 'number' && input.maxItems > 0 ? input.maxItems : 20;
+    return items.slice(0, maxItems);
   }
 
   async search(request: ProviderSearchRequest): Promise<RawProductData[]> {
+    // Sections 21–25, Stage B (B1) — was a silent [] when
+    // unconfigured. Throwing names the ban instead.
     if (!this.isAvailable()) {
-      logger.debug('ApifyProvider.search — provider unavailable, returning empty');
-      return [];
+      throw new ProviderNotConfiguredError('apify', APIFY_NOT_CONFIGURED_REASON);
     }
 
     logger.debug('ApifyProvider.search', {
@@ -189,9 +226,10 @@ export class ApifyProvider implements DataProvider {
   }
 
   async fetch(request: ProviderFetchRequest): Promise<RawProductData | null> {
+    // Sections 21–25, Stage B (B1) — was a silent null when
+    // unconfigured. Throwing names the ban instead.
     if (!this.isAvailable()) {
-      logger.debug('ApifyProvider.fetch — provider unavailable, returning null');
-      return null;
+      throw new ProviderNotConfiguredError('apify', APIFY_NOT_CONFIGURED_REASON);
     }
 
     logger.debug('ApifyProvider.fetch', {

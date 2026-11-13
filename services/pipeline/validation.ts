@@ -59,6 +59,36 @@ export const rawProductDataSchema = z.object({
   availability: availabilitySchema,
   url: z.string().url().optional().nullable(),
   raw: z.record(z.unknown()).optional(),
+  // Section 21–25, Stage C (B1/B4) — specs + variants a feed row
+  // may carry. Both are optional and shape-checked only here; the
+  // template/GS1 validation happens in the pipeline (specs against
+  // the category template, variant GTINs against the check digit),
+  // so a bad spec key or variant GTIN is a skipped write, never a
+  // rejected product.
+  specs: z
+    .array(
+      z.object({
+        key: z.string().min(1).max(100),
+        value: z.string().min(1).max(1000),
+        unit: z.string().max(20).optional(),
+      })
+    )
+    .max(50)
+    .optional(),
+  variants: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(500),
+        attributes: z.record(z.string()).optional(),
+        sku: z.string().max(200).optional(),
+        gtin: z.string().max(50).optional().nullable(),
+        imageUrl: z.string().url().optional(),
+        inStock: z.boolean().optional(),
+        sortOrder: z.number().int().optional(),
+      })
+    )
+    .max(100)
+    .optional(),
 });
 
 export type ValidatedRawProduct = z.infer<typeof rawProductDataSchema>;

@@ -32,11 +32,17 @@
  *   the current price is above the budget the verdict NEVER says
  *   buy_now — it says wait (or track) and states the gap
  *   ("above your budget by $X"). No budget supplied → unchanged.
- * - Section 19, Phase 3 (§12 #20 note): when the latest recorded
- *   price is stale (> 7 days, the STALE_PRICE_DAYS rule), the
- *   verdict is QUALIFIED with the staleness — the reason says the
- *   price is N days old — instead of presenting it as current.
- *   `priceStale` / `daysSinceLastPrice` expose it to callers.
+ * - Section 19, Phase 3 (§12 #20 note, REVISED Section 21,
+ *   Stage E E-P2-2): when the latest recorded price is stale
+ *   (> 7 days, the STALE_PRICE_DAYS rule), the verdict is
+ *   WITHHELD — the engine returns 'not_enough_data' with a reason
+ *   that states the age — instead of issuing a buy/wait call on
+ *   old data. The earlier behaviour (issue the verdict, qualified
+ *   with the staleness in the reason) is retired: a qualified
+ *   "Buy Now" on an 11-day-old price still reads as a current
+ *   recommendation. `priceStale` / `daysSinceLastPrice` still
+ *   expose the staleness to callers so the UI can explain WHY no
+ *   verdict was given.
  */
 
 import { STALE_PRICE_DAYS } from '@/lib/price-freshness';
@@ -119,10 +125,12 @@ export interface BuyWaitPrediction {
   /** True when history is thin (<= 4 points): the UI must show the low-confidence label. Unreachable since §12 #46 (no verdict below 5 points); kept as a defence-in-depth flag. */
   lowConfidence: boolean;
   /**
-   * True when the latest recorded price is older than
-   * STALE_PRICE_DAYS (7) — the verdict is then qualified with the
-   * staleness in `reason` instead of presented as current
-   * (Section 19, Phase 3, §12 #20 note).
+   * Section 21, Stage E (E-P2-2) — True when the latest recorded
+   * price is older than STALE_PRICE_DAYS (7). A stale price
+   * withholds the verdict entirely (recommendation
+   * 'not_enough_data', confidence 0) — the reason states the age
+   * instead of presenting a buy/wait call as current. The flag
+   * stays on the result so callers can explain the withholding.
    */
   priceStale: boolean;
   /** Whole days since the latest recorded price (null when < 5 points — no verdict is issued below the minimum). */
@@ -276,10 +284,14 @@ export function predictBuyVsWait(
       ? Math.round((current - budget) * 100) / 100
       : null;
 
-  // Freshness (§12 #20 note): the verdict is only as current as
-  // the latest recorded price. Older than STALE_PRICE_DAYS (7) →
-  // the reason carries the staleness instead of presenting the
-  // verdict as if the price were checked today.
+  // Freshness (§12 #20 note, revised Section 21 E-P2-2): the
+  // verdict is only as current as the latest recorded price.
+  // Older than STALE_PRICE_DAYS (7) → the verdict is WITHHELD
+  // below (recommendation 'not_enough_data', confidence 0), not
+  // merely qualified — a "Buy Now" on an 11-day-old price still
+  // reads as a current recommendation. priceStale /
+  // daysSinceLastPrice stay on the result so the UI can explain
+  // WHY no verdict was given.
   const daysSinceLastPrice = Math.max(
     0,
     Math.floor((Date.now() - valid[valid.length - 1].ms) / 86_400_000)
@@ -323,7 +335,21 @@ export function predictBuyVsWait(
   }
 
   if (priceStale) {
-    reason += ` Note: the latest recorded price is ${daysSinceLastPrice} day${daysSinceLastPrice === 1 ? '' : 's'} old, so this verdict is based on stale data — treat it as a rough guide, not a current price.`;
+    // Section 21, Stage E (E-P2-2) — WITHHOLD, do not qualify:
+    // no buy/wait/track/compare verdict stands on a price older
+    // than STALE_PRICE_DAYS. The facts (current/lowest/average,
+    // slope, counts) stay on the result — they are recorded
+    // history — but the recommendation is 'not_enough_data' and
+    // the reason states the age and what would unblock a verdict
+    // (a fresh price check). Callers that branch on
+    // 'not_enough_data' (drop-window, monthly-planner, the chat
+    // assistant) already render the honest empty state for it.
+    recommendation = 'not_enough_data';
+    confidence = 0;
+    reason =
+      `No verdict — the latest recorded price is ${daysSinceLastPrice} day${daysSinceLastPrice === 1 ? '' : 's'} old ` +
+      `(last checked ${new Date(valid[valid.length - 1].ms).toISOString().slice(0, 10)}), older than the ${STALE_PRICE_DAYS}-day freshness window. ` +
+      `A buy-now-or-wait call on stale data would present an old price as current; set a price alert and check back once the price is refreshed.`;
   }
 
   return {

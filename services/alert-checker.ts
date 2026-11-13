@@ -20,7 +20,11 @@
  *   from availability_history, with the two latest price_history
  *   rows as fallback when that table is unavailable)
  * - deal:          an active, not-yet-expired deal exists for the product
- *   (one batched query for all products — §12 #69, no per-alert N+1)
+ *   (one batched query for all products — §12 #69, no per-alert N+1).
+ *   Sections 21–25, Stage F (F5): deal alerts ARE freshness-gated —
+ *   the gate runs on the newest active deal's `created_at`, the same
+ *   7-day STALE_PRICE_DAYS rule as the price gates. A deal recorded
+ *   more than 7 days ago is not a "new deal" and never fires.
  * - significant_drop (§12 #61): latest recorded price fell by at
  *   least condition_value % (default 10) vs the previous recorded
  *   price; evidence carries old/new price, % drop, timestamps, and
@@ -37,12 +41,27 @@
  *   alert rows, so the tier cap is untouched; it honours the
  *   master switches and dedupes by trigger key.
  *
- * Duplicate prevention: an alert fires at most once per distinct
- * triggered price. If the price stays at the same level, the checker
- * skips it (checked via price_alert_history); if it drops further to
- * a new lower price, a new alert fires. On every trigger the alert's
- * last_triggered_at / trigger_count are updated and the trigger is
- * recorded in price_alert_history.
+ * Duplicate prevention (Sections 21–25, Stage F: F9 — strengthened):
+ * an alert fires at most once per distinct (triggered price, delivery
+ * channel) inside a 30-day window. The old rule was price-only over
+ * the last 50 history rows: it blocked a genuine re-drop to the same
+ * price forever, and it blocked a re-fire on a newly enabled channel
+ * (the history row from the old channel counted as a duplicate).
+ * Now the key is (alert, price, channel, 30-day window) — a price
+ * that returns to a previously-triggered level more than 30 days
+ * later is a new event, and a channel change re-arms the alert for
+ * the new leg. Alert type is implicit in the key: one stored alert
+ * row has exactly one type, so `alert_id` already pins it (the one
+ * exception is an in-place type change via PATCH, whose old history
+ * still applies — conservative: it may suppress one re-fire, never
+ * a false send; `price_alert_history` stores no alert_type column).
+ * On every trigger the alert's last_triggered_at / trigger_count
+ * are updated and the trigger is recorded in price_alert_history.
+ *
+ * Expired alerts (Sections 21–25, Stage F: F6) are skipped
+ * defensively in the loop (counted in `skippedExpired`) — the
+ * cleanup step deactivates them, but an alert expiring between
+ * cleanup runs must not fire in between either.
  *
  * The current price is the latest price_history row, falling back to
  * the lowest in-stock merchant_product price when no price history
@@ -51,10 +70,12 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import { logApiError } from '@/lib/api/error-logging';
 import { getFreshnessStatus } from '@/lib/price-freshness';
 import { appConfig } from '@/lib/config/app';
 import { queueNotification } from '@/services/notifications';
 import { recordAlertTrigger } from '@/services/alert-history';
+import { loadExpiredAlertIds } from '@/services/alert-expiry';
 import {
   DEFAULT_ALERT_DELIVERY_SETTINGS,
   getAlertDeliverySettingsByUser,
@@ -93,6 +114,13 @@ export interface AlertCheckResult {
    * current; suppression is the gate, and this count proves it.
    */
   skippedStale: number;
+  /**
+   * Sections 21–25, Stage F (F6) — active alerts skipped because
+   * their `expires_at` has passed. The cleanup step deactivates
+   * them; this count proves the checker never fires one in the
+   * gap between expiry and cleanup.
+   */
+  skippedExpired: number;
 }
 
 interface AlertRow {
@@ -133,23 +161,12 @@ interface CurrentPrice {
 
 /**
  * Section 20, §12 #81 — the freshness gate for "is now" alert
- * triggers. Returns 'stale' when the triggering record is older
- * than STALE_PRICE_DAYS, 'unknown' when no check date exists, and
- * 'fresh' otherwise. Callers SUPPRESS stale triggers and QUALIFY
- * unknown-age ones (the price may be out of date) — never present
- * either as a current price.
+ * triggers. Moved to lib/price-freshness.ts (see there) — imported
+ * here for this module's own use and re-exported so existing
+ * importers keep working.
  */
-export function alertPriceFreshness(
-  recordedAt: string | null | undefined,
-  now: Date = new Date()
-): 'fresh' | 'stale' | 'unknown' {
-  return getFreshnessStatus(recordedAt, now).status;
-}
-
-/** Staleness note appended to a trigger body whose price age is unknown. */
-export function alertUnknownAgeNote(): string {
-  return ' Price age unknown — this price was not recorded with a check date, so it may be out of date.';
-}
+import { alertPriceFreshness, alertUnknownAgeNote } from '@/lib/price-freshness';
+export { alertPriceFreshness, alertUnknownAgeNote };
 
 /**
  * Section 18, item 17 — batched current-price lookup, mirroring
@@ -238,26 +255,53 @@ async function getCurrentPrices(
  * mirroring the refresh route's `dealProductIds` set. The old
  * per-alert `hasActiveDeal(supabase, productId)` issued one query
  * per `deal` alert (N queries for N alerts); every caller now
- * reads this set instead.
+ * reads this map instead.
+ *
+ * Sections 21–25, Stage F (F5) — the value is the NEWEST active
+ * deal's `created_at` for the product (null when the row carries
+ * none): the deal alert's freshness gate runs on it, the same
+ * 7-day STALE_PRICE_DAYS rule as the price gates. A product is in
+ * the map only when it has at least one active, not-yet-expired
+ * deal. The newest deal decides: one fresh active deal means the
+ * "new deal" claim holds even beside older ones.
  */
 export async function getActiveDealProductIds(
   supabase: AnySupabaseClient,
   productIds: string[]
-): Promise<Set<string>> {
+): Promise<Map<string, string | null>> {
   const ids = [...new Set(productIds.filter(Boolean))];
-  const out = new Set<string>();
+  const out = new Map<string, string | null>();
   if (ids.length === 0) return out;
 
   const { data } = await supabase
     .from('deals')
-    .select('product_id')
+    .select('product_id, created_at')
     .in('product_id', ids)
     .eq('active', true)
     .is('deleted_at', null)
     .gte('end_at', new Date().toISOString());
 
-  for (const row of (data ?? []) as Array<{ product_id: string }>) {
-    if (row.product_id) out.add(row.product_id);
+  for (const row of (data ?? []) as Array<{
+    product_id: string;
+    created_at: string | null;
+  }>) {
+    if (!row.product_id) continue;
+    const createdAt = row.created_at ?? null;
+    const existing = out.get(row.product_id);
+    // Keep the newest deal per product; a missing created_at
+    // never overwrites a dated one, and a dated one always wins
+    // over a missing one.
+    if (existing === undefined) {
+      out.set(row.product_id, createdAt);
+    } else if (existing === null && createdAt !== null) {
+      out.set(row.product_id, createdAt);
+    } else if (
+      existing !== null &&
+      createdAt !== null &&
+      createdAt > existing
+    ) {
+      out.set(row.product_id, createdAt);
+    }
   }
   return out;
 }
@@ -501,23 +545,81 @@ async function loadQueuedWishlistTriggerKeys(
   return out;
 }
 
-async function alreadyTriggeredAtPrice(
+/**
+ * Sections 21–25, Stage F (F9) — strengthened trigger dedupe.
+ *
+ * The old rule was price-only over the last 50 history rows: any
+ * past trigger at the same price blocked a re-fire forever, and a
+ * history row recorded on a different channel blocked a re-fire on
+ * the newly enabled leg. The key is now (alert, triggered price,
+ * delivery channel, time window):
+ * - same price + same channel + sent within `windowDays`
+ *   (default 30) → duplicate, skip;
+ * - same price but a different channel → NOT a duplicate (the new
+ *   leg never delivered this trigger);
+ * - same price + same channel but the last trigger is older than
+ *   the window → NOT a duplicate (a price returning to a level it
+ *   hit over a month ago is a new event, not a replay).
+ * Alert type needs no separate column here: one stored alert row
+ * has exactly one type, so `alert_id` already pins it (see the
+ * header comment for the in-place type-change exception).
+ * A history row with an unparseable `sent_at` counts as a duplicate
+ * (fail-closed toward NOT double-sending on bad data).
+ */
+export const ALERT_DEDUPE_WINDOW_DAYS = 30;
+
+export interface AlreadyTriggeredOptions {
+  /** Delivery channel of the trigger being evaluated (e.g. 'email', 'both'). */
+  channel?: string;
+  /** Re-fire window in days; default ALERT_DEDUPE_WINDOW_DAYS (30). */
+  windowDays?: number;
+  /** "Now" for the window comparison (tests); default new Date(). */
+  now?: Date;
+}
+
+export async function alreadyTriggeredAtPrice(
   supabase: AnySupabaseClient,
   alertId: string,
-  price: number
+  price: number,
+  options: AlreadyTriggeredOptions = {}
 ): Promise<boolean> {
   const { data } = await supabase
     .from('price_alert_history')
-    .select('triggered_price')
+    .select('triggered_price, notification_channel, sent_at')
     .eq('alert_id', alertId)
     .order('sent_at', { ascending: false })
     .limit(50);
 
   if (!data) return false;
 
-  return (data as Array<{ triggered_price: number | string }>).some(
-    (row) => parseFloat(String(row.triggered_price)) === price
-  );
+  const windowDays = options.windowDays ?? ALERT_DEDUPE_WINDOW_DAYS;
+  const nowMs = (options.now ?? new Date()).getTime();
+  const windowMs = windowDays * 24 * 60 * 60 * 1000;
+
+  return (data as Array<{
+    triggered_price: number | string;
+    notification_channel: string | null;
+    sent_at: string | null;
+  }>).some((row) => {
+    if (parseFloat(String(row.triggered_price)) !== price) return false;
+    // A different delivery channel never delivered this trigger.
+    if (
+      options.channel !== undefined &&
+      row.notification_channel !== null &&
+      row.notification_channel !== undefined &&
+      row.notification_channel !== options.channel
+    ) {
+      return false;
+    }
+    // Outside the window it is a new event, not a replay. An
+    // unparseable sent_at is treated as inside the window
+    // (fail-closed: never double-send on bad data).
+    if (row.sent_at) {
+      const sentMs = new Date(row.sent_at).getTime();
+      if (Number.isFinite(sentMs) && nowMs - sentMs > windowMs) return false;
+    }
+    return true;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -538,6 +640,7 @@ export async function checkPriceAlerts(
     wishlistTriggered: 0,
     wishlistQueued: 0,
     skippedStale: 0,
+    skippedExpired: 0,
   };
 
   const { data: alerts, error } = await supabase
@@ -553,6 +656,15 @@ export async function checkPriceAlerts(
     logger.warn('checkPriceAlerts: failed to load active alerts', {
       error: error?.message,
     });
+    // Section 21–25, Stage J, J-P2-3 — the alert run returning
+    // empty on a load failure used to be logger-only; a failed
+    // load is a server error worth the error_log trail.
+    if (error) {
+      logApiError(new Error(`checkPriceAlerts load failed: ${error.message}`), {
+        route: 'alert-checker',
+        status: 500,
+      });
+    }
     return result;
   }
 
@@ -610,13 +722,20 @@ export async function checkPriceAlerts(
     : new Map<string, HistoryPoint[]>();
 
   // Section 19, Phase 6 (§12 #69): ONE deals query for the whole
-  // set, read by every `deal` alert from the set.
+  // set, read by every `deal` alert from the map.
   const needsDeals = (alerts as Array<{ alert_type: string }>).some(
     (a) => a.alert_type === 'deal'
   );
   const dealProductIds = needsDeals
     ? await getActiveDealProductIds(supabase, productIds)
-    : new Set<string>();
+    : new Map<string, string | null>();
+
+  // Sections 21–25, Stage F (F6): expired alerts are skipped
+  // defensively in the loop below, even if the cleanup step has
+  // not deactivated them yet. Best-effort: a missing `expires_at`
+  // column (migration 063 not applied) yields an empty set and
+  // every alert is treated as unexpired.
+  const expiredAlertIds = await loadExpiredAlertIds(supabase);
 
   // Section 19, Phase 6 (§12 #67): ONE transition lookup for the
   // whole set, read by every `back_in_stock` alert and every
@@ -642,6 +761,15 @@ export async function checkPriceAlerts(
   for (const row of alerts as unknown as AlertRow[]) {
     result.checked++;
 
+    // Sections 21–25, Stage F (F6): an expired alert never fires,
+    // even in the gap between expiry and the cleanup step. The
+    // alert stays armed in the table (cleanup deactivates it); the
+    // skip here only proves it never fired while expired.
+    if (expiredAlertIds.has(row.id)) {
+      result.skippedExpired++;
+      continue;
+    }
+
     try {
       const product = productMap.get(row.product_id);
       if (!product) {
@@ -666,9 +794,10 @@ export async function checkPriceAlerts(
       /**
        * Section 20, §12 #81 — the check date behind THIS trigger,
        * for the stale gate below. `undefined` = this alert type
-       * makes no "is now" claim and is not gated (deal, trend,
+       * makes no "is now" claim and is not gated (trend,
        * opportunity); null = a gated trigger with unknown age
        * (qualify, don't suppress); a date = gate on its age.
+       * Deal alerts gate on the deal's creation date (F5).
        */
       let gateRecordedAt: string | null | undefined;
       // Evidence for the queued notification. New alert types
@@ -707,9 +836,16 @@ export async function checkPriceAlerts(
             `. View it at ${productUrl}`;
         }
       } else if (row.alert_type === 'deal') {
-        // §12 #69: read from the batched set — no query here.
+        // §12 #69: read from the batched map — no query here.
+        // Sections 21–25, Stage F (F5): deal alerts ARE
+        // freshness-gated — on the newest active deal's
+        // `created_at`, via gateRecordedAt below. A deal recorded
+        // more than STALE_PRICE_DAYS ago is not a "new deal"; a
+        // deal with no recorded creation date fires but the body
+        // is qualified (unknown age, same as the price gates).
         if (dealProductIds.has(row.product_id)) {
           shouldTrigger = true;
+          gateRecordedAt = dealProductIds.get(row.product_id) ?? null;
           subject = `New deal: ${product.name}`;
           body = `There is a new deal on ${product.name}. View it at ${productUrl}`;
         }
@@ -809,19 +945,23 @@ export async function checkPriceAlerts(
 
       if (!shouldTrigger) continue;
 
-      // Section 20, §12 #81 — stale gate for "is now" triggers.
+      // Section 20, §12 #81 — stale gate for "is now" triggers,
+      // extended by Sections 21–25, Stage F (F5) to deal alerts.
       // price_drop / back_in_stock / significant_drop announce a
       // CURRENT event, so a triggering record older than
       // STALE_PRICE_DAYS (7) suppresses the alert entirely — it is
       // counted in skippedStale, never queued, never recorded as a
-      // trigger. An unknown age does not suppress (the price may be
-      // fresh) but the body is qualified so it never reads as a
-      // confirmed current price. trend / opportunity / deal make no
-      // "is now" claim (opportunity already requires fresh; trend
-      // carries its own recorded timestamps, qualified below), so
-      // they are not gated here. NOTE: there is no 'price_below'
-      // alert type in this checker — price_drop is the only
-      // target-price trigger, and it is gated above.
+      // trigger. A deal alert announces a NEW deal, so its gate
+      // runs on the deal's creation date: a deal recorded more
+      // than 7 days ago is not new. An unknown age does not
+      // suppress (the price/deal may be fresh) but the body is
+      // qualified so it never reads as a confirmed current price.
+      // trend / opportunity make no "is now" claim (opportunity
+      // already requires fresh; trend carries its own recorded
+      // timestamps, qualified below), so they are not gated here.
+      // NOTE: there is no 'price_below' alert type in this checker
+      // — price_drop is the only target-price trigger, and it is
+      // gated above.
       if (gateRecordedAt !== undefined) {
         const freshness = alertPriceFreshness(gateRecordedAt);
         if (freshness === 'stale') {
@@ -845,13 +985,11 @@ export async function checkPriceAlerts(
         continue;
       }
 
-      // One notification per distinct triggered price.
-      const triggerPrice = price ?? target ?? 0;
-      if (await alreadyTriggeredAtPrice(supabase, row.id, triggerPrice)) {
-        result.skippedDuplicate++;
-        continue;
-      }
-
+      // One notification per distinct (triggered price, delivery
+      // channel) inside the dedupe window (F9). The channel is
+      // resolved BEFORE the dedupe check so a channel change
+      // re-arms the alert for the new leg instead of being
+      // blocked by a history row from the old channel.
       const channel =
         row.channel === 'email' || row.channel === 'push' || row.channel === 'both'
           ? row.channel
@@ -877,6 +1015,16 @@ export async function checkPriceAlerts(
         }
         if (!alertSettings.emailNotifications) effectiveChannel = 'push';
         else if (!alertSettings.pushNotifications) effectiveChannel = 'email';
+      }
+
+      const triggerPrice = price ?? target ?? 0;
+      if (
+        await alreadyTriggeredAtPrice(supabase, row.id, triggerPrice, {
+          channel: effectiveChannel,
+        })
+      ) {
+        result.skippedDuplicate++;
+        continue;
       }
 
       const queued = await queueNotification(
@@ -927,6 +1075,12 @@ export async function checkPriceAlerts(
       logger.error('checkPriceAlerts: alert failed', {
         alertId: row.id,
         error: String(err),
+      });
+      // Section 21–25, Stage J, J-P2-3.
+      logApiError(err, {
+        route: 'alert-checker',
+        status: 500,
+        context: { alertId: row.id },
       });
       result.failed++;
     }
@@ -1076,6 +1230,12 @@ export async function checkPriceAlerts(
           userId: item.userId,
           productId: item.productId,
           error: String(err),
+        });
+        // Section 21–25, Stage J, J-P2-3.
+        logApiError(err, {
+          route: 'alert-checker',
+          status: 500,
+          context: { userId: item.userId, productId: item.productId },
         });
         result.failed++;
       }

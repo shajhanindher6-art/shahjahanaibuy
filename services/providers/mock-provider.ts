@@ -125,6 +125,11 @@ export class MockProvider implements DataProvider {
     return true;
   }
 
+  /** Mock is test data only, always available — nothing to explain. */
+  getNotConfiguredReason(): string | null {
+    return null;
+  }
+
   async search(request: ProviderSearchRequest): Promise<RawProductData[]> {
     logger.debug('MockProvider.search', { query: request.query, retailerSlug: request.retailerSlug });
 

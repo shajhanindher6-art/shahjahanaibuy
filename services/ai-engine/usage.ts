@@ -47,6 +47,12 @@
  */
 
 import { logger } from '@/lib/config/logger';
+import {
+  isSharedAiQuotaConfigured,
+  checkSharedUserQuota,
+  readSharedProviderBudget,
+  spendSharedProviderBudget,
+} from './quota-store';
 
 // ---------------------------------------------------------------------------
 // Constants (the numbers above, in one place for tests + routes)
@@ -392,4 +398,91 @@ export function resetAiUsage(): void {
   capabilityUsage.clear();
   userDayBuckets.clear();
   providerDaySpend.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Shared-counter wrappers (Section 21–25, Stage J, J-P2-6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Async per-user quota check: tries the shared Upstash counter
+ * first (see `quota-store.ts`); falls back to the in-memory
+ * `checkAiUserQuota` when Upstash is unconfigured or Redis
+ * errors. All AI routes call THIS, not the sync version — the
+ * sync version is the in-memory fallback and the test seam.
+ * The bypass is closed only when `isSharedAiQuotaConfigured()`
+ * is true (Upstash confirmed in Vercel — owner-gated).
+ */
+export async function checkAiUserQuotaAsync(userId: string): Promise<AiUserQuotaCheck> {
+  const resetAt = nextUtcMidnightIso();
+  const shared = await checkSharedUserQuota(userId, AI_USER_DAILY_QUOTA);
+  if (shared) {
+    return {
+      allowed: shared.allowed,
+      remaining: shared.remaining,
+      resetAt,
+    };
+  }
+  return checkAiUserQuota(userId);
+}
+
+/** Async provider-budget state: shared first, in-memory fallback. */
+export async function getProviderBudgetStateAsync(key: string): Promise<AiProviderBudgetState> {
+  const budget = getBudget(key);
+  if (Number.isFinite(budget)) {
+    const shared = await readSharedProviderBudget(key, budget);
+    if (shared) {
+      return {
+        key,
+        used: shared.used,
+        budget: shared.budget,
+        remaining: shared.remaining,
+        exhausted: shared.exhausted,
+      };
+    }
+  }
+  return getProviderBudgetState(key);
+}
+
+/** Async provider-budget exhaustion check: shared first, in-memory fallback. */
+export async function isProviderBudgetExhaustedAsync(providerKey: string): Promise<boolean> {
+  const state = await getProviderBudgetStateAsync(providerKey);
+  return state.exhausted;
+}
+
+/**
+ * Async provider-budget spend: shared first (denied calls spend
+ * nothing), in-memory fallback. Returns false when exhausted.
+ */
+export async function spendProviderBudgetAsync(providerKey: string): Promise<boolean> {
+  const budget = getBudget(providerKey);
+  if (Number.isFinite(budget)) {
+    const shared = await spendSharedProviderBudget(providerKey, budget);
+    if (shared !== null) return shared;
+  }
+  return spendProviderBudget(providerKey);
+}
+
+/**
+ * Async admin summary: same shape as `getAiUsageSummary`, but the
+ * `budgets` array reads the shared counters when they are active.
+ * The per-provider / per-capability call counts stay per-instance
+ * in-memory (no shared ledger exists for those yet) — the summary
+ * note says so.
+ */
+export async function getAiUsageSummaryAsync(): Promise<AiUsageSummary> {
+  const summary = getAiUsageSummary();
+  const sharedActive = isSharedAiQuotaConfigured();
+  const budgets = await Promise.all(
+    Object.keys(PROVIDER_DAILY_BUDGETS).map((key) => getProviderBudgetStateAsync(key))
+  );
+  return {
+    ...summary,
+    budgets,
+    note:
+      summary.note +
+      (sharedActive
+        ? ' Shared Upstash counters are ACTIVE: budgets above are cross-instance.'
+        : ' Shared Upstash counters are NOT configured: budgets above are this instance only.'),
+  };
 }

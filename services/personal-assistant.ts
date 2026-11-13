@@ -54,6 +54,11 @@ import { getLatestPrices, getPriceHistory } from './price-history';
 import { predictBuyVsWait, type BuyWaitPoint } from './buy-wait-prediction';
 import { getAISummary } from './ai-summary';
 import { formatLabelDate } from '@/lib/ai-source-label';
+import {
+  normalizePriceVerificationStatus,
+  type PriceVerificationStatus,
+} from './price-verification';
+import { recordAiRecommendation } from './ai-recommendation-audit';
 import type { ParsedSearchIntent } from '@/types/ai';
 import type { Product } from '@/types';
 
@@ -109,11 +114,14 @@ export interface EnrichedProduct {
   confidenceScore: number;
   /**
    * Section 20, §12 #82 — verification rollup for the shown price.
-   * Always 'unverified' here: the assistant's price is a recorded
-   * merchant listing / price_history value, never a live-checked
-   * price, and the 045 column is not read on this path.
+   * Section 21, Stage E (E-P2-7): read from the real value, not
+   * hardcoded — enrichProducts fills this from
+   * products.price_verification_status (migration 045) via a
+   * best-effort lookup; when the column is unreadable (045
+   * unapplied) normalizePriceVerificationStatus returns
+   * 'unverified', the honest value until 045 applies.
    */
-  priceVerificationStatus: 'unverified';
+  priceVerificationStatus: PriceVerificationStatus;
   /** Recorded USD price — always present (unpriced rows are dropped). Recorded, not live-checked. */
   price: number;
   bestRetailer: AssistantRetailer;
@@ -164,6 +172,45 @@ function parseNum(value: unknown): number | null {
 }
 
 /**
+ * Section 21, Stage E (E-P2-7) — best-effort read of the real
+ * price-verification rollup (products.price_verification_status,
+ * migration 045). Never throws: a missing column (045 unapplied),
+ * a failed query, or an empty result all degrade to "no rows",
+ * and callers read 'unverified' for a missing id via
+ * normalizePriceVerificationStatus — the honest value until 045
+ * applies and the column is readable. Kept as a separate query
+ * (rather than extending the callers' product selects) so a
+ * pre-045 table can never break the recommendation queries.
+ */
+async function fetchVerificationStatuses(
+  supabase: AnySupabaseClient,
+  ids: string[]
+): Promise<Map<string, PriceVerificationStatus>> {
+  const out = new Map<string, PriceVerificationStatus>();
+  if (ids.length === 0) return out;
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select('id, price_verification_status')
+      .in('id', ids);
+    if (error || !data) return out;
+    for (const row of data as Array<{
+      id: string;
+      price_verification_status: unknown;
+    }>) {
+      out.set(
+        row.id,
+        normalizePriceVerificationStatus(row.price_verification_status)
+      );
+    }
+  } catch {
+    // Column missing (045 unapplied) or query failed — callers
+    // read 'unverified' for the missing ids, never a throw.
+  }
+  return out;
+}
+
+/**
  * Enrich product rows with everything a recommendation needs.
  * DROPS (never returns): demo slugs, products with no merchant
  * listing, and products with no resolvable price. Callers must
@@ -179,7 +226,7 @@ export async function enrichProducts(
   const ids = candidates.map((r) => r.id);
   if (ids.length === 0) return [];
 
-  const [mpRes, latestPrices, reviewsRes] = await Promise.all([
+  const [mpRes, latestPrices, reviewsRes, verificationById] = await Promise.all([
     supabase
       .from('merchant_products')
       .select('product_id, merchant_id, price, compare_at_price, url, in_stock')
@@ -193,6 +240,7 @@ export async function enrichProducts(
       .in('product_id', ids)
       .is('deleted_at', null)
       .limit(1000),
+    fetchVerificationStatuses(supabase, ids),
   ]);
 
   const mpRows = (mpRes.data ?? []) as Array<{
@@ -312,7 +360,11 @@ export async function enrichProducts(
       category: row.category,
       imageUrl: row.image_url,
       confidenceScore: row.confidence_score ?? 50,
-      priceVerificationStatus: 'unverified',
+      // Section 21, Stage E (E-P2-7): the real value from the
+      // products rollup — 'unverified' until migration 045
+      // applies and a verified stamp can exist at all.
+      priceVerificationStatus:
+        verificationById.get(row.id) ?? 'unverified',
       price,
       bestRetailer,
       history: null,
@@ -546,6 +598,10 @@ export async function recommendAssistant(
     // Section 20, §12 #67: the old "highest confidence first"
     // ranked by confidence_score, a completeness count, not
     // quality. Name breaks ties deterministically.
+    // Section 21, Stage E (E-P2-3): the pick IS the cheapest —
+    // the label says "Lowest price pick", not "Best pick", so
+    // the visitor is never told a price-only sort is a
+    // multi-factor judgement.
     products.sort((a, b) =>
       a.price - b.price || a.name.localeCompare(b.name)
     );
@@ -557,7 +613,7 @@ export async function recommendAssistant(
 
     const budgetText = budgetLabel(intent);
     const lines: string[] = [];
-    lines.push(`🏆 Best pick for you: ${top.name}${top.brand ? ` (${top.brand})` : ''}`);
+    lines.push(`🏆 Lowest price pick for you: ${top.name}${top.brand ? ` (${top.brand})` : ''}`);
     lines.push(
       `Price: ${formatPriceText(top.price, region)} at ${top.bestRetailer.name} ` +
         `(${retailerDomain(top.bestRetailer, region)})${top.bestRetailer.inStock ? ' — In Stock' : ''}.`
@@ -590,6 +646,21 @@ export async function recommendAssistant(
     // specs". The card shows recorded specifications (or the honest
     // empty state when there are none).
     lines.push('Open a product card below for recorded specifications, price history, and to set a price alert.');
+
+    // Section 21, Stage E (E-P1-4) — audit what was recommended,
+    // to whom (null = anonymous: the assistant carries no auth
+    // context), when, and on what data. The recorder never throws
+    // and its durable write no-ops until migration 065 applies.
+    recordAiRecommendation(supabase, {
+      surface: 'assistant-recommend',
+      userId: null,
+      productIds: products.slice(0, 4).map((p) => p.id),
+      recommendation: `Lowest price pick: ${top.name}`,
+      basis: {
+        priceVerificationStatus: top.priceVerificationStatus,
+        pointsUsed: top.history?.points ?? null,
+      },
+    });
 
     return {
       content: lines.join('\n'),
@@ -777,7 +848,10 @@ export async function compareAssistant(
     }
     lines.push('');
     lines.push(
-      `🏆 Best pick: ${pick.name} — ${whyText(pick, region, {
+      // Section 21, Stage E (E-P2-3): the pick is the cheapest
+      // of the compared products — the label says "Lowest price
+      // pick", not "Best pick".
+      `🏆 Lowest price pick: ${pick.name} — ${whyText(pick, region, {
         budget: intent.budget,
         budgetText: budgetLabel(intent),
         lowestAmong: products.length,
@@ -790,6 +864,20 @@ export async function compareAssistant(
       );
     }
     lines.push('Coupon codes apply at the retailer\'s checkout, not inside SmartBuy.');
+
+    // Section 21, Stage E (E-P1-4) — audit the comparison pick
+    // (see recommendAssistant: null user = anonymous, durable
+    // write no-ops until migration 065 applies).
+    recordAiRecommendation(supabase, {
+      surface: 'assistant-compare',
+      userId: null,
+      productIds: products.map((p) => p.id),
+      recommendation: `Lowest price pick: ${pick.name}`,
+      basis: {
+        priceVerificationStatus: pick.priceVerificationStatus,
+        pointsUsed: pick.history?.points ?? null,
+      },
+    });
 
     return {
       content: lines.join('\n'),
@@ -821,9 +909,11 @@ export async function compareAssistant(
  * product search — not as a verdict.
  *
  * The verdict is computed ONLY from the product's real recorded
- * price_history points (the engine refuses below 2 points and
- * caps confidence at 25% on thin history), and the answer labels
- * it an estimate, never a guarantee. No LLM, no invented data:
+ * price_history points (the engine refuses below 5 points —
+ * Section 20, §12 #46 unified the minimum at 5 — and withholds
+ * the verdict entirely when the latest recorded price is stale,
+ * Section 21, Stage E E-P2-2), and the answer labels it an
+ * estimate, never a guarantee. No LLM, no invented data:
  * with no product named, the answer asks which product; with no
  * price history, it says so honestly instead of guessing.
  */
@@ -942,6 +1032,22 @@ export async function buyWaitAssistant(
       }
     }
     lines.push('Open the product card below for the full price history and to set a price alert.');
+
+    // Section 21, Stage E (E-P1-4) — audit the verdict (see
+    // recommendAssistant: null user = anonymous, durable write
+    // no-ops until migration 065 applies). The basis records the
+    // point count and staleness the verdict stood on — including
+    // a withheld verdict, so a missing verdict is inspectable.
+    recordAiRecommendation(supabase, {
+      surface: 'assistant-buy-wait',
+      userId: null,
+      productIds: [row.id],
+      recommendation: `Verdict for ${row.name}: ${verdict}`,
+      basis: {
+        priceVerificationStatus: enriched[0]?.priceVerificationStatus ?? null,
+        pointsUsed: prediction.pointCount,
+      },
+    });
 
     return {
       content: lines.join('\n'),

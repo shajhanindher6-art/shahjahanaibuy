@@ -9,6 +9,101 @@ import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
 
 // ---------------------------------------------------------------------------
+// Circuit breaker — in-memory read side (Sections 21–25, Stage B, B3)
+// ---------------------------------------------------------------------------
+//
+// `recordProviderHealth` opened the breaker at ≥5 consecutive
+// failures — but nothing ever READ it before calling a provider,
+// so the breaker was write-only. This in-memory mirror is updated
+// by every `recordProviderHealth` call (success resets it, failure
+// increments it) and read by the provider call guard BEFORE any
+// provider is contacted. The DB row stays the durable record; this
+// map is the live gate. It is per-instance, like the repo's other
+// in-memory counters — stated, not hidden.
+//
+// Half-open: once open, the breaker stays open for 60s, then one
+// probe call is allowed through. A probe success closes it; a
+// probe failure re-opens it immediately. Without the probe window
+// an open breaker could never close, because skipped calls record
+// no success.
+
+/** Consecutive failures that open the breaker — mirrors the DB rule in recordProviderHealth. */
+export const PROVIDER_CIRCUIT_BREAKER_THRESHOLD = 5;
+/** Cooldown before one probe call is allowed through an open breaker. */
+export const PROVIDER_CIRCUIT_BREAKER_COOLDOWN_MS = 60_000;
+
+export interface ProviderBreakerState {
+  providerKey: string;
+  /** True while the breaker is open AND inside its cooldown (calls are skipped). */
+  open: boolean;
+  /** True when the cooldown has elapsed and one probe call may go through. */
+  halfOpen: boolean;
+  consecutiveFailures: number;
+  openedAt: string | null;
+}
+
+const breakerStates = new Map<string, { consecutiveFailures: number; openedAt: number | null }>();
+
+function getBreakerRecord(providerKey: string): { consecutiveFailures: number; openedAt: number | null } {
+  let record = breakerStates.get(providerKey);
+  if (!record) {
+    record = { consecutiveFailures: 0, openedAt: null };
+    breakerStates.set(providerKey, record);
+  }
+  return record;
+}
+
+/** Read side of the breaker (B3). Never throws. */
+export function getProviderBreakerState(
+  providerKey: string,
+  nowMs: number = Date.now()
+): ProviderBreakerState {
+  const record = getBreakerRecord(providerKey);
+  const isOpen = record.consecutiveFailures >= PROVIDER_CIRCUIT_BREAKER_THRESHOLD;
+  const cooledDown =
+    isOpen && record.openedAt !== null && nowMs - record.openedAt >= PROVIDER_CIRCUIT_BREAKER_COOLDOWN_MS;
+  return {
+    providerKey,
+    open: isOpen && !cooledDown,
+    halfOpen: cooledDown,
+    consecutiveFailures: record.consecutiveFailures,
+    openedAt: record.openedAt !== null ? new Date(record.openedAt).toISOString() : null,
+  };
+}
+
+/** True when calls to this provider must be skipped right now (open + inside cooldown). */
+export function isProviderCircuitOpen(providerKey: string, nowMs: number = Date.now()): boolean {
+  return getProviderBreakerState(providerKey, nowMs).open;
+}
+
+/** Test-only reset of the in-memory breaker states. */
+export function resetProviderBreakers(): void {
+  breakerStates.clear();
+}
+
+/** Write side, called by recordProviderHealth below. Exported for tests. */
+export function noteProviderBreakerOutcome(
+  providerKey: string,
+  success: boolean,
+  nowMs: number = Date.now()
+): void {
+  const record = getBreakerRecord(providerKey);
+  if (success) {
+    record.consecutiveFailures = 0;
+    record.openedAt = null;
+    return;
+  }
+  record.consecutiveFailures += 1;
+  if (record.consecutiveFailures >= PROVIDER_CIRCUIT_BREAKER_THRESHOLD && record.openedAt === null) {
+    record.openedAt = nowMs;
+  }
+  // A probe failure after the cooldown re-opens immediately.
+  if (record.openedAt !== null && nowMs - record.openedAt >= PROVIDER_CIRCUIT_BREAKER_COOLDOWN_MS) {
+    record.openedAt = nowMs;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Provider Health
 // ---------------------------------------------------------------------------
 
@@ -63,15 +158,31 @@ export async function recordProviderHealth(
     base.circuit_opened_at = now;
   }
 
+  // Sections 21–25, Stage B (B3) — mirror the outcome into the
+  // in-memory breaker so the call guard can read it. The DB
+  // upsert below is best-effort history; the mirror must move
+  // even when the table is unapplied.
+  if (update.success !== undefined) {
+    noteProviderBreakerOutcome(update.providerKey, update.success);
+  } else if (update.status === 'circuit_open') {
+    // An explicit circuit_open status without a success flag
+    // still means the breaker is open: force the mirror open.
+    const record = getBreakerRecord(update.providerKey);
+    if (record.consecutiveFailures < PROVIDER_CIRCUIT_BREAKER_THRESHOLD) {
+      record.consecutiveFailures = PROVIDER_CIRCUIT_BREAKER_THRESHOLD;
+    }
+    if (record.openedAt === null) record.openedAt = Date.now();
+  }
+
   await supabase.from('provider_health').upsert(base, { onConflict: 'provider_key' });
 }
 
 export async function getProviderHealth(
   supabase: AnySupabaseClient
-): Promise<Array<{ providerKey: string; status: string; successCount: number; failureCount: number; consecutiveFailures: number; lastSuccessAt: string | null; lastFailureAt: string | null; avgResponseMs: number | null }>> {
+): Promise<Array<{ providerKey: string; status: string; successCount: number; failureCount: number; consecutiveFailures: number; lastSuccessAt: string | null; lastFailureAt: string | null; lastError: string | null; avgResponseMs: number | null }>> {
   const { data } = await supabase
     .from('provider_health')
-    .select('provider_key, status, success_count, failure_count, consecutive_failures, last_success_at, last_failure_at, avg_response_ms')
+    .select('provider_key, status, success_count, failure_count, consecutive_failures, last_success_at, last_failure_at, last_error, avg_response_ms')
     .order('provider_key')
     .limit(100);
 
@@ -83,6 +194,9 @@ export async function getProviderHealth(
     consecutiveFailures: d.consecutive_failures,
     lastSuccessAt: d.last_success_at,
     lastFailureAt: d.last_failure_at,
+    // Sections 21–25, Stage B (B13) — the admin health surface
+    // shows the last error, not just the counts.
+    lastError: (d as { last_error?: string | null }).last_error ?? null,
     avgResponseMs: d.avg_response_ms,
   }));
 }

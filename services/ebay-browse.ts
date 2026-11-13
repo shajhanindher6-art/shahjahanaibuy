@@ -32,6 +32,7 @@
 
 import { logger } from '@/lib/config/logger';
 import { logApiError } from '@/lib/api/error-logging';
+import { validateGtin } from '@/lib/gtin';
 
 export interface EbayListing {
   itemId: string;
@@ -42,6 +43,15 @@ export interface EbayListing {
   condition: string | null;
   itemWebUrl: string;
   imageUrl: string | null;
+  /**
+   * Section 21–25, Stage C (B12) — the listing's GTIN when the
+   * listing itself carries one (a structured field, GS1-validated).
+   * Null is the honest value for most listings: eBay Browse
+   * `itemSummary` rows rarely carry a GTIN, and one is NEVER
+   * guessed from the title or invented — a missing GTIN is
+   * recorded as missing, not filled in.
+   */
+  gtin: string | null;
 }
 
 export type EbaySearchFailureReason =
@@ -165,6 +175,40 @@ function parsePrice(value: unknown, currency: unknown): {
   };
 }
 
+/**
+ * Section 21–25, Stage C (B12) — attempt GTIN extraction from an
+ * eBay Browse `itemSummary` row. Only structured fields are read:
+ * a top-level `gtin` value, or a `localizedAspects` entry named
+ * GTIN / UPC / EAN / EAN-13 / ISBN. Every candidate must pass the
+ * GS1 check-digit test (lib/gtin.ts) — a mistyped or non-GTIN
+ * aspect value is dropped, never stored. The title is NEVER
+ * scanned for a GTIN: a digit run in a keyword-stuffed title is
+ * not an identity. Returns the digits-only GTIN, or null when
+ * the listing carries none (the normal case — recorded as
+ * missing, never invented).
+ */
+export function extractEbayGtin(item: unknown): string | null {
+  if (!item || typeof item !== 'object') return null;
+  const row = item as Record<string, unknown>;
+  const candidates: unknown[] = [];
+  if (typeof row.gtin === 'string') candidates.push(row.gtin);
+  if (Array.isArray(row.localizedAspects)) {
+    for (const aspect of row.localizedAspects as Array<Record<string, unknown>>) {
+      if (!aspect || typeof aspect !== 'object') continue;
+      const name = typeof aspect.name === 'string' ? aspect.name.trim().toLowerCase() : '';
+      if (name === 'gtin' || name === 'upc' || name === 'ean' || name === 'ean-13' || name === 'isbn') {
+        candidates.push(aspect.value);
+      }
+    }
+  }
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const check = validateGtin(candidate);
+    if (check.valid) return check.normalized;
+  }
+  return null;
+}
+
 function toListing(item: unknown): EbayListing | null {
   if (!item || typeof item !== 'object') return null;
   const row = item as Record<string, unknown>;
@@ -192,6 +236,7 @@ function toListing(item: unknown): EbayListing | null {
     itemWebUrl,
     imageUrl:
       typeof imageObj.imageUrl === 'string' ? imageObj.imageUrl : null,
+    gtin: extractEbayGtin(row),
   };
 }
 

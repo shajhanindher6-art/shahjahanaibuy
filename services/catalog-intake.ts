@@ -18,6 +18,7 @@
 import { parseCsvDocument } from './providers/csv-provider';
 import { validateGtin } from '@/lib/gtin';
 import { validateImageUrl } from '@/lib/image-url';
+import { nearMissSimilarity, NEAR_MISS_THRESHOLD } from '@/lib/fuzzy-match';
 
 /** Stored in the audit-log details for every approved intake batch. */
 export { INTAKE_SOURCE } from '@/lib/intake-sources';
@@ -177,6 +178,46 @@ export function intakeNameBrandKey(name: string, brand: string): string {
 }
 
 /**
+ * Section 21–25, Stage C (B3) — fuzzy name+brand match over
+ * normalized "name|brand" keys (the shape `existingNameBrands`
+ * already stores, so no new catalog context is needed).
+ *
+ * The pipeline dedups with token-Jaccard ≥ 0.75; CSV review did
+ * not, so "MacBook Air 13-inch" vs "MacBook Air 13" (same brand)
+ * sailed through as 'valid' and could create a second catalog
+ * row. The fuzzy leg requires the SAME normalized brand AND a
+ * name similarity ≥ 0.75 (token Jaccard or bigram Dice —
+ * lib/fuzzy-match.ts, the same 0.75 bar as the pipeline). A
+ * different brand never fuzzy-matches, however similar the name:
+ * "MacBook Air 13" (Apple) vs "MacBook Air 13" (a clone brand)
+ * is a different product, not a duplicate.
+ *
+ * Returns the matched key, or null. Pure.
+ */
+export function findFuzzyNameBrandKey(
+  name: string,
+  brand: string,
+  keys: Iterable<string>
+): string | null {
+  const wantedName = normalizeIntakeKey(name);
+  const wantedBrand = normalizeIntakeKey(brand);
+  if (!wantedName || !wantedBrand) return null;
+  let best: { key: string; similarity: number } | null = null;
+  for (const key of keys) {
+    const separator = key.indexOf('|');
+    if (separator < 0) continue;
+    const keyName = key.slice(0, separator);
+    const keyBrand = key.slice(separator + 1);
+    if (keyBrand !== wantedBrand) continue;
+    const similarity = nearMissSimilarity(wantedName, keyName);
+    if (similarity >= NEAR_MISS_THRESHOLD && (!best || similarity > best.similarity)) {
+      best = { key, similarity };
+    }
+  }
+  return best?.key ?? null;
+}
+
+/**
  * Section 20, #9 — GTIN normalization for dedupe: strip spaces
  * and hyphens, upper-case. "978-0-123" and "9780123" are the same
  * GTIN; without this, the same product under a different slug
@@ -275,6 +316,11 @@ export function parseIntakeCsv(csv: string): {
  *  4. same normalized name + brand already in the catalog, or repeated
  *     in this file → 'near-duplicate' (flagged for review, not inserted
  *     unless the admin explicitly includes the row at approve time),
+ *  4b. same normalized brand + a SIMILAR name (similarity ≥ 0.75) already
+ *     in the catalog, or repeated in this file → 'near-duplicate'
+ *     (Section 21–25, Stage C, B3 — the fuzzy leg the pipeline has
+ *     and CSV review did not; a reworded name is held for review,
+ *     never silently inserted),
  *  5. otherwise 'valid'.
  */
 export function reviewIntakeRows(
@@ -445,7 +491,47 @@ export function reviewIntakeRows(
         status = 'near-duplicate';
         nearDuplicateOf = `row ${seenInFile} in this file`;
       } else {
-        status = 'valid';
+        // Section 21–25, Stage C (B3) — fuzzy leg. Same brand +
+        // similar name (≥ 0.75) is a near-duplicate even when the
+        // normalized name is not identical: "MacBook Air 13-inch"
+        // vs "MacBook Air 13" is the same product reworded, not a
+        // new one. Catalog first, then earlier rows in this file.
+        // The detail names the similarity so the reviewer can see
+        // WHY the row was held — a fuzzy hold is a judgement call,
+        // not a certainty.
+        const fuzzyKey = findFuzzyNameBrandKey(
+          input.name,
+          input.brand,
+          context.existingNameBrands.keys()
+        );
+        const fuzzySeenKey = fuzzyKey
+          ? null
+          : findFuzzyNameBrandKey(input.name, input.brand, seenNameBrands.keys());
+        if (fuzzyKey) {
+          const fuzzySlug = context.existingNameBrands.get(fuzzyKey);
+          const similarity = nearMissSimilarity(
+            normalizeIntakeKey(input.name),
+            fuzzyKey.slice(0, fuzzyKey.indexOf('|'))
+          );
+          status = 'near-duplicate';
+          nearDuplicateOf = fuzzySlug;
+          duplicateDetail =
+            `Similar name "${input.name}" to "${fuzzySlug}" (similarity ${similarity.toFixed(2)}) with the same brand "${input.brand}". ` +
+            `Check before including; this may be the same product reworded.`;
+        } else if (fuzzySeenKey) {
+          const fuzzySeenRow = seenNameBrands.get(fuzzySeenKey);
+          const similarity = nearMissSimilarity(
+            normalizeIntakeKey(input.name),
+            fuzzySeenKey.slice(0, fuzzySeenKey.indexOf('|'))
+          );
+          status = 'near-duplicate';
+          nearDuplicateOf = `row ${fuzzySeenRow} in this file`;
+          duplicateDetail =
+            `Similar name "${input.name}" to row ${fuzzySeenRow} in this file (similarity ${similarity.toFixed(2)}) with the same brand "${input.brand}". ` +
+            `Check before including; this may be the same product reworded.`;
+        } else {
+          status = 'valid';
+        }
       }
     } else {
       status = 'valid';

@@ -25,28 +25,77 @@ import { findDuplicate, resolveUniqueSlug, type DeduplicationResult } from './de
 import { assignCategory } from './category-assignment';
 import { detectBrand } from './brand-detection';
 import { processImages } from './image-processing';
+import { writeProductSpecs, replaceProductSpecs } from '@/services/product-attributes';
+import { upsertProductVariants } from './variants';
+import { recordIngestionRejection } from '@/services/ingestion-rejections';
+import { createAuditLog } from '@/services/audit-logs';
 import {
   assessPriceChange,
   insertPriceHistoryRow,
   type PriceHistoryPoint,
 } from '@/services/price-history-quality';
+import { markProductSuccessfullyUpdated } from '@/services/last-successful-update';
 
 /**
- * Section 20, §12 #16 — the minimum-confidence gate for
- * CREATING a product through the pipeline. A score below this
- * is a product with (at most) a name and a price and nothing
- * else worth recording — name-only scores 15, name + price +
- * known availability scores 30, which is the floor: a new
- * product must at least be priced and availability-known. The
- * gate applies to CREATES only: updating an already-catalogued
- * product (matched by GTIN/slug) is not an insertion, and the
- * refresh/update path must not be blocked because the incoming
- * feed row is thin. Price 0 is rejected on the same gate — no
- * free-price flag exists anywhere, so a $0 product is never
- * created (a price-0 UPDATE to an existing product is left to
- * the update path, as before).
+ * Sections 21–25, Stage D (R1) — the fetch time behind this
+ * ingest. The ONLY live caller (lib/workers/processors.ts,
+ * `product.fetch`) passes the moment its provider search
+ * returned; that is the real observation time the freshness
+ * stamp must carry. When absent, ingestion stamps NOTHING:
+ * stamping insert-time would present a re-read / a delayed
+ * insert as a fresh live check. Residual caveat (DB, not code):
+ * `products.data_freshness` is `NOT NULL DEFAULT now()`
+ * (migration 002), so a CREATE without a fetchedAt still gets
+ * the DB default — only a migration can change that default.
+ * The update path has no such default problem: omitting the
+ * column leaves the stored stamp untouched.
+ */
+export interface IngestOptions {
+  /** ISO timestamp of the provider fetch these rows came from. */
+  fetchedAt?: string;
+}
+
+/** A usable fetchedAt (parseable ISO), or null when unknown/invalid. */
+export function resolveIngestFetchedAt(options?: IngestOptions): string | null {
+  const raw = options?.fetchedAt;
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  const time = new Date(raw).getTime();
+  return Number.isFinite(time) ? new Date(time).toISOString() : null;
+}
+
+/**
+ * Section 20, §12 #16 — the minimum-confidence gate for the
+ * pipeline. A score below this is a product with (at most) a name
+ * and a price and nothing else worth recording — name-only scores
+ * 15, name + price + known availability scores 30, which is the
+ * floor: a product must at least be priced and availability-known.
+ * Price 0 is rejected on the same gate — no free-price flag exists
+ * anywhere, so a $0 product is never recorded.
+ *
+ * Section 21–25, Stage C (B9) — the gate applies to UPDATES as
+ * well as creates. Section 20 deliberately left updates ungated
+ * ("an existing product's price update is not an insertion"), but
+ * that let a thin feed row overwrite a catalogued product's
+ * confidence with a 15 and re-stamp its freshness with nothing
+ * behind it. An update that fails the gate is now rejected with
+ * the same reasons as a create, and the rejection is persisted
+ * (B5) so the admin can see what the feed tried to do.
  */
 export const PIPELINE_MIN_CONFIDENCE_SCORE = 30;
+
+/** Reasons a normalized row fails the ingest gate (empty = passes). */
+export function ingestGateFailures(normalized: NormalizedProduct): string[] {
+  const reasons: string[] = [];
+  if (normalized.confidenceScore < PIPELINE_MIN_CONFIDENCE_SCORE) {
+    reasons.push(
+      `confidence score ${normalized.confidenceScore} is below the minimum ${PIPELINE_MIN_CONFIDENCE_SCORE}`
+    );
+  }
+  if (!(normalized.price > 0)) {
+    reasons.push('price must be greater than 0 (no free-price flag exists)');
+  }
+  return reasons;
+}
 
 /** PostgREST/Postgres code for "column does not exist". */
 function isUndefinedColumnError(error: unknown): boolean {
@@ -87,8 +136,9 @@ async function recordPriceHistory(
   supabase: ReturnType<typeof getServiceClient>,
   productId: string,
   retailerId: string,
-  normalized: NormalizedProduct
-): Promise<void> {
+  normalized: NormalizedProduct,
+  fetchedAt: string | null = null
+): Promise<boolean> {
   // Section 20, §12 #39/#42/#44 — assess the new point against
   // the retailer's recorded history BEFORE inserting, and store
   // the flag + provenance with the row. The history read is
@@ -124,7 +174,11 @@ async function recordPriceHistory(
       reasons: assessment.reasons,
     });
   }
-  await insertPriceHistoryRow(supabase, {
+  // Sections 21–25, Stage D (R1) — `observed_at` is when the
+  // provider observed this price (the fetch time), NOT the
+  // insert time: `recorded_at` is the insert. Without a fetch
+  // time the two coincide, as before.
+  const { error } = await insertPriceHistoryRow(supabase, {
     product_id: productId,
     retailer_id: retailerId,
     price: normalized.price,
@@ -133,9 +187,19 @@ async function recordPriceHistory(
     url: normalized.url,
     recorded_at: nowIso,
     source: 'merchant-feed',
-    observed_at: nowIso,
+    observed_at: fetchedAt ?? nowIso,
     suspicious_change: assessment.suspicious,
   });
+  if (error) return false;
+  // Sections 21–25, Stage D (item 3) — a real provider response
+  // was validated and its price point saved: a successful
+  // update. Best-effort; the writer never throws.
+  try {
+    await markProductSuccessfullyUpdated(supabase, productId, fetchedAt ?? nowIso);
+  } catch {
+    // Freshness bookkeeping must never fail the product.
+  }
+  return true;
 }
 
 async function upsertProductSource(
@@ -143,7 +207,8 @@ async function upsertProductSource(
   productId: string,
   retailerId: string,
   normalized: NormalizedProduct,
-  providerKey: string
+  providerKey: string,
+  fetchedAt: string | null = null
 ): Promise<void> {
   await supabase
     .from('product_sources')
@@ -153,7 +218,9 @@ async function upsertProductSource(
         retailer_id: retailerId,
         external_id: normalized.externalId,
         provider_key: providerKey,
-        last_fetched_at: new Date().toISOString(),
+        // Sections 21–25, Stage D (R1) — the fetch time, not the
+        // insert time, when the caller knows it.
+        last_fetched_at: fetchedAt ?? new Date().toISOString(),
         raw: normalized.raw ?? null,
       },
       { onConflict: 'retailer_id,external_id' }
@@ -182,20 +249,37 @@ async function logAudit(
   productId: string,
   metadata: Record<string, unknown>
 ): Promise<void> {
-  await supabase.from('audit_logs').insert({
-    user_id: null,
+  // Section 21–25, Stage J, J-P2-7 — this used to insert into
+  // `audit_logs` directly, leaving `createAuditLog` (the one
+  // helper for that table) with zero callers. The helper is now
+  // the single writer: the `audit_logs` table is kept because the
+  // pipeline genuinely audits product creates/updates into it —
+  // deleting the table would have destroyed that trail. (Admin
+  // actions keep their own trail via `recordAdminAction` /
+  // `admin_audit_logs`.)
+  await createAuditLog(supabase, null, {
     action,
     resource: 'product',
-    resource_id: productId,
+    resourceId: productId,
     metadata,
   });
+}
+
+/** Spec templates are keyed by the leaf category word ('headphones'),
+ *  while normalized.category carries the full path
+ *  ('Electronics > Headphones') — the template lookup needs the leaf. */
+function leafCategory(category: string | null): string | null {
+  if (!category) return null;
+  const parts = category.split('>').map((s) => s.trim()).filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : null;
 }
 
 async function createNewProduct(
   supabase: ReturnType<typeof getServiceClient>,
   normalized: NormalizedProduct,
   retailerId: string,
-  providerKey: string
+  providerKey: string,
+  fetchedAt: string | null = null
 ): Promise<{ id: string; brandCreated: boolean; categoryCreated: boolean }> {
   const slug = await resolveUniqueSlug(supabase, normalized.slug);
 
@@ -233,7 +317,14 @@ async function createNewProduct(
     image_url: processedImages[0]?.url ?? normalized.imageUrl,
     gtin: normalized.gtin,
     confidence_score: normalized.confidenceScore,
-    data_freshness: new Date().toISOString(),
+    // Sections 21–25, Stage D (R1) — the freshness stamp is the
+    // provider FETCH time, never insert-time. Without a known
+    // fetch time the column is omitted (the DB default in
+    // migration 002 still stamps now() on create — only a
+    // migration can remove that default; the only live caller
+    // always passes fetchedAt, so in practice the stamp is
+    // always the real fetch time).
+    ...(fetchedAt ? { data_freshness: fetchedAt } : {}),
     next_refresh_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     refresh_status: 'idle',
     refresh_priority: 3,
@@ -264,13 +355,46 @@ async function createNewProduct(
 
   const productId = data.id;
   await insertProductImages(supabase, productId, processedImages);
-  await recordPriceHistory(supabase, productId, retailerId, normalized);
-  await upsertProductSource(supabase, productId, retailerId, normalized, providerKey);
+  // Section 21–25, Stage C (B1) — the production spec-write path:
+  // specs the feed carried are validated against the category
+  // template and written with per-spec attribution
+  // (source 'merchant-feed', verified by 'system'). A spec the
+  // template does not know is never stored and never guessed —
+  // the write reports its errors and the product keeps its
+  // honest 0-spec state for that key.
+  if (normalized.specs.length > 0) {
+    const specWrite = await writeProductSpecs(supabase, {
+      productId,
+      category: leafCategory(normalized.category),
+      entries: normalized.specs,
+      attribution: { source: 'merchant-feed', verifiedBy: 'system' },
+    });
+    if (specWrite.errors.length > 0) {
+      logger.warn('Ingestion: feed specs were not stored', {
+        productId,
+        errors: specWrite.errors,
+      });
+    }
+  }
+  // Section 21–25, Stage C (B4) — variants the feed carried are
+  // matched/created (SKU → GTIN → attributes). No provider
+  // supplies variants today, so this is normally a no-op.
+  if (normalized.variants.length > 0) {
+    const variantWrite = await upsertProductVariants(supabase, productId, normalized.variants);
+    if (variantWrite.errors.length > 0) {
+      logger.warn('Ingestion: some feed variants were not stored', {
+        productId,
+        errors: variantWrite.errors,
+      });
+    }
+  }
+  await recordPriceHistory(supabase, productId, retailerId, normalized, fetchedAt);
+  await upsertProductSource(supabase, productId, retailerId, normalized, providerKey, fetchedAt);
   await logAudit(supabase, 'product.created', productId, {
     name: normalized.name,
     provider: providerKey,
     brand: normalized.brand,
-    category: normalized.category,
+    category: leafCategory(normalized.category),
   });
 
   return {
@@ -286,7 +410,8 @@ async function updateExistingProduct(
   normalized: NormalizedProduct,
   retailerId: string,
   providerKey: string,
-  matchedBy: DeduplicationResult['matchedBy']
+  matchedBy: DeduplicationResult['matchedBy'],
+  fetchedAt: string | null = null
 ): Promise<{ brandCreated: boolean; categoryCreated: boolean }> {
   // Section 20, §12 #66 — NO floor on the score. The old
   // `Math.max(score, 50)` made every ingested product read "50%"
@@ -295,8 +420,13 @@ async function updateExistingProduct(
   // completeness count, not a data-quality score — the transparent
   // multi-dimension score lives in services/product-quality-score.ts
   // and is computed on read.
+  // Sections 21–25, Stage D (R1) — the freshness stamp moves
+  // ONLY when the fetch time is known. An update without a
+  // fetchedAt leaves the stored stamp untouched: stamping
+  // now() here used to present every re-ingest as a fresh live
+  // check.
   const updateData: Record<string, unknown> = {
-    data_freshness: new Date().toISOString(),
+    ...(fetchedAt ? { data_freshness: fetchedAt } : {}),
     confidence_score: normalized.confidenceScore,
     next_refresh_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     refresh_status: 'idle',
@@ -328,8 +458,35 @@ async function updateExistingProduct(
   if (normalized.gtin) updateData.gtin = normalized.gtin;
 
   await supabase.from('products').update(updateData).eq('id', productId);
-  await recordPriceHistory(supabase, productId, retailerId, normalized);
-  await upsertProductSource(supabase, productId, retailerId, normalized, providerKey);
+  // Section 21–25, Stage C (B1/B4) — an update carries the specs
+  // and variants the feed supplied for the keys it touches: specs
+  // replace-by-key (other stored specs are left alone), variants
+  // match-or-create. Invalid entries are reported, never stored.
+  if (normalized.specs.length > 0) {
+    const specWrite = await replaceProductSpecs(supabase, {
+      productId,
+      category: leafCategory(normalized.category),
+      entries: normalized.specs,
+      attribution: { source: 'merchant-feed', verifiedBy: 'system' },
+    });
+    if (specWrite.errors.length > 0) {
+      logger.warn('Ingestion: feed specs were not stored on update', {
+        productId,
+        errors: specWrite.errors,
+      });
+    }
+  }
+  if (normalized.variants.length > 0) {
+    const variantWrite = await upsertProductVariants(supabase, productId, normalized.variants);
+    if (variantWrite.errors.length > 0) {
+      logger.warn('Ingestion: some feed variants were not stored on update', {
+        productId,
+        errors: variantWrite.errors,
+      });
+    }
+  }
+  await recordPriceHistory(supabase, productId, retailerId, normalized, fetchedAt);
+  await upsertProductSource(supabase, productId, retailerId, normalized, providerKey, fetchedAt);
   await logAudit(supabase, 'product.updated', productId, {
     provider: providerKey,
     matchedBy,
@@ -340,12 +497,22 @@ async function updateExistingProduct(
 
 export async function ingestProduct(
   raw: RawProductData,
-  providerKey: string
+  providerKey: string,
+  options?: IngestOptions
 ): Promise<IngestionResult> {
+  // Sections 21–25, Stage D (R1) — the fetch time, when the
+  // caller knows it (the product.fetch processor passes the
+  // moment its provider search returned).
+  const fetchedAt = resolveIngestFetchedAt(options);
   // 1. Validate
   const validation = validateRawProduct(raw);
   if (!validation.success) {
     logger.warn('Ingestion: validation failed', { errors: validation.errors });
+    // No rejection record here by design: validation runs before
+    // any database client exists ("rejects invalid input before
+    // touching the database"), and the errors are returned inline
+    // to the caller in full. Post-validation rejections below ARE
+    // persisted (B5).
     return {
       success: false,
       action: 'rejected',
@@ -357,14 +524,39 @@ export async function ingestProduct(
   const normalized = normalizeProduct(validation.data);
   const supabase = getServiceClient();
 
+  // Section 21–25, Stage C (B5) — persist a pipeline rejection
+  // (row + reason + timestamp) so the admin can review it at
+  // /admin/ingestion-failures. Best-effort: a store failure never
+  // changes the rejection itself.
+  const persistRejection = async (reason: string): Promise<void> => {
+    await recordIngestionRejection(supabase, {
+      source: 'pipeline',
+      rowNumber: null,
+      productName: normalized.name,
+      row: {
+        name: normalized.name,
+        slug: normalized.slug,
+        brand: normalized.brand,
+        category: normalized.category,
+        price: normalized.price,
+        currency: normalized.currency,
+        merchant: normalized.retailerSlug,
+        gtin: normalized.gtin,
+      },
+      reason,
+    });
+  };
+
   try {
     // 3. Get retailer
     const retailerId = await getRetailerId(supabase, normalized.retailerSlug);
     if (!retailerId) {
+      const reason = `Unknown retailer: ${normalized.retailerSlug}`;
+      await persistRejection(reason);
       return {
         success: false,
         action: 'rejected',
-        errors: [`Unknown retailer: ${normalized.retailerSlug}`],
+        errors: [reason],
       };
     }
 
@@ -372,14 +564,34 @@ export async function ingestProduct(
     const dedup = await findDuplicate(supabase, normalized);
 
     if (dedup.isDuplicate && dedup.existingProductId) {
-      // 5. Update existing
+      // 5. Update existing — Section 21–25, Stage C (B9): the
+      // update path is gated with the same confidence + price>0
+      // checks as creates. A thin feed row no longer overwrites
+      // a catalogued product's confidence and freshness.
+      const updateGateFailures = ingestGateFailures(normalized);
+      if (updateGateFailures.length > 0) {
+        const reasons = updateGateFailures;
+        logger.warn('Ingestion: confidence gate rejected product update', {
+          id: dedup.existingProductId,
+          reasons,
+        });
+        await persistRejection(
+          `Update gate: ${reasons.join('; ')} (existing product ${dedup.existingProductId}, matched by ${dedup.matchedBy ?? 'unknown'})`
+        );
+        return {
+          success: false,
+          action: 'rejected',
+          errors: reasons.map((r) => `Ingest gate: ${r}`),
+        };
+      }
       const { brandCreated, categoryCreated } = await updateExistingProduct(
         supabase,
         dedup.existingProductId,
         normalized,
         retailerId,
         providerKey,
-        dedup.matchedBy
+        dedup.matchedBy,
+        fetchedAt
       );
       logger.info('Ingestion: updated existing product', {
         id: dedup.existingProductId,
@@ -397,33 +609,22 @@ export async function ingestProduct(
     // A new product must clear the minimum confidence bar AND
     // carry a real price (> 0). A thin feed row (name only,
     // price 0) used to be inserted as a published product; it is
-    // now rejected before any write. The UPDATE branch above is
-    // deliberately ungated — an existing product's price update
-    // is not an insertion.
-    if (
-      normalized.confidenceScore < PIPELINE_MIN_CONFIDENCE_SCORE ||
-      !(normalized.price > 0)
-    ) {
-      const reasons: string[] = [];
-      if (normalized.confidenceScore < PIPELINE_MIN_CONFIDENCE_SCORE) {
-        reasons.push(
-          `confidence score ${normalized.confidenceScore} is below the minimum ${PIPELINE_MIN_CONFIDENCE_SCORE}`
-        );
-      }
-      if (!(normalized.price > 0)) {
-        reasons.push('price must be greater than 0 (no free-price flag exists)');
-      }
+    // now rejected before any write.
+    const createGateFailures = ingestGateFailures(normalized);
+    if (createGateFailures.length > 0) {
+      const reasons = createGateFailures;
       logger.warn('Ingestion: confidence gate rejected new product', {
         name: normalized.name,
         reasons,
       });
+      await persistRejection(`Create gate: ${reasons.join('; ')}`);
       return {
         success: false,
         action: 'rejected',
         errors: reasons.map((r) => `Ingest gate: ${r}`),
       };
     }
-    const result = await createNewProduct(supabase, normalized, retailerId, providerKey);
+    const result = await createNewProduct(supabase, normalized, retailerId, providerKey, fetchedAt);
     logger.info('Ingestion: created new product', { id: result.id });
     return {
       success: true,
@@ -434,13 +635,15 @@ export async function ingestProduct(
   } catch (err) {
     const message = err instanceof Error ? err.message : 'unknown error';
     logger.error('Ingestion: failed', { error: message });
+    await persistRejection(`Ingestion failed: ${message}`);
     return { success: false, action: 'rejected', errors: [message] };
   }
 }
 
 export async function ingestBatch(
   raws: RawProductData[],
-  providerKey: string
+  providerKey: string,
+  options?: IngestOptions
 ): Promise<IngestionResult[]> {
-  return Promise.all(raws.map((r) => ingestProduct(r, providerKey)));
+  return Promise.all(raws.map((r) => ingestProduct(r, providerKey, options)));
 }

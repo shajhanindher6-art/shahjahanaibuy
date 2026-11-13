@@ -51,9 +51,11 @@
  * HONEST LABELLING: nothing here writes price history, a Deal
  * Score, or an alert. An approved eBay row is ONE snapshot of an
  * ephemeral asking price; the UI labels it "Live eBay asking
- * price, checked <timestamp>" with the approve-time
- * `data_freshness`, shows the condition, and links to the live
- * listing. A listing that later vanishes never triggers an alert.
+ * price, checked <timestamp>" with the preview-time
+ * `data_freshness` (Sections 21–25, Stage D, R2 — the approve
+ * stamps the preview fetch time, never the approve time), shows
+ * the condition, and links to the live listing. A listing that
+ * later vanishes never triggers an alert.
  */
 
 import {
@@ -126,6 +128,12 @@ export function mapEbayListingToIntakeRow(
     merchant: EBAY_MERCHANT_SLUG,
     ...(fields.description ? { description: fields.description } : {}),
     ...(imageUrl ? { imageUrl } : {}),
+    // Section 21–25, Stage C (B12) — the listing's GTIN, when
+    // the listing carries one (extractEbayGtin, GS1-validated).
+    // Null/absent stays absent: the shared review validates any
+    // GTIN that reaches it, and a listing without one is
+    // GTIN-less, never filled in.
+    ...(listing.gtin ? { gtin: listing.gtin } : {}),
     sku: listing.itemId,
   };
 }

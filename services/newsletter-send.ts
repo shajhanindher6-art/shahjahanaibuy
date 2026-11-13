@@ -70,7 +70,32 @@ export interface NewsletterSendOptions {
 }
 
 const DEFAULT_LIMIT = 100;
-const MAX_LIMIT = 500;
+/**
+ * Sections 21–25, Stage G, G-P2-2 — the per-run recipient cap.
+ * The audit found the send limit "unclamped": the route passed
+ * the caller's `limit` straight through and this module clamped
+ * only with `Math.min(MAX_LIMIT, Math.max(1, ...))`, which lets a
+ * non-finite value (`NaN`, from `JSON.parse` of `{"limit": NaN}`
+ * — or any non-number that slips past the route's `typeof`
+ * check) through as `NaN`, turning the subscriber query into
+ * `.limit(NaN)`. The clamp is now explicit and total: only a
+ * finite number is honoured, everything else falls back to the
+ * default, and the result is always an integer in 1..500. The
+ * route (`app/api/v1/admin/newsletter/send/route.ts`) clamps to
+ * the same exported maximum before calling, so the bound is
+ * enforced at both layers and documented in one place.
+ */
+export const NEWSLETTER_SEND_MAX_LIMIT = 500;
+export const NEWSLETTER_SEND_DEFAULT_LIMIT = DEFAULT_LIMIT;
+const MAX_LIMIT = NEWSLETTER_SEND_MAX_LIMIT;
+
+/** Clamp a caller-supplied recipient limit to 1..MAX_LIMIT. */
+export function clampNewsletterSendLimit(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_LIMIT;
+  }
+  return Math.min(MAX_LIMIT, Math.max(1, Math.floor(value)));
+}
 
 interface SubscriberRow {
   email: string;
@@ -111,10 +136,7 @@ export async function sendNewsletterToSubscribers(
     return { ...empty, reason: 'email-not-configured' };
   }
 
-  const limit = Math.min(
-    MAX_LIMIT,
-    Math.max(1, options.limit ?? DEFAULT_LIMIT)
-  );
+  const limit = clampNewsletterSendLimit(options.limit ?? DEFAULT_LIMIT);
 
   let rows: SubscriberRow[];
   try {
