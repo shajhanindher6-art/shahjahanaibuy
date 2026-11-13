@@ -26,5 +26,27 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     setupFiles: ['./tests/setup.ts'],
     environment: 'node',
+    // Sections 21–25, Stage K (K8) — coverage measurement. There was
+    // none: 0 hits in the vitest configs / package.json / workflows.
+    // Provider is @vitest/coverage-v8 (free, same major as vitest —
+    // devDependency, no paid service). `npm run test:coverage` runs
+    // the main suite with coverage; reports land in /coverage
+    // (gitignored) as text (console) + json + html. No threshold is
+    // enforced yet — the first measured baseline is the point; a
+    // threshold that fails the gate belongs to a later decision once
+    // the baseline is known, not to this item.
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      reportsDirectory: './coverage',
+      include: ['app/**', 'lib/**', 'services/**', 'features/**', 'components/**'],
+      exclude: [
+        'tests/**',
+        '**/*.test.ts',
+        '**/*.test.tsx',
+        'app/**/loading.tsx',
+        '**/node_modules/**',
+      ],
+    },
   },
 });

@@ -198,6 +198,15 @@ export interface ComparisonProduct {
    * price. Null when the row carries no freshness timestamp.
    */
   dataFreshness?: string | null;
+  /**
+   * Recorded `products.price_verification_status` (Section 21,
+   * P0 #1) — the comparison verdict earns the "verified recorded
+   * data" label ONLY when every compared product is 'verified'
+   * AND fresh; anything else gets the recorded-data label.
+   * Null/undefined when the row carries no verification stamp
+   * (treated as unverified, never assumed verified).
+   */
+  priceVerificationStatus?: string | null;
 }
 
 export interface ComparisonRetailer {
