@@ -21,6 +21,16 @@ import path from 'path';
  * tests/section18-ux-jsdom.test.tsx (component renders +
  * interactions for the UX items — same jsdom environment, same
  * mocks as the a11y suite).
+ *
+ * Section 19, Phase 3: this config also runs
+ * tests/section19-phase3-best-time-to-buy.test.tsx (the
+ * best-time-to-buy component render tests — exact-date removal
+ * and the Track Price / Compare Alternatives cards).
+ *
+ * Section 19 resume (§12 #18, #73): this config also runs
+ * tests/buying-considerations.test.tsx (the "Before you buy"
+ * component render) and tests/owner-error-log-list.test.tsx
+ * (the owner error-log route filter) — same jsdom environment.
  */
 export default defineConfig({
   resolve: {
@@ -34,7 +44,13 @@ export default defineConfig({
   // "React is not defined" — force the automatic runtime here.
   esbuild: { jsx: 'automatic' },
   test: {
-    include: ['tests/a11y-runtime.test.tsx', 'tests/section18-ux-jsdom.test.tsx'],
+    include: [
+      'tests/a11y-runtime.test.tsx',
+      'tests/section18-ux-jsdom.test.tsx',
+      'tests/section19-phase3-best-time-to-buy.test.tsx',
+      'tests/buying-considerations.test.tsx',
+      'tests/owner-error-log-list.test.tsx',
+    ],
     setupFiles: ['./tests/setup.ts'],
     environment: 'jsdom',
   },

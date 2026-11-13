@@ -36,8 +36,14 @@ function fakeWebhookClient(options: {
   insertError?: { message: string } | null;
 }) {
   const inserts: Array<Record<string, unknown>> = [];
+  // Section 19, item 97: the outcome bookkeeping update
+  // (updateWebhookEventOutcome) was missing from this fake, so the
+  // test logged "supabase.from(...).update is not a function" to
+  // stderr. Recorded here so tests can assert the outcome too.
+  const outcomeUpdates: Array<Record<string, unknown>> = [];
   const client = {
     inserts,
+    outcomeUpdates,
     from(table: string) {
       if (table !== 'webhook_events') throw new Error(`unexpected table ${table}`);
       return {
@@ -55,6 +61,14 @@ function fakeWebhookClient(options: {
         async insert(row: Record<string, unknown>) {
           inserts.push(row);
           return { error: options.insertError ?? null };
+        },
+        update(values: Record<string, unknown>) {
+          return {
+            eq: async (_col: string, value: string) => {
+              outcomeUpdates.push({ ...values, _eq: value });
+              return { error: null };
+            },
+          };
         },
       };
     },
@@ -92,6 +106,14 @@ describe('processWebhookEvent records the event or fails loudly', () => {
     expect(client.inserts).toHaveLength(1);
     expect(client.inserts[0].stripe_event_id).toBe('evt_test_1');
     expect(client.inserts[0].event_type).toBe('customer.subscription.updated');
+    // Section 19, item 97: with no Stripe key the processing fails
+    // after the insert, and the outcome bookkeeping update now lands
+    // on the fake (status 'failed') instead of stderr noise.
+    expect(client.outcomeUpdates).toHaveLength(1);
+    expect(client.outcomeUpdates[0]).toMatchObject({
+      status: 'failed',
+      _eq: 'evt_test_1',
+    });
   });
 
   it('skips the insert for an already-recorded event (idempotency)', async () => {

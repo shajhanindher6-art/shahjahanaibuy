@@ -278,7 +278,12 @@ export interface Alert {
   id: string;
   userId: string;
   productId: string;
-  alertType: 'price_drop' | 'back_in_stock' | 'deal';
+  // Section 19, Phase 6 (§12 #61/#62/#64): significant_drop (≥10%
+  // vs the previous recorded price), trend (sustained move over the
+  // recorded 30-day window), opportunity (Phase 2 buying-opportunity
+  // composite). The `alerts` table (migration 006) has no CHECK on
+  // alert_type, so no migration is needed for these types.
+  alertType: 'price_drop' | 'back_in_stock' | 'deal' | 'significant_drop' | 'trend' | 'opportunity';
   conditionValue: number | null;
   channel: 'email' | 'push' | 'both';
   active: boolean;

@@ -212,6 +212,15 @@ export interface ComparisonRetailer {
   seller: string | null;
   warranty: string | null;
   url: string | null;
+  /**
+   * Section 19, Phase 5 (§12 #50) — merchant reliability for this
+   * retailer's merchant, scored ONLY from recorded signals (stores
+   * directory, website, verified badge, policy trust grade, listing
+   * coverage). Null when the merchant has no reliability score
+   * (not enough data) — the UI then says so honestly instead of
+   * showing a guessed number.
+   */
+  reliability?: import('@/services/merchant-reliability').MerchantReliability | null;
 }
 
 export interface ProductComparison {
@@ -220,6 +229,21 @@ export interface ProductComparison {
   aiSummary: string;
   bestChoice: string | null;
   createdAt: string;
+  /**
+   * Section 19, Phase 5 (§12 #51) — per-requirement suitability
+   * prose (lowest price, highest rated, widest availability, best
+   * discount): which product suits each requirement better and WHY,
+   * grounded in the real rows. Empty when fewer than 2 products.
+   */
+  suitability: import('@/services/comparison-suitability').SuitabilityExplanation[];
+  /**
+   * Section 19, Phase 5 (§12 #55) — source label for the verdict:
+   * "based on verified recorded data" with the products' freshness
+   * range, plus the note that the closing recommendation line is
+   * general guidance. Rendered with the summary; the same text is
+   * appended to `aiSummary` so API consumers see it too.
+   */
+  sourceLabel: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -231,11 +255,31 @@ export interface Recommendation {
   product: import('./index').Product;
   score: number;
   reason: string;
+  /**
+   * Section 19, Phase 4 (§12 #40) — lowest recorded in-stock
+   * merchant price, or null when no price is recorded. Lets the UI
+   * show the price next to a budget reason instead of asking the
+   * user to trust the words alone.
+   */
+  priceUsd?: number | null;
+  /**
+   * Section 19, Phase 4 (§12 #40) — dollars over the user's
+   * budget_max, or null when in budget / no budget set / no price
+   * recorded. A recommendation with this set is only ever returned
+   * when nothing fits the budget, and its reason says so.
+   */
+  overBudgetByUsd?: number | null;
 }
 
 export interface RecommendationContext {
   userId: string;
   basedOn: 'search_history' | 'wishlist' | 'views' | 'preferences' | 'trending';
+  /**
+   * Section 19, Phase 4 (§12 #43) — true when the user opted out
+   * of personalization: the recommendations are trending-only and
+   * no personal signal was read.
+   */
+  personalizationOptOut?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +330,19 @@ export interface AISummary {
   alternatives: string[];
   createdAt: string;
   expiresAt: string;
+  /**
+   * Section 19, Phase 2 (§12 #16) — freshness stamp. The summary
+   * already has real rows; it just never said when. `priceAsOf`
+   * is the product's real `dataFreshness` (never a fabricated
+   * timestamp; null when the product records none), and
+   * `freshnessNote` is the §12 #20 gate qualifier — null while the
+   * price is fresh, otherwise the honest "based on a price last
+   * checked N days ago" note. Both are attached at read time in
+   * getAISummary (cached rows carry neither column), so a cached
+   * summary is never re-stamped with a fresh date it did not earn.
+   */
+  priceAsOf: string | null;
+  freshnessNote: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -385,7 +442,14 @@ export interface DealRanking {
   productId: string | null;
   dealType: string;
   aiScore: number;
-  discountPercentage: number;
+  /**
+   * Section 19, Phase 0 (§12 #24): null when no percentage can
+   * honestly be derived — a fixed-amount deal with no recorded
+   * price has no percentage, and the API reports null instead of
+   * the old invented `(discountValue/100)*10` number. Callers
+   * treat null as a 0 contribution, never as a fabricated value.
+   */
+  discountPercentage: number | null;
   savingsAmount: number;
   isFeatured: boolean;
   rankedAt: string;

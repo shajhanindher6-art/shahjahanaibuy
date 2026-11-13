@@ -75,11 +75,17 @@ function makeFakeClient() {
   const historyInserts: Array<Record<string, unknown>> = [];
   const webhookInserts: Array<Record<string, unknown>> = [];
   const updates: Array<Record<string, unknown>> = [];
+  // Section 19, item 97: the outcome bookkeeping update
+  // (updateWebhookEventOutcome) was missing from this fake, so
+  // every test logged "supabase.from(...).update is not a function"
+  // to stderr. Recorded here so tests can assert the outcome too.
+  const outcomeUpdates: Array<Record<string, unknown>> = [];
   const client = {
     upserts,
     historyInserts,
     webhookInserts,
     updates,
+    outcomeUpdates,
     from(table: string) {
       if (table === 'webhook_events') {
         return {
@@ -97,6 +103,14 @@ function makeFakeClient() {
           async insert(row: Record<string, unknown>) {
             webhookInserts.push(row);
             return { error: null };
+          },
+          update(values: Record<string, unknown>) {
+            return {
+              eq: async (_col: string, value: string) => {
+                outcomeUpdates.push({ ...values, _eq: value });
+                return { error: null };
+              },
+            };
           },
         };
       }
@@ -177,6 +191,13 @@ describe('processWebhookEvent under the route\'s real call shape (data IS the St
       })
     );
     expect(client.webhookInserts).toHaveLength(1);
+    // Section 19, item 97: the outcome bookkeeping update now
+    // lands on the fake instead of stderr noise.
+    expect(client.outcomeUpdates).toHaveLength(1);
+    expect(client.outcomeUpdates[0]).toMatchObject({
+      status: 'processed',
+      _eq: 'evt_checkout_1',
+    });
     // The handler's effect: syncSubscriptionFromStripe ran (upsert),
     // not a silent no-op on the 'checkout.session' string.
     expect(client.upserts).toHaveLength(1);
