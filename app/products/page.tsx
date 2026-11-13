@@ -339,6 +339,11 @@ export default async function ProductsIndexPage({
                       // and a real fetch checks it).
                       priceVerificationStatus:
                         lowest.get(product.id)?.priceVerificationStatus ?? 'unverified',
+                      // Final 100% (F-P1-04): the brief's 5-state
+                      // price label + reason ride with the card, as
+                      // on the detail page (getProducts derives it
+                      // from the cheapest listing).
+                      priceState: product.priceState,
                       // Section 16, item 9: recorded freshness rides
                       // with the card so the stale-price badge + age
                       // can render under the price.

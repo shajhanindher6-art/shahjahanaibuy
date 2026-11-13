@@ -100,6 +100,7 @@ export default async function PriceHistoryExplorerPage({
         (result.history ?? []).map((h) => ({
           price: Number(h.price),
           recordedAt: h.recordedAt,
+          source: h.source ?? null,
         }))
       );
     })
@@ -130,8 +131,11 @@ export default async function PriceHistoryExplorerPage({
           <p className="mt-2 text-muted-foreground">
             Every product&apos;s recorded price history, side by side —
             biggest drop, current price vs the 30-day low, high and
-            average. Prices are recorded points only: currently 4
-            recorded points per product over 30 days (Amazon only).
+            average. Prices are recorded points only. A product&apos;s
+            stats and biggest drop are shown only once it has at
+            least 5 recorded points with a fresh latest point
+            (within 7 days) — below that the recorded points are
+            listed but no trend verdict is drawn from them.
             Nothing here is smoothed or interpolated — gaps stay gaps.
           </p>
 
@@ -206,13 +210,32 @@ export default async function PriceHistoryExplorerPage({
                           ${summary.stats.current.toFixed(2)}
                         </p>
                         <p className="text-xs text-muted-foreground">current price</p>
+                        {/* Final 100% (F-P1-03): stats only render
+                            when the latest point is fresh (5-point +
+                            freshness gate), but the price still
+                            carries its last-checked date — no price
+                            on this page renders without its freshness
+                            context. */}
+                        {summary.points.length > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            Last checked{' '}
+                            {new Date(
+                              summary.points[summary.points.length - 1].recordedAt
+                            ).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })}
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>
 
                   {summary.stats === null && (
                     <p className="mt-3 text-sm text-muted-foreground">
-                      No recorded price history for this product yet.
+                      {summary.gateReason ??
+                        'No recorded price history for this product yet.'}
                     </p>
                   )}
 
@@ -260,7 +283,8 @@ export default async function PriceHistoryExplorerPage({
                         </p>
                       ) : (
                         <p className="mt-2 text-sm text-muted-foreground">
-                          No price drop recorded in this range.
+                          {summary.gateReason ??
+                            'No price drop recorded in this range.'}
                         </p>
                       )}
                       <p className="mt-3 text-xs text-muted-foreground">

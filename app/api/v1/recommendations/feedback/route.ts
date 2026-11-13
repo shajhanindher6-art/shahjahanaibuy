@@ -15,9 +15,10 @@
 
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { apiSuccess, internalError, validationError } from '@/lib/api/responses';
+import { apiSuccess, badRequest, internalError, validationError } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { logApiError } from '@/lib/api/error-logging';
+import { validateBody, recommendationProductSchema } from '@/lib/api/validation';
 import {
   dismissRecommendation,
   undismissRecommendation,
@@ -35,7 +36,17 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json().catch(() => null);
-    const productId = typeof body?.productId === 'string' ? body.productId.trim() : '';
+    // Final 100%, F-P1-60 — schema validation for productId
+    // (the route keeps its own `feedback` enum check + message).
+    const validation = validateBody(recommendationProductSchema, body ?? {});
+    // Narrowing check (not invalidBodyResponse — it does not narrow
+    // the union, so validation.data would not type-check). Same 400
+    // as invalidBodyResponse: the first error, same message.
+    if (!validation.success) {
+      const firstError = Object.values(validation.errors).flat()[0];
+      return badRequest(firstError ?? 'Invalid request body');
+    }
+    const productId = typeof validation.data.productId === 'string' ? validation.data.productId.trim() : '';
     const feedback = body?.feedback;
     if (!productId) return validationError('productId is required.');
     if (feedback !== 'dismissed' && feedback !== 'undismiss') {

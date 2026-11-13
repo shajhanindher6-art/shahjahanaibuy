@@ -50,7 +50,12 @@ interface SearchResult {
     brand: string | null;
     category: string | null;
     imageUrl: string | null;
-    confidenceScore: number;
+    /**
+     * Final 100% — F-P2-03: legacy field-presence count, no longer
+     * emitted by /api/v1/ai-search. Optional for older cached
+     * responses; nothing on this page reads it.
+     */
+    confidenceScore?: number;
     /** Recorded `products.data_freshness` (Section 16, item 9) — the
         API returns the full product row; older cached responses may
         omit it, so the stale badge renders nothing then. */
@@ -1646,8 +1651,8 @@ function SearchPageContent() {
                             recorded points. */}
                         <PriceTrendSparkline slug={result.product.slug} showChange />
                         {/* A2 label fix: this is the SEARCH relevance
-                            score (services/ai-search.ts: product
-                            confidenceScore + 15 per matched attribute,
+                            score (services/ai-search.ts: field-presence
+                            count + 15 per matched attribute,
                             capped at 100) — NOT the product page's
                             Deal Score, which is a different formula
                             (price history + discount probability).
@@ -1847,6 +1852,18 @@ function SearchPageContent() {
                         )}
                         <span className="text-xs text-blue-600 underline">View at retailer →</span>
                       </div>
+                      {/* Final 100% — F-P0-06: a web result's price
+                          is the retailer's own listing as found by
+                          search — SmartBuy never checked it, and
+                          there is no recorded check date behind it.
+                          The qualifier rides with the price so the
+                          number is never read as a SmartBuy-verified
+                          or current price. */}
+                      {web.price !== null && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Price as listed by the retailer — not checked by SmartBuy.
+                        </p>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

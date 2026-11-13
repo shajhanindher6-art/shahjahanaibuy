@@ -82,7 +82,13 @@ export function ProductGallery({ images, fallbackImageUrl, productName }: Produc
             className="h-full w-full object-cover"
           />
         ) : (
-          <Package className="h-24 w-24 text-muted-foreground" />
+          <div className="flex flex-col items-center gap-2">
+            <Package className="h-24 w-24 text-muted-foreground" />
+            {/* FINAL 100%, F-P2-33 — the placeholder now says so in
+                text, not just an icon: no image is recorded for
+                this product. */}
+            <p className="text-sm text-muted-foreground">No image recorded for this product</p>
+          </div>
         )}
       </div>
       {ordered.length > 1 && (

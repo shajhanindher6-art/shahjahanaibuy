@@ -11,9 +11,9 @@
  *
  * Honesty: this measures dispersion only — it is NOT the Price
  * History Explorer (which shows levels: low/high/average/biggest
- * drop). A product with fewer than 2 recorded points gets no
- * volatility stats and an honest "not enough recorded points" row,
- * never a zero-filled ranking. Nothing is smoothed or interpolated.
+ * drop). A product with fewer than 5 recorded points, or a stale
+ * latest point, gets no volatility stats and an honest gated row
+ * with the reason, never a zero-filled ranking. Nothing is smoothed or interpolated.
  */
 
 import type { Metadata } from 'next';
@@ -88,6 +88,7 @@ export default async function VolatilityRankingPage({
         (result.history ?? []).map((h) => ({
           price: Number(h.price),
           recordedAt: h.recordedAt,
+          source: h.source ?? null,
         }))
       );
     })
@@ -112,10 +113,12 @@ export default async function VolatilityRankingPage({
           </h1>
           <p className="mt-2 text-muted-foreground">
             Which products hold a steady price — and which jump around?
-            Ranked by price stability from recorded price history only
-            (currently 4 recorded points per product over 30 days,
-            Amazon only). Rank 1 is the most stable product. Nothing
-            here is smoothed or interpolated — gaps stay gaps.
+            Ranked by price stability from recorded price history only.
+            A product is ranked only once it has at least 5 recorded
+            points with a fresh latest point (within 7 days) — fewer
+            or stale points are listed unranked with the reason, never
+            ranked from thin history. Rank 1 is the most stable product.
+            Nothing here is smoothed or interpolated — gaps stay gaps.
           </p>
 
           <form
@@ -196,8 +199,8 @@ export default async function VolatilityRankingPage({
 
                   {row.stats === null && (
                     <p className="mt-3 text-sm text-muted-foreground">
-                      Not enough recorded price history to measure
-                      volatility — at least 2 recorded points are needed.
+                      {row.gateReason ??
+                        'Not enough recorded price history to measure volatility — at least 5 recorded points with a fresh latest point are needed.'}
                     </p>
                   )}
 

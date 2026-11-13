@@ -129,6 +129,7 @@ import type { NextRequest } from 'next/server';
 import { apiSuccess, unauthorized, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp, requireAdmin } from '@/lib/api/middleware';
 import { isCronAuthorized } from '@/lib/api/cron-auth';
+import { logApiError } from '@/lib/api/error-logging';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import {
   refreshTrackedPrices,
@@ -138,6 +139,7 @@ import {
 } from '@/services/price-refresh';
 import {
   refreshEbayPrices,
+  EBAY_PRICE_HISTORY_NOTE,
   type EbayRefreshResult,
 } from '@/services/ebay-refresh';
 import {
@@ -172,6 +174,7 @@ import { mapWithConcurrencyLimit } from '@/lib/with-concurrency';
 import {
   runRefreshStep,
   retryFailedRefreshSteps,
+  resolveRefreshRunStatus,
   CHAIN_RETRY_MAX_ATTEMPTS,
   sanitizeRefreshStepLoadError,
   summarizeStep,
@@ -604,6 +607,13 @@ export async function POST(request: NextRequest) {
     const admin = await requireAdmin(request);
     if ('error' in admin) {
       if (!process.env.CRON_SECRET) {
+        // Final 100%, F-P2-55 — log the config failure server-side
+        // (was unwired: the 500 went out with no error-log row).
+        logApiError(new Error('CRON_SECRET is not configured'), {
+          request,
+          route: 'prices.refresh',
+          status: 500,
+        });
         return internalError(
           'CRON_SECRET is not configured; set it in the hosting dashboard before scheduling this endpoint'
         );
@@ -614,6 +624,12 @@ export async function POST(request: NextRequest) {
 
   const supabase = createSupabaseServiceClient();
   if (!supabase) {
+    // Final 100%, F-P2-55 — see above.
+    logApiError(new Error('SUPABASE_SERVICE_ROLE_KEY is not configured'), {
+      request,
+      route: 'prices.refresh',
+      status: 500,
+    });
     return internalError(
       'SUPABASE_SERVICE_ROLE_KEY is not configured; price refresh requires the service-role client'
     );
@@ -629,6 +645,15 @@ export async function POST(request: NextRequest) {
   // contract holds — and nothing runs unguarded.
   const guard = await tryStartRefreshRun(supabase, 'prices-refresh');
   if (!guard.started) {
+    // Final 100%, F-P2-55 — a guard READ error is a real failure
+    // (the run was not started); log it, don't just skip silently.
+    if (guard.reason === 'guard-error') {
+      logApiError(new Error(guard.error ?? 'Refresh guard could not be read'), {
+        request,
+        route: 'prices.refresh',
+        status: 500,
+      });
+    }
     const stepNames = [
       'ebay',
       'pipeline',
@@ -675,6 +700,7 @@ export async function POST(request: NextRequest) {
     nonUsdCurrencies: [],
     loadFailed: false,
     staleFlipped: 0,
+    suspiciousPriceChanges: 0,
   };
   // Section 15, P1-9 — step 0: the first live fetch leg. The
   // step never throws and gets NO isFailed predicate, so an eBay
@@ -693,6 +719,10 @@ export async function POST(request: NextRequest) {
     failed: 0,
     budgetExhausted: false,
     budgetRefunded: 0,
+    // Final 100% — F-P2-19: the eBay/history design decision
+    // travels on the zero/fallback result too, so the refresh
+    // response always states it.
+    historyNote: EBAY_PRICE_HISTORY_NOTE,
     products: [],
   };
   // Section 17, Stage D — pipeline step fallback: no provider
@@ -1125,6 +1155,9 @@ export async function POST(request: NextRequest) {
       succeeded: refresh.result.inserted + refresh.result.unchanged,
       failed: refresh.result.failed,
       skipped: refresh.result.skippedNoRetailer + refresh.result.skippedNoPrice,
+      // Final 100% — F-P2-15: the suspicious-flag notification
+      // count, stored in the run row (see RefreshStepCounts).
+      suspiciousPriceChanges: refresh.result.suspiciousPriceChanges,
     }),
     alertExpiry: summarizeStep(alertExpiry, {
       processed: alertExpiry.result.alertsDeactivated + alertExpiry.result.guestAlertsDeactivated,
@@ -1191,12 +1224,25 @@ export async function POST(request: NextRequest) {
   const failedSteps = Object.entries(steps).filter(
     ([, s]) => s.status === 'failed'
   );
-  const overallStatus =
-    failedSteps.length === 0
-      ? 'completed'
-      : failedSteps.length === Object.keys(steps).length
-        ? 'failed'
-        : 'completed_with_failures';
+  // FINAL 100% (F-P1-28, K10b) — the overall status is computed
+  // by the single shared rule (services/refresh-run.ts): a run
+  // with zero failed steps but zero LIVE prices fetched is
+  // 'completed_no_live_source', never 'completed'. Live prices
+  // are eBay listings upserted from a real Browse response +
+  // pipeline products with a fresh provider point; the refresh
+  // step's DB re-reads are NOT live fetches and never count. The
+  // old computation (no failed steps → 'completed') recorded a
+  // no-provider run as a successful refresh; the header note
+  // above ("must not report completed_with_failures just because
+  // no live merchant adapter is configured yet") still holds —
+  // this is a distinct status, not a failure.
+  const livePricesFetched =
+    ebay.result.updated + ebay.result.inserted + pipeline.result.refreshed;
+  const overallStatus = resolveRefreshRunStatus({
+    failedSteps: failedSteps.length,
+    totalSteps: Object.keys(steps).length,
+    livePricesFetched,
+  });
 
   // Section 15, P1-5 — record the run (no-op while migration 040
   // is unapplied: finishRefreshRun logs and continues).
@@ -1212,6 +1258,12 @@ export async function POST(request: NextRequest) {
 
   return apiSuccess({
     skipped: false,
+    // FINAL 100% (F-P1-28) — the run's overall status rides in
+    // the response too (it used to live only in the stored run
+    // row), so the cron caller can see a no-live-source run
+    // without reading the run table.
+    status: overallStatus,
+    livePricesFetched,
     ebay: ebay.result,
     pipeline: pipeline.result,
     refresh: refresh.result,

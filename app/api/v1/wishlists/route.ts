@@ -20,6 +20,7 @@ import {
 import { getPollCountsByWishlist } from '@/lib/wishlist-polls';
 
 import { logApiError } from '@/lib/api/error-logging';
+import { validateBody, wishlistSchema } from '@/lib/api/validation';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'wishlists' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -63,7 +64,19 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { name, description, isPublic } = body ?? {};
+    // Final 100%, F-P1-60 — schema validation (was hand-rolled).
+    // A non-string `description` now 400s instead of being
+    // silently dropped; a non-boolean `isPublic` now 400s instead
+    // of being silently treated as false.
+    const validation = validateBody(wishlistSchema, body ?? {});
+    // Narrowing check (not invalidBodyResponse — it does not narrow
+    // the union, so validation.data would not type-check). Same 400
+    // as invalidBodyResponse: the first error, same message.
+    if (!validation.success) {
+      const firstError = Object.values(validation.errors).flat()[0];
+      return badRequest(firstError ?? 'Invalid request body');
+    }
+    const { name, description, isPublic } = validation.data;
 
     if (typeof name !== 'string' || name.trim() === '') {
       return badRequest('name is required');

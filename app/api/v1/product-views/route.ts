@@ -23,6 +23,7 @@ import { getLowestMerchantPrices } from '@/services/products';
 import type { RecentlyViewedItem } from '@/lib/recently-viewed';
 
 import { logApiError } from '@/lib/api/error-logging';
+import { validateBody, productViewSchema } from '@/lib/api/validation';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -125,7 +126,16 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { productId } = body ?? {};
+    // Final 100%, F-P1-60 — schema validation (was hand-rolled).
+    const validation = validateBody(productViewSchema, body ?? {});
+    // Narrowing check (not invalidBodyResponse — it does not narrow
+    // the union, so validation.data would not type-check). Same 400
+    // as invalidBodyResponse: the first error, same message.
+    if (!validation.success) {
+      const firstError = Object.values(validation.errors).flat()[0];
+      return badRequest(firstError ?? 'Invalid request body');
+    }
+    const { productId } = validation.data;
 
     if (typeof productId !== 'string' || productId.trim() === '') {
       return badRequest('productId is required');

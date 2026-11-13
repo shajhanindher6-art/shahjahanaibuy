@@ -22,7 +22,7 @@
  * Age 0 reads "checked today"; age 1 reads "1 day old".
  */
 
-import { formatLastChecked, getPriceAgeDays, isPriceStale } from '@/lib/price-freshness';
+import { formatLastChecked, getFreshnessStatus } from '@/lib/price-freshness';
 import { cn } from '@/lib/utils';
 
 interface StalePriceBadgeProps {
@@ -32,11 +32,19 @@ interface StalePriceBadgeProps {
 }
 
 export function StalePriceBadge({ dataFreshness, className }: StalePriceBadgeProps) {
-  const age = getPriceAgeDays(dataFreshness);
+  // Final 100% — F-P2-16: the freshness decision goes through
+  // the 3-state getFreshnessStatus, not the 2-state isPriceStale
+  // (which returns false for unknown age — that false used to be
+  // read as "fresh" at this call site). Behaviour is unchanged:
+  // unknown → "Price age unknown", stale → amber badge, fresh →
+  // quiet checked line. The 3-state call is the single source of
+  // truth, so a future reader cannot reintroduce the fail-open.
+  const freshness = getFreshnessStatus(dataFreshness);
+  const age = freshness.ageDays;
   // Section 19, Phase 2 (§12 #21): unknown freshness used to
   // render nothing — indistinguishable from a fresh price. An
   // honest "age unknown" line is shown instead.
-  if (age === null) {
+  if (freshness.status === 'unknown' || age === null) {
     return (
       <span
         className={cn('text-xs text-muted-foreground', className)}
@@ -47,7 +55,7 @@ export function StalePriceBadge({ dataFreshness, className }: StalePriceBadgePro
     );
   }
   const checked = formatLastChecked(dataFreshness);
-  const stale = isPriceStale(dataFreshness);
+  const stale = freshness.status === 'stale';
   const ageLabel =
     age <= 0 ? 'checked today' : age === 1 ? '1 day old' : `${age} days old`;
   const title = checked

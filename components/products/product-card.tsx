@@ -12,6 +12,7 @@ import {
   priceVerificationLabel,
   normalizePriceVerificationStatus,
 } from '@/services/price-verification';
+import type { PriceStateResult } from '@/lib/verification/price-state';
 import { cn } from '@/lib/utils';
 
 export interface ProductCardData {
@@ -47,6 +48,16 @@ export interface ProductCardData {
    * assumes a price is verified.
    */
   priceVerificationStatus?: import('@/services/price-verification').PriceVerificationStatus;
+  /**
+   * Final 100% (F-P1-04): the brief's 5-state price machine result
+   * for the shown price (services/products.ts derives it from the
+   * cheapest listing). When supplied, the card renders the label +
+   * reason under the price, same as the product detail page; when
+   * absent the card renders no state claim at all — it never
+   * guesses one. Only LIVE_VERIFIED may be shown with live/current
+   * wording, and the reason travels with the label.
+   */
+  priceState?: PriceStateResult;
   matchScore?: number | null;
   reason?: string | null;
 }
@@ -166,6 +177,17 @@ export function ProductCard({ product, href, className, showReason }: ProductCar
                 normalizePriceVerificationStatus(product.priceVerificationStatus),
                 null
               ).shortText}
+            </p>
+          )}
+          {/* Final 100% (F-P1-04): the brief's 5-state price label +
+              reason, as on the product detail page — only when the
+              caller supplied the derived state (the /products list
+              and brand pages do, from getProducts). A stale or
+              unverified price never reads as current here. */}
+          {product.price != null && product.priceState && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Price state: <strong>{product.priceState.label}</strong> —{' '}
+              {product.priceState.reason}
             </p>
           )}
           {/* Section 16, item 10: the withheld Deal Score note lives

@@ -18,7 +18,8 @@ import { ShareButtons } from '@/components/products/share-buttons';
 import { EmptyState } from '@/components/ui/empty-state';
 import { cn } from '@/lib/utils';
 import { fetchTimed } from '@/lib/fetch-timed';
-import { computeTrendStats, filterPointsByRange, type TrendPoint } from '@/lib/price-trend';
+import { filterPointsByRange, type TrendPoint } from '@/lib/price-trend';
+import { gateTrendStats } from '@/lib/price-history-gates';
 import { slugify } from '@/lib/brand-category-seo';
 import { Price } from '@/components/region/price';
 import { useRegion } from '@/components/region/region-provider';
@@ -63,11 +64,21 @@ import type { GlobalReadinessData } from '@/services/global-readiness';
  * matrix. Same /prices data as the sparkline (GET
  * /api/v1/products/[slug]/prices, backed by `price_history`), but a
  * 30-DAY window (filterPointsByRange) instead of the sparkline's
- * last-30-points. Renders "No price history" with fewer than 2
- * recorded points in the window — never a fabricated trend.
+ * last-30-points.
+ *
+ * FINAL 100% (W3, F-P2-23) — the cell used to render a trend from
+ * a single point (computeTrendStats returns stats for 1 point:
+ * change 0). It now shares the unified gate (5 recorded points
+ * in the window, fresh latest point): a gated cell says why
+ * ("Not enough history — 3 of 5 points" / "Price data stale")
+ * instead of a number drawn from too little or too old data.
+ * The state is the change % when ungated, null when gated, and
+ * undefined while loading — a second state holds the gate reason
+ * text for the gated render.
  */
 function TrendChangeCell({ slug }: { slug: string }) {
   const [change, setChange] = useState<number | null | undefined>(undefined);
+  const [gateReason, setGateReason] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,14 +93,16 @@ function TrendChangeCell({ slug }: { slug: string }) {
         const points: TrendPoint[] = history
           .map((h) => ({ price: Number(h.price), recordedAt: h.recordedAt }))
           .filter((p) => Number.isFinite(p.price) && p.recordedAt);
-        const stats = computeTrendStats(filterPointsByRange(points, 30));
-        // computeTrendStats returns stats for a single point too
-        // (change 0) — but one point measures no change, so fewer
-        // than 2 points in the window is "No price history", never
-        // a "0.0%" that would read as a flat price.
-        if (!cancelled) setChange(stats && stats.pointCount >= 2 ? stats.changePercent : null);
+        const { stats, gate } = gateTrendStats(filterPointsByRange(points, 30));
+        if (!cancelled) {
+          setChange(stats ? stats.changePercent : null);
+          setGateReason(gate.gated ? gate.reason : null);
+        }
       } catch {
-        if (!cancelled) setChange(null);
+        if (!cancelled) {
+          setChange(null);
+          setGateReason(null);
+        }
       }
     })();
     return () => {
@@ -98,7 +111,17 @@ function TrendChangeCell({ slug }: { slug: string }) {
   }, [slug]);
 
   if (change === undefined) return <span className="text-xs text-muted-foreground">…</span>;
-  if (change === null) return <span className="text-sm text-muted-foreground">No price history</span>;
+  if (change === null) {
+    return (
+      <span className="text-sm text-muted-foreground" title={gateReason ?? undefined}>
+        {gateReason
+          ? gateReason.startsWith('Only')
+            ? `Not enough history (${gateReason})`
+            : 'Price data stale — trend withheld'
+          : 'No price history'}
+      </span>
+    );
+  }
   const fell = change < 0;
   return (
     <span className={cn('text-sm font-medium', fell ? 'text-green-600' : change > 0 ? 'text-red-600' : 'text-muted-foreground')}>
@@ -732,7 +755,7 @@ export default function ComparePage() {
                       <p className="text-sm">
                         <span className="font-medium">Best discount: </span>
                         {discount !== null ? (
-                          <span className="font-semibold text-green-600">−{discount}%</span>
+                          <span className="font-semibold text-green-600">−{discount}% vs list price</span>
                         ) : (
                           <span className="text-muted-foreground">No discount listed</span>
                         )}
@@ -855,7 +878,7 @@ export default function ComparePage() {
                               )}
                               {r.discount !== null && r.discount !== undefined && r.discount > 0 && (
                                 <span className="ml-1 text-xs font-semibold text-green-600">
-                                  −{r.discount}%
+                                  −{r.discount}% vs list price
                                 </span>
                               )}
                             </p>
@@ -940,7 +963,7 @@ export default function ComparePage() {
                       return (
                         <td key={p.productId} className="p-3">
                           {discount !== null ? (
-                            <span className="font-semibold text-green-600">−{discount}%</span>
+                            <span className="font-semibold text-green-600">−{discount}% vs list price</span>
                           ) : (
                             <span className="text-sm text-muted-foreground">No discount listed</span>
                           )}

@@ -5,9 +5,11 @@
  * a countdown while it is upcoming, and — once a stream URL is
  * recorded — a LINK OUT to the provider's stream. The stream is never
  * embedded (no iframe, no CSP change). Linked products are listed at
- * their real current prices (lowest in-stock merchant listing,
- * re-read at view time); a product with no recorded listing says so
- * honestly instead of showing an invented price.
+ * their recorded prices (lowest in-stock merchant listing,
+ * re-read at view time — a re-read, not a live check); a product
+ * with no recorded listing says so honestly instead of showing an
+ * invented price. Each product row carries the stale-price badge,
+ * so a stale recorded price never reads as current.
  *
  * 'Notify me' reuses the existing price-drop alert chain: the page
  * points visitors at the product pages, where a signed-in visitor
@@ -21,6 +23,7 @@ import { ExternalLink, Radio } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EventCountdown } from '@/components/seasonal/countdown';
+import { StalePriceBadge } from '@/components/products/stale-price-badge';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getLiveSessionDetail, liveSessionStatusLabel } from '@/lib/live-sessions';
 import { appConfig } from '@/lib/config/app';
@@ -45,7 +48,7 @@ export async function generateMetadata({
   const title = `${session.title} — SmartBuy AI`;
   const description =
     session.hostNote ??
-    'A scheduled live shopping session — a host walks through real products, each linking to its product page with its real current price.';
+    'A scheduled live shopping session — a host walks through real products, each linking to its product page with its recorded price.';
   return {
     title,
     description,
@@ -211,7 +214,7 @@ export default async function LiveSessionPage({ params }: { params: { slug: stri
           {session.status === 'ended' ? (
             <p className="mt-6 text-sm text-muted-foreground">
               This session has ended. The products below are still listed
-              at their real current prices.
+              at their recorded prices.
             </p>
           ) : null}
 
@@ -235,6 +238,14 @@ export default async function LiveSessionPage({ params }: { params: { slug: stri
                       'No current price recorded for this product.'
                     )}
                   </p>
+                  {/* Final 100% (F-P1-03): the session price is a
+                      recorded price — the stale badge + age render
+                      under it, as on the product card. */}
+                  {lowestPrice !== null && (
+                    <p className="mt-1">
+                      <StalePriceBadge dataFreshness={product.dataFreshness} />
+                    </p>
+                  )}
                   <Link
                     href={`/products/${product.slug}`}
                     className="mt-2 inline-block text-sm font-medium text-primary hover:underline"

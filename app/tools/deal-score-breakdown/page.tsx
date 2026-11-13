@@ -35,6 +35,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getProducts } from '@/services/products';
 import { predictPriceDrop } from '@/services/ai-predictions';
 import { breakdownDealScoreFromPrediction } from '@/lib/deal-score-breakdown';
+import { StalePriceBadge } from '@/components/products/stale-price-badge';
 import {
   DEAL_SCORE_MIN_DATA_POINTS,
   shouldShowDealScore,
@@ -244,11 +245,18 @@ export default async function DealScoreBreakdownPage({
                     </dd>
                   </div>
                   <div className="rounded-md bg-muted p-3">
-                    <dt className="text-muted-foreground">Current price</dt>
+                    {/* Final 100% — F-P0-06: this is a RECORDED
+                        price, never "current" — the input to the
+                        Deal Score is the last recorded price, and
+                        its last-checked age rides under it. */}
+                    <dt className="text-muted-foreground">Recorded price</dt>
                     <dd className="mt-1 font-semibold">
                       {breakdown.inputs.currentPrice !== null
                         ? `$${breakdown.inputs.currentPrice.toFixed(2)}`
                         : 'Unknown'}
+                    </dd>
+                    <dd className="mt-1">
+                      <StalePriceBadge dataFreshness={selected.dataFreshness} />
                     </dd>
                   </div>
                   <div className="rounded-md bg-muted p-3">

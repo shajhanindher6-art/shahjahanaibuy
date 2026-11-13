@@ -28,6 +28,8 @@ import {
 import { logApiError } from '@/lib/api/error-logging';
 import { computeProductQualityScore } from '@/services/product-quality-score';
 import { getProductQualityContexts } from '@/services/admin-products';
+import { assessSpecCompleteness } from '@/lib/spec-templates';
+import { assessIdentityPrecision } from '@/lib/model-identity';
 // Section 14, Chunk 1 — live per-request data: never statically prerendered.
 export const dynamic = 'force-dynamic';
 
@@ -107,7 +109,23 @@ export async function GET(
       merchantSourceMissing: qualityContexts.merchantSourceMissing,
     };
 
-    return apiSuccess({ ...product, images, attributes, variants, repairability, endurance, physical, recorded, globalReadiness, dimensions: dimensionsOut, modelUrl, authenticity, supplyChain, dataQuality });
+    // FINAL 100%, F-P1-09 / F-P1-27 — spec completeness and
+    // identity precision ride the detail response so the product
+    // page can flag them honestly: which required spec keys are
+    // missing (never silently dropped), and whether the name is
+    // a family name rather than one buyable model. Both are
+    // computed from recorded rows only — a missing model number
+    // is flagged, never guessed.
+    const specCompleteness = assessSpecCompleteness(
+      product.category,
+      attributes.map((a) => a.key)
+    );
+    const identityPrecision = assessIdentityPrecision({
+      name: product.name,
+      modelNumber: product.modelNumber ?? null,
+    });
+
+    return apiSuccess({ ...product, images, attributes, variants, repairability, endurance, physical, recorded, globalReadiness, dimensions: dimensionsOut, modelUrl, authenticity, supplyChain, dataQuality, specCompleteness, identityPrecision });
   } catch (err) {
     logApiError(err, { request, route: 'products', status: 500 });
     return internalError('Failed to fetch product');

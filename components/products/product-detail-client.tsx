@@ -532,7 +532,10 @@ interface Product {
   category: string | null;
   imageUrl: string | null;
   gtin: string | null;
-  confidenceScore: number;
+  // Final 100% — F-P2-03: legacy field-presence count, optional
+  // and never rendered. The public products API no longer emits
+  // it; the Specs tab shows the 7-dimension data-quality score.
+  confidenceScore?: number;
   // Section 20, #6: manufacturer model number from GET
   // /api/v1/products/[slug] (migration 055, unapplied — null
   // until the column exists or a value is recorded; the Specs
@@ -548,6 +551,23 @@ interface Product {
   // (and on the SEO initial product) — the Specs tab then hides
   // the row instead of showing the old completeness percentage.
   dataQuality?: (ProductQualityScore & { merchantSourceMissing?: boolean }) | null;
+  // FINAL 100%, F-P1-09 / F-P1-27 — spec completeness and
+  // identity precision from the same endpoint. Absent on older
+  // responses — the Specs tab then hides those lines instead of
+  // guessing them.
+  specCompleteness?: {
+    hasTemplate: boolean;
+    requiredKeys: string[];
+    missingKeys: string[];
+    unknownKeys: string[];
+    complete: boolean;
+    coverage: number;
+  } | null;
+  identityPrecision?: {
+    precision: 'precise' | 'imprecise';
+    label: string;
+    reasons: string[];
+  } | null;
   // Seeded product_attributes rows from GET /api/v1/products/[slug].
   // Absent or empty when the product has no seeded specs — the Specs
   // tab then renders exactly the base rows below, nothing invented.
@@ -1718,6 +1738,16 @@ export default function ProductDetailClient({
           </Card>
         )}
 
+        {/* FINAL 100%, F-P1-10 — variants read-side wiring, verified:
+            the selector above renders only when rows exist; with 0
+            rows (the live state for every product) the page says
+            so honestly instead of hiding the section silently. */}
+        {variants.length === 0 && (
+          <p className="mt-8 text-sm text-muted-foreground">
+            No variants recorded for this product.
+          </p>
+        )}
+
         {/* Where to Buy — merchant listings with price, stock and a
             retailer link. Previously this section did not exist at
             all, so a shopper could see a price and a Deal Score but
@@ -2574,6 +2604,25 @@ export default function ProductDetailClient({
                       when null — 0/10 live products have one, so this
                       row renders nothing today and never a guessed value. */}
                   <SpecRow label="Model number" value={product.modelNumber ?? null} />
+                  {/* FINAL 100%, F-P1-27 — identity precision: when
+                      the name is a family name (no model + generation
+                      recorded) the page says so, instead of presenting
+                      the family name as one buyable model. */}
+                  {product.identityPrecision?.precision === 'imprecise' && (
+                    <p className="py-2 text-sm text-muted-foreground">
+                      {product.identityPrecision.label} —{' '}
+                      {product.identityPrecision.reasons.join('; ')}.
+                    </p>
+                  )}
+                  {/* FINAL 100%, F-P1-09 — missing required specs are
+                      flagged, never silently dropped: the template
+                      keys with no stored value are listed. */}
+                  {product.specCompleteness?.hasTemplate &&
+                    product.specCompleteness.missingKeys.length > 0 && (
+                      <p className="py-2 text-sm text-muted-foreground">
+                        Missing specs: {product.specCompleteness.missingKeys.join(', ')}.
+                      </p>
+                    )}
                   {/* Sections 21–25, Stage H (H-P2-3) — was "Data
                       completeness {confidence}%": the confidence
                       number is a field-presence count, not a
@@ -2605,6 +2654,11 @@ export default function ProductDetailClient({
                       key={attr.id}
                       label={attr.key}
                       value={formatAttributeValue(attr)}
+                      detail={
+                        attr.source
+                          ? `Source: ${attr.source}${attr.verifiedAt ? ` · verified ${new Date(attr.verifiedAt).toLocaleDateString()}` : ' · not verified'}`
+                          : 'Source not recorded'
+                      }
                     />
                   ))}
                 </div>
@@ -2625,6 +2679,11 @@ export default function ProductDetailClient({
                         key={attr.id}
                         label={attr.key}
                         value={formatAttributeValue(attr)}
+                        detail={
+                          attr.source
+                            ? `Source: ${attr.source}${attr.verifiedAt ? ` · verified ${new Date(attr.verifiedAt).toLocaleDateString()}` : ' · not verified'}`
+                            : 'Source not recorded'
+                        }
                       />
                     ))}
                   </div>
@@ -2734,16 +2793,34 @@ function formatMerchantSyncedAt(value: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
 }
 
-function SpecRow({ label, value }: { label: string; value: string | null }) {
+function SpecRow({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string | null;
+  /**
+   * FINAL 100%, F-P2-31 — per-spec attribution line, shown under
+   * the value ("Source: manual-intake · verified 12 Nov 2026",
+   * or "Source not recorded"). Null when there is nothing to say.
+   */
+  detail?: string | null;
+}) {
   // A spec with no recorded value (e.g. GTIN is null in the database
   // for every catalog product) is hidden instead of shown as a dash:
   // a dash reads like a broken field, while a missing row is honest
   // about the data simply not existing. Never invent a value here.
   if (value === null || value === undefined || value === '') return null;
   return (
-    <div className="flex justify-between border-b border-slate-100 py-2 text-sm dark:border-slate-800">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium">{value}</span>
+    <div className="border-b border-slate-100 py-2 text-sm dark:border-slate-800">
+      <div className="flex justify-between">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="font-medium">{value}</span>
+      </div>
+      {detail ? (
+        <p className="mt-0.5 text-right text-xs text-muted-foreground">{detail}</p>
+      ) : null}
     </div>
   );
 }

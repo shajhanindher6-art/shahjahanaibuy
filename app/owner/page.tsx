@@ -35,6 +35,7 @@ import { getOwnerOverview } from '@/services/owner';
 import { listRecentErrors } from '@/services/error-log-admin';
 import { ErrorLogList } from '@/components/owner/error-log-list';
 import { getAiAccuracySummary, accuracySummaryLine } from '@/services/ai-accuracy';
+import { requireAdminPage } from '@/lib/admin-page-guard';
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-GB', {
@@ -62,6 +63,9 @@ const REFRESH_RUN_STATUS_LABELS: Record<string, string> = {
 };
 
 export default async function OwnerPage() {
+  // Final 100%, F-P1-62 — per-page server-side admin re-check
+  // (the layout guard alone is not the only check anymore).
+  await requireAdminPage();
   // Sections 21–25, Stage G, G-P1-4 — the error-log read service
   // re-checks the admin role itself (defense in depth, beyond the
   // owner layout guard), so the page passes the session user id.

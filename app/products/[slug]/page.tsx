@@ -38,6 +38,7 @@ import {
 } from '@/lib/product-seo';
 import { getProductSeo } from '@/lib/product-seo-server';
 import { formatLastChecked, isPriceStale } from '@/lib/price-freshness';
+import { derivePriceState } from '@/lib/verification/price-state';
 import {
   priceVerificationLabel,
   normalizePriceVerificationStatus,
@@ -98,9 +99,12 @@ export default async function ProductPage({
   // from the product row getProductSeo already loaded
   // (products.dataFreshness) — the client component below renders
   // the same fact after its own fetch, but SSR HTML carried no
-  // trace of it until now. No label at all when the row has no
-  // freshness timestamp; a stale badge when the last check is older
-  // than STALE_PRICE_DAYS (7). Nothing here is client-side.
+  // trace of it until now. A stale badge when the last check is
+  // older than STALE_PRICE_DAYS (7). Final 100% — F-P2-16: when
+  // the row has NO freshness timestamp the page renders an honest
+  // "Price age unknown" line instead of hiding the block (the old
+  // code rendered nothing, so an unknown age read as fresh).
+  // Nothing here is client-side.
   const lastCheckedLabel = formatLastChecked(seo.dataFreshness);
   const pricesStale = isPriceStale(seo.dataFreshness);
 
@@ -115,6 +119,23 @@ export default async function ProductPage({
     formatLastChecked(seo.priceVerifiedAt)
   );
 
+  // Final 100% (F-P1-29) — the brief's 5-state price machine, from
+  // the same inputs as the verification label above: the cheapest
+  // listing's stamp, the product row's freshness as the last
+  // check of the price shown. Rendered only when a price is
+  // actually shown, next to the verification pill; the reason
+  // travels with the label so a historical price can never read
+  // as a current live price.
+  const priceState = derivePriceState({
+    priceVerificationStatus: normalizePriceVerificationStatus(
+      seo.priceVerificationStatus
+    ),
+    priceVerifiedAt: seo.priceVerifiedAt ?? null,
+    lastCheckedAt: seo.dataFreshness ?? null,
+    hasRecordedPrice: seo.lowestPrice !== null,
+    hasLiveSource: null,
+  });
+
   return (
     <>
       <script
@@ -124,7 +145,7 @@ export default async function ProductPage({
           __html: buildProductJsonLd(seo, appConfig.url),
         }}
       />
-      {lastCheckedLabel && (
+      {lastCheckedLabel ? (
         <div className="container mx-auto max-w-6xl px-4 pt-6">
           <p className="text-sm text-muted-foreground">
             Prices last checked {lastCheckedLabel}
@@ -135,20 +156,36 @@ export default async function ProductPage({
             )}
           </p>
           {seo.lowestPrice !== null && (
-            <p className="mt-1 text-sm text-muted-foreground">
-              {verification.tone === 'ok' ? (
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
-                  {verification.text}
-                </span>
-              ) : verification.tone === 'warn' ? (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
-                  {verification.text}
-                </span>
-              ) : (
-                verification.text
-              )}
-            </p>
+            <>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {verification.tone === 'ok' ? (
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+                    {verification.text}
+                  </span>
+                ) : verification.tone === 'warn' ? (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                    {verification.text}
+                  </span>
+                ) : (
+                  verification.text
+                )}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Price state: <strong>{priceState.label}</strong> — {priceState.reason}
+              </p>
+            </>
           )}
+        </div>
+      ) : (
+        // Final 100% — F-P2-16: unknown age used to render NOTHING
+        // here — the whole freshness block was hidden, so a product
+        // with no recorded check date read as if its price needed
+        // no warning at all. Unknown age gets its own honest line.
+        <div className="container mx-auto max-w-6xl px-4 pt-6">
+          <p className="text-sm text-muted-foreground">
+            Price age unknown — no recorded price-check date for this
+            product, so the price may be out of date.
+          </p>
         </div>
       )}
       {/* Section skeletons (Section 4, item 2): the hero renders from

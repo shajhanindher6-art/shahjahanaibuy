@@ -34,6 +34,7 @@ import {
 import { countReferralSignups } from '@/services/referral-attribution';
 
 import { logApiError } from '@/lib/api/error-logging';
+import { validateBody, invalidBodyResponse, referralSchema } from '@/lib/api/validation';
 export const dynamic = 'force-dynamic';
 
 function newReferralCode(): string {
@@ -63,6 +64,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json().catch(() => null);
+    // Final 100%, F-P1-60 — schema validation (was hand-rolled).
+    const validation = validateBody(referralSchema, body ?? {});
+    const invalid = invalidBodyResponse(validation);
+    if (invalid) return invalid;
     const guestToken =
       body && typeof body.guestToken === 'string' && body.guestToken.trim() !== ''
         ? body.guestToken.trim()

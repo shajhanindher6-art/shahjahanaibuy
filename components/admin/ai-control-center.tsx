@@ -122,6 +122,40 @@ interface DataQualityPayload {
   merchantSourceMissing?: boolean;
   /** Section 21–25, Stage H (H-P2-2): 5-state taxonomy counts. */
   qualityStates?: { verified: number; partial: number; unverified: number; stale: number; missing: number };
+  /**
+   * Final 100% — F-P2-15: suspicious price changes awaiting
+   * review (migration-057 flag). Absent on older payloads.
+   */
+  suspiciousPriceFlags?: Array<{
+    productId: string;
+    productName: string | null;
+    price: number | null;
+    recordedAt: string;
+    source: string | null;
+  }>;
+  suspiciousPriceFlagCount?: number;
+  /**
+   * Final 100%, F-P1-51 — the three metrics the service computed
+   * but no UI rendered (historyCoverage, sourceReliability,
+   * lastSuccessfulUpdate + productsWithSuccessfulUpdate). All
+   * optional: an older API payload simply renders the
+   * "not available" state instead of crashing.
+   */
+  historyCoverage?: Record<
+    string,
+    { points: number; spanDays: number; firstRecordedAt: string | null; lastRecordedAt: string | null }
+  >;
+  sourceReliability?: Record<
+    string,
+    { points: number; suspicious: number; reliability: number | null }
+  >;
+  historyProvenanceMissing?: boolean;
+  lastSuccessfulUpdate?: Record<
+    string,
+    { at: string | null; source: 'column' | 'price-history' | 'merchant-sync' | null; columnMissing: boolean }
+  >;
+  productsWithSuccessfulUpdate?: number;
+  lastSuccessfulUpdateColumnMissing?: boolean;
   notes: string[];
 }
 
@@ -605,6 +639,40 @@ export function AiControlCenter() {
                 ) : null}
               </ul>
             </div>
+            {/* Final 100% — F-P2-15: the suspicious-price review
+                surface. Detection without review was dead: flagged
+                rows now list here with product, price, date and
+                source, so an admin can check the merchant listing
+                before acting. A flag is a pattern description
+                (spike / fake-sale / inflation), never an accusation
+                — the list never quarantines or deletes anything.
+                The count is the notification: any admin opening
+                this panel sees how many flags await review. When
+                migration 057 is unapplied the flag cannot be stored
+                and the list is empty by construction (the Notes
+                below say so). */}
+            <div className="rounded-lg border p-4">
+              <p className="font-medium">
+                Suspicious price changes — needs review (
+                {data.dataQuality.suspiciousPriceFlagCount ?? 0})
+              </p>
+              {(data.dataQuality.suspiciousPriceFlagCount ?? 0) === 0 ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  No suspicious price changes are flagged right now.
+                </p>
+              ) : (
+                <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                  {(data.dataQuality.suspiciousPriceFlags ?? []).map((flag) => (
+                    <li key={`${flag.productId}-${flag.recordedAt}`}>
+                      {flag.productName ?? flag.productId} —{' '}
+                      {flag.price !== null ? `$${flag.price.toFixed(2)}` : 'price unknown'} on{' '}
+                      {new Date(flag.recordedAt).toLocaleDateString()}
+                      {flag.source ? ` (source: ${flag.source})` : ''}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             <div className="rounded-lg border p-4">
               <p className="font-medium">Price freshness</p>
               <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
@@ -626,6 +694,129 @@ export function AiControlCenter() {
                 </li>
               </ul>
             </div>
+            {/* Final 100%, F-P1-51 — the three metrics the service
+                computed but this panel dropped: price-history
+                coverage, per-source reliability, and last
+                successful update. Every number comes from the
+                payload (real DB records); a missing provenance
+                column renders as "cannot be computed", never as a
+                zero. */}
+            <div className="rounded-lg border p-4">
+              <p className="font-medium">Price-history coverage</p>
+              {data.dataQuality.historyProvenanceMissing ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Cannot be computed — price-history provenance columns do not exist yet
+                  (migration 057 not applied), so per-product coverage is unknown, not zero.
+                </p>
+              ) : data.dataQuality.historyCoverage &&
+                Object.keys(data.dataQuality.historyCoverage).length > 0 ? (
+                <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                  {Object.entries(data.dataQuality.historyCoverage).map(([id, c]) => (
+                    <li key={id}>
+                      {c.points} point(s) over {c.spanDays} day(s)
+                      {c.lastRecordedAt
+                        ? ` — latest ${new Date(c.lastRecordedAt).toLocaleDateString('en-GB')}`
+                        : ' — no recorded point'}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  No price-history coverage recorded — no product has a
+                  provenance-carrying history point yet.
+                </p>
+              )}
+            </div>
+            <div className="rounded-lg border p-4">
+              <p className="font-medium">Per-source reliability</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Share of non-suspicious price-history points per source — a recorded-history
+                ratio, not a trust score. A source with one clean point scores 1.0, which
+                means &ldquo;nothing flagged yet&rdquo;, not &ldquo;proven reliable&rdquo;.
+              </p>
+              {data.dataQuality.historyProvenanceMissing ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Cannot be computed — price-history provenance columns do not exist yet
+                  (migration 057 not applied).
+                </p>
+              ) : data.dataQuality.sourceReliability &&
+                Object.keys(data.dataQuality.sourceReliability).length > 0 ? (
+                <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                  {Object.entries(data.dataQuality.sourceReliability).map(([source, r]) => (
+                    <li key={source}>
+                      {source}: {r.reliability !== null ? `${Math.round(r.reliability * 100)}% clean` : 'no points'} (
+                      {r.points} point(s), {r.suspicious} flagged)
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  No per-source reliability yet — no price-history point carries a source.
+                </p>
+              )}
+            </div>
+            <div className="rounded-lg border p-4">
+              <p className="font-medium">Last successful update</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                The last time a real provider response was validated AND saved — distinct from
+                &ldquo;last checked&rdquo;. {data.dataQuality.productsWithSuccessfulUpdate ?? 0} of{' '}
+                {data.dataQuality.productsTotal} product(s) have one recorded.
+                {data.dataQuality.lastSuccessfulUpdateColumnMissing
+                  ? ' The stored column does not exist yet (migration 066 not applied), so values below are derived from live-source history and merchant syncs, not stored.'
+                  : ''}
+              </p>
+              {data.dataQuality.lastSuccessfulUpdate &&
+              Object.values(data.dataQuality.lastSuccessfulUpdate).some((v) => v.at !== null) ? (
+                <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                  {Object.entries(data.dataQuality.lastSuccessfulUpdate)
+                    .filter(([, v]) => v.at !== null)
+                    .map(([id, v]) => (
+                      <li key={id}>
+                        {v.at ? new Date(v.at).toLocaleString('en-GB') : '—'}
+                        {v.source ? ` (from ${v.source})` : ''}
+                        {v.columnMissing ? ' — derived, not stored' : ''}
+                      </li>
+                    ))}
+                </ul>
+              ) : (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  No product has a recorded successful update yet — no provider-validated save
+                  has happened. That is the honest state for the seeded catalog, not a gap in
+                  this panel.
+                </p>
+              )}
+            </div>
+            {/* Final 100%, F-P1-50 (dashboard half) — the canonical
+                merchant-reliability scorer (policy scorer:
+                recorded policy + trust grade + verified badge +
+                directory signals) as shown in the provider-health
+                section above, summarised here so the data-quality
+                panel carries it too. The sync scorer in deal
+                ranking and the history-based per-source ratio above
+                are different dimensions, not duplicates. */}
+            <div className="rounded-lg border p-4">
+              <p className="font-medium">Merchant reliability (canonical policy scorer)</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Scored from recorded policy, trust grade, verified badge and directory signals
+                only. A merchant with too little evidence gets no score, never a guess.
+              </p>
+              {!providerHealth ? (
+                <p className="mt-1 text-sm text-muted-foreground">Loading merchant reliability…</p>
+              ) : providerHealth.merchantReliability.length === 0 ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  No merchants to score yet.
+                </p>
+              ) : (
+                <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                  {providerHealth.merchantReliability.map((m) => (
+                    <li key={m.merchantId}>
+                      <span className="font-medium text-foreground">{m.merchantName}</span>
+                      {m.score !== null ? <> — {m.score}/100 ({m.level})</> : <> — not enough data to score</>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             {data.dataQuality.notes.length > 0 ? (
               <div className="rounded-lg border border-dashed p-4">
                 <p className="font-medium">Notes</p>
@@ -637,6 +828,10 @@ export function AiControlCenter() {
               </div>
             ) : null}
             <p className="text-sm">
+              <Link href="/admin/data-quality" className="underline">
+                Data-quality dashboard — totals, coverage, reliability, refresh monitoring
+              </Link>
+              {' · '}
               <Link href="/admin/products/review" className="underline">
                 Review the catalog — duplicates, missing specs, images, price history
               </Link>

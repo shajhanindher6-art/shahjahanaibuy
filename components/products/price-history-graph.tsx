@@ -41,6 +41,10 @@ import {
   MOVING_AVERAGE_WINDOW_DAYS,
   type TrendPoint,
 } from '@/lib/price-trend';
+import {
+  gateTrendStats,
+  getHistoryProvenance,
+} from '@/lib/price-history-gates';
 
 interface PricePoint {
   price: number;
@@ -49,6 +53,11 @@ interface PricePoint {
   // this point, verbatim from GET /api/v1/products/[slug]/prices
   // (`price_history.currency`). Null when the API row carried none.
   currency: string | null;
+  // FINAL 100% (W3, F-P1-37/F-P1-38) — migration 057 source,
+  // when recorded. Null pre-057: the point's origin is then
+  // derived from the 057 backfill rule (recorded before
+  // 2026-11-03 = seed) by getHistoryProvenance, never guessed.
+  source: string | null;
 }
 
 interface PriceHistoryGraphProps {
@@ -96,11 +105,14 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
           price: number;
           recordedAt: string;
           currency?: string | null;
+          source?: string | null;
         }>;
         if (!cancelled) {
           // API returns newest-first; chart needs oldest-first.
           // The currency rides along (H-P2-9) — dropping it here
           // is what made every price render with a hard-coded $.
+          // The source rides along too (FINAL 100%, W3 F-P1-38)
+          // so the chart can label seed-origin history.
           setPoints(
             history
               .map((h) => ({
@@ -110,6 +122,7 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
                   typeof h.currency === 'string' && h.currency.trim() !== ''
                     ? h.currency.trim().toUpperCase()
                     : null,
+                source: typeof h.source === 'string' ? h.source : null,
               }))
               .filter((h) => Number.isFinite(h.price) && h.recordedAt)
               .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime())
@@ -206,13 +219,25 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
 
   const stats = useMemo(() => {
     if (chartData.length === 0) return null;
+    // FINAL 100% (W3, F-P2-22) — trend stats need the unified
+    // gate (5 recorded points in range, fresh latest point). A
+    // 1-point "trend" used to render Change 0 / Average = the
+    // point as if it meant something. Gated ranges show the
+    // reason instead of the stats grid (see the render below).
+    if (gateTrendStats(rangedPoints).stats === null) return null;
     const base = computeTrendStats(chartData.map((d) => ({ price: d.price, recordedAt: d.date })));
     if (!base) return null;
     // Date of the lowest point in range, for the "best price" marker.
     // chartData is oldest-first, so the first occurrence wins on ties.
     const lowestPoint = chartData.reduce((min, d) => (d.price < min.price ? d : min), chartData[0]);
     return { ...base, lowestDate: lowestPoint.date };
-  }, [chartData]);
+  }, [chartData, rangedPoints]);
+
+  // FINAL 100% (W3, F-P1-38/F-P2-22) — the gate verdict and the
+  // seed-origin verdict for this series, computed from the raw
+  // recorded points (not the per-day aggregation).
+  const trendGate = useMemo(() => gateTrendStats(rangedPoints), [rangedPoints]);
+  const provenance = useMemo(() => getHistoryProvenance(points), [points]);
 
   if (loading) {
     return (
@@ -258,6 +283,18 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
       </div>
 
       {/* Stats for the selected range */}
+      {/* FINAL 100% (W3, F-P1-38) — seed-origin label. The live
+          catalog's history is the launch demo seed (×1.05/×1.02/
+          ×1.00/×1.00 factors): its −4.76% change, two "price
+          drops", moving-average line and "Lowest" dot are
+          seed-constructed, not market movement. The label shows
+          whenever the series is seed-origin (or mixed with seed
+          points); a fully live series shows nothing here. */}
+      {provenance.label && (
+        <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          {provenance.label}
+        </p>
+      )}
       {currencies.length === 0 ? (
         <p className="mb-4 text-xs text-muted-foreground">
           Currency was not recorded for these prices — amounts are shown without a currency.
@@ -268,7 +305,33 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
           their recorded currency.
         </p>
       ) : null}
-      {stats ? (
+      {/* FINAL 100% (W3, F-P2-22) — trend stats are gated: below
+          5 recorded points in range, or with a stale latest point,
+          the numbers are withheld and the reason is shown instead
+          of a 1-point "Change 0". When stats ARE shown they carry
+          a freshness label: the latest point's age, so a stale
+          −4.76% never reads as current. */}
+      {stats && trendGate.gate.ageDays !== null && (
+        <p className="mb-4 text-xs text-muted-foreground">
+          Latest recorded point{' '}
+          {trendGate.gate.lastRecordedAt
+            ? new Date(trendGate.gate.lastRecordedAt).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              })
+            : 'unknown'}
+          {` (${trendGate.gate.ageDays} day${trendGate.gate.ageDays === 1 ? '' : 's'} ago)`}
+          {trendGate.gate.ageDays > 7
+            ? ' — stale, so these numbers may be out of date.'
+            : '.'}
+        </p>
+      )}
+      {trendGate.gate.gated && chartData.length > 0 ? (
+        <p className="mb-4 rounded-md border p-3 text-sm text-muted-foreground">
+          Trend stats withheld: {trendGate.gate.reason}
+        </p>
+      ) : stats ? (
         <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
           <div>
             <p className="text-xs text-muted-foreground">Current</p>

@@ -28,14 +28,14 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   title: 'Live shopping — SmartBuy AI',
   description:
-    'Scheduled live shopping sessions — a host walks through real products, and every product shown links to its product page with its real current price.',
+    'Scheduled live shopping sessions — a host walks through real products, and every product shown links to its product page with its recorded price.',
   alternates: {
     canonical: `${appConfig.url}/live`,
   },
   openGraph: {
     title: 'Live shopping — SmartBuy AI',
     description:
-      'Scheduled live shopping sessions — a host walks through real products, and every product shown links to its product page with its real current price.',
+      'Scheduled live shopping sessions — a host walks through real products, and every product shown links to its product page with its recorded price.',
     url: `${appConfig.url}/live`,
     type: 'website',
     locale: 'en_US',
@@ -44,7 +44,7 @@ export const metadata: Metadata = {
     card: 'summary',
     title: 'Live shopping — SmartBuy AI',
     description:
-      'Scheduled live shopping sessions — a host walks through real products, and every product shown links to its product page with its real current price.',
+      'Scheduled live shopping sessions — a host walks through real products, and every product shown links to its product page with its recorded price.',
   },
 };
 
@@ -58,7 +58,7 @@ export default async function LiveSessionsPage() {
       {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList, ItemList). */}
       <PageJsonLd
         name="Live shopping"
-        description="Scheduled live shopping sessions — a host walks through real products, and every product shown links to its product page with its real current price."
+        description="Scheduled live shopping sessions — a host walks through real products, and every product shown links to its product page with its recorded price."
         path="/live"
         crumbs={[ { name: "Home", path: "/" }, { name: "Live shopping" } ]}
         items={sessions.map((session) => ({ name: session.title, path: `/live/${session.slug}` }))}
@@ -71,7 +71,7 @@ export default async function LiveSessionsPage() {
           <p className="mt-2 text-muted-foreground">
             Scheduled live shopping sessions — a host walks through real
             products, and every product shown links to its product page
-            with its real current price. SmartBuy does not host the video:
+            with its recorded price. SmartBuy does not host the video:
             when a session is live, the session page links out to the
             stream on the provider&apos;s own site.
           </p>

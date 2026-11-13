@@ -28,6 +28,7 @@ import {
 } from '@/lib/referral-dedupe';
 
 import { logApiError } from '@/lib/api/error-logging';
+import { validateBody, referralSchema } from '@/lib/api/validation';
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'referrals.click' });
 
@@ -40,7 +41,16 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json().catch(() => null);
-    const { code, productId } = body ?? {};
+    // Final 100%, F-P1-60 — schema validation (was hand-rolled).
+    const validation = validateBody(referralSchema, body ?? {});
+    // Narrowing check (not invalidBodyResponse — it does not narrow
+    // the union, so validation.data would not type-check). Same 400
+    // as invalidBodyResponse: the first error, same message.
+    if (!validation.success) {
+      const firstError = Object.values(validation.errors).flat()[0];
+      return badRequest(firstError ?? 'Invalid request body');
+    }
+    const { code, productId } = validation.data;
 
     if (!isValidReferralCode(code)) {
       return badRequest('A valid referral code is required');

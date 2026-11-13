@@ -34,6 +34,7 @@ import { buildStatusSummary, buildStatusSummaryFromUptime, fetchStatusUptime, ty
 import type { UptimeSummary } from '@/lib/uptime';
 import { describePlatformStatus, type PlatformStatus } from '@/services/platform-status';
 import { getLatestRefreshRun, type RefreshRunRow } from '@/services/refresh-run';
+import { getRefreshMonitorState, type RefreshHealth } from '@/services/refresh-monitor';
 import { appConfig } from '@/lib/config/app';
 
 export const dynamic = 'force-dynamic';
@@ -103,6 +104,11 @@ function formatDateTime(iso: string): string {
 const REFRESH_RUN_STATUS_LABELS: Record<string, string> = {
   completed: 'Completed',
   completed_with_failures: 'Completed with failures',
+  // FINAL 100% (F-P1-28, K10b) — the run finished, but no live
+  // price was fetched by any live-fetch leg. Not a failure (no
+  // provider configured is an honest skip), and never to be read
+  // as a successful refresh.
+  completed_no_live_source: 'Completed — no live source',
   failed: 'Failed',
   running: 'Running',
 };
@@ -115,6 +121,10 @@ export default async function StatusPage() {
   // table renders the "no refresh recorded yet" state below, never
   // a 500.
   let lastRefresh: RefreshRunRow | null = null;
+  // Final 100%, F-P1-53 — the dead-man's switch: whether the
+  // scheduled refresh is actually firing, not just when the last
+  // recorded run happened. Null when the read itself failed.
+  let refreshMonitor: RefreshHealth | null = null;
   // Section 18, item 29 — DB-side uptime summary (two head:true
   // counts + first/last check rows), or null when the read failed.
   let uptimeSummary: UptimeSummary | null = null;
@@ -136,6 +146,7 @@ export default async function StatusPage() {
       incidents = incidentsRes.data as unknown as StatusIncident[];
     }
     lastRefresh = await getLatestRefreshRun(supabase);
+    refreshMonitor = await getRefreshMonitorState(supabase);
     uptimeSummary = uptime;
   } catch {
     // Fail-safe: render the honest "no data yet" state below.
@@ -270,6 +281,13 @@ export default async function StatusPage() {
                   </p>
                 ) : null;
               })()}
+              {lastRefresh.status === 'completed_no_live_source' ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  This run fetched no live price from any merchant — no
+                  live source was reachable, so only recorded prices were
+                  re-read. Prices were not refreshed by this run.
+                </p>
+              ) : null}
               {lastRefresh.finished_at ? (
                 <p className="mt-2 text-sm text-muted-foreground">
                   Finished {formatDateTime(lastRefresh.finished_at)}.
@@ -284,6 +302,41 @@ export default async function StatusPage() {
               one.
             </p>
           )}
+          {/* Final 100%, F-P1-53 — dead-man's switch. The last-run
+              section above shows runs that happened; this box shows
+              the ABSENCE of runs: overdue, repeatedly failing, no
+              run ever recorded, or the cron secret unset. The
+              external cron-job.org job itself is still outside the
+              app — this checks its visible effect (recorded runs),
+              not the job's own dashboard. */}
+          {refreshMonitor && refreshMonitor.status !== 'ok' ? (
+            <div
+              role="alert"
+              className="mt-4 rounded-lg border border-red-300 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950"
+            >
+              <p className="font-medium">
+                Refresh monitoring —{' '}
+                {refreshMonitor.status === 'cron-secret-unset'
+                  ? 'cron secret not set'
+                  : refreshMonitor.status === 'no-runs-recorded'
+                    ? 'no refresh run recorded'
+                    : refreshMonitor.status === 'overdue'
+                      ? 'refresh overdue'
+                      : 'refresh failing'}
+              </p>
+              <p className="mt-2 text-sm">{refreshMonitor.reason}</p>
+              {refreshMonitor.ownerAction ? (
+                <p className="mt-2 text-sm">
+                  <span className="font-medium">Owner action: </span>
+                  {refreshMonitor.ownerAction}
+                </p>
+              ) : null}
+            </div>
+          ) : refreshMonitor ? (
+            <p className="mt-4 rounded-lg border p-4 text-sm text-muted-foreground">
+              Refresh monitoring — {refreshMonitor.reason}
+            </p>
+          ) : null}
           <p className="mt-4 text-sm text-muted-foreground">
             What this page cannot tell you: the app cannot see whether the owner&apos;s
             scheduled jobs are running — the price refresh (every 6 hours) and the uptime
@@ -292,6 +345,9 @@ export default async function StatusPage() {
             as unknown here, not as up. The last recorded refresh run above is written by
             the refresh endpoint itself once migration 040 is applied — it shows the last
             run that actually happened, not whether the cron job is still scheduled.
+            The refresh-monitoring box above checks the visible effect (recorded runs and
+            their age) — it can tell you the refresh has stopped, but it cannot see the
+            cron-job.org dashboard itself.
             No uptime percentage is shown until the in-app
             check runner has recorded real checks.
           </p>

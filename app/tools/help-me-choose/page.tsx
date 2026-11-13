@@ -32,6 +32,7 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { StalePriceBadge } from '@/components/products/stale-price-badge';
 import {
   GUIDED_BRANDS,
   GUIDED_BUDGETS,
@@ -95,10 +96,20 @@ function PickArticle({
           </p>
           {pick.savingPct !== null && (
             <p className="text-sm font-medium text-green-700">
-              Save {pick.savingPct}%
+              {/* Final 100% (F-P1-02): savingPct is the merchant-basis
+                  saving (compare-at list price vs price) — the basis
+                  rides with the number, never a bare "% off". */}
+              Save {pick.savingPct}% vs list price
               {pick.savingsUsd !== null && ` ($${pick.savingsUsd.toFixed(2)})`}
             </p>
           )}
+          {/* Final 100% (F-P0-06 / F-P1-03): the pick's price is a
+              recorded price — the stale badge + age render under it,
+              as on the product card, so a stale pick never reads as
+              a current price. */}
+          <div className="mt-1 flex justify-end">
+            <StalePriceBadge dataFreshness={pick.dataFreshness} />
+          </div>
           {pick.savingsVsBudgetUsd !== null && (
             <p className="text-xs text-muted-foreground">
               ${pick.savingsVsBudgetUsd.toFixed(2)} left of your budget
@@ -526,7 +537,7 @@ function QuizInner() {
                   <EmptyState
                     eyebrow="No priced match"
                     title="No priced match for these answers"
-                    description="No product with a verified price fits this combination right now — the catalog is small. Try raising the budget, picking any brand, or clearing a must-have."
+                    description="No product with a recorded price fits this combination right now — the catalog is small. Try raising the budget, picking any brand, or clearing a must-have."
                     action={<Button onClick={() => setStep(0)}>Adjust my answers</Button>}
                   />
                   {/* B1: nearest-miss fallback — closest picks that
@@ -575,8 +586,13 @@ function QuizInner() {
                     />
                   ))}
                   <p className="text-xs text-muted-foreground">
-                    Prices are verified merchant prices. Products
-                    without a priced listing are never shown as picks.
+                    {/* Final 100% (F-P0-06): picks carry recorded
+                        prices only — no live check stands behind
+                        any of them, so the page never claims the
+                        prices are verified. */}
+                    Recorded prices only — no live check stands behind
+                    these prices. Products without a priced listing
+                    are never shown as picks.
                   </p>
                 </div>
               )}

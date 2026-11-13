@@ -32,6 +32,7 @@ import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { formatOriginalAmount } from '@/services/currency';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
+import { StalePriceBadge } from '@/components/products/stale-price-badge';
 import {
   GUIDED_CATEGORIES,
   GUIDED_SPEC_DATA_NOTE,
@@ -169,8 +170,10 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
           <p className="mt-2 text-muted-foreground">
             Pick a category and a budget — every priced product that
             fits, ranked by biggest saving first, then Deal Score.
-            Prices are verified merchant prices; products without a
-            priced listing are never shown.
+            Prices are recorded catalog prices, not verified live
+            merchant prices — no price here was checked live at a
+            merchant, and each pick below carries its last-checked
+            age. Products without a priced listing are never shown.
           </p>
 
           <form
@@ -354,7 +357,7 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
                         ? `No priced ${category} under ${budgetLabel}`
                         : 'No priced match for this budget'
                     }
-                    description="No product with a verified price fits this budget and category right now — the catalog is small. Try a higher budget or a different category."
+                    description="No product with a recorded price fits this budget and category right now — the catalog is small. Try a higher budget or a different category."
                     action={
                       <Link
                         href="/tools/budget-finder"
@@ -413,6 +416,11 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
                                     ${pick.savingsVsBudgetUsd.toFixed(2)} left of your budget
                                   </p>
                                 )}
+                                {/* Final 100% — F-P0-06: closest-match
+                                    prices are recorded prices too. */}
+                                <div className="mt-1">
+                                  <StalePriceBadge dataFreshness={pick.dataFreshness} />
+                                </div>
                               </div>
                             </div>
                             <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
@@ -481,6 +489,14 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
                               Deal Score {pick.dealScore}/100
                             </p>
                           )}
+                          {/* Final 100% — F-P0-06: a pick's price is
+                              a recorded price, never a current one —
+                              its last-checked age rides under the
+                              price (stale badge, or "Price age
+                              unknown" when no check date exists). */}
+                          <div className="mt-1">
+                            <StalePriceBadge dataFreshness={pick.dataFreshness} />
+                          </div>
                         </div>
                       </div>
                       <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">

@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
           (result.history ?? []).map((h) => ({
             price: Number(h.price),
             recordedAt: h.recordedAt,
+            source: h.source ?? null,
           }))
         );
       })
@@ -61,7 +62,7 @@ export async function GET(request: NextRequest) {
     return apiSuccess({
       products: sortHistorySummaries(summaries, sortBy),
       sortBy,
-      note: 'Stats come from recorded price history only. Each product shows how many recorded points its stats are based on (currently 4 points over 30 days, Amazon only) — no smoothing or interpolation.',
+      note: 'Stats come from recorded price history only. A product needs at least 5 recorded points with a fresh latest point (within 7 days) before its stats and biggest drop are shown — below that the recorded points are listed but no trend verdict is drawn from them. No smoothing or interpolation.',
       generatedAt: new Date().toISOString(),
     });
   } catch (err) {

@@ -240,6 +240,11 @@ export default async function CategoryPage({
                         // for the stale badge, point count for the
                         // withheld-score note.
                         dataFreshness: full.dataFreshness ?? null,
+                        // Final 100% (F-P1-04): the brief's 5-state
+                        // price label + reason (getProducts derives
+                        // it; resolveTaxonomyPage passes the full
+                        // Product rows through untouched).
+                        priceState: full.priceState,
                         dealScoreDataPoints:
                           dealScorePoints.get(productId) ?? null,
                       }}

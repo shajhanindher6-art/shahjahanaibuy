@@ -359,6 +359,13 @@ async function FeaturedProductsStrip({ language }: { language: Language }) {
     price: number | null;
     /** Recorded `products.data_freshness` (Section 16, item 9). */
     dataFreshness: string | null;
+    /**
+     * Final 100% (F-P1-04): the brief's 5-state price machine
+     * result for the shown price (getProducts derives it from the
+     * cheapest listing). Rendered with its reason, as on the
+     * detail page; absent = no state claim, never guessed.
+     */
+    priceState?: import('@/lib/verification/price-state').PriceStateResult;
   }> = [];
   try {
     const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey, {
@@ -386,6 +393,9 @@ async function FeaturedProductsStrip({ language }: { language: Language }) {
       // card so the stale-price badge + age can render under
       // the price.
       dataFreshness: product.dataFreshness ?? null,
+      // Final 100% (F-P1-04): the brief's 5-state price label +
+      // reason ride with the strip, as on the detail page.
+      priceState: product.priceState,
     }));
   } catch {
     products = [];
@@ -448,6 +458,16 @@ async function FeaturedProductsStrip({ language }: { language: Language }) {
                         <div className="mt-1">
                           <StalePriceBadge dataFreshness={product.dataFreshness} />
                         </div>
+                      )}
+                      {/* Final 100% (F-P1-04): the brief's 5-state
+                          price label + reason, as on the detail
+                          page — only when the state was derived
+                          for the shown price. */}
+                      {product.price !== null && product.priceState && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Price state: <strong>{product.priceState.label}</strong> —{' '}
+                          {product.priceState.reason}
+                        </p>
                       )}
                     </div>
                   </CardContent>
