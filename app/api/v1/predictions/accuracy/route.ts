@@ -14,6 +14,7 @@ import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import {
   summarizeAccuracy,
   type AccuracyOutcomeRow,
@@ -26,7 +27,11 @@ export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'predictions.accuracy' });
-  // Section 19, Phase 9 (§12 #92) — intentionally unwired: the honest empty summary IS the designed response while migration 032 is unapplied (missing table is the expected state, not an error); the endpoint never returns a 5xx.
+  // Section 21–25, Stage J, J-P2-3 — wired: unexpected throws and
+  // non-missing-table query failures are logged via logApiError;
+  // the honest empty summary below is still returned. A missing
+  // table (migration 032 unapplied) is the expected state, not an
+  // error, and is deliberately NOT logged.
 
   const limited = await rateLimitResponse(
     `predictions-accuracy:${getClientIp(request)}`,
@@ -45,6 +50,15 @@ export async function GET(request: NextRequest) {
     // Table missing (migration 032 not run yet) or any query failure:
     // honest empty summary, not an error page.
     if (error || !data) {
+      // Log real query failures; a missing table is expected.
+      const code = (error as { code?: string } | null)?.code;
+      if (error && code !== 'PGRST205' && code !== '42P01') {
+        logApiError(new Error(`predictions accuracy query failed: ${error.message}`), {
+          request,
+          route: 'predictions-accuracy',
+          status: 500,
+        });
+      }
       return apiSuccess(summarizeAccuracy([]));
     }
 
@@ -54,7 +68,8 @@ export async function GET(request: NextRequest) {
     }));
 
     return apiSuccess(summarizeAccuracy(rows));
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'predictions-accuracy', status: 500 });
     return apiSuccess(summarizeAccuracy([]));
   }
 }

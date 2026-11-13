@@ -41,6 +41,8 @@
  */
 
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { getDeadLetterQueue, getQueueMetrics } from '@/lib/workers/queue';
 import {
@@ -83,6 +85,16 @@ function formatDateTime(iso: string | null): string {
 }
 
 export default async function AdminRefreshRunsPage() {
+  // Sections 21–25, Stage G, G-P1-4 — the admin data services
+  // re-check the admin role themselves (defense in depth, beyond
+  // the layout guard), so the page passes the session user id.
+  // No session user → redirect, never read unguarded.
+  const sessionClient = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await sessionClient.auth.getUser();
+  if (!user) redirect('/sign-in?reason=session-expired');
+
   const service = createSupabaseServiceClient();
 
   if (!service) {
@@ -97,8 +109,8 @@ export default async function AdminRefreshRunsPage() {
     );
   }
 
-  const { runs, tableMissing, error } = await listRefreshRuns(service, 50);
-  const failures = await listRefreshFailures(service, 20);
+  const { runs, tableMissing, error } = await listRefreshRuns(service, 50, { adminUserId: user.id });
+  const failures = await listRefreshFailures(service, 20, { adminUserId: user.id });
   const lastRun: RefreshRunRow | null = runs[0] ?? null;
   const totalFailedSteps = runs.reduce((n, run) => n + failedStepsOf(run).length, 0);
   // Section 18, item 42 — the in-memory dead-letter queue, surfaced

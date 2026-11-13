@@ -78,9 +78,16 @@ export async function GET(request: NextRequest) {
           price: Number(h.price),
           recordedAt: h.recordedAt,
         }));
-        const forecast = computeForecast(points);
+        const forecast = computeForecast(points, Date.now(), FORECAST_HORIZONS, {
+          // Section 21, Stage E (E-P1-1) — the product's real last
+          // check is the freshness input; stale inputs withhold
+          // the forecast instead of presenting it as current.
+          lastCheckedAt: product.dataFreshness ?? null,
+        });
         const backtests = FORECAST_HORIZONS.map((horizonDays) => ({
-          ...backtestForecast(points, horizonDays),
+          ...backtestForecast(points, horizonDays, Date.now(), {
+            lastCheckedAt: product.dataFreshness ?? null,
+          }),
         }));
         return {
           productId: product.id,

@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
   const days = daysParam === '7' || daysParam === '90' ? Number(daysParam) : 30;
 
   try {
-    const analytics = await getAffiliateClickAnalytics(service, days);
+    const analytics = await getAffiliateClickAnalytics(service, days, { adminUserId: auth.userId });
     return apiSuccess(analytics, 200);
   } catch (err) {
     logApiError(err, { request, route: 'admin.affiliate-clicks', status: 500 });

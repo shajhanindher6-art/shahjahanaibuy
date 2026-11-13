@@ -23,9 +23,17 @@
 
 import type { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
+import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { apiSuccess, badRequest, internalError, serviceUnavailable } from '@/lib/api/responses';
-import { logApiRequest, rateLimitResponse, requireAdmin } from '@/lib/api/middleware';
+import { logApiRequest, getClientIp, rateLimitResponse, requireAdmin } from '@/lib/api/middleware';
+import { checkCsrfOrigin } from '@/lib/api/csrf';
+import { recordAdminAction } from '@/services/admin';
 import { logApiError } from '@/lib/api/error-logging';
+import {
+  adminSentryTestSchema,
+  invalidBodyResponse,
+  validateBody,
+} from '@/lib/api/validation';
 
 const TEST_TAG = 'smartbuy-sentry-test';
 
@@ -44,6 +52,12 @@ export async function POST(request: NextRequest) {
     const limited = await rateLimitResponse(`sentry-test:${auth.userId}`, 10);
     if (limited) return limited;
 
+    // Sections 21–25, Stage G, G-P1-3 — CSRF Origin check
+    // (cookie-authed mutation; absent Origin fails open for
+    // non-browser clients). The middleware layer checks this too.
+    const csrf = checkCsrfOrigin(request);
+    if (csrf) return csrf;
+
     const dsn = process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN;
     if (!dsn) {
       return serviceUnavailable(
@@ -52,6 +66,14 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => null);
+    // Sections 21–25, Stage G, G-P2-1 — shared Zod shape gate
+    // (kind must be a string when present; runs after the DSN
+    // check so a missing DSN still 503s). The enum check below
+    // is unchanged, so its message is preserved.
+    const invalid = invalidBodyResponse(
+      validateBody(adminSentryTestSchema, body ?? {}),
+    );
+    if (invalid) return invalid;
     const kind = body?.kind ?? 'message';
     if (kind !== 'message' && kind !== 'exception') {
       return badRequest('kind must be "message" or "exception"');
@@ -72,6 +94,23 @@ export async function POST(request: NextRequest) {
 
     // Flush so the event leaves before the serverless function ends.
     await Sentry.flush(2000);
+
+    // Sections 21–25, Stage G, G-P1-2 — audit the test event:
+    // it writes to the owner's Sentry project, so who triggered
+    // it belongs in the audit trail. recordAdminAction never
+    // throws: a logging failure never fails the response itself.
+    const auditService = createSupabaseServiceClient();
+    if (auditService) {
+      await recordAdminAction(
+        auditService,
+        auth.userId,
+        'sentry_test',
+        'sentry',
+        null,
+        { kind, eventId },
+        getClientIp(request)
+      );
+    }
 
     return apiSuccess(
       {

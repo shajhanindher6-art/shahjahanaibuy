@@ -31,8 +31,9 @@ export default function AboutPage() {
           <LocalizedHeading dictKey="pageHeadingAbout" className="text-3xl font-bold" />
           <p className="mt-4 text-muted-foreground">
             SmartBuy AI helps shoppers make confident decisions. It brings together product
-            search, price tracking across retailers, price-drop alerts, and AI-powered
-            recommendations, summaries, and price predictions in one place.
+            search, price tracking across retailers, price-drop alerts, and rule-based
+            recommendations, summaries, and price predictions in one place — deterministic
+            templates over recorded prices, not an LLM.
           </p>
           <p className="mt-4 text-muted-foreground">
             Instead of checking many stores one by one, you can compare products, follow the

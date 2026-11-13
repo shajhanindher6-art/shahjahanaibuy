@@ -192,6 +192,11 @@ export default function EbayIntakePage() {
           rows: review.rows,
           includeRowNumbers: Array.from(includeRows),
           source: 'ebay-browse-api',
+          // Sections 21–25, Stage D (R2) — the preview fetch
+          // time, so the approve stamps the check time, not
+          // the approve time. Without it the approve writes no
+          // freshness stamp at all.
+          ...(searchResult?.fetchedAt ? { fetchedAt: searchResult.fetchedAt } : {}),
         }),
       });
       const json = await res.json();

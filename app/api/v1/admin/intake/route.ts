@@ -16,8 +16,13 @@
  *    `source: 'ebay-browse-api'` instead — the audit log then
  *    records the eBay origin (plus per-row ebay_item_id, itemWebUrl
  *    and fetched_at from the preview), and the inserted products
- *    get `data_freshness` stamped at approve time so the "Live eBay
- *    asking price, checked <timestamp>" label is grounded. The
+ *    get `data_freshness` stamped at the PREVIEW fetch time
+ *    (Sections 21–25, Stage D, R2 — the approve call carries
+ *    `fetchedAt` from the preview response; stamping approve-time
+ *    used to claim a check that happened at preview) so the "Live
+ *    eBay asking price, checked <timestamp>" label is grounded.
+ *    When no preview time is carried, no freshness stamp is
+ *    written at all. The
  *    default stays 'manual-intake'; any other source value is
  *    rejected.
  *
@@ -29,7 +34,8 @@
  * Section 17, Stage C items 14–15 (migration 045, unapplied):
  * approve inserts each product as `status: 'pending'` with its
  * price-verification stamp (manual → 'unverified'; eBay Browse →
- * 'verified' with verified_at = approve time) and flips it to
+ * 'verified' with verified_at = the preview fetch time, or null
+ * when the preview time was not carried) and flips it to
  * 'published' only after the merchant listing is in — a row is
  * never public because it was merely inserted. The public query
  * path (services/products.ts) lists published rows only. Until
@@ -104,6 +110,11 @@ const intakeJsonBodySchema = z.object({
   source: z.enum([INTAKE_SOURCE, EBAY_INTAKE_SOURCE]).optional(),
   rows: z.array(intakeRowSchema).max(MAX_ROWS).optional(),
   includeRowNumbers: z.array(z.number()).optional(),
+  // Sections 21–25, Stage D (R2) — the preview fetch time for
+  // eBay batches (the eBay preview response's `fetchedAt`).
+  // The approve stamp must be the time the price was actually
+  // checked, not the approve time.
+  fetchedAt: z.string().optional(),
 });
 
 /**
@@ -206,6 +217,9 @@ export async function POST(request: NextRequest) {
   // step. Defaults to 'manual-intake'; the eBay preview flow
   // passes 'ebay-browse-api'. Any other value is rejected below.
   let source: string = INTAKE_SOURCE;
+  // Sections 21–25, Stage D (R2): the preview fetch time, when
+  // the caller carried it (eBay batches only).
+  let fetchedAt: string | undefined;
 
   try {
     if (contentType.includes('multipart/form-data')) {
@@ -237,6 +251,9 @@ export async function POST(request: NextRequest) {
       if (typeof validation.data.csv === 'string') csv = validation.data.csv;
       if (validation.data.source) {
         source = validation.data.source;
+      }
+      if (typeof validation.data.fetchedAt === 'string') {
+        fetchedAt = validation.data.fetchedAt;
       }
       if (validation.data.rows) {
         rows = validation.data.rows as unknown as IntakeRowInput[];
@@ -354,11 +371,23 @@ export async function POST(request: NextRequest) {
     // 055 is unapplied — surfaced in the response so the admin
     // knows to re-enter it after applying 055.
     let modelNumberUnsupported = false;
-    // Section 15, P3-2: the approve-time check timestamp for eBay
-    // rows — the "Live eBay asking price, checked <timestamp>"
-    // label reads data_freshness, so it is stamped here, once per
-    // batch, only for the eBay source.
-    const approvedAt = new Date().toISOString();
+    // Sections 21–25, Stage D (R2): the check timestamp for
+    // eBay rows is the PREVIEW fetch time — the "Live eBay asking
+    // price, checked <timestamp>" label reads data_freshness, so
+    // it must be the time the price was actually checked, not
+    // the approve time. When the caller did not carry the preview
+    // time, the stamp is omitted entirely (verified_at null):
+    // stamping approve-time would claim a check that happened
+    // at approve time, when the check happened at preview.
+    // Manual-intake rows never stamp: their prices were typed in,
+    // never checked.
+    const checkedAt =
+      source === EBAY_INTAKE_SOURCE && typeof fetchedAt === 'string'
+        ? (() => {
+            const time = new Date(fetchedAt).getTime();
+            return Number.isFinite(time) ? new Date(time).toISOString() : null;
+          })()
+        : null;
 
     for (const plan of plans) {
       // Section 17, Stage C items 14–15: the product is born
@@ -372,7 +401,7 @@ export async function POST(request: NextRequest) {
       const verification = priceVerificationForIntakeSource(
         // Validated above to be one of the two known sources.
         source as typeof INTAKE_SOURCE | typeof EBAY_INTAKE_SOURCE,
-        approvedAt
+        checkedAt
       );
       const productBase = {
         name: plan.product.name,
@@ -390,8 +419,8 @@ export async function POST(request: NextRequest) {
         ...(plan.product.model_number
           ? { model_number: plan.product.model_number }
           : {}),
-        ...(source === EBAY_INTAKE_SOURCE
-          ? { data_freshness: approvedAt }
+        ...(source === EBAY_INTAKE_SOURCE && checkedAt
+          ? { data_freshness: checkedAt }
           : {}),
       };
       // Same row without the model number — the middle fallback
@@ -569,8 +598,14 @@ export async function POST(request: NextRequest) {
       ...(modelNumberUnsupported ? { modelNumberUnsupported: true } : {}),
       ...(source === EBAY_INTAKE_SOURCE
         ? {
-            priceNote:
-              `Live eBay asking prices, checked ${approvedAt}. No price history, no Deal Score and no alerts were created from these listings.`,
+            // Sections 21–25, Stage D (R2): the label carries the
+            // preview check time when it was recorded; when it
+            // was not carried, the note says so instead of
+            // claiming an approve-time check.
+            checkedAt,
+            priceNote: checkedAt
+              ? `Live eBay asking prices, checked ${checkedAt}. No price history, no Deal Score and no alerts were created from these listings.`
+              : 'Live eBay asking prices, checked at preview time (the exact check time was not recorded with this batch). No price history, no Deal Score and no alerts were created from these listings.',
           }
         : {}),
     });

@@ -40,7 +40,13 @@ import {
   getClientIp,
 } from '@/lib/api/middleware';
 import { logApiError } from '@/lib/api/error-logging';
+import { checkCsrfOrigin } from '@/lib/api/csrf';
 import { recordAdminAction } from '@/services/admin';
+import {
+  adminMerchantVerifySchema,
+  invalidBodyResponse,
+  validateBody,
+} from '@/lib/api/validation';
 import {
   VERIFIED_MERCHANT_RECHECK_DAYS,
   meetsVerifiedMerchantStandards,
@@ -105,6 +111,12 @@ export async function POST(
   const limited = await rateLimitResponse(`admin-merchants-verify:${admin.userId}`, 30);
   if (limited) return limited;
 
+  // Sections 21–25, Stage G, G-P1-3 — CSRF Origin check
+  // (cookie-authed mutation; absent Origin fails open for
+  // non-browser clients). The middleware layer checks this too.
+  const csrf = checkCsrfOrigin(request);
+  if (csrf) return csrf;
+
   const service = createSupabaseServiceClient();
   if (!service) {
     return internalError('Merchant verification unavailable: service client not configured');
@@ -116,6 +128,15 @@ export async function POST(
   } catch {
     body = null;
   }
+  // Sections 21–25, Stage G, G-P2-1 — shared Zod shape gate
+  // (type/bounds only; Number() coercion is mirrored by
+  // coercibleInt/coercibleNumber). The action enum check and the
+  // parseOptional* helpers below are unchanged, so their
+  // messages (incl. the http(s) URL rule) are preserved.
+  const invalid = invalidBodyResponse(
+    validateBody(adminMerchantVerifySchema, body ?? {}),
+  );
+  if (invalid) return invalid;
   const action = body?.action;
   if (action !== 'record' && action !== 'verify' && action !== 'revoke') {
     return badRequest('action must be one of: record, verify, revoke');

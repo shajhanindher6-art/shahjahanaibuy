@@ -38,6 +38,8 @@ import {
   rateLimitResponse,
   getClientIp,
 } from '@/lib/api/middleware';
+import { checkCsrfOrigin } from '@/lib/api/csrf';
+import { recordAdminAction } from '@/services/admin';
 import {
   isEbayConfigured,
   searchEbayListings,
@@ -54,6 +56,11 @@ import {
 } from '@/services/ebay-intake';
 import { validateLocalFirstQuery } from '@/services/local-first-search';
 import { loadCatalogContext } from '@/app/api/v1/admin/intake/route';
+import {
+  adminEbayPreviewSchema,
+  invalidBodyResponse,
+  validateBody,
+} from '@/lib/api/validation';
 
 import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
@@ -72,6 +79,12 @@ export async function POST(request: NextRequest) {
   );
   if (limited) return limited;
 
+  // Sections 21–25, Stage G, G-P1-3 — CSRF Origin check
+  // (cookie-authed mutation; absent Origin fails open for
+  // non-browser clients). The middleware layer checks this too.
+  const csrf = checkCsrfOrigin(request);
+  if (csrf) return csrf;
+
   const auth = await requireAdmin(request);
   if ('error' in auth) return auth.error;
 
@@ -84,6 +97,12 @@ export async function POST(request: NextRequest) {
   if (!isRecord(body)) {
     return badRequest('Expected a JSON body with a "q" field');
   }
+
+  // Sections 21–25, Stage G, G-P2-1 — shared Zod shape gate
+  // (type/bounds only; the query itself is still validated by
+  // validateLocalFirstQuery below, keeping its message).
+  const invalid = invalidBodyResponse(validateBody(adminEbayPreviewSchema, body));
+  if (invalid) return invalid;
 
   const validated = validateLocalFirstQuery(body.q);
   if (!validated.ok) return badRequest(validated.error);
@@ -127,6 +146,27 @@ export async function POST(request: NextRequest) {
   }
 
   const fetchedAt = new Date().toISOString();
+
+  // Sections 21–25, Stage G, G-P1-2 — audit the budget spend.
+  // The reservation above already consumed one call from the
+  // shared daily budget, so the spend is logged even when the
+  // search itself then fails. recordAdminAction never throws.
+  await recordAdminAction(
+    service,
+    auth.userId,
+    'ebay_preview_budget_spend',
+    'ebay_budget',
+    null,
+    {
+      query,
+      phase: Array.isArray(body.items) ? 'review' : 'search',
+      budgetUsed: budget.used,
+      budgetRemaining: budget.remaining,
+      budgetLimit: budget.limit,
+    },
+    getClientIp(request)
+  );
+
   const result = await searchEbayListings(query, { limit, condition });
   if (!result.ok) {
     if (result.reason === 'rate-limited') {

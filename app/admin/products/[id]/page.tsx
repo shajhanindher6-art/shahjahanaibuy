@@ -21,6 +21,8 @@ import { getProductAttributes } from '@/services/products';
 import {
   DATA_QUALITY_SCORE_LABEL,
   computeProductQualityScore,
+  getDataQualityState,
+  isValidGtin,
 } from '@/services/product-quality-score';
 import { priceVerificationLabel } from '@/services/price-verification';
 import { formatLastChecked } from '@/lib/price-freshness';
@@ -70,7 +72,8 @@ export default async function AdminProductEditPage({
   const { product, columnsMissing } = await getAdminProductById(service, params.id);
   if (!product) notFound();
 
-  const contexts = await getProductQualityContexts(service, [product.id]);
+  const { contexts, merchantSourceMissing } = await getProductQualityContexts(service, [product.id]);
+  const productCtx = contexts.get(product.id) ?? {};
   const score = computeProductQualityScore(
     {
       name: product.name,
@@ -85,8 +88,17 @@ export default async function AdminProductEditPage({
       dataFreshness: product.dataFreshness,
       updatedAt: product.updatedAt,
     },
-    contexts.get(product.id) ?? {}
+    productCtx
   );
+  // Section 21–25, Stage H (H-P2-2): the same 5-state taxonomy the
+  // public product page shows, from the same inputs.
+  const qualityState = getDataQualityState({
+    priceVerificationStatus: product.priceVerificationStatus,
+    priceAgeDays: score.priceAgeDays,
+    merchantCount: productCtx.merchantCount ?? 0,
+    hasValidGtin: isValidGtin(product.gtin),
+    hasPriceSource: (productCtx.priceSource ?? null) !== null,
+  });
   const verification = priceVerificationLabel(
     product.priceVerificationStatus,
     formatLastChecked(product.priceVerifiedAt)
@@ -110,10 +122,21 @@ export default async function AdminProductEditPage({
         <p className="text-sm text-muted-foreground">{DATA_QUALITY_SCORE_LABEL}</p>
         <p className="mt-1 text-4xl font-bold">{score.score} / 100</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Grade: {score.grade}. This is a data quality score — how
+          Grade: {score.grade}. Data verification: <strong>{qualityState.label}</strong> —{' '}
+          {qualityState.reason} This is a data quality score — how
           complete, verifiable, and fresh this product&apos;s record is
           — never a judgement of the product itself.
         </p>
+        {/* Section 21–25, Stage H (H-P2-4): say the score may
+            understate while the price-source column is missing. */}
+        {merchantSourceMissing ? (
+          <p className="mt-2 text-sm text-muted-foreground">
+            This score may understate data quality: the merchant
+            price-source column does not exist yet (migration 045 not
+            applied), so the attribution dimension cannot count a
+            recorded price source.
+          </p>
+        ) : null}
         <ul className="mt-4 space-y-1 text-sm">
           {score.dimensions.map((d) => (
             <li key={d.key}>
@@ -147,19 +170,28 @@ export default async function AdminProductEditPage({
         <h2 className="text-xl font-semibold">Specs ({attributes.length})</h2>
         {attributes.length === 0 ? (
           <p className="mt-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-            No specs stored for this product. Spec editing is not
-            available in this admin UI yet — specs arrive through
-            intake, and there is no admin spec write API to call.
+            No specs stored for this product.{' '}
+            <Link href={`/admin/products/${product.id}/specs`} className="underline">
+              Verify / correct specs
+            </Link>{' '}
+            — record a real value against its source, or leave it unknown.
           </p>
         ) : (
-          <ul className="mt-2 space-y-1 text-sm">
-            {attributes.map((attr) => (
-              <li key={attr.id}>
-                {attr.key}: {attr.value}
-                {attr.unit ? ` ${attr.unit}` : ''}
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="mt-2 space-y-1 text-sm">
+              {attributes.map((attr) => (
+                <li key={attr.id}>
+                  {attr.key}: {attr.value}
+                  {attr.unit ? ` ${attr.unit}` : ''}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-sm">
+              <Link href={`/admin/products/${product.id}/specs`} className="underline">
+                Verify / correct specs
+              </Link>
+            </p>
+          </>
         )}
       </section>
 

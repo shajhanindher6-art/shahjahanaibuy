@@ -24,7 +24,7 @@ import { apiSuccess, internalError, rateLimited } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { logApiError } from '@/lib/api/error-logging';
 // Section 19, Phase 1 (§12 #13) — per-user daily AI quota.
-import { checkAiUserQuota } from '@/services/ai-engine/usage';
+import { checkAiUserQuotaAsync } from '@/services/ai-engine/usage';
 import { getSmartDealRecommendations } from '@/services/smart-deals';
 import { rotateDealsForRegion } from '@/services/deal-rotation';
 import { resolveGeoCountry } from '@/services/affiliate-geo';
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
     // signed in (300 calls/day across AI routes, in-memory).
     // Guests keep the per-IP limit above as their floor.
     if (userId) {
-      const quota = checkAiUserQuota(userId);
+      const quota = await checkAiUserQuotaAsync(userId);
       if (!quota.allowed) {
         return rateLimited('Daily AI usage limit reached. Try again tomorrow.', {
           resetAt: quota.resetAt,

@@ -21,8 +21,9 @@
  */
 
 import type { NextRequest } from 'next/server';
-import { apiSuccess, badRequest } from '@/lib/api/responses';
+import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import {
   buildGeoAffiliateUrl,
   isGeoAffiliateEnabled,
@@ -48,14 +49,25 @@ function knownStoreHosts(): Set<string> {
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'affiliate.transform' });
-  // Section 19, Phase 9 (§12 #92) — intentionally unwired: pure sync URL transform, no DB/IO that can throw; bad input is a 4xx (unlogged by design).
-
+  // Section 21–25, Stage J, J-P2-3 — wired: the transform is
+  // pure sync URL work, so bad input is still a 4xx (unlogged by
+  // design) — but an unexpected throw is now caught and logged via
+  // logApiError instead of surfacing as an unlogged 500.
   // Pure URL transform, no DB write — still cap per IP so the
   // batch endpoint cannot be used as a free proxy loop.
   // Redis-backed when Upstash is configured, in-memory fallback otherwise.
   const limited = await rateLimitResponse(`affiliate.transform:${getClientIp(request)}`, 30);
   if (limited) return limited;
 
+  try {
+    return await transformAffiliateUrls(request);
+  } catch (err) {
+    logApiError(err, { request, route: 'affiliate.transform', status: 500 });
+    return internalError('Affiliate transform failed unexpectedly');
+  }
+}
+
+async function transformAffiliateUrls(request: NextRequest) {
   const body: unknown = await request.json().catch(() => null);
   const urls = (body ?? {}) as Record<string, unknown>;
   const list = urls.urls;

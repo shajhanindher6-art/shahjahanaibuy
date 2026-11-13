@@ -1,6 +1,6 @@
 # PROJECT ARCHITECTURE — SmartBuy AI
 
-> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. Its stack/version numbers and route/page counts are stale (it predates Sections 9–17: 36 AI tools, 121 page routes, 181 API routes, middleware soft-404 handling, cron-job.org scheduling). Do not use it for current architecture decisions. Superseded by: `project-summary.md` (Stack + Architecture).
+> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. Its stack/version numbers and route/page counts are stale (it predates Sections 9–17: 36 AI tools, 121 page routes, 181 API routes, middleware soft-404 handling, cron-job.org scheduling). Do not use it for current architecture decisions. Superseded by: `project-summary.md` (Stack + Architecture). **Correction 13 Nov 2026 (Sections 21–25, Stage L):** the two "BullMQ-ready / BullMQ support" claims in this file were wrong and are corrected in place — BullMQ is NOT installed; the queue is in-process `SynchronousQueue` only. The rest of the file is still frozen.
 
 **Version:** 1.0.0  
 **Date:** 2026-07-12
@@ -56,7 +56,7 @@ project/
 │   ├── api/               # API helpers (responses, middleware, validation)
 │   ├── config/            # Environment, app config, logger, feature flags
 │   ├── supabase/          # Supabase client (browser, server, middleware)
-│   ├── workers/           # Background job queue (BullMQ-ready)
+│   ├── workers/           # Background job queue (in-process SynchronousQueue — BullMQ NOT installed; corrected 13 Nov 2026, see banner)
 │   ├── cache/             # Caching layer
 │   └── stripe.ts          # Stripe client
 ├── hooks/                 # Custom React hooks
@@ -98,7 +98,7 @@ project/
 
 ### 5. Infrastructure Layer
 - **Middleware**: Supabase session refresh on every request, auth-gated routes
-- **Workers**: Job queue with BullMQ support (graceful fallback to sync)
+- **Workers**: Job queue is in-process only (`SynchronousQueue` in `lib/workers/queue.ts`); BullMQ is NOT installed (`bullmq` is absent from `package.json`) and the `BullMQQueue` adapter in code is never reached — it loads via `eval('require')`, which always throws and falls back to sync. There is no Redis worker. (Corrected 13 Nov 2026 — this file previously said "BullMQ-ready" / "BullMQ support".)
 - **Caching**: Cache abstraction with provider registry
 - **PWA**: Service worker with stale-while-revalidate, push handlers
 

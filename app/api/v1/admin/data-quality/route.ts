@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const summary = await getAdminDataQualitySummary(service);
+    const summary = await getAdminDataQualitySummary(service, { adminUserId: auth.userId });
     return apiSuccess(summary);
   } catch (err) {
     logApiError(err, { request, route: 'admin.data-quality', status: 500 });

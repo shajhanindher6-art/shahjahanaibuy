@@ -17,6 +17,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { logger } from '@/lib/config/logger';
+import { logApiError } from '@/lib/api/error-logging';
 import { computePriceIndex, type PriceIndexEntry } from '@/lib/price-index';
 
 // Live DB data must never be served from a stale edge cache.
@@ -45,7 +46,7 @@ function toCsv(entries: PriceIndexEntry[]): string {
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'price-index-export' });
-  // Section 19, Phase 9 (§12 #92) — intentionally unwired: DB failures return an honest empty CSV / empty JSON 200 (fail-safe) and the catch already records them via logger.error, so no 5xx is ever returned for error_log/Sentry capture.
+  // Section 21–25, Stage J, J-P2-3 — wired: unexpected errors are logged via logApiError (error_log/Sentry) AND the honest empty response below is still returned.
 
   const limited = await rateLimitResponse(`price-index-export:${getClientIp(request)}`, 30);
   if (limited) return limited;
@@ -152,6 +153,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     logger.error('price-index-export: unexpected error', { error: String(err) });
+    logApiError(err, { request, route: 'price-index-export', status: 500 });
     if (format === 'csv') {
       return new NextResponse(`${CSV_HEADERS}\n`, {
         headers: {

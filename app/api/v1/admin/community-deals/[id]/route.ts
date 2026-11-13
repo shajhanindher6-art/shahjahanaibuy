@@ -29,7 +29,13 @@ import {
   serviceUnavailable,
 } from '@/lib/api/responses';
 import { logApiRequest, requireAdmin, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { checkCsrfOrigin } from '@/lib/api/csrf';
 import { recordAdminAction } from '@/services/admin';
+import {
+  adminCommunityDealModerationSchema,
+  invalidBodyResponse,
+  validateBody,
+} from '@/lib/api/validation';
 
 import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
@@ -63,6 +69,12 @@ export async function PATCH(
   const limited = await rateLimitResponse(`admin-community-deals:${admin.userId}`, 60);
   if (limited) return limited;
 
+  // Sections 21–25, Stage G, G-P1-3 — CSRF Origin check
+  // (cookie-authed mutation; absent Origin fails open for
+  // non-browser clients). The middleware layer checks this too.
+  const csrf = checkCsrfOrigin(request);
+  if (csrf) return csrf;
+
   const service = createSupabaseServiceClient();
   if (!service) {
     return internalError('Community-deal moderation unavailable: service client not configured');
@@ -74,6 +86,13 @@ export async function PATCH(
   } catch {
     body = null;
   }
+  // Sections 21–25, Stage G, G-P2-1 — shared Zod shape gate
+  // (type/bounds only). The action enum check below is unchanged,
+  // so its message is preserved.
+  const invalid = invalidBodyResponse(
+    validateBody(adminCommunityDealModerationSchema, body ?? {}),
+  );
+  if (invalid) return invalid;
   const action = body?.action;
   if (typeof action !== 'string' || !(ACTIONS as readonly string[]).includes(action)) {
     return badRequest('action must be one of: verify, unverify, reject, approve');

@@ -2,16 +2,15 @@
  * API v1 data refresh endpoint.
  * POST /api/v1/data/refresh — trigger a product data fetch job.
  *
- * Enqueues a `product.fetch` job to the worker queue. When Redis/BullMQ is
- * available, the job runs asynchronously and the response is honestly
- * 202 'queued'. Otherwise it runs synchronously — and Section 18,
- * item 41 changed the response to match: instead of the old 202
- * "queued" for work that had already finished inline, the route now
- * returns the job's real outcome (200 'completed' / 'failed' with
- * the processed count and errors, read from getJobResult). The 202
- * 'queued' response is kept ONLY for the paths where the work
- * genuinely has not run yet (BullMQ, or a delayed job). No real
- * async queue was introduced.
+ * Enqueues a `product.fetch` job to the worker queue. The queue
+ * is synchronous in-process today (BullMQ is not installed, so
+ * there is no async path): the job runs inline and the response
+ * is honestly 200 with its real outcome. The 202 'queued'
+ * response is kept ONLY for the delayed-job path, where the work
+ * genuinely has not run yet. No real async queue was introduced.
+ *
+ * (Sections 21–25, Stage D, item 8 — the old header claimed a
+ * Redis/BullMQ async path that does not exist.)
  *
  * ADMIN-ONLY (security fix 2026-11-05): this route used to accept any
  * signed-in user, and with no real provider configured the job ran the
@@ -109,7 +108,8 @@ export async function POST(request: NextRequest) {
 
     // Section 18, item 41 — the job ran inline on the synchronous
     // queue, so report its real outcome instead of "queued". When
-    // no result is recorded (BullMQ / delayed job) the work has
+    // no result is recorded (a delayed job — there is no BullMQ
+    // worker today, the package is not installed) the work has
     // genuinely not run yet, and 202 'queued' stays honest.
     const outcome = getJobResult(jobId);
     if (outcome) {

@@ -12,14 +12,14 @@ import { appConfig } from '@/lib/config/app';
 export const metadata: Metadata = {
   title: 'Product Comparison \u2014 SmartBuy AI',
   description:
-    'Compare products across retailers with AI-powered insights \u2014 real recorded prices and price history only.',
+    'Compare products across retailers with deterministic, rule-based insights \u2014 real recorded prices and price history only.',
   alternates: {
     canonical: `${appConfig.url}/compare`,
   },
   openGraph: {
     title: 'Product Comparison \u2014 SmartBuy AI',
     description:
-      'Compare products across retailers with AI-powered insights \u2014 real recorded prices and price history only.',
+      'Compare products across retailers with deterministic, rule-based insights \u2014 real recorded prices and price history only.',
     url: `${appConfig.url}/compare`,
     type: 'website',
     locale: 'en_US',
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     card: 'summary',
     title: 'Product Comparison \u2014 SmartBuy AI',
     description:
-      'Compare products across retailers with AI-powered insights \u2014 real recorded prices and price history only.',
+      'Compare products across retailers with deterministic, rule-based insights \u2014 real recorded prices and price history only.',
   },
 };
 

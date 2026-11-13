@@ -26,6 +26,8 @@ import {
 } from '@/services/product-dimensions';
 
 import { logApiError } from '@/lib/api/error-logging';
+import { computeProductQualityScore } from '@/services/product-quality-score';
+import { getProductQualityContexts } from '@/services/admin-products';
 // Section 14, Chunk 1 — live per-request data: never statically prerendered.
 export const dynamic = 'force-dynamic';
 
@@ -66,7 +68,7 @@ export async function GET(
     // when the array is non-empty. 0 variant rows live today, so
     // the field is [] and nothing new renders — the wiring is the
     // fix, not the data.
-    const [images, attributes, variants, repairability, endurance, physical, recorded, globalReadiness, dimensions, modelUrl, authenticity, supplyChain] =
+    const [images, attributes, variants, repairability, endurance, physical, recorded, globalReadiness, dimensions, modelUrl, authenticity, supplyChain, qualityContexts] =
       await Promise.all([
         getProductImages(supabase, product.id),
         getProductAttributes(supabase, product.id),
@@ -80,6 +82,7 @@ export async function GET(
         getProductModelUrl(supabase, product.id),
         getProductAuthenticity(supabase, product.id),
         getProductSupplyChain(supabase, product.id),
+        getProductQualityContexts(supabase, [product.id]),
       ]);
 
     // Dimensions are null (not an all-null object) when nothing is
@@ -89,7 +92,22 @@ export async function GET(
         ? null
         : dimensions;
 
-    return apiSuccess({ ...product, images, attributes, variants, repairability, endurance, physical, recorded, globalReadiness, dimensions: dimensionsOut, modelUrl, authenticity, supplyChain });
+    // Sections 21–25, Stage H (H-P2-3) — the public page no
+    // longer shows the field-presence "confidence" count as a
+    // percentage. The 7-dimension data-quality score is computed
+    // here, server-side, from the product row + the context reads
+    // (specs / images / merchants / newest price point); a
+    // dimension with no data scores 0 in that dimension, never a
+    // guessed value. `merchantSourceMissing` (migration 045
+    // unapplied) rides along so the page can say the score may
+    // understate instead of showing a bare number (H-P2-4).
+    const qualityContext = qualityContexts.contexts.get(product.id) ?? {};
+    const dataQuality = {
+      ...computeProductQualityScore(product, qualityContext),
+      merchantSourceMissing: qualityContexts.merchantSourceMissing,
+    };
+
+    return apiSuccess({ ...product, images, attributes, variants, repairability, endurance, physical, recorded, globalReadiness, dimensions: dimensionsOut, modelUrl, authenticity, supplyChain, dataQuality });
   } catch (err) {
     logApiError(err, { request, route: 'products', status: 500 });
     return internalError('Failed to fetch product');

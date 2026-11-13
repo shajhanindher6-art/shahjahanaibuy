@@ -35,7 +35,7 @@ import {
   getClientIp,
 } from '@/lib/api/middleware';
 import { getAiEngine } from '@/services/ai-engine/providers';
-import { getAiUsageSummary } from '@/services/ai-engine/usage';
+import { getAiUsageSummaryAsync } from '@/services/ai-engine/usage';
 import { getAiAccuracySummary } from '@/services/ai-accuracy';
 import { getAiErrorBreakdown } from '@/services/error-log-admin';
 import { getAdminDataQualitySummary } from '@/services/admin-data-quality';
@@ -56,8 +56,8 @@ export async function GET(request: NextRequest) {
     const [accuracy, errors, dataQuality] = service
       ? await Promise.all([
           getAiAccuracySummary(service),
-          getAiErrorBreakdown(service),
-          getAdminDataQualitySummary(service),
+          getAiErrorBreakdown(service, 200, { adminUserId: auth.userId }),
+          getAdminDataQualitySummary(service, { adminUserId: auth.userId }),
         ])
       : [
           null,
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
 
     return apiSuccess({
       providers: getAiEngine().validate(),
-      usage: getAiUsageSummary(),
+      usage: await getAiUsageSummaryAsync(),
       accuracy,
       errors,
       dataQuality,

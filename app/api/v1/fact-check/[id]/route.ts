@@ -28,6 +28,8 @@ import {
 } from '@/lib/api/middleware';
 import { getFactCheck, type FactCheckStatus } from '@/lib/fact-check';
 import { logger } from '@/lib/config/logger';
+import { checkCsrfOrigin } from '@/lib/api/csrf';
+import { recordAdminAction } from '@/services/admin';
 
 import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
@@ -72,6 +74,12 @@ export async function PATCH(
 
   const limited = await rateLimitResponse(`fact-check-decide:${getClientIp(request)}`, 30);
   if (limited) return limited;
+
+  // Sections 21–25, Stage G, G-P1-3 — CSRF Origin check
+  // (cookie-authed mutation; absent Origin fails open for
+  // non-browser clients). The middleware layer checks this too.
+  const csrf = checkCsrfOrigin(request);
+  if (csrf) return csrf;
 
   const admin = await requireAdmin(request);
   if ('error' in admin) return admin.error;
@@ -137,6 +145,22 @@ export async function PATCH(
           dealId: entry.subjectId,
         });
       }
+    }
+
+    // Sections 21–25, Stage G, G-P1-2 — audit the decision.
+    // recordAdminAction never throws: a logging failure is
+    // recorded by the logger and never fails the response itself.
+    const auditService = createSupabaseServiceClient();
+    if (auditService) {
+      await recordAdminAction(
+        auditService,
+        admin.userId,
+        'fact_check_decide',
+        'fact_check',
+        params.id,
+        { decision, takedownApplied },
+        getClientIp(request)
+      );
     }
 
     return apiSuccess({ ...data, takedownApplied });

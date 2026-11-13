@@ -12,6 +12,7 @@
 
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import {
   apiSuccess,
   badRequest,
@@ -25,6 +26,8 @@ import {
   rateLimitResponse,
   getClientIp,
 } from '@/lib/api/middleware';
+import { checkCsrfOrigin } from '@/lib/api/csrf';
+import { recordAdminAction } from '@/services/admin';
 import {
   runAutomatedChecks,
   getFactCheckQueue,
@@ -80,6 +83,13 @@ export async function POST(request: NextRequest) {
 
   const limited = await rateLimitResponse(`fact-check-create:${getClientIp(request)}`, 30);
   if (limited) return limited;
+
+  // Sections 21–25, Stage G, G-P1-3 — CSRF Origin check
+  // (cookie-authed mutation; absent Origin fails open for
+  // non-browser clients). The middleware layer checks this too;
+  // the direct call keeps the protection if the matcher changes.
+  const csrf = checkCsrfOrigin(request);
+  if (csrf) return csrf;
 
   const admin = await requireAdmin(request);
   if ('error' in admin) return admin.error;
@@ -157,6 +167,22 @@ export async function POST(request: NextRequest) {
       // (migration 028 not run).
       return serviceUnavailable(
         'Fact-checking is not available yet — the fact-check queue has not been set up.'
+      );
+    }
+
+    // Sections 21–25, Stage G, G-P1-2 — audit the creation.
+    // recordAdminAction never throws: a logging failure is
+    // recorded by the logger and never fails the response itself.
+    const auditService = createSupabaseServiceClient();
+    if (auditService) {
+      await recordAdminAction(
+        auditService,
+        admin.userId,
+        'fact_check_create',
+        'fact_check',
+        data.id as string,
+        { subjectType, subjectId: subjectId.trim(), overall },
+        getClientIp(request)
       );
     }
 

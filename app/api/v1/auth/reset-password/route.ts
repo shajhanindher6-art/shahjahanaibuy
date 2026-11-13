@@ -9,11 +9,12 @@
  * route rate-limits it (5/min per IP) before forwarding it to
  * Supabase's `resetPasswordForEmail` with the anon client.
  *
- * Deliberately narrow: ONLY the reset-request path is proxied.
- * Sign-in / sign-up are NOT proxied (no captcha is added, and
- * the actual auth flow is unchanged — the user still receives
- * Supabase's reset email and lands on /auth/callback?type=recovery
- * exactly as before).
+ * Deliberately narrow: ONLY the reset-request path is proxied
+ * here. Sign-in / sign-up have their own proxies since Section
+ * 21–25, Stage J, J-P1-1 (`app/api/v1/auth/sign-in` and
+ * `sign-up`, same 5/min/IP limit + captcha hook) — the user
+ * still receives Supabase's reset email and lands on
+ * /auth/callback?type=recovery exactly as before.
  *
  * Anti-enumeration: the response is the same generic success
  * whether or not the email exists (Supabase itself returns no

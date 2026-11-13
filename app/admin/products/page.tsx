@@ -24,6 +24,8 @@ import {
 import {
   DATA_QUALITY_SCORE_LABEL,
   computeProductQualityScore,
+  getDataQualityState,
+  isValidGtin,
 } from '@/services/product-quality-score';
 import { priceVerificationLabel } from '@/services/price-verification';
 import { formatLastChecked } from '@/lib/price-freshness';
@@ -77,7 +79,7 @@ export default async function AdminProductsPage({
     page,
     pageSize: 20,
   });
-  const contexts = await getProductQualityContexts(
+  const { contexts, merchantSourceMissing } = await getProductQualityContexts(
     service,
     result.products.map((p) => p.id)
   );
@@ -107,6 +109,18 @@ export default async function AdminProductsPage({
           are not applied, and every product reads as published /
           unverified. Apply migration 045 in the Supabase SQL Editor
           to enable them.
+        </p>
+      ) : null}
+      {/* Section 21–25, Stage H (H-P2-4): the scores below may
+          understate data quality while the price-source column is
+          missing — say so here instead of showing bare numbers. */}
+      {merchantSourceMissing ? (
+        <p className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-950">
+          The merchant price-source column does not exist yet
+          (migration 045 not applied), so the data quality scores
+          below may understate data quality: the attribution
+          dimension cannot count a recorded price source. Apply
+          migration 045 in the Supabase SQL Editor to enable it.
         </p>
       ) : null}
       {result.error ? (
@@ -181,6 +195,18 @@ export default async function AdminProductsPage({
               },
               contexts.get(product.id) ?? {}
             );
+            // Section 21–25, Stage H (H-P2-2): the same 5-state
+            // taxonomy the public product page shows, from the same
+            // inputs — the admin row and the public page can never
+            // disagree about a product's state.
+            const productCtx = contexts.get(product.id) ?? {};
+            const qualityState = getDataQualityState({
+              priceVerificationStatus: product.priceVerificationStatus,
+              priceAgeDays: score.priceAgeDays,
+              merchantCount: productCtx.merchantCount ?? 0,
+              hasValidGtin: isValidGtin(product.gtin),
+              hasPriceSource: (productCtx.priceSource ?? null) !== null,
+            });
             const verification = priceVerificationLabel(
               product.priceVerificationStatus,
               formatLastChecked(product.priceVerifiedAt)
@@ -210,6 +236,7 @@ export default async function AdminProductsPage({
                 </div>
                 <p className="mt-2 text-sm text-muted-foreground">
                   {DATA_QUALITY_SCORE_LABEL}: <strong>{score.score} / 100</strong> ({score.grade})
+                  {' · '}Data verification: <strong>{qualityState.label}</strong>
                   {score.missingFields.length > 0
                     ? ` — missing: ${score.missingFields.join(', ')}`
                     : ' — nothing missing'}

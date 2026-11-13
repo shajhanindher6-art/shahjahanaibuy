@@ -18,6 +18,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { logger } from '@/lib/config/logger';
+import { logApiError } from '@/lib/api/error-logging';
 import { computePriceIndex } from '@/lib/price-index';
 
 // Live DB data must never be served from a stale edge cache.
@@ -25,7 +26,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'price-index' });
-  // Section 19, Phase 9 (§12 #92) — intentionally unwired: DB failures return an honest empty 200 (fail-safe) and the catch already records them via logger.error, so no 5xx is ever returned for error_log/Sentry capture.
+  // Section 21–25, Stage J, J-P2-3 — wired: unexpected errors are logged via logApiError (error_log/Sentry) AND the honest empty response below is still returned.
 
   const limited = await rateLimitResponse(`price-index:${getClientIp(request)}`, 60);
   if (limited) return limited;
@@ -108,6 +109,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     logger.error('price-index: unexpected error', { error: String(err) });
+    logApiError(err, { request, route: 'price-index', status: 500 });
     return emptyIndex('Price Index data is unavailable right now.');
   }
 }

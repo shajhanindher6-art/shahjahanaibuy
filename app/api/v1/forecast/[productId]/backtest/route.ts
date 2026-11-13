@@ -19,6 +19,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, notFound } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { logger } from '@/lib/config/logger';
+import { logApiError } from '@/lib/api/error-logging';
 import { getProductById, getProductBySlug } from '@/services/products';
 import { backtestForecast, FORECAST_ALLOWED_HORIZONS, isAllowedForecastHorizon } from '@/lib/forecast';
 
@@ -33,7 +34,7 @@ export async function GET(
   { params }: { params: { productId: string } }
 ) {
   logApiRequest(request, { endpoint: 'forecast-backtest', productId: params.productId });
-  // Section 19, Phase 9 (§12 #92) — intentionally unwired: DB failures return an honest empty 200 (fail-safe) and the catch already records them via logger.error, so no 5xx is ever returned for error_log/Sentry capture.
+  // Section 21–25, Stage J, J-P2-3 — wired: unexpected errors are logged via logApiError (error_log/Sentry) AND the honest empty response below is still returned.
 
   const limited = await rateLimitResponse(`forecast-backtest:${getClientIp(request)}`, 30);
   if (limited) return limited;
@@ -92,6 +93,7 @@ export async function GET(
     });
   } catch (err) {
     logger.error('forecast-backtest: unexpected error', { error: String(err) });
+    logApiError(err, { request, route: 'forecast-backtest', status: 500 });
     return apiSuccess({
       product: null,
       horizonDays: horizon,

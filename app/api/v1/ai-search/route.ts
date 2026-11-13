@@ -21,7 +21,7 @@ import {
 import { getAiEngine } from '@/services/ai-engine';
 import {
   AI_SEARCH_ANON_PER_MIN,
-  checkAiUserQuota,
+  checkAiUserQuotaAsync,
 } from '@/services/ai-engine/usage';
 import { type WebSearchOutcome, type WebSearchResult } from '@/services/external-search';
 import type { SearchFilters } from '@/types/ai';
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   // The same `auth` is reused below for recordSearch.
   const auth = await requireAuth(request);
   if (!('error' in auth)) {
-    const quota = checkAiUserQuota(auth.userId);
+    const quota = await checkAiUserQuotaAsync(auth.userId);
     if (!quota.allowed) {
       return rateLimited('Daily AI usage limit reached. Try again tomorrow.', {
         resetAt: quota.resetAt,

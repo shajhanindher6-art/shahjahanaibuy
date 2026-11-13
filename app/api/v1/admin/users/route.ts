@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     const pageSize = Math.min(100, Math.max(1, Number(searchParams.get('pageSize') ?? 20)));
 
     const supabase = await createSupabaseServerClient();
-    const result = await getAllUsers(supabase, page, pageSize);
+    const result = await getAllUsers(supabase, page, pageSize, { adminUserId: auth.userId });
 
     return apiSuccess(result.users, 200, {
       total: result.total,

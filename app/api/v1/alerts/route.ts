@@ -67,7 +67,15 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = await createSupabaseServerClient();
-    const alerts = await getAlerts(supabase, auth.userId);
+    // Section 21–25, Stage J, J-P2-5 — the list is capped in
+    // getAlerts (default 100, max 500); ?limit= lets the page ask
+    // for fewer, never more than the cap.
+    const limitParam = Number(request.nextUrl.searchParams.get('limit') ?? '');
+    const alerts = await getAlerts(
+      supabase,
+      auth.userId,
+      Number.isFinite(limitParam) && limitParam > 0 ? limitParam : undefined
+    );
     // The guest-merge runner reads this meta to cap the merge at
     // the signed-in tier's limit without a separate tier lookup.
     const tier = await getTierForUserId(auth.userId);

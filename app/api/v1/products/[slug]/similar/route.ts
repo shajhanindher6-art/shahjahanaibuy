@@ -14,7 +14,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, notFound, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getProductBySlug, getLowestMerchantPrices, type LowestMerchantPrice } from '@/services/products';
-import { rankSimilarByValue } from '@/lib/similar-value';
+import { rankSimilarByValue, similarityScore } from '@/lib/similar-value';
 
 import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
@@ -77,16 +77,19 @@ export async function GET(
 
     // Lowest in-stock merchant price + in-stock merchant count per
     // similar product (one batched query). A failure here degrades
-    // to priceless cards, never a guessed price.
+    // to priceless cards, never a guessed price. The anchor's own
+    // lowest price rides in the same batch — it is the reference
+    // for the similarity score below, not a displayed price.
     let lowest = new Map<string, LowestMerchantPrice>();
     try {
-      lowest = await getLowestMerchantPrices(
-        supabase,
-        (data ?? []).map((row) => row.id as string)
-      );
+      lowest = await getLowestMerchantPrices(supabase, [
+        ...(data ?? []).map((row) => row.id as string),
+        product.id as string,
+      ]);
     } catch {
       lowest = new Map();
     }
+    const anchorPrice = lowest.get(product.id as string)?.price ?? null;
 
     const results = rankSimilarByValue(
       (data ?? []).map((row) => ({
@@ -102,10 +105,19 @@ export async function GET(
         // Section 16, item 9: recorded freshness rides with the card
         // so the stale-price badge + age can render under the price.
         dataFreshness: (row.data_freshness as string | null) ?? null,
-        // Deterministic: the old term added Math.random() * 20, so the same
-        // product's "match" value jittered on every request. confidence_score
-        // alone is the stated similarity signal (50 when unrecorded).
-        matchScore: Math.round(row.confidence_score ?? 50),
+        // Sections 21–25, Stage H (H-P2-7) — a REAL similarity
+        // score (same brand +40, same category +30, price within
+        // 20% +30; see lib/similar-value.ts). The old value was
+        // confidence_score — a field-presence completeness count
+        // presented as a match. No randomness, no invented data.
+        matchScore: similarityScore({
+          anchorBrand: product.brand,
+          anchorCategory: product.category,
+          anchorPrice,
+          brand: row.brand,
+          category: row.category,
+          price: lowest.get(row.id)?.price ?? null,
+        }),
         reason: product.brand && row.brand === product.brand
           ? `Same brand as ${product.name}`
           : `Similar ${product.category ?? 'product'} category`,

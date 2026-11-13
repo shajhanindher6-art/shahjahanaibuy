@@ -35,7 +35,7 @@ import {
 import { getAiEngine } from '@/services/ai-engine';
 import {
   SCAN_ANON_PER_MIN,
-  isProviderBudgetExhausted,
+  isProviderBudgetExhaustedAsync,
 } from '@/services/ai-engine/usage';
 
 // Section 19, Phase 1 (§12 #10) — expensive inline AI work runs under
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
       // note says so honestly ("unavailable today"), instead of
       // pretending Lens searched and found nothing. The catalog
       // fallback below still serves when keywords exist.
-      if (isProviderBudgetExhausted('serpapi')) {
+      if (await isProviderBudgetExhaustedAsync('serpapi')) {
         if (!keywords) {
           return apiSuccess([], 200, {
             mode: 'visual',

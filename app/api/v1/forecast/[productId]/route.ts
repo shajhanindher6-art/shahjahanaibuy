@@ -132,13 +132,24 @@ export async function GET(
     const points = ((data ?? []) as Array<{ price: number; recorded_at: string }>).map(
       (r) => ({ price: Number(r.price), recordedAt: r.recorded_at })
     );
-    const forecast = computeForecast(points, Date.now(), horizons);
-    const backtest = backtestForecast(points, backtestHorizon);
+    // Section 21, Stage E (E-P1-1) — the product's real last
+    // check (products.data_freshness) is the freshness input, not
+    // an assumption: when it is older than STALE_PRICE_DAYS the
+    // library withholds the forecast (status 'stale-data').
+    const lastCheckedAt =
+      (resolved as { dataFreshness?: string | null }).dataFreshness ?? null;
+    const forecast = computeForecast(points, Date.now(), horizons, { lastCheckedAt });
+    const backtest = backtestForecast(points, backtestHorizon, Date.now(), { lastCheckedAt });
 
     return apiSuccess({
       product,
       currentPrice: forecast.currentPrice,
       lastRecordedAt: points.length > 0 ? points[points.length - 1].recordedAt : null,
+      // Section 21, Stage E (E-P1-1) — freshness of the forecast's
+      // inputs, so clients can label a withheld/stale forecast.
+      lastCheckedAt: forecast.lastCheckedAt,
+      daysSinceLastCheck: forecast.daysSinceLastCheck,
+      priceStale: forecast.priceStale,
       historyPoints: forecast.pointsUsed,
       historyDays: forecast.historyDays,
       status: forecast.status,

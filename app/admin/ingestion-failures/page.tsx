@@ -19,9 +19,12 @@
  */
 
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { getDeadLetterQueue, getQueueMetrics } from '@/lib/workers/queue';
 import { listRecentErrors, listRefreshFailures } from '@/services/error-log-admin';
+import { listIngestionRejections } from '@/services/ingestion-rejections';
 import {
   failedStepsOf,
   listRefreshRuns,
@@ -67,6 +70,7 @@ export default async function AdminIngestionFailuresPage() {
 
   const errors = await listRecentErrors(service, 50);
   const refreshFailures = await listRefreshFailures(service, 20);
+  const rejections = await listIngestionRejections(service, 50);
   const { runs, tableMissing: runsTableMissing, error: runsError } = await listRefreshRuns(service, 10);
   const deadLettered = getDeadLetterQueue();
   const queueMetrics = getQueueMetrics();
@@ -80,6 +84,45 @@ export default async function AdminIngestionFailuresPage() {
         first. An empty section means nothing was stored there, not
         that nothing ever failed.
       </p>
+
+      <h2 className="mt-10 text-xl font-semibold">Rejected ingestion rows</h2>
+      {rejections.error ? (
+        <p className="mt-4 rounded-lg border border-red-300 bg-red-50 p-4 text-sm dark:border-red-800 dark:bg-red-950">
+          Rejected rows could not be read: {rejections.error}
+        </p>
+      ) : rejections.tableMissing ? (
+        <div className="mt-4 rounded-lg border p-6">
+          <p className="font-medium">Rejected rows are not stored yet — migration 048 not applied.</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Pipeline and CSV rejections are written to the same
+            error_log table as the section above, so they are
+            unavailable for the same reason. This is not a claim
+            that no row was ever rejected.
+          </p>
+        </div>
+      ) : rejections.rejections.length === 0 ? (
+        <div className="mt-4 rounded-lg border p-6">
+          <p className="font-medium">No rejected rows recorded.</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            The table exists, but no pipeline or CSV rejection has
+            been recorded since it was applied.
+          </p>
+        </div>
+      ) : (
+        <ul className="mt-4 space-y-2">
+          {rejections.rejections.map((rejection) => (
+            <li key={rejection.id} className="rounded-lg border p-4 text-sm">
+              <p className="font-medium">
+                {rejection.productName ?? 'Unnamed row'}
+                {rejection.rowNumber !== null ? ` · CSV row ${rejection.rowNumber}` : ''}
+                {rejection.source ? ` · ${rejection.source}` : ''} ·{' '}
+                {formatDateTime(rejection.created_at)}
+              </p>
+              <p className="mt-1 text-muted-foreground">{rejection.reason ?? rejection.message}</p>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <h2 className="mt-10 text-xl font-semibold">Error log</h2>
       {errors.error ? (

@@ -3,7 +3,7 @@
 **Base URL:** `https://shahjahanaibuy-b1zp.vercel.app`
 **Version:** v1
 **Last updated:** 2026-11-13 (Section 19, Phase 9)
-**Coverage:** 190 route files / 258 handlers under `app/api/`, counted from the route files on 2026-11-13 (Section 20). The route table below is generated, not hand-typed — regenerate it from `app/api/**/route.ts` (`docs/openapi.json` is generated from the same source).
+**Coverage:** 197 route files / 266 handlers under `app/api/`, counted from the route files on 2026-11-13 (Sections 21–25). The route table below is generated, not hand-typed — regenerate it from `app/api/**/route.ts` (`docs/openapi.json` is generated from the same source).
 **Machine-readable spec:** `docs/openapi.json` (OpenAPI 3.0.3 — paths + methods only; request/response schemas are not yet machine-generated).
 
 > Honest scope note: this document lists every route that exists in code. It does **not** mean every route works live today — several depend on owner-gated configuration (see "Fail-closed behaviour" below) or on database migrations that are not yet applied live. Where a route is known to degrade, it is called out.
@@ -79,7 +79,7 @@ All API routes return a consistent JSON envelope:
 
 ## Rate limiting
 
-All 190 route files call `rateLimitResponse` (enforced by `tests/rate-limit-coverage.test.ts`). Upstash Redis first when `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set; otherwise a per-instance in-memory bucket (fail-open by design). Exceeding the limit returns `429 RATE_LIMITED`. Per-route limits vary — see `docs/rate-limits.md` for the per-route table.
+All 197 route files call `rateLimitResponse` (enforced by `tests/rate-limit-coverage.test.ts`). Upstash Redis first when `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set; otherwise a per-instance in-memory bucket (fail-open by design). Exceeding the limit returns `429 RATE_LIMITED`. Per-route limits vary — see `docs/rate-limits.md` for the per-route table.
 
 ---
 
@@ -175,9 +175,9 @@ Natural-language product search. Body: `{ "query": "string", "pageSize": 10 }`.
 
 ---
 
-## Complete route table (190 routes, 258 handlers)
+## Complete route table (197 routes, 266 handlers)
 
-Generated from `app/api/**/route.ts` on 2026-11-13 (Section 20). Methods are the exported handlers in each file, in file order. Paths sort with `{param}` segments before literals, and a longer path before the shorter path it extends.
+Generated from `app/api/**/route.ts` on 2026-11-13 (Sections 21–25). Methods are the exported handlers in each file, in file order. Paths sort with `{param}` segments before literals, and a longer path before the shorter path it extends.
 
 ### `search`
 
@@ -205,6 +205,7 @@ Generated from `app/api/**/route.ts` on 2026-11-13 (Section 20). Methods are the
 | GET | `/api/v1/admin/data-quality` |
 | POST | `/api/v1/admin/intake` |
 | GET | `/api/v1/admin/products` |
+| GET | `/api/v1/admin/providers` |
 | POST | `/api/v1/admin/sentry-test` |
 | GET | `/api/v1/admin/users` |
 | POST | `/api/v1/admin/visual-search-backfill` |
@@ -231,11 +232,26 @@ Generated from `app/api/**/route.ts` on 2026-11-13 (Section 20). Methods are the
 | POST | `/api/v1/admin/ebay/preview` |
 
 
+### `v1/admin/jobs`
+
+| Method(s) | Path |
+|---|---|
+| GET | `/api/v1/admin/jobs/dead-letter` |
+
+
 ### `v1/admin/merchants/{slug}`
 
 | Method(s) | Path |
 |---|---|
 | POST | `/api/v1/admin/merchants/{slug}/verify` |
+
+
+### `v1/admin/monitoring`
+
+| Method(s) | Path |
+|---|---|
+| GET | `/api/v1/admin/monitoring/alert-delivery` |
+| GET | `/api/v1/admin/monitoring/jobs` |
 
 
 ### `v1/admin/newsletter`
@@ -250,6 +266,7 @@ Generated from `app/api/**/route.ts` on 2026-11-13 (Section 20). Methods are the
 | Method(s) | Path |
 |---|---|
 | GET, PATCH, DELETE | `/api/v1/admin/products/{id}` |
+| GET, PATCH | `/api/v1/admin/products/{id}/specs` |
 
 
 ### `v1/affiliate`
@@ -331,6 +348,8 @@ Generated from `app/api/**/route.ts` on 2026-11-13 (Section 20). Methods are the
 | Method(s) | Path |
 |---|---|
 | POST | `/api/v1/auth/reset-password` |
+| POST | `/api/v1/auth/sign-in` |
+| POST | `/api/v1/auth/sign-up` |
 
 
 ### `v1/brands`
@@ -966,5 +985,5 @@ Generated from `app/api/**/route.ts` on 2026-11-13 (Section 20). Methods are the
 
 - **Page routes (122 `page.tsx` files)** — see `project-summary.md` and the in-app `/docs` page.
 - **The 36 AI tools** — see `app/tools/page.tsx` and `project-summary.md`.
-- **`/api-docs` page** — covers 7 of 190 routes; this document supersedes it for API reference.
+- **`/api-docs` page** — covers 7 of 197 routes; this document supersedes it for API reference.
 - **Request/response schemas** — not yet machine-generated. `docs/openapi.json` lists paths and methods only.

@@ -56,6 +56,7 @@ import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { refreshTrackedPrices, type PriceRefreshResult } from '@/services/price-refresh';
 import { checkPriceAlerts, type AlertCheckResult } from '@/services/alert-checker';
 import { processNotificationQueue } from '@/services/notification-dispatch';
+import { cleanupExpiredAlerts, type AlertExpiryCleanupResult } from '@/services/alert-expiry';
 import {
   runRefreshStep,
   summarizeStep,
@@ -145,6 +146,8 @@ export async function POST(request: NextRequest) {
       failed: 0,
       loadFailed: false,
       staleFlipped: 0,
+      currencyAssumedUsd: 0,
+      nonUsdCurrencies: [],
     };
     const zeroAlerts: AlertCheckResult = {
       checked: 0,
@@ -157,14 +160,26 @@ export async function POST(request: NextRequest) {
       wishlistChecked: 0,
       wishlistTriggered: 0,
       wishlistQueued: 0,
+      skippedExpired: 0,
     };
-    const zeroNotifications = { processed: 0, sent: 0, failed: 0 };
+    const zeroNotifications = { processed: 0, sent: 0, failed: 0, partial: 0 };
+    // Sections 21–25, Stage F (F6) — same cleanup as the refresh
+    // chain: deactivate expired alerts before firing new ones.
+    const zeroAlertExpiry: AlertExpiryCleanupResult = {
+      alertsDeactivated: 0,
+      guestAlertsDeactivated: 0,
+    };
 
     const refresh = await runRefreshStep(
       'refreshTrackedPrices',
       () => refreshTrackedPrices(supabase),
       zeroRefresh,
       (r) => (r.loadFailed ? (r.loadError ?? 'price load failed') : null)
+    );
+    const alertExpiry = await runRefreshStep(
+      'cleanupExpiredAlerts',
+      () => cleanupExpiredAlerts(supabase),
+      zeroAlertExpiry
     );
     const alerts = await runRefreshStep(
       'checkPriceAlerts',
@@ -186,6 +201,11 @@ export async function POST(request: NextRequest) {
         succeeded: refresh.result.inserted + refresh.result.unchanged,
         failed: refresh.result.failed,
         skipped: refresh.result.skippedNoRetailer + refresh.result.skippedNoPrice,
+      }),
+      alertExpiry: summarizeStep(alertExpiry, {
+        processed: alertExpiry.result.alertsDeactivated + alertExpiry.result.guestAlertsDeactivated,
+        succeeded: alertExpiry.result.alertsDeactivated + alertExpiry.result.guestAlertsDeactivated,
+        failed: 0,
       }),
       alerts: summarizeStep(alerts, {
         processed: alerts.result.checked,
@@ -224,6 +244,7 @@ export async function POST(request: NextRequest) {
     return apiSuccess({
       skipped: false,
       refresh: refresh.result,
+      alertExpiry: alertExpiry.result,
       alerts: alerts.result,
       notifications: notifications.result,
       steps,

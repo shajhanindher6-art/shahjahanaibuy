@@ -1,6 +1,9 @@
 /**
  * API v1 AI product summary endpoint.
- * GET /api/v1/ai-summary/[productId] — AI-generated summary with pros, cons, and alternatives.
+ * GET /api/v1/ai-summary/[productId] — deterministic
+ * (template-based, no LLM) summary with pros, cons, and
+ * alternatives. (Section 21, Stage E, E-P2-4: was "AI-generated",
+ * which overstates a deterministic-only engine.)
  */
 
 import type { NextRequest } from 'next/server';

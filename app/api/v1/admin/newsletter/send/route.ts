@@ -21,7 +21,8 @@
  * every recipient was accepted.
  *
  * Body (optional): { "limit": number } — recipients per run,
- * clamped to 1–500 by the sender module (default 100).
+ * clamped to 1–NEWSLETTER_SEND_MAX_LIMIT (500) at the route and
+ * again in the sender module (default 100).
  */
 
 import type { NextRequest } from 'next/server';
@@ -37,39 +38,82 @@ import {
   rateLimitResponse,
   getClientIp,
 } from '@/lib/api/middleware';
-import { sendNewsletterToSubscribers } from '@/services/newsletter-send';
+import { logApiError } from '@/lib/api/error-logging';
+import { checkCsrfOrigin } from '@/lib/api/csrf';
+import {
+  clampNewsletterSendLimit,
+  sendNewsletterToSubscribers,
+} from '@/services/newsletter-send';
 import { recordAdminAction } from '@/services/admin';
+import {
+  adminNewsletterSendSchema,
+  invalidBodyResponse,
+  validateBody,
+} from '@/lib/api/validation';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'admin.newsletter.send' });
-  // Section 19, Phase 9 (§12 #92) — intentionally unwired: sendNewsletterToSubscribers never throws (every failure is a result tuple, audited via recordAdminAction) and its 503s are handled config states, so there is no 5xx to log.
+  // Section 21–25, Stage J, J-P2-3 — wired: an unexpected throw
+  // from the sender (it returns result tuples for expected
+  // failures, but a throw is still possible) is logged via
+  // logApiError. The 503 config states below stay unlogged — they
+  // are handled states, not errors.
   // Rate limit: 10 requests/min per IP — a send run mails up to
   // 500 people, so this must never be hammerable.
   const limited = await rateLimitResponse(`admin.newsletter.send:${getClientIp(request)}`, 10);
   if (limited) return limited;
+
+  // Sections 21–25, Stage G, G-P1-3 — CSRF Origin check
+  // (cookie-authed mutation; absent Origin fails open for
+  // non-browser clients). The middleware layer checks this too.
+  const csrf = checkCsrfOrigin(request);
+  if (csrf) return csrf;
 
   const auth = await requireAdmin(request);
   if ('error' in auth) return auth.error;
 
   const service = createSupabaseServiceClient();
   if (!service) {
+    logApiError(new Error('admin.newsletter.send: service client unavailable'), {
+      request,
+      route: 'admin.newsletter.send',
+      status: 500,
+    });
     return internalError('Newsletter send unavailable (service key missing)');
   }
 
   let limit: number | undefined;
   try {
     const body = await request.json().catch(() => null);
-    if (body && typeof body.limit === 'number') limit = body.limit;
+    // Sections 21–25, Stage G, G-P2-1 — shared Zod shape gate
+    // (limit must be a finite number when present; the clamp
+    // below still floors + bounds it to 1–500 as before).
+    const invalid = invalidBodyResponse(
+      validateBody(adminNewsletterSendSchema, body ?? {}),
+    );
+    if (invalid) return invalid;
+    // Sections 21–25, Stage G, G-P2-2 — clamp the caller-supplied
+    // limit here too, to the documented maximum
+    // NEWSLETTER_SEND_MAX_LIMIT (500). The sender module clamps
+    // again with the same bound; a non-finite value (NaN) falls
+    // back to the default instead of reaching `.limit(NaN)`.
+    if (body && typeof body.limit === 'number') limit = clampNewsletterSendLimit(body.limit);
   } catch {
     limit = undefined;
   }
 
-  const result = await sendNewsletterToSubscribers(
-    service,
-    limit !== undefined ? { limit } : {}
-  );
+  let result: Awaited<ReturnType<typeof sendNewsletterToSubscribers>>;
+  try {
+    result = await sendNewsletterToSubscribers(
+      service,
+      limit !== undefined ? { limit } : {}
+    );
+  } catch (err) {
+    logApiError(err, { request, route: 'admin.newsletter.send', status: 500 });
+    return internalError('Newsletter send failed unexpectedly');
+  }
 
   if (!result.ok && result.reason === 'email-not-configured') {
     return serviceUnavailable(

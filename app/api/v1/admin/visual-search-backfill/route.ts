@@ -23,7 +23,13 @@ import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { logger } from '@/lib/config/logger';
 import { apiSuccess, internalError, serviceUnavailable } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, requireAdmin, getClientIp } from '@/lib/api/middleware';
+import { checkCsrfOrigin } from '@/lib/api/csrf';
 import { recordAdminAction } from '@/services/admin';
+import {
+  adminVisualSearchBackfillSchema,
+  invalidBodyResponse,
+  validateBody,
+} from '@/lib/api/validation';
 import {
   embedText,
   isVectorSearchConfigured,
@@ -49,6 +55,12 @@ export async function POST(request: NextRequest) {
     const limited = await rateLimitResponse(`visual-search-backfill:${auth.userId}`, 10);
     if (limited) return limited;
 
+    // Sections 21–25, Stage G, G-P1-3 — CSRF Origin check
+    // (cookie-authed mutation; absent Origin fails open for
+    // non-browser clients). The middleware layer checks this too.
+    const csrf = checkCsrfOrigin(request);
+    if (csrf) return csrf;
+
     if (!isVectorSearchConfigured()) {
       return serviceUnavailable(
         'Hugging Face API token is not configured. Set HF_API_TOKEN first (see docs/visual-search.md).'
@@ -61,6 +73,13 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => null);
+    // Sections 21–25, Stage G, G-P2-1 — shared Zod shape gate
+    // (force must be a boolean when present; runs after the
+    // config checks so a missing HF token still 503s).
+    const invalid = invalidBodyResponse(
+      validateBody(adminVisualSearchBackfillSchema, body ?? {}),
+    );
+    if (invalid) return invalid;
     const force = body?.force === true;
 
     const { data: products, error: productsError } = await service
