@@ -1,3 +1,4 @@
+import { env } from '@/lib/config/env';
 import { logger } from '@/lib/config/logger';
 import { logProviderConfigIssues } from '@/services/provider-config';
 import { ProviderNotConfiguredError } from './errors';
@@ -7,6 +8,11 @@ import { ApifyProvider } from './apify-provider';
 import { CsvProvider } from './csv-provider';
 import { AmazonProvider } from './amazon-provider';
 import { BestBuyProvider } from './bestbuy-provider';
+import {
+  canonicalMerchantSlug,
+  merchantSlugForProviderKey,
+  providerKeyForMerchantSlug,
+} from '@/lib/merchant-slugs';
 
 /**
  * Priority ordering for provider categories. Lower index = higher priority.
@@ -68,10 +74,22 @@ export class ProviderRegistry {
 
   /**
    * Register a preferred provider key for a specific retailer slug.
+   * FINAL 100% (F-P2-06): the slug is canonicalized first
+   * (lib/merchant-slugs.ts) — 'bestbuy' and 'best-buy' register
+   * the same override, so a lookup under either spelling finds it.
    */
   setRetailerOverride(retailerSlug: string, providerKey: string): void {
-    this.retailerOverrides.set(retailerSlug.toLowerCase(), providerKey);
-    logger.debug('ProviderRegistry.setRetailerOverride', { retailerSlug, providerKey });
+    const canonical = canonicalMerchantSlug(retailerSlug) ?? retailerSlug.toLowerCase();
+    this.retailerOverrides.set(canonical, providerKey);
+    // Keep the provider-key spelling as a second entry so a
+    // caller passing the raw provider key ('bestbuy') also hits.
+    const keySpelling = providerKeyForMerchantSlug(retailerSlug) ?? providerKey.toLowerCase();
+    if (keySpelling !== canonical) this.retailerOverrides.set(keySpelling, providerKey);
+    logger.debug('ProviderRegistry.setRetailerOverride', {
+      retailerSlug,
+      canonicalRetailerSlug: canonical,
+      providerKey,
+    });
   }
 
   /**
@@ -130,10 +148,18 @@ export class ProviderRegistry {
    * caller wants the failure as a typed error.
    */
   getForRetailer(retailerSlug: string): DataProvider | undefined {
-    const overrideKey = this.retailerOverrides.get(retailerSlug.toLowerCase());
+    // FINAL 100% (F-P2-06/F-P1-11): reconcile the slug first —
+    // the merchants table says 'best-buy', the provider key says
+    // 'bestbuy'. Both spellings resolve to the same override.
+    const canonical = canonicalMerchantSlug(retailerSlug) ?? retailerSlug.toLowerCase();
+    const overrideKey =
+      this.retailerOverrides.get(canonical) ??
+      this.retailerOverrides.get(retailerSlug.toLowerCase()) ??
+      this.retailerOverrides.get(merchantSlugForProviderKey(retailerSlug) ?? '');
     if (!overrideKey) {
       logger.warn('ProviderRegistry.getForRetailer — no provider override for retailer', {
         retailerSlug,
+        canonicalRetailerSlug: canonical,
       });
       return undefined;
     }
@@ -203,20 +229,18 @@ export function getProviderRegistry(): ProviderRegistry {
   if (process.env.NODE_ENV !== 'production') {
     registrySingleton.register(new MockProvider());
   }
-  // GUARD (Section 16, #49): ApifyProvider is registered here so
-  // the registry knows about it, but it FAILS CLOSED without env
-  // vars — ApifyProvider.isAvailable() is false unless BOTH
-  // APIFY_API_TOKEN and APIFY_ACTOR_ID are set, and search()/fetch()
-  // now THROW a typed NOT_CONFIGURED error in that case (see
-  // services/providers/apify-provider.ts). The vars MUST stay
-  // unset: scraping is a hard standing rule — Apify is REJECTED /
-  // BANNED, never an approved provider (Sections 21–25, Stage B,
-  // B8) — .env.example lists them as empty placeholders only,
-  // and no code anywhere sets them. Registering the provider does
-  // not enable scraping; it only keeps the fail-closed path
-  // testable. If the vars are ever set, that is an owner decision
-  // outside this codebase — do not set them here, in tests, in
-  // fixtures, or in .env.example.
+  // KILL-SWITCH (Final 100%, F-P1-59): ApifyProvider is registered
+  // here so the registry knows about it, but it is HARD-DEAD —
+  // ApifyProvider.isAvailable() returns false unconditionally and
+  // the constructor never reads APIFY_API_TOKEN / APIFY_ACTOR_ID,
+  // so no Vercel env edit can activate scraping. search()/fetch()
+  // THROW a typed NOT_CONFIGURED error naming the ban (see
+  // services/providers/apify-provider.ts). Scraping is a hard
+  // standing rule — Apify is REJECTED / BANNED, never an approved
+  // provider (Sections 21–25, Stage B, B8) — .env.example lists
+  // the vars as empty placeholders only, and no code anywhere
+  // sets them. Registering the provider does not enable scraping;
+  // it only keeps the fail-closed path testable.
   registrySingleton.register(new ApifyProvider());
 
   // Section 20, §12 #58 — CsvProvider, registered from env config.
@@ -227,7 +251,7 @@ export function getProviderRegistry(): ProviderRegistry {
   // services/data-sources.ts (ensureCsvDataSource) for the
   // data_sources row that records the configured source.
   registrySingleton.register(
-    new CsvProvider({ csvUrl: process.env.CSV_SOURCE_URL?.trim() || undefined })
+    new CsvProvider({ csvUrl: env.csvSourceUrl?.trim() || undefined })
   );
 
   // Section 20, §12 #57 — Amazon / Best Buy adapter scaffolding.
@@ -242,6 +266,12 @@ export function getProviderRegistry(): ProviderRegistry {
   registrySingleton.register(new AmazonProvider());
   registrySingleton.register(new BestBuyProvider());
   registrySingleton.setRetailerOverride('amazon', 'amazon');
+  // FINAL 100% (F-P2-06): register under BOTH spellings — the
+  // canonical merchants slug 'best-buy' and the provider key
+  // 'bestbuy' — so getForRetailer('best-buy') and
+  // getForRetailer('bestbuy') agree. setRetailerOverride
+  // canonicalizes, so these two calls land on the same entries.
+  registrySingleton.setRetailerOverride('best-buy', 'bestbuy');
   registrySingleton.setRetailerOverride('bestbuy', 'bestbuy');
 
   logger.info('ProviderRegistry initialized', {

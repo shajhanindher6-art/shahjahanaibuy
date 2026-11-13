@@ -4,6 +4,7 @@
 
 import type { ValidatedRawProduct } from './validation';
 import { normalizeGtin } from '@/lib/gtin';
+import { normalizeModel } from '@/lib/model-normalization';
 import type { SpecEntryInput } from '@/lib/spec-templates';
 import type { ProductVariantInput } from './variants';
 
@@ -15,6 +16,8 @@ export interface NormalizedProduct {
   category: string | null;
   imageUrl: string | null;
   gtin: string | null;
+  /** FINAL 100% (F-P1-45/F-P1-46): canonical normalized model number, or null. */
+  modelNumber: string | null;
   confidenceScore: number;
   images: string[];
   price: number;
@@ -74,6 +77,9 @@ export function normalizeProduct(data: ValidatedRawProduct): NormalizedProduct {
     // Section 20, §12 #31 — store the canonical digits-only
     // GTIN (spaces/hyphens stripped); an absent GTIN stays null.
     gtin: normalizeGtin(data.gtin),
+    // FINAL 100% (F-P1-46): store the canonical normalized model
+    // ("SM-S928B" variants collapse to "SMS928B"); absent stays null.
+    modelNumber: normalizeModel(data.modelNumber ?? null),
     confidenceScore: calculateConfidenceScore(data),
     images: data.images ?? [],
     price: data.price,
@@ -93,6 +99,8 @@ export function normalizeProduct(data: ValidatedRawProduct): NormalizedProduct {
       ...(v.attributes ? { attributes: v.attributes } : {}),
       ...(v.sku ? { sku: v.sku } : {}),
       ...(v.gtin ? { gtin: v.gtin } : {}),
+      // FINAL 100% (F-P1-47): variant model number passthrough.
+      ...(v.modelNumber ? { modelNumber: v.modelNumber } : {}),
       ...(v.imageUrl ? { imageUrl: v.imageUrl } : {}),
       ...(v.inStock !== undefined ? { inStock: v.inStock } : {}),
       ...(v.sortOrder !== undefined ? { sortOrder: v.sortOrder } : {}),

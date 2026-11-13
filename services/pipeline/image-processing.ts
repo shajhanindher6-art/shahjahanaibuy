@@ -59,6 +59,13 @@
 
 import { logger } from '@/lib/config/logger';
 import { validateImageUrl } from '@/lib/image-url';
+import {
+  getAllowedImageHosts,
+  isAllowedImageHost,
+  getImageAllowlistConfig,
+} from '@/lib/image-allowlist';
+
+export { getImageAllowlistConfig };
 
 export interface ProcessedImage {
   url: string;
@@ -115,27 +122,172 @@ function envNonEmpty(name: string): string | null {
  * comma-separated). EMPTY by default — no host is known and none
  * is invented. An empty list means "nothing is allowlisted"
  * (fail-closed), never "everything is allowed".
+ *
+ * FINAL 100%, F-P2-25 — this now delegates to the canonical
+ * module `lib/image-allowlist.ts` (exact-host only). The previous
+ * implementation here allowed subdomains via `endsWith`, so the
+ * two modules disagreed on the same env var; the canonical rule
+ * is exact-host, and these exports stay only so existing callers
+ * keep compiling against the same names.
  */
 export function getImageAllowlist(): string[] {
-  const raw = envNonEmpty('IMAGE_ALLOWED_HOSTS');
-  if (!raw) return [];
-  return raw
-    .split(',')
-    .map((h) => h.trim().toLowerCase())
-    .filter(Boolean);
+  return getAllowedImageHosts();
 }
 
 /** True only when the URL's host is on the allowlist (false when the list is empty). */
 export function isImageHostAllowlisted(url: string): boolean {
-  const allowlist = getImageAllowlist();
-  if (allowlist.length === 0) return false;
-  let hostname: string;
+  return isAllowedImageHost(url);
+}
+
+// ---------------------------------------------------------------------------
+// FINAL 100%, F-P2-28 — URL normalization + dedupe + content hash
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical form of an image URL for dedupe: scheme and host
+ * lower-cased, default ports stripped, fragment dropped, one
+ * trailing slash removed from a non-root path. The query string
+ * is left EXACTLY as-is — reordering it could break signed CDN
+ * URLs, and a signed URL's spelling is part of its identity.
+ * Returns the trimmed input unchanged when it does not parse.
+ */
+export function normalizeImageUrl(url: string): string {
+  const trimmed = url.trim();
   try {
-    hostname = new URL(url).hostname.toLowerCase();
+    const parsed = new URL(trimmed);
+    parsed.protocol = parsed.protocol.toLowerCase();
+    parsed.hostname = parsed.hostname.toLowerCase();
+    if (
+      (parsed.protocol === 'https:' && parsed.port === '443') ||
+      (parsed.protocol === 'http:' && parsed.port === '80')
+    ) {
+      parsed.port = '';
+    }
+    parsed.hash = '';
+    if (parsed.pathname.length > 1 && parsed.pathname.endsWith('/')) {
+      parsed.pathname = parsed.pathname.slice(0, -1);
+    }
+    return parsed.toString();
   } catch {
-    return false;
+    return trimmed;
   }
-  return allowlist.some((host) => hostname === host || hostname.endsWith(`.${host}`));
+}
+
+/**
+ * Deterministic 53-bit hash of a (normalized) image URL, as a
+ * hex string — the dedupe key for cross-product duplicate
+ * detection. This is a non-cryptographic URL hash, not a content
+ * hash: two different spellings of the same URL hash alike
+ * (after normalization), two different images at different URLs
+ * do not. For byte-level identity use `computeImageContentHash`.
+ */
+export function hashImageUrl(url: string): string {
+  const input = normalizeImageUrl(url);
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * SHA-256 content hash of image bytes (hex). Async — used by the
+ * storage-upload path, which already holds the bytes. Two
+ * different URLs serving identical bytes hash alike, which is
+ * what URL dedupe alone can never see.
+ */
+export async function computeImageContentHash(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+export interface CrossProductDuplicateImage {
+  /** Normalized URL all rows in the group share. */
+  normalizedUrl: string;
+  /** Content-hash key when known, otherwise the URL hash. */
+  hash: string;
+  productIds: string[];
+}
+
+/**
+ * Cross-product duplicate detection: group (productId, url)
+ * pairs by normalized URL. A group with 2+ distinct products is
+ * the same image stored under two products — reported, never
+ * silently deleted. Pure.
+ */
+export function findCrossProductDuplicateImages(
+  rows: Array<{ productId: string; url: string }>
+): CrossProductDuplicateImage[] {
+  const groups = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const normalized = normalizeImageUrl(row.url);
+    const set = groups.get(normalized) ?? new Set<string>();
+    set.add(row.productId);
+    groups.set(normalized, set);
+  }
+  const out: CrossProductDuplicateImage[] = [];
+  for (const [normalizedUrl, productIds] of groups) {
+    if (productIds.size > 1) {
+      out.push({ normalizedUrl, hash: hashImageUrl(normalizedUrl), productIds: [...productIds] });
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// FINAL 100%, F-P1-39 / F-P2-29 — pipeline config (env-gated, honest)
+// ---------------------------------------------------------------------------
+
+export interface ImagePipelineConfig {
+  /** HEAD-check every kept image (IMAGE_PIPELINE_CHECK_ACCESSIBILITY=true). */
+  checkAccessibility: boolean;
+  /** Attempt storage upload for allowlisted hosts (IMAGE_PIPELINE_UPLOAD_TO_STORAGE=true). */
+  uploadToStorage: boolean;
+  /** Storage bucket configured (IMAGE_STORAGE_BUCKET set). */
+  storageConfigured: boolean;
+  /** Allowlist configured (IMAGE_ALLOWED_HOSTS non-empty). */
+  allowlistConfigured: boolean;
+  /** Honest status line: what the rich path will actually do. */
+  status: string;
+}
+
+/**
+ * The rich image path, behind config. Defaults are OFF: the
+ * pipeline never blocks on a merchant CDN being slow and never
+ * claims an upload it did not do. When the owner enables the
+ * flags, ingestion exercises the full rich path (accessibility
+ * HEAD check + storage upload + per-image verification status);
+ * when storage or the allowlist is unconfigured, the upload
+ * reports 'not-configured' and the hotlink is kept.
+ */
+export function getImagePipelineConfig(): ImagePipelineConfig {
+  const checkAccessibility = process.env.IMAGE_PIPELINE_CHECK_ACCESSIBILITY === 'true';
+  const uploadToStorage = process.env.IMAGE_PIPELINE_UPLOAD_TO_STORAGE === 'true';
+  const storageConfigured = isImageStorageConfigured();
+  const allowlistConfigured = getImageAllowlistConfig().configured;
+  const parts: string[] = [];
+  parts.push(checkAccessibility ? 'accessibility HEAD check on' : 'accessibility HEAD check off');
+  parts.push(uploadToStorage ? 'storage upload requested' : 'storage upload off');
+  if (uploadToStorage && !storageConfigured) {
+    parts.push('IMAGE_STORAGE_BUCKET unset — uploads will report not-configured, hotlinks kept');
+  }
+  if (uploadToStorage && !allowlistConfigured) {
+    parts.push('IMAGE_ALLOWED_HOSTS empty — no host is allowlisted, uploads cannot run');
+  }
+  return {
+    checkAccessibility,
+    uploadToStorage,
+    storageConfigured,
+    allowlistConfigured,
+    status: parts.join('; '),
+  };
 }
 
 /**
@@ -459,7 +611,12 @@ export async function processImagesDetailed(
   const unique: string[] = [];
   const cachedFlags = new Map<string, boolean>();
   for (const url of images) {
-    const normalized = url.trim();
+    // FINAL 100%, F-P2-28 — dedupe on the NORMALIZED URL, not
+    // the raw string: "HTTPS://H/x.jpg/" and "https://h/x.jpg"
+    // are the same image and must not be stored twice. The
+    // normalized form is what is kept, so the stored URL is
+    // canonical too.
+    const normalized = normalizeImageUrl(url);
     if (seen.has(normalized)) continue;
     const { valid, cached } = cachedValidateImageUrl(normalized);
     if (!valid) {

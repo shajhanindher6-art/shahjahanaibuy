@@ -15,6 +15,20 @@
  *     do is say so anywhere countable. Callers surface the
  *     assumed count in the refresh result, so the assumption is
  *     visible in the run record instead of hidden in a comment.
+ *   - FINAL 100% (F-P1-30) — the assumed flag IS persisted, on
+ *     the price_history row (`currency_assumed`, tiered retry in
+ *     services/price-history-quality.ts) and in the refresh-run
+ *     counts. It is NOT persisted on the merchant row itself:
+ *     no `currency_assumed` column exists on merchant_products
+ *     in any migration (060 adds price_history.currency_code
+ *     only), and writing the assumed code into the merchant
+ *     row's `currency_id` would relabel an assumption as an
+ *     observed currency — fabrication. The merchant row keeps
+ *     `currency_id` NULL until a future migration adds the flag
+ *     column (owner-gated; do NOT write that migration here).
+ *     Displays must therefore never read the merchant row's
+ *     currency as observed USD; the history flag + run counts
+ *     are the honest record of the assumption.
  *   - An eBay listing whose currency code is unknown is NEVER
  *     recorded as USD: the listing is skipped and the unknown
  *     code is reported (see services/ebay-refresh.ts). Recording

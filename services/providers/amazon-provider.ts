@@ -1,3 +1,4 @@
+import { env } from '@/lib/config/env';
 import { logger } from '@/lib/config/logger';
 import { ProviderNotConfiguredError } from './errors';
 import type {
@@ -40,7 +41,7 @@ export class AmazonProvider implements DataProvider {
   readonly category = 'affiliate_tag_only' as const;
 
   isAvailable(): boolean {
-    return Boolean(process.env.AMAZON_CREATORS_API_KEY?.trim());
+    return Boolean(env.amazonCreatorsApiKey?.trim());
   }
 
   /** Plain-language reason the adapter cannot fetch prices today. */

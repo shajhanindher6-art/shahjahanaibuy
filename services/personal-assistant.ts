@@ -359,7 +359,11 @@ export async function enrichProducts(
       brand: row.brand,
       category: row.category,
       imageUrl: row.image_url,
-      confidenceScore: row.confidence_score ?? 50,
+      // Final 100% (F-P2-03): the legacy field-presence count is
+      // internal only — it is never serialized on any assistant
+      // payload — and it is NEVER defaulted to the old 50 floor.
+      // An unreadable row scores 0 here, not 50.
+      confidenceScore: row.confidence_score ?? 0,
       // Section 21, Stage E (E-P2-7): the real value from the
       // products rollup — 'unverified' until migration 045
       // applies and a verified stamp can exist at all.

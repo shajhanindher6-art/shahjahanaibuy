@@ -37,6 +37,12 @@ export const rawProductDataSchema = z.object({
       (v) => v == null || v.trim() === '' || validateGtin(v).valid,
       { message: 'gtin is not a valid GS1 GTIN (wrong check digit or unsupported length)' }
     ),
+  // FINAL 100% (F-P1-45/F-P1-46): manufacturer model number, as
+  // supplied by the feed. Optional — most feeds carry none — and
+  // never invented. Normalized to canonical form in
+  // normalizeProduct (lib/model-normalization.ts), so "SM-S928B"
+  // variants match each other; stored verbatim would never match.
+  modelNumber: z.string().max(100).optional().nullable(),
   // Section 20, §12 #94 — images must be valid http(s) image
   // URLs (zod .url() alone accepted data: / javascript: /
   // credential-bearing URLs, which must never be stored).
@@ -82,6 +88,9 @@ export const rawProductDataSchema = z.object({
         attributes: z.record(z.string()).optional(),
         sku: z.string().max(200).optional(),
         gtin: z.string().max(50).optional().nullable(),
+        // FINAL 100% (F-P1-47): variant model number, for the
+        // variant model leg in matchVariant.
+        modelNumber: z.string().max(100).optional().nullable(),
         imageUrl: z.string().url().optional(),
         inStock: z.boolean().optional(),
         sortOrder: z.number().int().optional(),

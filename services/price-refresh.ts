@@ -25,12 +25,16 @@
  *      product_ids from active alerts + wishlist_items. Untouched
  *      catalog products are deliberately NOT refreshed, so a
  *      scheduled run stays bounded and free-tier friendly.
- *   2. For each, take the lowest in-stock merchant_products row —
- *      that is the catalog's current known price, as last synced by
- *      the existing provider pipeline (Apify / CSV / merchant upload).
- *      Live retailer scraping itself still belongs to that pipeline
- *      and still needs its provider keys; this worker does not add a
- *      second, unauthenticated scraper.
+ *   2. For each, take every in-stock `merchant_products` row —
+ *      that is the catalog's current known price per merchant, as
+ *      last synced by the existing provider pipeline (Apify / CSV
+ *      / merchant upload). FINAL 100% (F-P1-34): each merchant's
+ *      row is recorded against its own retailer when it changed —
+ *      the old code recorded only the lowest in-stock listing per
+ *      product, so Best Buy (and any non-cheapest merchant) never
+ *      got a history row. Live retailer scraping itself still
+ *      belongs to that pipeline and still needs its provider keys;
+ *      this worker does not add a second, unauthenticated scraper.
  *   3. Map the merchant to a retailer by slug. merchants and
  *      retailers are separate tables with the same slugs (see the
  *      seed comment in supabase/seed-demo-data.sql); price_history
@@ -79,6 +83,15 @@ export interface PriceRefreshResult {
    * row). The assumption is counted here, never silent.
    */
   currencyAssumedUsd: number;
+  /**
+   * FINAL 100% (F-P1-30) — of the `currencyAssumedUsd` rows, how
+   * many actually persisted the `currency_assumed` flag on the
+   * price_history row. 0 while the flag's column does not exist
+   * (no migration defines it yet) — the assumption is then
+   * recorded only in this run result, never on the data. See
+   * services/price-history-quality.ts.
+   */
+  currencyAssumedPersisted?: number;
   /** Distinct non-USD currencies recorded on this run's rows (never converted — see services/refresh-currency.ts). */
   nonUsdCurrencies: string[];
   /**
@@ -99,6 +112,17 @@ export interface PriceRefreshResult {
    * reports columns-missing, never an error.
    */
   staleFlipped: number;
+  /**
+   * Final 100% — F-P2-15 (notification path): price changes this
+   * run assessed as suspicious (spike / fake-sale / inflation)
+   * and stored flagged. The flag itself lives on the history row
+   * (migration 057 `suspicious_change`); this count is the
+   * notification — it rides the cron response (`refresh` result),
+   * the stored run's step counts, and the admin refresh-runs page,
+   * so an admin sees a new flag without opening the data-quality
+   * review queue. 0 while no change was flagged.
+   */
+  suspiciousPriceChanges: number;
 }
 
 interface MerchantProductRow {
@@ -272,9 +296,11 @@ export async function refreshTrackedPrices(
     skippedNoPrice: 0,
     failed: 0,
     currencyAssumedUsd: 0,
+    currencyAssumedPersisted: 0,
     nonUsdCurrencies: [],
     loadFailed: false,
     staleFlipped: 0,
+    suspiciousPriceChanges: 0,
   };
 
   // Section 20, §12 #68 — verified → stale runs first, before the
@@ -395,13 +421,26 @@ export async function refreshTrackedPrices(
     merchantRows = merchantData as MerchantProductRow[];
   }
 
-  const lowestByProduct = new Map<string, MerchantProductRow>();
+  // FINAL 100% (F-P1-34) — per-merchant history. The rows arrive
+  // price-ascending (the query orders by price), so the first row
+  // per product used to be the only one recorded — the lowest
+  // in-stock listing. Every other merchant never got a history
+  // row (Best Buy never appeared in any product's history), so
+  // per-merchant trends, coverage, and reliability were
+  // uncomputable. Now every in-stock merchant row per product is
+  // recorded on change, each against its own retailer; the
+  // cheapest listing is still the one the product page shows
+  // (that read is unchanged — services/products.ts), but the
+  // history no longer pretends the other merchants do not exist.
+  const rowsByProduct = new Map<string, MerchantProductRow[]>();
   for (const row of merchantRows) {
-    if (!lowestByProduct.has(row.product_id)) lowestByProduct.set(row.product_id, row);
+    const rows = rowsByProduct.get(row.product_id) ?? [];
+    rows.push(row);
+    rowsByProduct.set(row.product_id, rows);
   }
 
   // Merchant slug -> retailer id, via the shared slug.
-  const merchantIds = Array.from(new Set(Array.from(lowestByProduct.values()).map((r) => r.merchant_id)));
+  const merchantIds = Array.from(new Set(merchantRows.map((r) => r.merchant_id)));
   const merchantSlugById = new Map<string, string>();
   if (merchantIds.length > 0) {
     const { data: merchants } = await supabase
@@ -487,132 +526,163 @@ export async function refreshTrackedPrices(
 
   for (const productId of ids) {
     try {
-      const lowest = lowestByProduct.get(productId);
-      if (!lowest || lowest.price === null || lowest.price === undefined) {
+      const rows = rowsByProduct.get(productId) ?? [];
+      if (rows.length === 0) {
         result.skippedNoPrice++;
         continue;
       }
-      const price = parseFloat(String(lowest.price));
-      if (!Number.isFinite(price)) {
-        result.skippedNoPrice++;
-        continue;
-      }
-      const merchantSlug = merchantSlugById.get(lowest.merchant_id);
-      const retailerId = merchantSlug ? retailerIdBySlug.get(merchantSlug) : undefined;
-      if (!retailerId) {
-        result.skippedNoRetailer++;
-        continue;
-      }
-      const availability = lowest.availability ?? (lowest.in_stock ? 'in_stock' : 'out_of_stock');
-      const latest = latestByKey.get(`${productId}:${retailerId}`);
-      if (latest && latest.price === price && latest.availability === availability) {
-        result.unchanged++;
-        // Section 20, §12 #43 — the recorded price was re-read
-        // from the database in this run, NOT live-checked. The
-        // re-check is recorded (a failed status clears) but
-        // data_freshness / next_refresh_at deliberately do NOT
-        // move — a DB re-read is not a live check.
-        try {
-          await markProductRechecked(supabase, productId);
-        } catch {
-          // Freshness bookkeeping must never fail the product.
+      // FINAL 100% (F-P1-34) — one history row per merchant, not
+      // one per product. Each in-stock listing is compared against
+      // ITS retailer's latest point and recorded when it changed,
+      // so Best Buy (or any non-cheapest merchant) finally gets a
+      // history row. `touched` tracks whether any listing was
+      // inserted or found unchanged, so the re-check below is
+      // recorded once per product — not once per merchant.
+      let touched = false;
+      let insertedForProduct = false;
+      for (const row of rows) {
+        if (row.price === null || row.price === undefined) {
+          result.skippedNoPrice++;
+          continue;
         }
-        continue;
-      }
-      // Section 20, §12 #41 — the row's own currency, resolved
-      // from its currency_id. Sections 21–25, Stage D (item 4) —
-      // the resolution now goes through the shared helper, and a
-      // NULL / unresolvable id is COUNTED as assumed-USD
-      // (`currencyAssumedUsd`) instead of only commented. A
-      // non-USD listing is never silently recorded as USD when
-      // its currency IS known, and no FX conversion is ever
-      // applied (see services/refresh-currency.ts).
-      const resolvedCurrency = resolveListingCurrency(lowest.currency_id, currencyCodeById);
-      const currency = resolvedCurrency.code;
-      if (resolvedCurrency.assumedUsd) result.currencyAssumedUsd += 1;
-      else if (currency !== 'USD' && !result.nonUsdCurrencies.includes(currency)) {
-        result.nonUsdCurrencies.push(currency);
-      }
-      // Section 20, §12 #42/#44 — assess the changed price
-      // against this retailer’s recorded history BEFORE
-      // inserting. The spike / fake-sale / inflation detectors
-      // used to be display-only; a flagged change is now stored
-      // flagged (migration 057 `suspicious_change`), not silently
-      // inserted as a normal price point.
-      const nowIso = new Date().toISOString();
-      const priorPoints: PriceHistoryPoint[] = historyRows
-        .filter((r) => r.product_id === productId && r.retailer_id === retailerId)
-        .map((r) => ({ price: parseFloat(String(r.price)), recordedAt: r.recorded_at }))
-        .filter((p) => Number.isFinite(p.price));
-      const assessment = assessPriceChange(priorPoints, price, nowIso);
-      if (assessment.suspicious) {
-        logger.warn('refreshTrackedPrices: suspicious price change flagged', {
-          productId,
-          reasons: assessment.reasons,
-        });
-      }
-      // Source is deliberately NULL here (migration 057): this
-      // row re-records a stored merchant price whose origin is
-      // not tracked — claiming 'seed' or 'manual-intake' for it
-      // would invent provenance.
-      // Sections 21–25, Stage D (R3) — `observed_at` is the
-      // merchant row's last write time (the last time this price
-      // value was observed by whatever wrote it), NEVER "now":
-      // re-reading a stored price does not observe it again.
-      // When even that is unknown the value is NULL (unknown),
-      // not now — `insertPriceHistoryRow` preserves an explicit
-      // null instead of defaulting it to recorded_at.
-      const observedAt =
-        typeof lowest.updated_at === 'string' && lowest.updated_at.trim()
-          ? lowest.updated_at
-          : null;
-      const { error } = await insertPriceHistoryRow(supabase, {
-        product_id: productId,
-        retailer_id: retailerId,
-        price,
-        currency,
-        availability,
-        url: lowest.url ?? null,
-        recorded_at: nowIso,
-        source: null,
-        observed_at: observedAt,
-        suspicious_change: assessment.suspicious,
-      });
-      if (error) {
-        logger.warn('refreshTrackedPrices: insert failed', { productId, error: error.message });
-        logApiError(new Error(`price_history insert failed: ${error.message}`), {
-          route: 'price-refresh',
-          status: 500,
-          context: { productId, phase: 'insert-price-history' },
-        });
-        result.failed++;
-        try {
-          await markProductRefreshFailed(supabase, productId, {
-            reason: `price_history insert failed: ${error.message}`,
+        const price = parseFloat(String(row.price));
+        if (!Number.isFinite(price)) {
+          result.skippedNoPrice++;
+          continue;
+        }
+        const merchantSlug = merchantSlugById.get(row.merchant_id);
+        const retailerId = merchantSlug ? retailerIdBySlug.get(merchantSlug) : undefined;
+        if (!retailerId) {
+          result.skippedNoRetailer++;
+          continue;
+        }
+        const availability = row.availability ?? (row.in_stock ? 'in_stock' : 'out_of_stock');
+        const latest = latestByKey.get(`${productId}:${retailerId}`);
+        if (latest && latest.price === price && latest.availability === availability) {
+          result.unchanged++;
+          touched = true;
+          continue;
+        }
+        // Section 20, §12 #41 — the row's own currency, resolved
+        // from its currency_id. Sections 21–25, Stage D (item 4) —
+        // the resolution now goes through the shared helper, and a
+        // NULL / unresolvable id is COUNTED as assumed-USD
+        // (`currencyAssumedUsd`) instead of only commented. A
+        // non-USD listing is never silently recorded as USD when
+        // its currency IS known, and no FX conversion is ever
+        // applied (see services/refresh-currency.ts).
+        const resolvedCurrency = resolveListingCurrency(row.currency_id, currencyCodeById);
+        const currency = resolvedCurrency.code;
+        if (resolvedCurrency.assumedUsd) result.currencyAssumedUsd += 1;
+        else if (currency !== 'USD' && !result.nonUsdCurrencies.includes(currency)) {
+          result.nonUsdCurrencies.push(currency);
+        }
+        // Section 20, §12 #42/#44 — assess the changed price
+        // against this retailer’s recorded history BEFORE
+        // inserting. The spike / fake-sale / inflation detectors
+        // used to be display-only; a flagged change is now stored
+        // flagged (migration 057 `suspicious_change`), not silently
+        // inserted as a normal price point.
+        const nowIso = new Date().toISOString();
+        const priorPoints: PriceHistoryPoint[] = historyRows
+          .filter((r) => r.product_id === productId && r.retailer_id === retailerId)
+          .map((r) => ({ price: parseFloat(String(r.price)), recordedAt: r.recorded_at }))
+          .filter((p) => Number.isFinite(p.price));
+        const assessment = assessPriceChange(priorPoints, price, nowIso);
+        if (assessment.suspicious) {
+          // Final 100% — F-P2-15: count the flag for the run
+          // notification (see PriceRefreshResult.suspiciousPriceChanges).
+          // The flag itself is stored on the history row below.
+          result.suspiciousPriceChanges += 1;
+          logger.warn('refreshTrackedPrices: suspicious price change flagged', {
+            productId,
+            reasons: assessment.reasons,
           });
-        } catch {
-          // Freshness bookkeeping must never fail the product.
         }
-      } else {
-        result.inserted++;
+        // Source is deliberately NULL here (migration 057): this
+        // row re-records a stored merchant price whose origin is
+        // not tracked — claiming 'seed' or 'manual-intake' for it
+        // would invent provenance.
+        // Sections 21–25, Stage D (R3) — `observed_at` is the
+        // merchant row's last write time (the last time this price
+        // value was observed by whatever wrote it), NEVER "now":
+        // re-reading a stored price does not observe it again.
+        // When even that is unknown the value is NULL (unknown),
+        // not now — `insertPriceHistoryRow` preserves an explicit
+        // null instead of defaulting it to recorded_at.
+        const observedAt =
+          typeof row.updated_at === 'string' && row.updated_at.trim()
+            ? row.updated_at
+            : null;
+        // FINAL 100% (F-P1-30) — the assumed-USD flag is persisted
+        // on the history row itself (not just counted in the run
+        // result), so a later reader can tell observed USD from
+        // assumed USD. Only an assumed currency is flagged; a
+        // genuinely observed currency carries no flag. FINAL 100%
+        // (F-P1-15) — no `verified` flag is passed here: a re-read
+        // row re-records a stored price, it is not a validated
+        // provider response, so it must never carry the verified
+        // flag (absence = not verified).
+        const insertResult = await insertPriceHistoryRow(supabase, {
+          product_id: productId,
+          retailer_id: retailerId,
+          price,
+          currency,
+          availability,
+          url: row.url ?? null,
+          recorded_at: nowIso,
+          source: null,
+          observed_at: observedAt,
+          suspicious_change: assessment.suspicious,
+          ...(resolvedCurrency.assumedUsd ? { currencyAssumed: true } : {}),
+        });
+        if (insertResult.error) {
+          logger.warn('refreshTrackedPrices: insert failed', { productId, error: insertResult.error.message });
+          logApiError(new Error(`price_history insert failed: ${insertResult.error.message}`), {
+            route: 'price-refresh',
+            status: 500,
+            context: { productId, phase: 'insert-price-history' },
+          });
+          result.failed++;
+          try {
+            await markProductRefreshFailed(supabase, productId, {
+              reason: `price_history insert failed: ${insertResult.error.message}`,
+            });
+          } catch {
+            // Freshness bookkeeping must never fail the product.
+          }
+        } else {
+          result.inserted++;
+          touched = true;
+          insertedForProduct = true;
+          if (insertResult.currencyAssumedPersisted) {
+            result.currencyAssumedPersisted = (result.currencyAssumedPersisted ?? 0) + 1;
+          }
+        }
+      }
+      if (insertedForProduct) {
         // Section 19, Phase 8 (§12 #14) — a new price point
         // changes the inputs the AI summary / prediction / comparison
         // were computed from, so their cached entries (in-memory
         // AND the stored ai_summaries / ai_predictions rows) are
         // invalidated for this product. The next AI read recomputes
-        // from the fresh price. Bookkeeping must never fail the
-        // product, so a failure here is swallowed (it is logged
-        // inside invalidateAiForProduct); the short SWR TTLs bound
-        // the staleness if the delete itself failed.
+        // from the fresh price. Once per product, not once per
+        // merchant row. Bookkeeping must never fail the product, so
+        // a failure here is swallowed (it is logged inside
+        // invalidateAiForProduct); the short SWR TTLs bound the
+        // staleness if the delete itself failed.
         try {
           await invalidateAiForProduct(supabase, productId);
         } catch {
           // Invalidation is best-effort; the refresh already succeeded.
         }
-        // P1-10 / Section 20, §12 #43: a changed price was
-        // recorded from a DB re-read, so the re-check is recorded
-        // (markProductRechecked) — but the freshness stamp does
-        // NOT move, because no live check happened in this step.
+      }
+      if (touched) {
+        // Section 20, §12 #43 / P1-10 — the recorded price was
+        // re-read from the database in this run, NOT live-checked.
+        // The re-check is recorded (a failed status clears) but
+        // data_freshness / next_refresh_at deliberately do NOT
+        // move — a DB re-read is not a live check.
         try {
           await markProductRechecked(supabase, productId);
         } catch {

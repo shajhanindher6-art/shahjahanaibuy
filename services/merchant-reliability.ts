@@ -52,6 +52,16 @@
  * and is live in services/ai-deals.ts deal ranking. The two are
  * NOT duplicates to merge: one scores recorded policy, the other
  * scores sync behaviour. Do NOT add a third scorer.
+ *
+ * FINAL 100% (F-P1-50) — CANONICAL SCORER: this file IS the one
+ * canonical "merchant reliability" scorer. The single entry point
+ * is services/canonical-merchant-reliability.ts
+ * (getCanonicalMerchantReliability → this file; the dashboard data
+ * layer getDashboardMerchantReliability; the 061 writer
+ * writeMerchantReliabilitySnapshot). New merchant surfaces must
+ * call the canonical entry point, never this file directly, and
+ * must never present the sync or history-based numbers as
+ * "merchant reliability".
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';

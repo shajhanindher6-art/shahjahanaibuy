@@ -24,6 +24,19 @@ export interface BrandDetectionResult {
    * creating a duplicate brand row.
    */
   matchedBy?: 'exact' | 'fuzzy';
+  /**
+   * FINAL 100% (F-P1-44): true when the resolution needs human
+   * review — a fuzzy near-miss fold. Absent on exact matches and
+   * creations, so those results keep their existing shape. The
+   * caller must surface the flag (audit log / ingest metadata):
+   * two genuinely distinct brands with similar names must not
+   * be folded together silently.
+   */
+  reviewRequired?: boolean;
+  /** Plain-language reason the brand resolution needs review. */
+  reviewReason?: string;
+  /** Fuzzy similarity behind a fuzzy match (0.75–1.0). */
+  similarity?: number;
 }
 
 function slugifyBrand(name: string): string {
@@ -110,12 +123,20 @@ export async function detectBrand(
           matched: best.name,
           similarity: best.similarity,
         });
+        // FINAL 100% (F-P1-44): a fuzzy brand fold is a review
+        // candidate, not a silent merge. The row is still
+        // resolved (the ingest needs a brand), but the flag +
+        // reason travel with the result so the caller surfaces
+        // them in the audit log and ingest metadata.
         return {
           brandId: best.id,
           detected: true,
           created: false,
           name: best.name,
           matchedBy: 'fuzzy',
+          reviewRequired: true,
+          reviewReason: `Brand fuzzy match (similarity ${best.similarity.toFixed(2)}) — "${trimmed}" was folded into existing brand "${best.name}"; review that they are the same brand, not two distinct brands with similar names.`,
+          similarity: best.similarity,
         };
       }
     }

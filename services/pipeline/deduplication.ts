@@ -10,17 +10,91 @@
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
 import type { NormalizedProduct } from './normalization';
+import { modelsConflict, normalizeBrand, normalizeModel } from '@/lib/model-normalization';
 
 export interface DeduplicationResult {
   existingProductId: string | null;
   isDuplicate: boolean;
-  matchedBy: 'gtin' | 'slug' | 'name-brand' | 'name-brand-fuzzy' | null;
+  matchedBy: 'gtin' | 'slug' | 'name-brand' | 'name-brand-fuzzy' | 'model' | null;
   /**
    * Section 20, #9: 0–1 similarity behind a fuzzy match (1 for
    * an exact normalized name+brand match). Null for GTIN/slug
    * matches and non-duplicates — those are exact, not scored.
    */
   confidence?: number | null;
+  /**
+   * FINAL 100% (F-P1-42/F-P1-45): true when the match must go to
+   * manual review instead of auto-merging — a fuzzy leg, an
+   * uncorroborated GTIN, or a model conflict. Absent (undefined)
+   * when the match auto-merges, so exact-match results keep
+   * their existing shape.
+   */
+  requiresReview?: boolean;
+  /** Plain-language reason the match requires review (when it does). */
+  reviewReason?: string;
+  /**
+   * FINAL 100% (F-P2-42, audit H-09): set when the dedupe check
+   * itself failed. The ingest must FAIL CLOSED on this — never
+   * proceed as "no match" when the check errored.
+   */
+  dedupeError?: string;
+  /** The existing product's recorded model number, when read. */
+  existingModelNumber?: string | null;
+}
+
+/** True when the error means "column does not exist" (Postgres 42703). */
+function isUndefinedColumnError(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === '42703';
+}
+
+/**
+ * Best-effort read of one product's recorded model number.
+ * Returns null when the row has none, the column does not exist
+ * yet (migration 055 unapplied), or the read fails — a missing
+ * model is never an error, and it never blocks the match.
+ */
+async function loadExistingModelNumber(
+  supabase: AnySupabaseClient,
+  productId: string
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select('model_number')
+      .eq('id', productId)
+      .maybeSingle();
+    if (error || !data) return null;
+    const raw = (data as Record<string, unknown>).model_number;
+    return typeof raw === 'string' && raw.trim() !== '' ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * FINAL 100% (F-P1-42/F-P1-45): attach the review flag to a
+ * candidate match. An exact leg auto-merges unless the models
+ * conflict; a fuzzy leg always requires review; a model
+ * conflict is a veto on any leg.
+ */
+function withReviewGate(
+  base: Omit<DeduplicationResult, 'requiresReview' | 'reviewReason' | 'existingModelNumber'>,
+  incomingModel: string | null | undefined,
+  existingModel: string | null | undefined
+): DeduplicationResult {
+  const result: DeduplicationResult = { ...base };
+  if (existingModel !== undefined) result.existingModelNumber = existingModel;
+  if (modelsConflict(incomingModel, existingModel)) {
+    result.requiresReview = true;
+    result.reviewReason = `Model conflict: incoming model "${normalizeModel(incomingModel)}" differs from existing model "${normalizeModel(existingModel)}" — two different models must never auto-merge.`;
+    return result;
+  }
+  if (base.matchedBy === 'name-brand-fuzzy') {
+    result.requiresReview = true;
+    result.reviewReason = `Fuzzy name+brand match (confidence ${base.confidence !== null && base.confidence !== undefined ? base.confidence.toFixed(2) : 'unknown'}) — uncertain merges go to manual review and never auto-overwrite GTIN, image, or description.`;
+    return result;
+  }
+  return result;
 }
 
 /** Lower-case, collapse all non-alphanumerics to single spaces. */
@@ -56,6 +130,20 @@ export function nameTokenSimilarity(a: string, b: string): number {
  */
 export const NAME_BRAND_FUZZY_THRESHOLD = 0.75;
 
+/**
+ * Final 100% — F-P1-03: GTIN-match confidence cap. A GTIN match
+ * is a strong signal, never identity proof: a mistyped GTIN
+ * copied across listings, a GTIN reused by a marketplace seller,
+ * or a GTIN that belongs to a different variant would otherwise
+ * collapse to certainty (confidence 1.0, the maximum). No
+ * GTIN-only match may report absolute certainty — 0.9 is the
+ * ceiling, and the match still needs a human (intake review) or
+ * a name/brand sanity check before any merge. Slug and exact
+ * name+brand matches stay at 1.0: those are exact-string
+ * identities, not format checks.
+ */
+export const GTIN_MATCH_CONFIDENCE = 0.9;
+
 export async function findDuplicate(
   supabase: AnySupabaseClient,
   normalized: NormalizedProduct
@@ -69,7 +157,15 @@ export async function findDuplicate(
 
     if (data?.id) {
       logger.debug('Deduplication: GTIN match', { gtin: normalized.gtin, id: data.id });
-      return { existingProductId: data.id, isDuplicate: true, matchedBy: 'gtin', confidence: 1 };
+      // FINAL 100% (F-P1-45/F-P1-46): a model conflict vetoes
+      // even an exact GTIN leg — the GTIN may be mistyped or
+      // reused across a variant family.
+      const existingModel = await loadExistingModelNumber(supabase, data.id);
+      return withReviewGate(
+        { existingProductId: data.id, isDuplicate: true, matchedBy: 'gtin', confidence: GTIN_MATCH_CONFIDENCE },
+        normalized.modelNumber ?? null,
+        existingModel
+      );
     }
   }
 
@@ -81,17 +177,99 @@ export async function findDuplicate(
 
   if (data?.id) {
     logger.debug('Deduplication: slug match', { slug: normalized.slug, id: data.id });
-    return { existingProductId: data.id, isDuplicate: true, matchedBy: 'slug', confidence: 1 };
+    const existingModel = await loadExistingModelNumber(supabase, data.id);
+    return withReviewGate(
+      { existingProductId: data.id, isDuplicate: true, matchedBy: 'slug', confidence: 1 },
+      normalized.modelNumber ?? null,
+      existingModel
+    );
+  }
+
+  // FINAL 100% (F-P1-45): the MODEL leg — same normalized model
+  // number + same normalized brand is a candidate on its own
+  // (held for review, never an auto-merge: model numbers can
+  // repeat across regional variants). It runs before the fuzzy
+  // name leg so a same-model re-ingest under a different name is
+  // caught instead of creating a second row.
+  if (normalized.modelNumber && normalized.brand) {
+    const wantedModel = normalizeModel(normalized.modelNumber);
+    const wantedBrandKey = normalizeBrand(normalized.brand);
+    if (wantedModel && wantedBrandKey) {
+      try {
+        let modelRows: Array<{ id: string; name: string; brand: string; model_number?: string | null }> | null = null;
+        let modelError: { code?: string; message: string } | null = null;
+        const modelQuery = supabase
+          .from('products')
+          .select('id, name, brand, model_number')
+          .ilike('brand', normalized.brand)
+          .limit(50);
+        const first = (await modelQuery) as unknown as {
+          data: Array<{ id: string; name: string; brand: string; model_number?: string | null }> | null;
+          error: { code?: string; message: string } | null;
+        };
+        modelRows = first.data;
+        modelError = first.error;
+        if (modelError && isUndefinedColumnError(modelError)) {
+          // Migration 055 unapplied: the model column does not
+          // exist, so the model leg cannot run — honest skip.
+          modelRows = null;
+          modelError = null;
+        }
+        if (modelError) {
+          logger.warn('Deduplication: model check failed, failing closed', {
+            error: modelError.message,
+          });
+          return {
+            existingProductId: null,
+            isDuplicate: false,
+            matchedBy: null,
+            confidence: null,
+            dedupeError: `model-number lookup failed: ${modelError.message}`,
+          };
+        }
+        for (const row of modelRows ?? []) {
+          if (normalizeBrand(row.brand ?? '') !== wantedBrandKey) continue;
+          if (normalizeModel(row.model_number ?? null) === wantedModel) {
+            logger.debug('Deduplication: model+brand match (held for review)', {
+              model: wantedModel,
+              id: row.id,
+            });
+            return {
+              existingProductId: row.id,
+              isDuplicate: true,
+              matchedBy: 'model',
+              confidence: 0.9,
+              requiresReview: true,
+              reviewReason: `Same normalized model number "${wantedModel}" with the same brand "${normalized.brand}" — a model leg is a review candidate, never an auto-merge (model numbers can repeat across regional variants).`,
+              existingModelNumber: row.model_number ?? null,
+            };
+          }
+        }
+      } catch (err) {
+        logger.warn('Deduplication: model check failed, failing closed', {
+          error: String(err),
+        });
+        return {
+          existingProductId: null,
+          isDuplicate: false,
+          matchedBy: null,
+          confidence: null,
+          dedupeError: `model-number lookup failed: ${String(err)}`,
+        };
+      }
+    }
   }
 
   // Section 20, #9 — name/brand legs. A product re-ingested with
   // no GTIN and a fresh slug used to sail through both legs above.
   // Brand is matched case-insensitively in the query; the name
   // comparison is normalized in code (the DB has no normalized
-  // name column). Fail-safe: any query failure degrades to "no
-  // match" rather than blocking ingestion — the retroactive
-  // sweep (findDuplicateCandidates) is the backstop, and the
-  // intake review has its own exact name+brand leg.
+  // name column). FINAL 100% (F-P2-42, audit H-09): FAIL CLOSED —
+  // a query failure now returns `dedupeError` and the ingest
+  // holds, instead of degrading to "no match" and silently
+  // admitting a duplicate. The retroactive sweep
+  // (findDuplicateCandidates) is the backstop only for pairs the
+  // check actually ran on.
   if (normalized.name && normalized.brand) {
     try {
       const { data: brandRows, error } = await supabase
@@ -99,7 +277,19 @@ export async function findDuplicate(
         .select('id, name, brand')
         .ilike('brand', normalized.brand)
         .limit(50);
-      if (!error && brandRows) {
+      if (error) {
+        logger.warn('Deduplication: name/brand check failed, failing closed', {
+          error: error.message,
+        });
+        return {
+          existingProductId: null,
+          isDuplicate: false,
+          matchedBy: null,
+          confidence: null,
+          dedupeError: `name/brand lookup failed: ${error.message}`,
+        };
+      }
+      if (brandRows) {
         const wantedName = normalizeDedupeText(normalized.name);
         const wantedBrand = normalizeDedupeText(normalized.brand);
         let best: { id: string; similarity: number } | null = null;
@@ -110,12 +300,17 @@ export async function findDuplicate(
         }
         if (best && best.similarity === 1) {
           logger.debug('Deduplication: name+brand match', { name: normalized.name, id: best.id });
-          return {
-            existingProductId: best.id,
-            isDuplicate: true,
-            matchedBy: 'name-brand',
-            confidence: 1,
-          };
+          const existingModel = await loadExistingModelNumber(supabase, best.id);
+          return withReviewGate(
+            {
+              existingProductId: best.id,
+              isDuplicate: true,
+              matchedBy: 'name-brand',
+              confidence: 1,
+            },
+            normalized.modelNumber ?? null,
+            existingModel
+          );
         }
         if (best && best.similarity >= NAME_BRAND_FUZZY_THRESHOLD) {
           logger.debug('Deduplication: fuzzy name+brand match', {
@@ -123,18 +318,30 @@ export async function findDuplicate(
             id: best.id,
             similarity: best.similarity,
           });
-          return {
-            existingProductId: best.id,
-            isDuplicate: true,
-            matchedBy: 'name-brand-fuzzy',
-            confidence: best.similarity,
-          };
+          const existingModel = await loadExistingModelNumber(supabase, best.id);
+          return withReviewGate(
+            {
+              existingProductId: best.id,
+              isDuplicate: true,
+              matchedBy: 'name-brand-fuzzy',
+              confidence: best.similarity,
+            },
+            normalized.modelNumber ?? null,
+            existingModel
+          );
         }
       }
     } catch (err) {
-      logger.warn('Deduplication: name/brand check failed, continuing as no match', {
+      logger.warn('Deduplication: name/brand check failed, failing closed', {
         error: String(err),
       });
+      return {
+        existingProductId: null,
+        isDuplicate: false,
+        matchedBy: null,
+        confidence: null,
+        dedupeError: `name/brand lookup failed: ${String(err)}`,
+      };
     }
   }
 
@@ -185,13 +392,15 @@ export interface DuplicateSweepProduct {
  * — the strongest leg wins, so a pair matching on both GTIN and
  * name is reported once, as a GTIN match.
  *
- * `confidence` is a 0–1 score, NOT a verdict: 1.0 = exact GTIN
- * or exact normalized name+brand (review to confirm, then merge
- * or keep); 0.75–0.99 = same brand + similar name (token
- * Jaccard, see NAME_BRAND_FUZZY_THRESHOLD). Anything below the
- * threshold is not reported at all. The admin review view (a
- * separate Section 20 item) decides merge vs keep — this
- * function never deletes or merges anything.
+ * `confidence` is a 0–1 score, NOT a verdict: 0.9 = GTIN match
+ * (capped — a GTIN is a format-checked identifier, never identity
+ * proof; see GTIN_MATCH_CONFIDENCE), 1.0 = exact normalized
+ * name+brand (review to confirm, then merge or keep); 0.75–0.99 =
+ * same brand + similar name (token Jaccard, see
+ * NAME_BRAND_FUZZY_THRESHOLD). Anything below the threshold is
+ * not reported at all. The admin review view (a separate Section
+ * 20 item) decides merge vs keep — this function never deletes or
+ * merges anything.
  */
 export interface DuplicateCandidate {
   productId: string;
@@ -202,7 +411,7 @@ export interface DuplicateCandidate {
   duplicateOfName: string;
   /** 'gtin' | 'name-brand' | 'name-brand-fuzzy'. */
   matchedBy: 'gtin' | 'name-brand' | 'name-brand-fuzzy';
-  /** 0–1: 1 for exact GTIN / exact name+brand, else the token similarity. */
+  /** 0–1: 0.9 for a GTIN match (capped — see GTIN_MATCH_CONFIDENCE), 1 for exact name+brand, else the token similarity. */
   confidence: number;
   /** Plain-language reasons, e.g. 'same GTIN 9780123'. */
   reasons: string[];
@@ -246,9 +455,21 @@ export function findDuplicateCandidates(
       const brandB = normalizeDedupeText(b.brand ?? '');
 
       // Strongest leg first: same GTIN = same physical product,
-      // whatever the slugs say.
+      // whatever the slugs say — but the confidence is CAPPED at
+      // GTIN_MATCH_CONFIDENCE (0.9), never 1.0: a GTIN match means
+      // "same identifier string", not "same product" (a mistyped
+      // or reused GTIN collapses to certainty at 1.0 — F-P1-03).
+      // FINAL 100% (F-P1-45/F-P1-46): a model conflict does not
+      // remove the candidate, but it is named in the reasons —
+      // the reviewer must resolve it before any merge.
       if (gtinA && gtinA === gtinB) {
         seenPair.add(key);
+        const gtinReasons = [`same GTIN ${a.gtin}`];
+        if (modelsConflict(a.modelNumber, b.modelNumber)) {
+          gtinReasons.push(
+            `model conflict: "${a.modelNumber}" vs "${b.modelNumber}" (normalized ${normalizeModel(a.modelNumber)} vs ${normalizeModel(b.modelNumber)}) — same GTIN but different recorded models; review before merging`
+          );
+        }
         candidates.push({
           productId: b.id,
           productSlug: b.slug,
@@ -257,14 +478,18 @@ export function findDuplicateCandidates(
           duplicateOfSlug: a.slug,
           duplicateOfName: a.name,
           matchedBy: 'gtin',
-          confidence: 1,
-          reasons: [`same GTIN ${a.gtin}`],
+          confidence: GTIN_MATCH_CONFIDENCE,
+          reasons: gtinReasons,
         });
         continue;
       }
 
-      // Same normalized name + same normalized brand.
+      // Same normalized name + same normalized brand — unless the
+      // models conflict (FINAL 100%, F-P1-45): the same name text
+      // with different recorded model numbers is two models, not
+      // one product, so it is not a duplicate candidate at all.
       if (nameA && nameA === nameB && brandA && brandA === brandB) {
+        if (modelsConflict(a.modelNumber, b.modelNumber)) continue;
         seenPair.add(key);
         candidates.push({
           productId: b.id,
@@ -284,18 +509,24 @@ export function findDuplicateCandidates(
       // number strengthens the reason line but never creates a
       // candidate on its own (model numbers can repeat across
       // regional variants — migration 055 deliberately has no
-      // UNIQUE on the column).
+      // UNIQUE on the column). FINAL 100% (F-P1-45/F-P1-46): the
+      // model comparison is NORMALIZED ("SM-S928B" variants
+      // match), and a model conflict vetoes the candidate —
+      // similar names for different models are exactly the
+      // false-merge case (e.g. a 4-token name differing in the
+      // year token).
       if (brandA && brandA === brandB && nameA && nameB) {
         const similarity = nameTokenSimilarity(nameA, nameB);
         if (similarity >= NAME_BRAND_FUZZY_THRESHOLD) {
+          if (modelsConflict(a.modelNumber, b.modelNumber)) continue;
           seenPair.add(key);
-          const modelA = (a.modelNumber ?? '').trim();
-          const modelB = (b.modelNumber ?? '').trim();
+          const normModelA = normalizeModel(a.modelNumber);
+          const normModelB = normalizeModel(b.modelNumber);
           const reasons = [
             `similar name "${a.name}" vs "${b.name}" (similarity ${similarity.toFixed(2)}) with the same brand "${a.brand}"`,
           ];
-          if (modelA && modelA === modelB) {
-            reasons.push(`same recorded model number ${modelA}`);
+          if (normModelA && normModelA === normModelB) {
+            reasons.push(`same recorded model number ${normModelA} (normalized)`);
           }
           candidates.push({
             productId: b.id,

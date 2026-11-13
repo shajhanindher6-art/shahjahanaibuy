@@ -23,6 +23,12 @@ export interface RawProductData {
   brand?: string;
   category?: string;
   gtin?: string;
+  /**
+   * FINAL 100% (F-P1-45/F-P1-46): manufacturer model number, as
+   * supplied by the feed. Optional; normalized to canonical form
+   * by the pipeline (lib/model-normalization.ts). Never invented.
+   */
+  modelNumber?: string;
   images?: string[];
   price: number;
   currency: string;
@@ -48,6 +54,8 @@ export interface RawProductData {
     attributes?: Record<string, string>;
     sku?: string;
     gtin?: string;
+    /** FINAL 100% (F-P1-47): variant model number. */
+    modelNumber?: string;
     imageUrl?: string;
     inStock?: boolean;
     sortOrder?: number;

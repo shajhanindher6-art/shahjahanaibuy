@@ -37,6 +37,7 @@
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
 import { validateGtin } from '@/lib/gtin';
+import { modelsMatch, normalizeModel } from '@/lib/model-normalization';
 
 export interface ProductVariantInput {
   /** Display name, e.g. "16 GB / 512 GB". Required. */
@@ -47,6 +48,13 @@ export interface ProductVariantInput {
   sku?: string | null;
   /** Variant-level GTIN (GS1-validated when present). */
   gtin?: string | null;
+  /**
+   * FINAL 100% (F-P1-47): the variant's model number, when the
+   * feed carries one. Normalized for matching ("SM-S928B"
+   * variants match); a missing model is honest-empty, never a
+   * match or a veto on its own.
+   */
+  modelNumber?: string | null;
   imageUrl?: string | null;
   inStock?: boolean;
   sortOrder?: number;
@@ -83,13 +91,15 @@ export function validateProductVariant(input: ProductVariantInput): VariantValid
 }
 
 /** How a variant was matched to a stored row, if at all. */
-export type VariantMatchKind = 'sku' | 'gtin' | 'attributes' | null;
+export type VariantMatchKind = 'sku' | 'gtin' | 'model' | 'attributes' | null;
 
 export interface StoredVariantRef {
   id: string;
   sku: string | null;
   gtin: string | null;
   attributes: Record<string, unknown>;
+  /** Stored variant's model number, when recorded (normalized at match time). */
+  modelNumber?: string | null;
 }
 
 function attributesKey(attributes: Record<string, unknown>): string {
@@ -103,9 +113,19 @@ function attributesKey(attributes: Record<string, unknown>): string {
 /**
  * Match one variant input against the stored variants of a
  * product. SKU first (the merchant's own key), then GTIN (the
- * physical identity), then the identical attribute set. Returns
- * the matched stored row and how it matched, or nulls when the
- * variant is new. Pure — reads nothing.
+ * physical identity), then MODEL (FINAL 100%, F-P1-47 — the
+ * normalized model number, or the `model` attribute when the
+ * variant carries its model there), then the identical attribute
+ * set. Returns the matched stored row and how it matched, or
+ * nulls when the variant is new. Pure — reads nothing.
+ *
+ * Edge cases (F-P2-39): an invalid variant GTIN never matches
+ * by GTIN (validateGtin gates it); a blank SKU never matches;
+ * an empty attribute set never matches by attributes (a variant
+ * with no distinguishing attributes is not identifiable); when
+ * two stored variants would match on the same leg, the FIRST in
+ * stored order wins deterministically — the caller must not rely
+ * on which one, and the upsert path reports it.
  */
 export function matchVariant(
   input: ProductVariantInput,
@@ -124,12 +144,84 @@ export function matchVariant(
     );
     if (hit) return { variant: hit, matchedBy: 'gtin' };
   }
+  // Model leg: the input's modelNumber, or the `model` attribute
+  // when the feed carries the model there. Normalized, so
+  // "SM-S928B" variants match each other.
+  const inputModel = normalizeModel(input.modelNumber ?? null) ??
+    normalizeModel(
+      typeof input.attributes?.model === 'string' ? input.attributes.model : null
+    );
+  if (inputModel) {
+    const hit = stored.find((row) => {
+      const storedModel =
+        normalizeModel(row.modelNumber ?? null) ??
+        normalizeModel(
+          typeof row.attributes?.model === 'string' ? (row.attributes.model as string) : null
+        );
+      return storedModel !== null && storedModel === inputModel;
+    });
+    if (hit) return { variant: hit, matchedBy: 'model' };
+  }
   const wantedKey = attributesKey(input.attributes ?? {});
   if (wantedKey !== '[]') {
     const hit = stored.find((row) => attributesKey(row.attributes ?? {}) === wantedKey);
     if (hit) return { variant: hit, matchedBy: 'attributes' };
   }
   return { variant: null, matchedBy: null };
+}
+
+/**
+ * Match a merchant LISTING to a product's variants (F-P1-47).
+ * A listing carries a merchant SKU, a GTIN, and/or a model
+ * number — the same three legs as matchVariant, in the same
+ * order. Returns the matched variant (or null) with how it
+ * matched and a reason. HONEST-EMPTY: when the product has no
+ * variants at all, the result is null with reason
+ * 'no-variants' — the listing still matches the PRODUCT (this
+ * function only answers the variant question, never the product
+ * question), it just has no variant to attach to.
+ */
+export function matchListingToVariant(
+  listing: { sku?: string | null; gtin?: string | null; modelNumber?: string | null },
+  stored: StoredVariantRef[]
+): {
+  variant: StoredVariantRef | null;
+  matchedBy: VariantMatchKind;
+  confidence: number | null;
+  reason: string;
+} {
+  if (stored.length === 0) {
+    return {
+      variant: null,
+      matchedBy: null,
+      confidence: null,
+      reason: 'no-variants — the product has no stored variants, so the listing attaches to the product, not to a variant',
+    };
+  }
+  const { variant, matchedBy } = matchVariant(
+    {
+      name: '',
+      sku: listing.sku ?? null,
+      gtin: listing.gtin ?? null,
+      modelNumber: listing.modelNumber ?? null,
+    },
+    stored
+  );
+  if (!variant) {
+    return {
+      variant: null,
+      matchedBy: null,
+      confidence: null,
+      reason: 'no-variant-match — the listing SKU/GTIN/model matches none of the product\'s stored variants',
+    };
+  }
+  const confidence = matchedBy === 'sku' || matchedBy === 'gtin' ? 0.9 : matchedBy === 'model' ? 0.85 : 0.8;
+  return {
+    variant,
+    matchedBy,
+    confidence,
+    reason: `Listing matches variant "${variant.id}" by ${matchedBy}.`,
+  };
 }
 
 function isUndefinedColumnError(error: unknown): boolean {

@@ -24,7 +24,15 @@ import { normalizeProduct, type NormalizedProduct } from './normalization';
 import { findDuplicate, resolveUniqueSlug, type DeduplicationResult } from './deduplication';
 import { assignCategory } from './category-assignment';
 import { detectBrand } from './brand-detection';
-import { processImages } from './image-processing';
+import { buildMatchReviewRecord, classifyPipelineDuplicate } from '@/services/matching-review';
+import {
+  processImagesDetailed,
+  getImagePipelineConfig,
+  type DetailedProcessedImage,
+} from './image-processing';
+import {
+  insertProductImagesWithVerification,
+} from '@/services/product-images';
 import { writeProductSpecs, replaceProductSpecs } from '@/services/product-attributes';
 import { upsertProductVariants } from './variants';
 import { recordIngestionRejection } from '@/services/ingestion-rejections';
@@ -32,6 +40,7 @@ import { createAuditLog } from '@/services/audit-logs';
 import {
   assessPriceChange,
   insertPriceHistoryRow,
+  isDuplicatePricePoint,
   type PriceHistoryPoint,
 } from '@/services/price-history-quality';
 import { markProductSuccessfullyUpdated } from '@/services/last-successful-update';
@@ -149,15 +158,22 @@ async function recordPriceHistory(
   // retries without the migration-057 columns when they do not
   // exist yet (42703, inside insertPriceHistoryRow).
   let history: PriceHistoryPoint[] = [];
+  let latestAvailability: string | null = null;
   try {
     const { data } = await supabase
       .from('price_history')
-      .select('price, recorded_at')
+      .select('price, availability, recorded_at')
       .eq('product_id', productId)
       .eq('retailer_id', retailerId)
       .order('recorded_at', { ascending: false })
       .limit(30);
-    history = ((data ?? []) as Array<{ price: number | string; recorded_at: string }>)
+    const rows = (data ?? []) as Array<{
+      price: number | string;
+      availability?: string | null;
+      recorded_at: string;
+    }>;
+    latestAvailability = rows.length > 0 ? (rows[0].availability ?? null) : null;
+    history = rows
       .map((row) => ({
         price: parseFloat(String(row.price)),
         recordedAt: row.recorded_at,
@@ -165,6 +181,28 @@ async function recordPriceHistory(
       .filter((p) => Number.isFinite(p.price));
   } catch {
     history = [];
+  }
+  // FINAL 100% (W3, F-P1-32) — change-only insert, the same rule
+  // the refresh writer already applies (services/price-refresh.ts
+  // :520-545): a re-ingest of an unchanged price is NOT a new
+  // observation. Without this check the first live feed re-run
+  // re-ingesting an unchanged price inserts a duplicate-price row
+  // at a new timestamp. A changed price OR a changed availability
+  // still records.
+  if (
+    isDuplicatePricePoint(
+      history.length > 0
+        ? { price: history[0].price, availability: latestAvailability }
+        : null,
+      normalized.price,
+      normalized.availability
+    )
+  ) {
+    logger.info('Ingestion: unchanged price, no history row written', {
+      productId,
+      price: normalized.price,
+    });
+    return false;
   }
   const nowIso = new Date().toISOString();
   const assessment = assessPriceChange(history, normalized.price, nowIso);
@@ -227,20 +265,37 @@ async function upsertProductSource(
     );
 }
 
+/**
+ * FINAL 100%, F-P1-39 / F-P1-40 / F-P2-30 — gallery insert via
+ * the verification-aware writer (services/product-images.ts).
+ * The rich pipeline's per-image verification status is STORED
+ * (migration 069 columns when applied, 42703 fallback when not),
+ * and alt text is derived honestly from the product name — the
+ * old helper hardcoded alt_text: null and threw the verdict away.
+ * Existing gallery URLs are skipped (re-ingest safety).
+ */
 async function insertProductImages(
   supabase: ReturnType<typeof getServiceClient>,
   productId: string,
-  images: { url: string; isPrimary: boolean }[]
+  productName: string,
+  images: DetailedProcessedImage[]
 ): Promise<void> {
   if (images.length === 0) return;
-  const rows = images.map((img, i) => ({
-    product_id: productId,
-    url: img.url,
-    alt_text: null,
-    is_primary: img.isPrimary,
-    sort_order: i,
-  }));
-  await supabase.from('product_images').insert(rows);
+  const result = await insertProductImagesWithVerification(supabase, productId, {
+    images,
+    productName,
+  });
+  if (result.error) {
+    logger.warn('Ingestion: gallery images were not stored', {
+      productId,
+      error: result.error,
+    });
+  }
+  if (result.verificationMissing) {
+    logger.debug('Ingestion: gallery images stored without verification status (migration 069 unapplied)', {
+      productId,
+    });
+  }
 }
 
 async function logAudit(
@@ -289,8 +344,20 @@ async function createNewProduct(
   // Brand detection
   const brandResult = await detectBrand(supabase, normalized.brand);
 
-  // Image processing
-  const processedImages = await processImages(normalized.images);
+  // Image processing — FINAL 100%, F-P1-39 / F-P2-29: the RICH
+  // path, behind config (getImagePipelineConfig). Ingestion used
+  // to call processImages(images) with no options, so the HEAD
+  // accessibility check and the storage upload were never enabled
+  // and the per-image verificationStatus was computed then
+  // discarded. Now the config decides: accessibility checks and
+  // uploads run when the owner enables them; with storage or the
+  // allowlist unconfigured the upload reports 'not-configured'
+  // and the hotlink is kept — never a fake success.
+  const pipelineConfig = getImagePipelineConfig();
+  const processedImages = await processImagesDetailed(normalized.images, {
+    checkAccessibility: pipelineConfig.checkAccessibility,
+    uploadToStorage: pipelineConfig.uploadToStorage,
+  });
 
   // Section 20, §12 #26 — born-pending per the migration 045
   // design (the same shape as the intake approve path): a
@@ -354,7 +421,21 @@ async function createNewProduct(
   }
 
   const productId = data.id;
-  await insertProductImages(supabase, productId, processedImages);
+  // FINAL 100% (F-P1-45): persist the canonical model number
+  // best-effort, in its own update — the column exists only
+  // after migration 055 is applied, and a 42703 (or any error)
+  // here must never fail the create above.
+  if (normalized.modelNumber) {
+    try {
+      await supabase
+        .from('products')
+        .update({ model_number: normalized.modelNumber })
+        .eq('id', productId);
+    } catch {
+      // Best-effort only: the match already ran on the normalized value.
+    }
+  }
+  await insertProductImages(supabase, productId, normalized.name, processedImages);
   // Section 21–25, Stage C (B1) — the production spec-write path:
   // specs the feed carried are validated against the category
   // template and written with per-spec attribution
@@ -411,7 +492,9 @@ async function updateExistingProduct(
   retailerId: string,
   providerKey: string,
   matchedBy: DeduplicationResult['matchedBy'],
-  fetchedAt: string | null = null
+  fetchedAt: string | null = null,
+  /** FINAL 100% (F-P1-12): the match confidence behind this update, for the audit trail. */
+  matchConfidence?: number | null
 ): Promise<{ brandCreated: boolean; categoryCreated: boolean }> {
   // Section 20, §12 #66 — NO floor on the score. The old
   // `Math.max(score, 50)` made every ingested product read "50%"
@@ -434,6 +517,8 @@ async function updateExistingProduct(
 
   let brandCreated = false;
   let categoryCreated = false;
+  let brandReviewRequired = false;
+  let brandReviewReason: string | undefined;
 
   if (normalized.brand) {
     const brandResult = await detectBrand(supabase, normalized.brand);
@@ -442,6 +527,10 @@ async function updateExistingProduct(
     // FK id, from the resolved brand row.
     if (brandResult.name) updateData.brand = brandResult.name;
     brandCreated = brandResult.created;
+    // FINAL 100% (F-P1-44): a fuzzy brand fold is flagged for
+    // review — it travels into the audit log below, never silently.
+    brandReviewRequired = brandResult.reviewRequired === true;
+    brandReviewReason = brandResult.reviewReason;
   }
 
   if (normalized.category) {
@@ -458,6 +547,37 @@ async function updateExistingProduct(
   if (normalized.gtin) updateData.gtin = normalized.gtin;
 
   await supabase.from('products').update(updateData).eq('id', productId);
+  // FINAL 100% (F-P1-45): persist the canonical model number
+  // best-effort, in its own update — the column exists only
+  // after migration 055 is applied, and a 42703 (or any error)
+  // here must never fail the product update above. A missing
+  // model stays an honest null.
+  if (normalized.modelNumber) {
+    try {
+      await supabase
+        .from('products')
+        .update({ model_number: normalized.modelNumber })
+        .eq('id', productId);
+    } catch {
+      // Best-effort only: the match already ran on the normalized value.
+    }
+  }
+  // FINAL 100%, F-P1-39 — the update path exercises the same
+  // rich image path as creates (config-gated), and new gallery
+  // URLs land via the verification-aware writer (existing URLs
+  // are skipped, so re-ingest never duplicates the gallery).
+  // The product's image_url is still only replaced when the
+  // feed carries one (below) — a gallery row is never promoted
+  // to the hero image on its own.
+  if (normalized.images.length > 0) {
+    const pipelineConfig = getImagePipelineConfig();
+    const processedImages = await processImagesDetailed(normalized.images, {
+      checkAccessibility: pipelineConfig.checkAccessibility,
+      uploadToStorage: pipelineConfig.uploadToStorage,
+    });
+    const productName = normalized.name;
+    await insertProductImages(supabase, productId, productName, processedImages);
+  }
   // Section 21–25, Stage C (B1/B4) — an update carries the specs
   // and variants the feed supplied for the keys it touches: specs
   // replace-by-key (other stored specs are left alone), variants
@@ -487,9 +607,19 @@ async function updateExistingProduct(
   }
   await recordPriceHistory(supabase, productId, retailerId, normalized, fetchedAt);
   await upsertProductSource(supabase, productId, retailerId, normalized, providerKey, fetchedAt);
+  // FINAL 100% (F-P1-12/F-P1-44): the audit trail records WHAT
+  // matched this update and how confidently — plus whether the
+  // brand fold needs review. Confidence lives in the audit
+  // metadata until the match_confidence columns exist.
   await logAudit(supabase, 'product.updated', productId, {
     provider: providerKey,
     matchedBy,
+    ...(matchConfidence !== undefined && matchConfidence !== null
+      ? { matchConfidence }
+      : {}),
+    ...(brandReviewRequired
+      ? { brandReviewRequired: true, brandReviewReason }
+      : {}),
   });
 
   return { brandCreated, categoryCreated };
@@ -563,7 +693,48 @@ export async function ingestProduct(
     // 4. Deduplication
     const dedup = await findDuplicate(supabase, normalized);
 
+    // FINAL 100% (F-P1-42, F-P2-42): the review gate. A failed
+    // dedupe check FAILS CLOSED — the ingest is held, never
+    // admitted as "no match". A fuzzy or model-conflicting match
+    // is HELD FOR REVIEW — the existing product is NOT updated,
+    // its GTIN/image/description are NOT overwritten, and the
+    // hold is persisted as an ingestion rejection (the durable
+    // review trail until a review-queue table exists) with the
+    // match record in the rejection reason.
+    if (dedup.dedupeError) {
+      const reason = `Duplicate check failed, ingest held (fail-closed): ${dedup.dedupeError}`;
+      logger.warn('Ingestion: dedupe check failed, holding ingest', { error: dedup.dedupeError });
+      await persistRejection(reason);
+      return { success: false, action: 'rejected', errors: [reason] };
+    }
+
     if (dedup.isDuplicate && dedup.existingProductId) {
+      const decision = classifyPipelineDuplicate({
+        isDuplicate: dedup.isDuplicate,
+        matchedBy: dedup.matchedBy,
+        confidence: dedup.confidence ?? null,
+        incomingModel: normalized.modelNumber ?? null,
+        existingModel: dedup.existingModelNumber ?? null,
+      });
+      if (decision.action === 'hold-for-review') {
+        const review = buildMatchReviewRecord('pipeline-duplicate', {
+          productName: normalized.name,
+          existingProductId: dedup.existingProductId,
+          matchedBy: dedup.matchedBy,
+          confidence: dedup.confidence ?? null,
+          reasons: decision.reasons,
+        });
+        const reason =
+          `Match held for manual review — no auto-merge: ${decision.reasons.join(' ')} ` +
+          `(existing product ${dedup.existingProductId}, matched by ${dedup.matchedBy ?? 'unknown'}, ` +
+          `confidence ${dedup.confidence ?? 'unknown'}). Review record: ${JSON.stringify(review)}`;
+        logger.warn('Ingestion: uncertain duplicate held for review', {
+          id: dedup.existingProductId,
+          matchedBy: dedup.matchedBy,
+        });
+        await persistRejection(reason);
+        return { success: false, action: 'rejected', errors: [reason] };
+      }
       // 5. Update existing — Section 21–25, Stage C (B9): the
       // update path is gated with the same confidence + price>0
       // checks as creates. A thin feed row no longer overwrites
@@ -591,7 +762,8 @@ export async function ingestProduct(
         retailerId,
         providerKey,
         dedup.matchedBy,
-        fetchedAt
+        fetchedAt,
+        dedup.confidence ?? null
       );
       logger.info('Ingestion: updated existing product', {
         id: dedup.existingProductId,

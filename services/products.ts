@@ -15,6 +15,7 @@ import { swrGet, cacheKey } from '@/lib/cache';
 import { logger } from '@/lib/config/logger';
 import { discountPercent } from '@/lib/deal-math';
 import type { Product, ProductImage } from '@/types';
+import { derivePriceState } from '@/lib/verification/price-state';
 import {
   normalizePriceVerificationStatus,
   normalizeProductStatus,
@@ -154,7 +155,15 @@ function mapProduct(row: ProductRow): Product {
     // Section 20, #6: null when the column is absent (055
     // unapplied) or the product has no recorded model number.
     modelNumber: row.model_number ?? null,
-    confidenceScore: row.confidence_score,
+    // Final 100% — F-P2-03: the legacy `confidence_score` is NOT
+    // emitted in API payloads any more. It is a field-presence
+    // count (name +15, GTIN +20, …), floored at 50 by the DB
+    // default, and it was quoted as "Data completeness 50%" —
+    // never a completion or quality score. The honest number is
+    // the 7-dimension data-quality score (services/
+    // product-quality-score.ts). The column still exists (the
+    // pipeline gate reads it internally); the public Product
+    // shape keeps the field optional for older readers.
     dataFreshness: row.data_freshness,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -220,6 +229,10 @@ interface ProductAttributeRow {
   unit: string | null;
   group: string | null;
   sort_order: number;
+  /** Migration 058 attribution (null when 058 is unapplied). */
+  source?: string | null;
+  verified_at?: string | null;
+  verified_by?: string | null;
 }
 
 function mapProductAttribute(row: ProductAttributeRow): ProductAttribute {
@@ -231,6 +244,9 @@ function mapProductAttribute(row: ProductAttributeRow): ProductAttribute {
     unit: row.unit,
     group: row.group,
     sortOrder: row.sort_order,
+    ...(row.source !== undefined ? { source: row.source } : {}),
+    ...(row.verified_at !== undefined ? { verifiedAt: row.verified_at } : {}),
+    ...(row.verified_by !== undefined ? { verifiedBy: row.verified_by } : {}),
   };
 }
 
@@ -461,14 +477,24 @@ export async function getProducts(
     const total = count ?? 0;
     const totalPages = Math.ceil(total / pageSize);
 
+    // FINAL 100% (F-P1-29) — the brief's 5-state price machine on
+    // every listed product that actually shows a price. The
+    // cheapest in-stock listing carries the verification stamp
+    // for the price shown, so the state is derived from that
+    // listing (not the product rollup alone): a product with no
+    // in-stock listing shows no price and carries no priceState
+    // (absent = unknown, never guessed). For the price sort the
+    // lookup below already ran; otherwise one bounded lookup for
+    // the page's ids.
+    let lowest: Map<string, LowestMerchantPrice> | null = null;
     if (sort === 'price') {
-      const lowest = await getLowestMerchantPrices(
+      lowest = await getLowestMerchantPrices(
         supabase,
         products.map((p) => p.id)
       );
       products = [...products].sort((a, b) => {
-        const pa = lowest.get(a.id)?.price ?? null;
-        const pb = lowest.get(b.id)?.price ?? null;
+        const pa = lowest?.get(a.id)?.price ?? null;
+        const pb = lowest?.get(b.id)?.price ?? null;
         if (pa === null && pb === null) return 0;
         if (pa === null) return 1;
         if (pb === null) return -1;
@@ -476,6 +502,33 @@ export async function getProducts(
       });
       products = products.slice(offset, offset + pageSize);
     }
+    if (lowest === null) {
+      lowest = await getLowestMerchantPrices(
+        supabase,
+        products.map((p) => p.id)
+      );
+    }
+    const lowestById = lowest;
+    products = products.map((p) => {
+      const cheapest = lowestById.get(p.id);
+      if (!cheapest) return p;
+      return {
+        ...p,
+        priceState: derivePriceState({
+          priceVerificationStatus:
+            cheapest.priceVerificationStatus ??
+            p.priceVerificationStatus ??
+            'unverified',
+          priceVerifiedAt: cheapest.priceVerifiedAt ?? p.priceVerifiedAt ?? null,
+          // The last check of the price shown: the listing's own
+          // check date when known, else the product row's
+          // freshness stamp.
+          lastCheckedAt: p.dataFreshness ?? null,
+          hasRecordedPrice: true,
+          hasLiveSource: null,
+        }),
+      };
+    });
 
     return { products, total, page, pageSize, totalPages };
   } catch (err) {
@@ -606,28 +659,65 @@ export async function getCachedProductBySlug(
 /**
  * Fetch images for a product.
  * Returns an array of `{ id, url, altText, isPrimary }` ordered by sort order.
+ *
+ * FINAL 100%, F-P1-40 — the read also carries the per-image
+ * verification verdict (`verificationStatus` / `checkedAt`,
+ * migration 069) when the columns exist; when 069 is unapplied
+ * the select retries without them and the verdicts read as null
+ * (unknown), never as "verified". The legacy shape is unchanged.
  */
 export async function getProductImages(
   supabase: AnySupabaseClient,
   productId: string
-): Promise<{ id: string; url: string; altText: string | null; isPrimary: boolean }[]> {
+): Promise<
+  {
+    id: string;
+    url: string;
+    altText: string | null;
+    isPrimary: boolean;
+    verificationStatus?: import('@/services/pipeline/image-processing').ImageVerificationStatus | null;
+    checkedAt?: string | null;
+  }[]
+> {
   try {
-    const { data, error } = await supabase
-      .from('product_images')
-      .select('id, url, alt_text, is_primary')
-      .eq('product_id', productId)
-      .order('sort_order', { ascending: true });
-
+    const runQuery = async (withVerification: boolean) => {
+      const columns = withVerification
+        ? 'id, url, alt_text, is_primary, verification_status, checked_at'
+        : 'id, url, alt_text, is_primary';
+      return (await supabase
+        .from('product_images')
+        .select(columns)
+        .eq('product_id', productId)
+        .order('sort_order', { ascending: true })) as unknown as {
+        data: Record<string, unknown>[] | null;
+        error: { code?: string; message: string } | null;
+      };
+    };
+    let { data, error } = await runQuery(true);
+    let verificationMissing = false;
+    if (error && (error as { code?: string }).code === '42703') {
+      verificationMissing = true;
+      ({ data, error } = await runQuery(false));
+    }
     if (error || !data) {
       if (error) logger.warn('getProductImages: query failed', { error: error.message });
       return [];
     }
 
     return data.map((row) => ({
-      id: row.id,
-      url: row.url,
-      altText: row.alt_text,
-      isPrimary: row.is_primary,
+      id: row.id as string,
+      url: row.url as string,
+      altText: row.alt_text as string | null,
+      isPrimary: row.is_primary as boolean,
+      ...(verificationMissing
+        ? { verificationStatus: null, checkedAt: null }
+        : {
+            verificationStatus:
+              (row.verification_status as
+                | import('@/services/pipeline/image-processing').ImageVerificationStatus
+                | null) ?? null,
+            checkedAt: (row.checked_at as string | null) ?? null,
+          }),
     }));
   } catch (err) {
     logger.error('getProductImages: unexpected error', { error: String(err) });
@@ -665,24 +755,41 @@ export async function getProductVariants(
 
 /**
  * Fetch structured product attributes (EAV-style specs).
+ *
+ * FINAL 100%, F-P2-31 — the read carries per-spec attribution
+ * (`source` / `verified_at` / `verified_by`, migration 058) when
+ * the columns exist; when 058 is unapplied it retries with the
+ * 004 columns and the attribution reads as undefined ("source
+ * not recorded"), never as a guessed source.
  */
 export async function getProductAttributes(
   supabase: AnySupabaseClient,
   productId: string
 ): Promise<ProductAttribute[]> {
   try {
-    const { data, error } = await supabase
-      .from('product_attributes')
-      .select('id, product_id, key, value, unit, group, sort_order')
-      .eq('product_id', productId)
-      .order('sort_order', { ascending: true });
-
+    const runQuery = async (withAttribution: boolean) => {
+      const columns = withAttribution
+        ? 'id, product_id, key, value, unit, group, sort_order, source, verified_at, verified_by'
+        : 'id, product_id, key, value, unit, group, sort_order';
+      return (await supabase
+        .from('product_attributes')
+        .select(columns)
+        .eq('product_id', productId)
+        .order('sort_order', { ascending: true })) as unknown as {
+        data: Record<string, unknown>[] | null;
+        error: { code?: string; message: string } | null;
+      };
+    };
+    let { data, error } = await runQuery(true);
+    if (error && (error as { code?: string }).code === '42703') {
+      ({ data, error } = await runQuery(false));
+    }
     if (error || !data) {
       if (error) logger.warn('getProductAttributes: query failed', { error: error.message });
       return [];
     }
 
-    return data.map((row) => mapProductAttribute(row as ProductAttributeRow));
+    return data.map((row) => mapProductAttribute(row as unknown as ProductAttributeRow));
   } catch (err) {
     logger.error('getProductAttributes: unexpected error', { error: String(err) });
     return [];

@@ -14,6 +14,7 @@ import {
   getConfiguredAmazonLocales,
 } from '@/services/affiliate-geo';
 import { isEbayConfigured } from '@/services/ebay-browse';
+import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { GLOBAL_STORES, LOCAL_STORES } from '@/lib/stores';
 import { REGIONS } from '@/lib/region';
 
@@ -49,6 +50,78 @@ export interface PlatformStatusEntry {
   coverage: string;
   /** What the visitor actually gets from this platform today. */
   whatYouGet: string;
+}
+
+/**
+ * FINAL 100% (F-P2-07) — the eBay "configured" gate. The
+ * configured-state copy ("Live active listings…") was untested
+ * against reality: keys alone do not make eBay live. eBay is
+ * `configured` ONLY when all three gates hold — keys set
+ * (EBAY_CLIENT_ID + EBAY_CLIENT_SECRET), the `merchants` row
+ * `slug='ebay'` exists, AND EPN + Growth Check approval is
+ * confirmed (owner dashboard only — no code can check it, so
+ * the caller must pass the owner's confirmation in). Anything
+ * less is `not-configured`, with the missing gates named in the
+ * copy so the page never promises live listings it cannot show.
+ * `merchantRowExists: null` means "not checked against the DB
+ * yet" — the copy says so instead of assuming either way.
+ */
+export interface EbayConfiguredCheck {
+  keysConfigured: boolean;
+  merchantRowExists: boolean | null;
+  approvalConfirmed: boolean;
+}
+
+export function describeEbayPlatformStatus(check: EbayConfiguredCheck): {
+  status: 'configured' | 'not-configured';
+  coverage: string;
+  whatYouGet: string;
+} {
+  const missing: string[] = [];
+  if (!check.keysConfigured) missing.push('EBAY_CLIENT_ID / EBAY_CLIENT_SECRET in Vercel');
+  if (check.merchantRowExists === false) missing.push('the eBay merchants row (slug=\'ebay\', owner SQL)');
+  if (check.merchantRowExists === null) missing.push('a database check that the eBay merchants row exists');
+  if (!check.approvalConfirmed) missing.push('eBay Partner Network + Growth Check approval (owner dashboard)');
+  if (missing.length === 0) {
+    return {
+      status: 'configured',
+      coverage: 'Live active listings via the official Browse API',
+      whatYouGet:
+        'Live active listings — asking prices, condition, and a link to the listing. No sold history, no price history, no Deal Score on live listings. Verified against keys, the merchants row, and EPN + Growth Check approval.',
+    };
+  }
+  return {
+    status: 'not-configured',
+    coverage: 'Search links in the stores directory (no live listings yet)',
+    whatYouGet:
+      `eBay live search is not configured — still missing: ${missing.join('; ')}. ` +
+      `Until all three are in place, eBay appears only as a search link.`,
+  };
+}
+
+/**
+ * Async live check of the eBay gates that CAN be checked from
+ * code (keys + merchants row). Approval is never checkable from
+ * code — the caller passes the owner's confirmation, or leaves
+ * it false (honest default: unconfirmed).
+ */
+export async function describeEbayPlatformStatusLive(
+  supabase: AnySupabaseClient,
+  approvalConfirmed = false
+): Promise<ReturnType<typeof describeEbayPlatformStatus>> {
+  const keysConfigured = isEbayConfigured();
+  let merchantRowExists: boolean | null = null;
+  try {
+    const { data, error } = await supabase
+      .from('merchants')
+      .select('id')
+      .eq('slug', 'ebay')
+      .maybeSingle();
+    if (!error) merchantRowExists = Boolean(data);
+  } catch {
+    merchantRowExists = null;
+  }
+  return describeEbayPlatformStatus({ keysConfigured, merchantRowExists, approvalConfirmed });
 }
 
 function countCountriesWithLocalStores(): number {
@@ -99,12 +172,18 @@ export function describePlatformStatus(): PlatformStatusEntry[] {
       id: 'ebay',
       name: 'eBay',
       kind: 'live-api',
+      // FINAL 100% (F-P2-07): keys alone do not prove a working
+      // integration — the merchants row + EPN/Growth Check
+      // approval are separate gates (see
+      // describeEbayPlatformStatus). This sync entry can only
+      // see the keys, so its copy says exactly that and names
+      // the unchecked gates instead of promising live listings.
       status: ebayConfigured ? 'configured' : 'not-configured',
       coverage: ebayConfigured
-        ? 'Live active listings via the official Browse API'
+        ? 'Keys set — live listings need the merchants row + approval too (see below)'
         : 'Search links in the stores directory (no live listings yet)',
       whatYouGet: ebayConfigured
-        ? 'Live active listings — asking prices, condition, and a link to the listing. No sold history, no price history, no Deal Score on live listings.'
+        ? 'Keys are set, but live listings also need the eBay merchants row (slug=\'ebay\') and EPN + Growth Check approval — neither is verified by this page. Until both are confirmed, treat eBay as not yet live; the gated check is describeEbayPlatformStatus (services/platform-status.ts).'
         : 'eBay live search is not configured. Set EBAY_CLIENT_ID and EBAY_CLIENT_SECRET in Vercel to turn it on (free developer account; production also needs the eBay Partner Network + Growth Check). Until then, eBay appears only as a search link.',
     },
     {

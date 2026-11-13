@@ -27,7 +27,11 @@
  *   spec completeness   20 — stored product_attributes count (bands)
  *   image availability  15 — valid http(s) image_url + product_images rows
  *   price freshness     20 — age of the last price check vs STALE_PRICE_DAYS
- *   merchant reliability 10 — merchant listings present and in stock
+ *   merchant listings 10 — listing count + in-stock presence
+ *     (FINAL 100%, F-P1-49: labelled "Merchant listings", NOT
+ *     "Merchant reliability" — it measures no reliability unless
+ *     the caller passes a measured canonical reliability score,
+ *     in which case the dimension uses that score instead)
  *   GTIN validity       10 — GTIN present AND GS1 check digit valid
  *   source attribution  10 — price source recorded + verified_at recorded
  *
@@ -39,6 +43,14 @@
 
 import { STALE_PRICE_DAYS, getPriceAgeDays } from '@/lib/price-freshness';
 import type { PriceVerificationStatus } from './price-verification';
+import {
+  derivePriceState,
+  type PriceStateResult,
+} from '@/lib/verification/price-state';
+import {
+  isFullyVerified,
+  type FullyVerifiedResult,
+} from '@/lib/verification/fully-verified';
 
 /** The label to use everywhere this score is shown. */
 export const DATA_QUALITY_SCORE_LABEL = 'Data quality score';
@@ -55,6 +67,8 @@ export interface QualityScoreProductInput {
   description?: string | null;
   imageUrl?: string | null;
   gtin?: string | null;
+  /** Recorded model number (migration 055) — null when absent. */
+  modelNumber?: string | null;
   priceVerificationStatus?: PriceVerificationStatus | string | null;
   priceVerifiedAt?: string | null;
   /** Fallback "last checked" when no price_history point is known. */
@@ -74,8 +88,26 @@ export interface QualityScoreContext {
   merchantCount?: number | null;
   /** merchant_products rows in stock for the product. */
   inStockMerchantCount?: number | null;
+  /**
+   * FINAL 100% (F-P1-49): the CANONICAL merchant-reliability
+   * score (0–100, policy scorer — see
+   * services/canonical-merchant-reliability.ts) for the
+   * product's cheapest / primary merchant, when the caller
+   * measured it. When present the merchants dimension uses it;
+   * when absent the dimension falls back to the listing-count
+   * proxy and SAYS SO in its label. Null = not measured.
+   */
+  merchantReliabilityScore?: number | null;
   /** merchant_products price_source of the cheapest listing. */
   priceSource?: string | null;
+  /**
+   * FINAL 100% (F-P1-06) — true when at least one merchant listing
+   * is proven to be a real listing (a merchant SKU recorded, not
+   * a search URL). Null = not read / unknown → the fully-verified
+   * merchant criterion fails closed. Set by
+   * getProductQualityContexts (services/admin-products.ts).
+   */
+  hasRealMerchantListing?: boolean | null;
   /** Newest price_history recorded_at for the product. */
   lastPriceRecordedAt?: string | null;
 }
@@ -105,6 +137,20 @@ export interface ProductQualityScore {
   priceVerificationStatus: PriceVerificationStatus;
   /** Age in whole days of the last price check, or null (unknown). */
   priceAgeDays: number | null;
+  /**
+   * FINAL 100% (F-P1-29) — the brief's 5-state price machine,
+   * derived from the same inputs as this score. Only
+   * LIVE_VERIFIED may be shown with live/current wording.
+   */
+  priceState: PriceStateResult;
+  /**
+   * FINAL 100% (F-P1-06) — the whole-record fully-verified
+   * verdict (lib/verification/fully-verified.ts). False for the
+   * whole current catalog — 0/10 have specs, images, GTINs,
+   * model numbers, or verified prices — which is the honest
+   * state; see `missing` / `reasons` for what would close it.
+   */
+  fullyVerified: FullyVerifiedResult;
 }
 
 export type DataQualityGrade = ProductQualityScore['grade'];
@@ -137,9 +183,17 @@ export function dataQualityGrade(score: number): DataQualityGrade {
 //                (age <= STALE_PRICE_DAYS). A price is only ever
 //                called verified when a real fetch checked it
 //                (services/price-verification.ts).
-//   partial    — the price itself is unverified, but part of the
-//                record IS independently checkable: a GS1-valid GTIN
-//                or a recorded price source.
+//   partial    — RETAINED as a state value but UNREACHABLE (Final
+//                100% — F-P1-02 / F-P1-04): it used to be earned by
+//                field presence alone — a GS1-valid GTIN or any
+//                recorded price source (incl. 'manual-intake', i.e.
+//                "an admin typed this"). A check digit proves a
+//                number is well-formed, not that it belongs to this
+//                product, and a recorded source proves a row exists,
+//                not that its price was checked — so neither may
+//                upgrade a verification label. The label is kept in
+//                the type + labels map so stored/older counts keep
+//                reading, but getDataQualityState never returns it.
 //   unverified — the default: a price is recorded, but it was never
 //                checked by a real fetch and nothing else about the
 //                record is independently checkable.
@@ -178,9 +232,19 @@ export function getDataQualityState(input: {
   priceAgeDays: number | null;
   /** merchant_products rows for the product (null = not read). */
   merchantCount: number | null;
-  /** GTIN present AND GS1 check digit valid. */
+  /**
+   * GTIN present AND GS1 check digit valid. Accepted for
+   * call-site compatibility but IGNORED by the state decision
+   * (Final 100% F-P1-04): a valid GTIN proves format, never
+   * verification, so it must not upgrade the label.
+   */
   hasValidGtin: boolean;
-  /** A price source is recorded for the cheapest listing. */
+  /**
+   * A price source is recorded for the cheapest listing.
+   * Accepted for call-site compatibility but IGNORED by the
+   * state decision (Final 100% F-P1-02): a recorded source
+   * proves a row exists, never that its price was checked.
+   */
   hasPriceSource: boolean;
 }): DataQualityStateResult {
   const status: PriceVerificationStatus =
@@ -223,19 +287,16 @@ export function getDataQualityState(input: {
           : 'The price carries a verified stamp, but no check date is recorded, so its currency cannot be confirmed.',
     };
   }
-  if (input.hasValidGtin || input.hasPriceSource) {
-    const checkable = [
-      input.hasValidGtin ? 'a valid GTIN' : null,
-      input.hasPriceSource ? 'a recorded price source' : null,
-    ]
-      .filter(Boolean)
-      .join(' and ');
-    return {
-      state: 'partial',
-      label: DATA_QUALITY_STATE_LABELS.partial,
-      reason: `Part of the record is independently checkable (${checkable}), but the price itself was never checked by a real fetch.`,
-    };
-  }
+  // Final 100% — F-P1-02 / F-P1-04: NO `partial` branch. Field
+  // presence used to buy "Partially verified" here (a valid GTIN
+  // or any recorded price source, incl. 'manual-intake'). Both
+  // legs are removed, not re-weighted: a well-formed GTIN proves
+  // format, not ownership, and a recorded source proves a row
+  // exists, not that its price was checked. An unverified price
+  // is unverified, whatever else the record holds. `hasValidGtin`
+  // / `hasPriceSource` stay in the input shape (callers already
+  // pass them) but no longer affect the state; the 'partial'
+  // state value is retained for stored counts only.
   return {
     state: 'unverified',
     label: DATA_QUALITY_STATE_LABELS.unverified,
@@ -395,13 +456,27 @@ export function computeProductQualityScore(
     dimensions.push(dimension('priceFreshness', 'Price freshness', 20, score, missing));
   }
 
-  // Merchant reliability (10): listings present and in stock.
+  // Merchant listings (10): FINAL 100% (F-P1-49) — this
+  // dimension was labelled "Merchant reliability" but measured
+  // only listing count + in-stock presence: it called neither
+  // reliability scorer. It is now labelled honestly, and REWIRED
+  // when the caller passes a measured canonical reliability
+  // score (context.merchantReliabilityScore): then the score IS
+  // the measured reliability. Otherwise the listing-count proxy
+  // still applies, under the honest label "Merchant listings
+  // (count only — not measured reliability)".
   {
     const missing: string[] = [];
     const merchantCount = context.merchantCount ?? null;
     const inStock = context.inStockMerchantCount ?? null;
+    const measured = context.merchantReliabilityScore ?? null;
     let score: number;
-    if (merchantCount === null || merchantCount <= 0) {
+    let label = 'Merchant listings (count only — not measured reliability)';
+    if (measured !== null && Number.isFinite(measured)) {
+      score = Math.max(0, Math.min(100, Math.round(measured)));
+      label = 'Merchant reliability (measured)';
+      if (score < 100) missing.push('measured merchant reliability');
+    } else if (merchantCount === null || merchantCount <= 0) {
       score = 0;
       missing.push('merchant listings');
     } else if (merchantCount >= 2 && (inStock ?? 0) > 0) {
@@ -413,7 +488,7 @@ export function computeProductQualityScore(
       score = 30;
       missing.push('in-stock merchant listing');
     }
-    dimensions.push(dimension('merchants', 'Merchant reliability', 10, score, missing));
+    dimensions.push(dimension('merchants', label, 10, score, missing));
   }
 
   // GTIN validity (10): present AND GS1 check digit valid.
@@ -451,6 +526,48 @@ export function computeProductQualityScore(
       ? product.priceVerificationStatus
       : 'unverified';
 
+  // FINAL 100% (F-P1-29) — the brief's 5-state price machine,
+  // derived from the same inputs as this score. A price is
+  // "recorded" when a merchant listing exists or a price_history
+  // point was read; data_freshness alone is a product-row stamp,
+  // not a price record, so it never counts here.
+  const hasRecordedPrice =
+    (context.merchantCount ?? 0) > 0 || context.lastPriceRecordedAt != null;
+  const priceState = derivePriceState({
+    priceVerificationStatus: status,
+    priceVerifiedAt: product.priceVerifiedAt ?? null,
+    priceAgeDays,
+    hasRecordedPrice,
+    // The scorer does not know whether a live source can check
+    // this price right now — unknown, never guessed.
+    hasLiveSource: null,
+    now,
+  });
+
+  // FINAL 100% (F-P1-06) — the whole-record fully-verified
+  // verdict. Unknown context fails closed (a count the caller
+  // did not read counts as missing), so a caller that passes no
+  // context gets fullyVerified: false with the reasons — never a
+  // pass on evidence nobody read.
+  const fullyVerified = isFullyVerified({
+    name: product.name,
+    brand: product.brand,
+    category: product.category,
+    description: product.description,
+    modelNumber: product.modelNumber ?? null,
+    gtin: product.gtin,
+    imageUrl: product.imageUrl,
+    priceVerificationStatus: status,
+    priceVerifiedAt: product.priceVerifiedAt ?? null,
+    priceAgeDays,
+    specCount: context.specCount ?? null,
+    imageCount: context.imageCount ?? null,
+    merchantCount: context.merchantCount ?? null,
+    hasRealMerchantListing: context.hasRealMerchantListing ?? null,
+    hasPriceSource: hasText(context.priceSource),
+    now,
+  });
+
   return {
     score: total,
     grade: dataQualityGrade(total),
@@ -458,5 +575,7 @@ export function computeProductQualityScore(
     missingFields,
     priceVerificationStatus: status,
     priceAgeDays,
+    priceState,
+    fullyVerified,
   };
 }

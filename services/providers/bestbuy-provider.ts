@@ -1,3 +1,4 @@
+import { env } from '@/lib/config/env';
 import { logger } from '@/lib/config/logger';
 import { ProviderNotConfiguredError } from './errors';
 import type {
@@ -30,7 +31,7 @@ export class BestBuyProvider implements DataProvider {
   readonly category = 'official_api' as const;
 
   isAvailable(): boolean {
-    return Boolean(process.env.BESTBUY_API_KEY?.trim());
+    return Boolean(env.bestbuyApiKey?.trim());
   }
 
   /** Plain-language reason the adapter cannot fetch prices today. */

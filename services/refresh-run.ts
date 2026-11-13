@@ -174,6 +174,14 @@ export interface RefreshStepCounts {
   succeeded: number;
   failed: number;
   skipped?: number;
+  /**
+   * Final 100% — F-P2-15: suspicious price changes flagged by
+   * this step (spike / fake-sale / inflation). Optional: only
+   * steps that assess prices report it. Stored in the run row
+   * and rendered on /admin/refresh-runs as the notification that
+   * flags await review in the data-quality panel.
+   */
+  suspiciousPriceChanges?: number;
 }
 
 /**
@@ -305,7 +313,50 @@ export type RefreshRunStatus =
   | 'running'
   | 'completed'
   | 'completed_with_failures'
-  | 'failed';
+  | 'failed'
+  /**
+   * FINAL 100% (F-P1-28, K10b) — the run finished without a
+   * single failed step, but NO live price was fetched by any
+   * live-fetch leg (eBay updated/inserted 0, pipeline refreshed
+   * 0). A job must never be called successful when no provider
+   * data was retrieved — but it is not a failure either (no
+   * provider configured is an honest skip, not a crash). This
+   * distinct status is the honest middle: "completed, nothing
+   * fetched". Migration 040's CHECK must admit it (see the
+   * migration file) — the run row cannot be stored otherwise.
+   */
+  | 'completed_no_live_source';
+
+/**
+ * FINAL 100% (F-P1-28, K10b) — the single overall-status rule
+ * for a refresh run, shared by POST /api/v1/prices/refresh (and
+ * any future trigger with live-fetch legs). Pure, so the route
+ * tests pin it without a DB.
+ *
+ *   failed steps = all steps            → 'failed'
+ *   some steps failed                   → 'completed_with_failures'
+ *   no failures, zero live prices       → 'completed_no_live_source'
+ *   no failures, ≥1 live price fetched  → 'completed'
+ *
+ * `livePricesFetched` counts LIVE prices only: eBay listings
+ * upserted from a real Browse response + pipeline products with
+ * a fresh provider point recorded. DB re-reads (refresh step
+ * inserts) are NOT live fetches and never count here — a run
+ * that only re-recorded stored prices is
+ * 'completed_no_live_source'.
+ */
+export function resolveRefreshRunStatus(args: {
+  failedSteps: number;
+  totalSteps: number;
+  livePricesFetched: number;
+}): Exclude<RefreshRunStatus, 'running'> {
+  if (args.failedSteps > 0) {
+    return args.failedSteps >= args.totalSteps && args.totalSteps > 0
+      ? 'failed'
+      : 'completed_with_failures';
+  }
+  return args.livePricesFetched > 0 ? 'completed' : 'completed_no_live_source';
+}
 
 /**
  * A `running` row older than this is a crashed run, not a live one.
@@ -543,6 +594,30 @@ export async function finishRefreshRun(
         error: updateError.message,
       });
     }
+    // Final 100%, F-P1-54 — the dateless-verified stale flip runs
+    // at the end of every recorded run, next to the dated flip in
+    // the refresh chain: a 'verified' stamp with no check date
+    // must not live forever. Best-effort and never throwing (the
+    // flip itself is fail-safe); a flip failure is logged inside
+    // the flip and never fails the run record. When 040 is
+    // unapplied there is no runId and this is a no-op — the
+    // dateless flip then needs the one-line call next to the dated
+    // flip in services/price-refresh.ts (W1 merge point).
+    try {
+      const { flipDatelessVerifiedToStale } = await import(
+        './verification-stale-flip'
+      );
+      const flipped = await flipDatelessVerifiedToStale(supabase);
+      if (flipped.flippedProducts + flipped.flippedMerchantRows > 0) {
+        logger.warn('finishRefreshRun: dateless verified rows flipped to stale', {
+          runId,
+          flippedProducts: flipped.flippedProducts,
+          flippedMerchantRows: flipped.flippedMerchantRows,
+        });
+      }
+    } catch {
+      // Staleness bookkeeping must never fail a refresh run.
+    }
   } catch (err) {
     logger.warn('finishRefreshRun: run update threw', {
       runId,
@@ -570,5 +645,53 @@ export async function getLatestRefreshRun(
     return data[0] as unknown as RefreshRunRow;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Final 100%, F-P1-53 — recent recorded refresh runs, newest
+ * first, for the dead-man's switch. Public-safe by design: the
+ * rows are already publicly readable (TO anon policy — the same
+ * read /status makes via `getLatestRefreshRun`), so this asserts
+ * no admin role and takes no admin user id. Fail-open on a
+ * missing table (`tableMissing: true`, runs: []); any other read
+ * error is reported in `error` with runs: [] — never invented
+ * as an empty history.
+ */
+export interface GetRecentRefreshRunsResult {
+  runs: RefreshRunRow[];
+  /** True when the price_refresh_runs table does not exist yet (migration 040 unapplied). */
+  tableMissing: boolean;
+  error?: string;
+}
+
+export async function getRecentRefreshRuns(
+  supabase: AnySupabaseClient,
+  limit = 5
+): Promise<GetRecentRefreshRunsResult> {
+  const safeLimit = Math.min(Math.max(1, limit), 20);
+  try {
+    const { data, error } = await supabase
+      .from(RUNS_TABLE)
+      .select('id, source, started_at, finished_at, status, steps, error')
+      .order('started_at', { ascending: false })
+      .limit(safeLimit);
+    if (error) {
+      if (isMissingTableError(error)) {
+        return { runs: [], tableMissing: true };
+      }
+      return {
+        runs: [],
+        tableMissing: false,
+        error: error.message ?? 'Refresh runs could not be read.',
+      };
+    }
+    return { runs: (data ?? []) as unknown as RefreshRunRow[], tableMissing: false };
+  } catch (err) {
+    return {
+      runs: [],
+      tableMissing: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }

@@ -52,6 +52,18 @@ export interface PriceHistoryPoint {
   source?: string | null;
   /** Migration 057 flag, or null when the column predates it. */
   suspicious?: boolean | null;
+  /**
+   * FINAL 100% (F-P1-15) — per-row verification flag, or null
+   * when the row predates the column. True only for a point
+   * written from a validated provider response.
+   */
+  verified?: boolean | null;
+  /**
+   * FINAL 100% (F-P1-30) — true when the point's USD was assumed
+   * from a NULL currency_id, never observed. Null when the row
+   * predates the column.
+   */
+  currencyAssumed?: boolean | null;
 }
 
 export interface HistoryCoverage {
@@ -138,6 +150,30 @@ export interface PriceChangeAssessment {
   spikePct: number | null;
   fakeSaleAlert: boolean;
   inflationVerdict: 'fake_discount_pattern' | 'inflated' | 'no_pattern' | 'insufficient';
+}
+
+/**
+ * FINAL 100% (W3, F-P1-32/F-P1-33) — the change-only dedupe every
+ * history writer must apply before inserting: a re-ingest (or a
+ * re-fetch) of the SAME price with the SAME availability is not a
+ * new observation, it is the same observation recorded again.
+ * `latest` is the newest recorded row for the (product, retailer)
+ * pair, or null when none exists (first observation always
+ * records). Prices compare numerically (stored values arrive as
+ * strings from PostgREST); availability compares as recorded,
+ * defaulting an absent value to 'unknown' — never to 'in_stock'.
+ */
+export function isDuplicatePricePoint(
+  latest: { price: number | string; availability?: string | null } | null | undefined,
+  price: number,
+  availability?: string | null
+): boolean {
+  if (!latest) return false;
+  const latestPrice = parseFloat(String(latest.price));
+  if (!Number.isFinite(latestPrice) || !Number.isFinite(price)) return false;
+  if (latestPrice !== price) return false;
+  const latestAvailability = latest.availability ?? 'unknown';
+  return latestAvailability === (availability ?? 'unknown');
 }
 
 /**
@@ -240,6 +276,39 @@ export interface PriceHistoryInsert {
   observed_at?: string | null;
   /** Migration 057 flag from `assessPriceChange`. */
   suspicious_change?: boolean;
+  /**
+   * FINAL 100% (W1, F-P1-15) — per-row verification flag. Pass
+   * `true` ONLY for a row written from a validated provider
+   * response; omit it (do not pass false) for re-reads and
+   * unproven rows — absence means "not verified", and omitting
+   * avoids a guaranteed 42703 retry on every insert while the
+   * column does not exist. COLUMN DEPENDENCY: no migration
+   * defines `price_history.verified` yet — it needs a future
+   * migration (the 068–071 worker owns new migration files).
+   * Until it exists, the staged retry below drops the flag and
+   * reports `verifiedPersisted: false`.
+   */
+  verified?: boolean;
+  /**
+   * FINAL 100% (W1, F-P1-30) — true when the row's currency is USD
+   * assumed from a NULL / unresolvable currency_id, never
+   * observed. Omit it when the currency was genuinely observed
+   * (same round-trip reason as `verified`). COLUMN DEPENDENCY:
+   * same as `verified` — `price_history.currency_assumed` needs
+   * a future migration; until then the flag is dropped by the
+   * retry and reported as `currencyAssumedPersisted: false`, and
+   * the run result's `currencyAssumedUsd` count is the only
+   * record of the assumption.
+   */
+  currencyAssumed?: boolean;
+}
+
+export interface PriceHistoryInsertResult {
+  error: { message: string; code?: string } | null;
+  /** True when the `verified` flag reached the stored row. */
+  verifiedPersisted: boolean;
+  /** True when the `currency_assumed` flag reached the stored row. */
+  currencyAssumedPersisted: boolean;
 }
 
 /**
@@ -249,13 +318,42 @@ export interface PriceHistoryInsert {
  * columns — the row is still recorded, just without provenance
  * or a flag. A transport throw propagates (callers treat it as
  * a failed insert); any other insert error is returned.
+ *
+ * Final 100%, F-P1-58 — the insert also writes migration 060's
+ * `currency_code` (the recorded 3-letter code, copied verbatim
+ * from `currency`) when the column exists. The retry is tiered
+ * so one missing column does not drop the others: a 42703 on
+ * the full row retries without `currency_code` only (provenance
+ * kept), and a second 42703 retries with the migration-002
+ * columns only.
+ *
+ * Final 100%, F-P1-15 / F-P1-30 (W1) — the `verified` /
+ * `currency_assumed` flags ride the same tiered retry as one
+ * more layer, dropped FIRST (they exist in no migration yet):
+ *   tier 1 — everything (060 code + 057 provenance + new flags,
+ *            the flags included only when the caller passed them,
+ *            so existing callers' inserts are byte-identical);
+ *   tier 2 — without the new flags (060 code + 057 kept);
+ *   tier 3 — without the 060 code either (057 provenance kept);
+ *   tier 4 — migration-002 columns only.
+ * The result reports whether each flag persisted, so a caller
+ * can count dropped flags instead of assuming they landed.
+ * (One exotic state is not covered: if the future verified /
+ * currency_assumed migration were applied while 060 is NOT
+ * applied, tier 3 drops the flags even though their columns
+ * exist — the runbook applies migrations in numeric order, so
+ * this cannot happen through the documented path, and the
+ * dropped flags are reported, never silently kept.)
  */
 export async function insertPriceHistoryRow(
   supabase: AnySupabaseClient,
   row: PriceHistoryInsert
-): Promise<{ error: { message: string; code?: string } | null }> {
+): Promise<PriceHistoryInsertResult> {
   const recordedAt = row.recorded_at ?? new Date().toISOString();
-  const fullRow: Record<string, unknown> = {
+  const wantsVerified = row.verified !== undefined;
+  const wantsCurrencyAssumed = row.currencyAssumed !== undefined;
+  const notPersisted = { verifiedPersisted: false, currencyAssumedPersisted: false };
+  const baseRow: Record<string, unknown> = {
     product_id: row.product_id,
     retailer_id: row.retailer_id,
     price: row.price,
@@ -263,6 +361,8 @@ export async function insertPriceHistoryRow(
     availability: row.availability,
     url: row.url ?? null,
     recorded_at: recordedAt,
+  };
+  const provenance: Record<string, unknown> = {
     source: row.source ?? null,
     // Sections 21–25, Stage D (R3): only `undefined` defaults
     // to recorded_at. An explicit null means "observation time
@@ -271,23 +371,58 @@ export async function insertPriceHistoryRow(
     observed_at: row.observed_at === undefined ? recordedAt : row.observed_at,
     suspicious_change: row.suspicious_change ?? false,
   };
-  const { error } = (await supabase.from('price_history').insert(fullRow)) as {
-    error: { message: string; code?: string } | null;
+  const fullRow: Record<string, unknown> = {
+    ...baseRow,
+    // Final 100%, F-P1-58 — migration 060: the canonical
+    // currency code, verbatim from the recorded `currency`
+    // value. Never a converted or assumed code: the caller
+    // resolved it from the row's currency_id (see
+    // services/refresh-currency.ts).
+    currency_code: row.currency,
+    ...provenance,
+    ...(wantsVerified ? { verified: row.verified } : {}),
+    ...(wantsCurrencyAssumed ? { currency_assumed: row.currencyAssumed } : {}),
   };
-  if (error && isUndefinedColumnError(error)) {
-    const legacyRow: Record<string, unknown> = {
-      product_id: row.product_id,
-      retailer_id: row.retailer_id,
-      price: row.price,
-      currency: row.currency,
-      availability: row.availability,
-      url: row.url ?? null,
-      recorded_at: recordedAt,
+  type InsertOutcome = { error: { message: string; code?: string } | null };
+  const insertOnce = async (candidate: Record<string, unknown>): Promise<InsertOutcome> =>
+    (await supabase.from('price_history').insert(candidate)) as InsertOutcome;
+
+  // Tier 1 — everything.
+  const tier1 = await insertOnce(fullRow);
+  if (!tier1.error) {
+    return {
+      error: null,
+      verifiedPersisted: wantsVerified,
+      currencyAssumedPersisted: wantsCurrencyAssumed,
     };
-    const retry = (await supabase.from('price_history').insert(legacyRow)) as {
-      error: { message: string; code?: string } | null;
-    };
-    return { error: retry.error };
   }
-  return { error };
+  if (!isUndefinedColumnError(tier1.error)) {
+    return { error: tier1.error, ...notPersisted };
+  }
+  // Tier 2 — without the Final-100% flags only (060 + 057 kept).
+  // Skipped when the caller passed neither flag: the tier-1
+  // failure is then necessarily a 060/057 column, and tier 3 is
+  // the right next attempt (this keeps the pinned 2-attempt /
+  // 3-attempt shapes for existing callers).
+  if (wantsVerified || wantsCurrencyAssumed) {
+    const tier2 = await insertOnce({ ...baseRow, currency_code: row.currency, ...provenance });
+    if (!tier2.error) {
+      return { error: null, ...notPersisted };
+    }
+    if (!isUndefinedColumnError(tier2.error)) {
+      return { error: tier2.error, ...notPersisted };
+    }
+  }
+  // Tier 3 — the 057 columns exist but `currency_code` (060)
+  // does not: retry with provenance, without the code.
+  const tier3 = await insertOnce({ ...baseRow, ...provenance });
+  if (!tier3.error) {
+    return { error: null, ...notPersisted };
+  }
+  if (!isUndefinedColumnError(tier3.error)) {
+    return { error: tier3.error, ...notPersisted };
+  }
+  // Tier 4 — the table predates 057 entirely: legacy columns only.
+  const tier4 = await insertOnce(baseRow);
+  return { error: tier4.error, ...notPersisted };
 }

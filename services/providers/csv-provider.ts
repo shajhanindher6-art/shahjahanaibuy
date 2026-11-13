@@ -98,10 +98,12 @@ export interface CsvDocumentRow {
  * Parses a full CSV document into row objects keyed by the header row,
  * each tagged with its original line number.
  *
- * Unlike {@link parseCsv} (used by CsvProvider), rows with fewer columns
- * than the header are NOT dropped — their missing fields come back as
- * empty strings so the caller can report a per-row, per-field error
- * instead of silently losing the row.
+ * Rows with fewer columns than the header are NOT dropped — their
+ * missing fields come back as empty strings so the caller can report
+ * a per-row, per-field error instead of silently losing the row.
+ * (Final 100%, F-P2-52: the old private parseCsv skipped short rows
+ * silently; loadProducts now uses this parser so short rows surface
+ * as named rejections via mapCsvRowWithReason.)
  */
 export function parseCsvDocument(csv: string): CsvDocumentRow[] {
   const lines = splitCsvLines(csv);
@@ -122,34 +124,6 @@ export function parseCsvDocument(csv: string): CsvDocumentRow[] {
   return rows;
 }
 
-/**
- * Parses a full CSV document into a list of row objects keyed by the header row.
- * Rows that are empty or have fewer columns than the header are skipped.
- */
-function parseCsv(csv: string): Record<string, string>[] {
-  const rows: Record<string, string>[] = [];
-
-  const lines = splitCsvLines(csv);
-
-  if (lines.length === 0) return rows;
-
-  const headers = parseCsvLine(lines[0].text).map((h) => h.toLowerCase());
-
-  for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].text.trim()) continue;
-    const values = parseCsvLine(lines[i].text);
-    if (values.length < headers.length) continue;
-
-    const row: Record<string, string> = {};
-    headers.forEach((header, index) => {
-      row[header] = values[index] ?? '';
-    });
-    rows.push(row);
-  }
-
-  return rows;
-}
-
 function normalizeAvailability(value: string | undefined): AvailabilityStatus {
   if (!value) return 'unknown';
   const normalized = value.toLowerCase().trim();
@@ -164,7 +138,39 @@ function normalizeAvailability(value: string | undefined): AvailabilityStatus {
   return 'unknown';
 }
 
-function mapCsvRow(row: Record<string, string>, defaultRetailerSlug: string): RawProductData | null {
+/**
+ * One rejected CSV row, with the reason it was dropped (Final 100%,
+ * F-P2-52). `rowNumber` is the 1-based line in the original CSV
+ * (header is line 1); 0 when the caller does not know the line.
+ * Rejections are surfaced via `CsvProvider.getLastLoadRejections()`
+ * and in the load log line — never silently dropped.
+ */
+export interface CsvRowRejection {
+  rowNumber: number;
+  reason: string;
+}
+
+/**
+ * Map one CSV row to a product, or to a rejection WITH A REASON.
+ * (Final 100%, F-P2-52 — the old `mapCsvRow` returned bare `null`
+ * for invalid rows, so the provider silently dropped them with no
+ * reason at provider level; the intake review path surfaces its
+ * own reasons, but a provider-level drop had none.)
+ *
+ * Rejection reasons:
+ * - 'missing name' — no name/title/product_name value. A row
+ *   without a name cannot become a product.
+ * - 'invalid price "<raw>"' — a price value was supplied but is
+ *   not a number (or is negative). The old code stored such rows
+ *   as price 0, which is worse than a rejection: a $0 price is a
+ *   fabricated price. A MISSING price still becomes 0 (existing
+ *   behaviour — price is optional in a CSV feed).
+ */
+export function mapCsvRowWithReason(
+  row: Record<string, string>,
+  defaultRetailerSlug: string,
+  rowNumber = 0
+): { product: RawProductData | null; reason: string | null } {
   const get = (keys: string[]): string | undefined => {
     for (const key of keys) {
       const value = row[key];
@@ -178,10 +184,13 @@ function mapCsvRow(row: Record<string, string>, defaultRetailerSlug: string): Ra
     `csv-${Math.random().toString(36).slice(2)}`;
 
   const name = get(['name', 'title', 'productname', 'product_name']);
-  if (!name) return null;
+  if (!name) return { product: null, reason: 'missing name (no name, title, or product_name value)' };
 
   const priceStr = get(['price', 'saleprice', 'sale_price', 'currentprice', 'current_price']);
   const price = priceStr ? parseFloat(priceStr.replace(/[^0-9.,-]/g, '').replace(',', '.')) : 0;
+  if (priceStr !== undefined && (!Number.isFinite(price) || price < 0)) {
+    return { product: null, reason: `invalid price "${priceStr}" (not a number, or negative)` };
+  }
   const currency = get(['currency', 'currencycode', 'currency_code']) ?? 'USD';
 
   const imagesStr = get(['images', 'image', 'imageurl', 'image_url', 'imageurls']);
@@ -190,21 +199,25 @@ function mapCsvRow(row: Record<string, string>, defaultRetailerSlug: string): Ra
     : undefined;
 
   return {
-    externalId,
-    retailerSlug: get(['retailerslug', 'retailer_slug', 'retailer']) ?? defaultRetailerSlug,
-    name,
-    description: get(['description', 'productdescription', 'product_description']),
-    brand: get(['brand', 'manufacturer']),
-    category: get(['category', 'producttype', 'product_type']),
-    gtin: get(['gtin', 'upc', 'ean', 'isbn']),
-    images: images && images.length > 0 ? images : undefined,
-    price: Number.isFinite(price) ? price : 0,
-    currency,
-    availability: normalizeAvailability(get(['availability', 'stockstatus', 'stock_status', 'instock', 'in_stock'])),
-    url: get(['url', 'link', 'producturl', 'product_url']),
-    raw: row as unknown as Record<string, unknown>,
+    product: {
+      externalId,
+      retailerSlug: get(['retailerslug', 'retailer_slug', 'retailer']) ?? defaultRetailerSlug,
+      name,
+      description: get(['description', 'productdescription', 'product_description']),
+      brand: get(['brand', 'manufacturer']),
+      category: get(['category', 'producttype', 'product_type']),
+      gtin: get(['gtin', 'upc', 'ean', 'isbn']),
+      images: images && images.length > 0 ? images : undefined,
+      price: Number.isFinite(price) ? price : 0,
+      currency,
+      availability: normalizeAvailability(get(['availability', 'stockstatus', 'stock_status', 'instock', 'in_stock'])),
+      url: get(['url', 'link', 'producturl', 'product_url']),
+      raw: row as unknown as Record<string, unknown>,
+    },
+    reason: null,
   };
 }
+
 
 /**
  * Data provider that ingests product data from a CSV string or a CSV file URL.
@@ -220,6 +233,19 @@ export class CsvProvider implements DataProvider {
   private readonly csvUrl: string | undefined;
   private readonly defaultRetailerSlug: string;
   private cachedProducts: RawProductData[] | null = null;
+  /**
+   * Final 100%, F-P2-52 — the rejections from the last load, with
+   * per-row reasons. Empty before any load, and empty when nothing
+   * was rejected. Callers (import summary, admin diagnostics) read
+   * this after loadProducts/search/fetch instead of guessing why
+   * the product count is lower than the row count.
+   */
+  private lastLoadRejections: CsvRowRejection[] = [];
+
+  /** The rejections from the last load (see `lastLoadRejections`). */
+  getLastLoadRejections(): CsvRowRejection[] {
+    return [...this.lastLoadRejections];
+  }
 
   constructor(options: {
     csv?: string;
@@ -296,14 +322,27 @@ export class CsvProvider implements DataProvider {
       throw new ProviderNotConfiguredError('csv', CSV_NOT_CONFIGURED_REASON);
     }
 
-    const rows = parseCsv(csv);
-    const products = rows
-      .map((row) => mapCsvRow(row, this.defaultRetailerSlug))
-      .filter((p): p is RawProductData => p !== null);
+    // Final 100%, F-P2-52 — parse via parseCsvDocument, NOT parseCsv:
+    // parseCsv silently SKIPS rows with fewer columns than the
+    // header, so a short row vanished with no reason at all. The
+    // document parser keeps short rows (missing fields = ''), so
+    // they flow into mapCsvRowWithReason and come back as a named
+    // rejection instead of disappearing.
+    const docRows = parseCsvDocument(csv);
+    const products: RawProductData[] = [];
+    const rejected: CsvRowRejection[] = [];
+    for (const { row, rowNumber } of docRows) {
+      const { product, reason } = mapCsvRowWithReason(row, this.defaultRetailerSlug, rowNumber);
+      if (product) products.push(product);
+      else if (reason) rejected.push({ rowNumber, reason });
+    }
+    this.lastLoadRejections = rejected;
 
     logger.debug('CsvProvider.loadProducts — parsed', {
-      rowCount: rows.length,
+      rowCount: docRows.length,
       productCount: products.length,
+      rejectedCount: rejected.length,
+      rejected: rejected.slice(0, 10),
     });
 
     this.cachedProducts = products;

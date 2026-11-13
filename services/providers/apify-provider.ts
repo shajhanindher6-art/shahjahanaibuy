@@ -126,33 +126,49 @@ export const APIFY_FETCH_TIMEOUT_MS = 10_000;
 
 /**
  * Data provider backed by Apify's Actor run API.
- * Available only when both APIFY_API_TOKEN and APIFY_ACTOR_ID env vars are set.
- * BANNED in practice: the standing no-scraping rule means the vars
- * must stay unset (see APIFY_NOT_CONFIGURED_REASON). The provider
- * stays registered only so the fail-closed path is testable.
+ *
+ * FINAL 100%, F-P1-59 — KILL-SWITCH (hard-fail, 13 Nov 2026). The ban
+ * used to rest entirely on unset env vars: setting APIFY_API_TOKEN +
+ * APIFY_ACTOR_ID in Vercel would have activated scraping with no
+ * code change. That activation surface is now closed in code:
+ * `isAvailable()` returns false UNCONDITIONALLY, the constructor
+ * never reads the env vars, and `runActor` can never reach the
+ * network (its guard throws before any fetch). Setting the vars
+ * does nothing — the provider is dead, not dormant. The class and
+ * its registration stay in place (visible-but-dead) so the ban is
+ * testable and so no caller can mistake "provider missing" for
+ * "provider available": search()/fetch() throw the typed ban error.
+ * `services/provider-config.ts` still warns if the vars are ever
+ * set, so a stray dashboard edit is named in the logs.
  */
 export class ApifyProvider implements DataProvider {
   readonly key = 'apify';
   readonly name = 'Apify Provider';
   readonly category = 'scraping' as const;
 
-  private readonly token: string | undefined;
-  private readonly actorId: string | undefined;
-  private readonly baseUrl: string;
+  // Kill-switch: these are never populated. They exist only so the
+  // (unreachable) runActor guard below keeps compiling exactly as
+  // written — the guard throws before they are ever read.
+  private readonly token: string | undefined = undefined;
+  private readonly actorId: string | undefined = undefined;
+  private readonly baseUrl: string = 'https://api.apify.com/v2';
 
   constructor() {
-    this.token = process.env.APIFY_API_TOKEN;
-    this.actorId = process.env.APIFY_ACTOR_ID;
-    this.baseUrl = process.env.APIFY_API_BASE_URL ?? 'https://api.apify.com/v2';
+    // Deliberately empty: APIFY_API_TOKEN / APIFY_ACTOR_ID are NEVER
+    // read here. See the class comment.
   }
 
+  /**
+   * FINAL 100%, F-P1-59 — hard-fail: always false, regardless of
+   * env. No Vercel env edit can activate this provider.
+   */
   isAvailable(): boolean {
-    return Boolean(this.token && this.actorId);
+    return false;
   }
 
   /** Sections 21–25, Stage B (B2) — Apify is banned, never merely unconfigured. */
   getNotConfiguredReason(): string | null {
-    return this.isAvailable() ? null : APIFY_NOT_CONFIGURED_REASON;
+    return APIFY_NOT_CONFIGURED_REASON;
   }
 
   private async runActor(input: Record<string, unknown>): Promise<ApifyActorItem[]> {

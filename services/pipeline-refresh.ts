@@ -88,6 +88,7 @@ import { processors } from '@/lib/workers/processors';
 import { logger } from '@/lib/config/logger';
 import { logApiError } from '@/lib/api/error-logging';
 import { markProductRefreshed } from '@/services/freshness';
+import { markProductVerified } from '@/services/price-verification';
 import { PUBLISHED_PRODUCT_STATUS } from '@/services/price-verification';
 import type { JobDefinition } from '@/lib/workers/types';
 
@@ -246,6 +247,21 @@ export async function refreshPricesViaPipeline(
           await markProductRefreshed(supabase, productId);
         } catch {
           // Freshness bookkeeping must never fail the product.
+        }
+        // FINAL 100% (F-P0-02): the same live check re-verifies
+        // the PRODUCTS rollup — the processor saved a validated
+        // provider response, so the product itself is 'verified'
+        // as of this run (source 'merchant-feed'). The stamp time
+        // is now: the fetch happened moments ago inside the
+        // processor call above. Best-effort, like the freshness
+        // stamp; 045 unapplied reports columnsMissing.
+        try {
+          await markProductVerified(supabase, productId, {
+            source: 'merchant-feed',
+            verifiedAt: new Date().toISOString(),
+          });
+        } catch {
+          // Verification bookkeeping must never fail the product.
         }
       } else {
         result.failed++;
