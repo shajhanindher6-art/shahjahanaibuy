@@ -35,6 +35,7 @@ import {
   type LocalFirstSearchData,
 } from '@/services/local-first-search';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'search' });
   // Rate limit: 60 requests/min per IP (see docs/rate-limits.md).
@@ -91,7 +92,8 @@ export async function GET(request: NextRequest) {
       fallbackTriggered,
     };
     return apiSuccess(data);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'search', status: 500 });
     return internalError('Failed to perform local-first search');
   }
 }

@@ -9,6 +9,7 @@ import { apiSuccess, internalError } from '@/lib/api/responses';
 import { logApiRequest, requireAdmin, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getAdminAnalytics } from '@/services/admin';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'admin.analytics' });
   // Rate limit: 60 requests/min per IP (see docs/rate-limits.md).
@@ -23,7 +24,8 @@ export async function GET(request: NextRequest) {
     const analytics = await getAdminAnalytics(supabase);
 
     return apiSuccess(analytics, 200);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'admin.analytics', status: 500 });
     return internalError('Failed to fetch admin analytics');
   }
 }

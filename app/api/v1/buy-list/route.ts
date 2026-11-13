@@ -32,6 +32,7 @@ import {
   normalizeQuantity,
 } from '@/lib/buy-list';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -52,6 +53,7 @@ export async function GET(request: NextRequest) {
     }
     return apiSuccess(items, 200, { buyListEnabled: enabled });
   } catch (err) {
+    logApiError(err, { request, route: 'buy-list.get', status: 500 });
     logger.error('[buy-list] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch buy list');
   }
@@ -95,6 +97,7 @@ export async function POST(request: NextRequest) {
     }
     return apiSuccess(result.item, result.deduped ? 200 : 201, { buyListEnabled: true });
   } catch (err) {
+    logApiError(err, { request, route: 'buy-list.post', status: 500 });
     logger.error('[buy-list] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to add buy list item');
   }

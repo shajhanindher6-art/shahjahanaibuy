@@ -14,6 +14,7 @@ import { apiSuccess, badRequest, internalError, notFound, serviceUnavailable } f
 import { logApiRequest, rateLimitResponse, requireAuth } from '@/lib/api/middleware';
 import { isMissingTableError, mapHuntRow } from '@/lib/agent-hunt';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const HUNT_COLUMNS =
@@ -72,7 +73,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       .maybeSingle();
     if (error || !data) return internalError('Failed to update agent hunt');
     return apiSuccess({ hunt: mapHuntRow(data as Record<string, unknown>), huntsEnabled: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'agent.hunts.patch', status: 500 });
     return internalError('Failed to update agent hunt');
   }
 }
@@ -104,7 +106,8 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       .eq('user_id', auth.userId);
     if (error) return internalError('Failed to delete agent hunt');
     return apiSuccess({ deleted: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'agent.hunts.delete', status: 500 });
     return internalError('Failed to delete agent hunt');
   }
 }

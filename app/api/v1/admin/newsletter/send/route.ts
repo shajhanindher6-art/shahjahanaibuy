@@ -44,6 +44,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'admin.newsletter.send' });
+  // Section 19, Phase 9 (§12 #92) — intentionally unwired: sendNewsletterToSubscribers never throws (every failure is a result tuple, audited via recordAdminAction) and its 503s are handled config states, so there is no 5xx to log.
   // Rate limit: 10 requests/min per IP — a send run mails up to
   // 500 people, so this must never be hammerable.
   const limited = await rateLimitResponse(`admin.newsletter.send:${getClientIp(request)}`, 10);

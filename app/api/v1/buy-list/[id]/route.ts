@@ -15,6 +15,7 @@ import {
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { normalizeQuantity, removeBuyListItem, updateBuyListQuantity } from '@/lib/buy-list';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function PATCH(
@@ -39,7 +40,8 @@ export async function PATCH(
     const updated = await updateBuyListQuantity(supabase, auth.userId, params.id, quantity);
     if (!updated) return notFound('Buy list item not found or not owned by user');
     return apiSuccess(updated);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'buy-list.patch', status: 500 });
     return internalError('Failed to update buy list item');
   }
 }
@@ -61,7 +63,8 @@ export async function DELETE(
     const deleted = await removeBuyListItem(supabase, auth.userId, params.id);
     if (!deleted) return notFound('Buy list item not found or not owned by user');
     return apiSuccess({ id: params.id, deleted: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'buy-list.delete', status: 500 });
     return internalError('Failed to remove buy list item');
   }
 }

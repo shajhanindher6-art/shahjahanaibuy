@@ -24,6 +24,7 @@ import { logger } from '@/lib/config/logger';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { isDealVerified, netScore, type CommunityDealRow, type MerchantPriceRow } from '@/services/community-deals';
 
+import { logApiError } from '@/lib/api/error-logging';
 // PostgREST reports a table missing from its schema cache as PGRST205
 // (not Postgres 42P01) on the REST path, so both codes must count as
 // "migration not run yet" — otherwise a missing table surfaces as a
@@ -96,6 +97,7 @@ export async function GET(request: NextRequest) {
     enriched.sort((a, b) => b.netScore - a.netScore || b.created_at.localeCompare(a.created_at));
     return apiSuccess(enriched, 200, { communityEnabled: true });
   } catch (err) {
+    logApiError(err, { request, route: 'community-deals.get', status: 500 });
     logger.error('[community-deals] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch community deals');
   }
@@ -129,6 +131,7 @@ export async function POST(request: NextRequest) {
         const u = new URL(sourceUrl);
         if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('bad protocol');
       } catch {
+        // User input error (422) — not a server error, so not logged to error_log.
         return validationError('sourceUrl must be a valid http(s) URL.');
       }
     }
@@ -156,7 +159,8 @@ export async function POST(request: NextRequest) {
       return internalError('Failed to submit community deal');
     }
     return apiSuccess(data, 201, { communityEnabled: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'community-deals.post', status: 500 });
     return internalError('Failed to submit community deal');
   }
 }

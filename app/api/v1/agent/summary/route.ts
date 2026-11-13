@@ -30,6 +30,7 @@ import {
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { isMissingTableError, mapMemoryRow, mapRuleRow } from '../shared';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 /** Max watched products priced in one summary (rules first, then seen). */
@@ -226,7 +227,8 @@ export async function GET(request: NextRequest) {
       generatedAt: new Date().toISOString(),
       priceBasis: 'Lowest recorded in-stock merchant price — not a live retailer price.',
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'agent.summary', status: 500 });
     return internalError('Failed to build agent summary');
   }
 }

@@ -25,6 +25,7 @@ import {
   badgeForVerifiedDeals,
 } from '@/lib/creator-rewards';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 function isMissingTable(error: { code?: string } | null | undefined): boolean {
@@ -132,7 +133,8 @@ export async function POST(request: NextRequest) {
       { userId: d.user_id, dealId: d.id, pointsAwarded: POINTS_PER_VERIFIED_DEAL, totalPoints: points, verifiedDeals, badge: badgeForVerifiedDeals(verifiedDeals) },
       201
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'creator-rewards.award', status: 500 });
     return internalError('Failed to award points');
   }
 }

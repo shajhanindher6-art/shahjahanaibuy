@@ -28,6 +28,7 @@ import {
   createAlert,
   type CreateAlertInput,
 } from '@/services/alerts';
+import { SIGNIFICANT_DROP_THRESHOLD_PCT } from '@/services/alert-triggers';
 
 /**
  * Section 18, Phase 2, item 10 (audit §1 #13) — create-alert body
@@ -42,7 +43,11 @@ import {
 const createAlertSchema = z.object({
   productSlug: z.string().min(1).optional(),
   productId: z.string().min(1).optional(),
-  alertType: z.enum(['price_drop', 'back_in_stock', 'deal']),
+  // Section 19, Phase 6 (§12 #61/#62/#64): significant_drop,
+  // trend, opportunity. conditionValue is the drop-% threshold
+  // for significant_drop (default 10 when omitted — applied
+  // below); unused for trend / opportunity.
+  alertType: z.enum(['price_drop', 'back_in_stock', 'deal', 'significant_drop', 'trend', 'opportunity']),
   conditionValue: z.number().optional(),
   channel: z.enum(['email', 'push', 'both']).optional(),
 });
@@ -50,6 +55,7 @@ import { BILLING_URL, getTierForUserId, getUpgradeTier } from '@/lib/api-quota';
 import { getMaxAlerts, getTier } from '@/lib/tiers';
 import { getCachedProductBySlug } from '@/services/products';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'alerts' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -70,7 +76,8 @@ export async function GET(request: NextRequest) {
       maxAlerts: getMaxAlerts(tier),
       alertCount: count < 0 ? alerts.length : count,
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'alerts.get', status: 500 });
     return internalError('Failed to fetch alerts');
   }
 }
@@ -140,10 +147,15 @@ export async function POST(request: NextRequest) {
 
     // Section 18, Phase 2, item 10: conditionValue/channel are
     // already validated by createAlertSchema above — no re-check.
+    // Section 19, Phase 6 (§12 #61): a significant_drop alert
+    // without an explicit threshold means "10% or more".
     const input: CreateAlertInput = {
       productId: resolvedProductId,
       alertType,
-      conditionValue,
+      conditionValue:
+        alertType === 'significant_drop' && conditionValue === undefined
+          ? SIGNIFICANT_DROP_THRESHOLD_PCT
+          : conditionValue,
       channel,
     };
 
@@ -154,7 +166,8 @@ export async function POST(request: NextRequest) {
     }
 
     return apiSuccess(alert, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'alerts.post', status: 500 });
     return internalError('Failed to create alert');
   }
 }

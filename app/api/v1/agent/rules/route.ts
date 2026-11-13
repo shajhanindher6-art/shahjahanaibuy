@@ -24,6 +24,7 @@ import { createAlert } from '@/services/alerts';
 import { getCachedProductBySlug } from '@/services/products';
 import { isMissingTableError, mapRuleRow } from '../shared';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const RULE_COLUMNS =
@@ -56,7 +57,8 @@ export async function GET(request: NextRequest) {
       rules: (data ?? []).map((row) => mapRuleRow(row as Record<string, unknown>)),
       setupRequired: false,
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'agent.rules.get', status: 500 });
     return internalError('Failed to fetch agent rules');
   }
 }
@@ -188,7 +190,8 @@ export async function POST(request: NextRequest) {
       },
       201
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'agent.rules.post', status: 500 });
     return internalError('Failed to create agent rule');
   }
 }

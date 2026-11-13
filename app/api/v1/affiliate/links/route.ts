@@ -8,6 +8,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -40,7 +41,8 @@ export async function GET(request: NextRequest) {
     }
 
     return apiSuccess(data ?? []);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'affiliate.links', status: 500 });
     return internalError('Failed to fetch affiliate links');
   }
 }

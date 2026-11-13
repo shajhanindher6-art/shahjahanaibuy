@@ -9,6 +9,7 @@ import { apiSuccess, internalError } from '@/lib/api/responses';
 import { logApiRequest, requireAdmin, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getAdminAuditLogs } from '@/services/admin';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'admin.audit-logs' });
   // Rate limit: 60 requests/min per IP (see docs/rate-limits.md).
@@ -26,7 +27,8 @@ export async function GET(request: NextRequest) {
     const logs = await getAdminAuditLogs(supabase, limit);
 
     return apiSuccess(logs, 200);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'admin.audit-logs', status: 500 });
     return internalError('Failed to fetch audit logs');
   }
 }

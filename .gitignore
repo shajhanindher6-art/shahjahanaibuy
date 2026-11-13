@@ -7,6 +7,8 @@
 
 # testing
 /coverage
+# Full vitest logs from `npm run test:ci-log` (Section 19, §12 #90)
+/logs/
 
 # next.js
 /.next/

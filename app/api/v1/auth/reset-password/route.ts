@@ -35,6 +35,7 @@ const resetPasswordSchema = z.object({
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'auth.reset-password' });
+  // Section 19, Phase 9 (§12 #92) — intentionally unwired: Supabase failures are logger.warn'd server-side and the response is deliberately the same generic success (anti-enumeration); the endpoint never returns a 5xx.
   // Rate limit: 5 reset requests/min per IP — reset emails are
   // cheap to abuse and Supabase's own limits are dashboard config
   // (audit §1 #11: status maloom nahi), so this is the app-level

@@ -55,6 +55,7 @@ import {
 import { validateLocalFirstQuery } from '@/services/local-first-search';
 import { loadCatalogContext } from '@/app/api/v1/admin/intake/route';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const MAX_ITEMS = 10;
@@ -189,7 +190,8 @@ export async function POST(request: NextRequest) {
   let context;
   try {
     context = await loadCatalogContext(service);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'admin.ebay.preview', status: 500 });
     return internalError('Failed to load catalog data for validation');
   }
 

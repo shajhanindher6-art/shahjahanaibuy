@@ -2,8 +2,8 @@
 
 **Base URL:** `https://shahjahanaibuy-b1zp.vercel.app`
 **Version:** v1
-**Last updated:** 2026-11-12 (Section 17, Stage I)
-**Coverage:** 181 route files / 244 handlers under `app/api/`, counted from the route files on 2026-11-12. The route table below is generated, not hand-typed — regenerate it with the Section 17 Stage I generator (`docs/openapi.json` is generated from the same source).
+**Last updated:** 2026-11-13 (Section 19, Phase 9)
+**Coverage:** 187 route files / 253 handlers under `app/api/`, counted from the route files on 2026-11-13 (Section 19, Phase 9). The route table below is generated, not hand-typed — regenerate it from `app/api/**/route.ts` (`docs/openapi.json` is generated from the same source).
 **Machine-readable spec:** `docs/openapi.json` (OpenAPI 3.0.3 — paths + methods only; request/response schemas are not yet machine-generated).
 
 > Honest scope note: this document lists every route that exists in code. It does **not** mean every route works live today — several depend on owner-gated configuration (see "Fail-closed behaviour" below) or on database migrations that are not yet applied live. Where a route is known to degrade, it is called out.
@@ -79,7 +79,7 @@ All API routes return a consistent JSON envelope:
 
 ## Rate limiting
 
-All 181 route files call `rateLimitResponse` (enforced by `tests/rate-limit-coverage.test.ts`). Upstash Redis first when `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set; otherwise a per-instance in-memory bucket (fail-open by design). Exceeding the limit returns `429 RATE_LIMITED`. Per-route limits vary — see `docs/rate-limits.md` for the per-route table.
+All 187 route files call `rateLimitResponse` (enforced by `tests/rate-limit-coverage.test.ts`). Upstash Redis first when `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set; otherwise a per-instance in-memory bucket (fail-open by design). Exceeding the limit returns `429 RATE_LIMITED`. Per-route limits vary — see `docs/rate-limits.md` for the per-route table.
 
 ---
 
@@ -175,9 +175,9 @@ Natural-language product search. Body: `{ "query": "string", "pageSize": 10 }`.
 
 ---
 
-## Complete route table (181 routes, 244 handlers)
+## Complete route table (187 routes, 253 handlers)
 
-Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported handlers in each file.
+Generated from `app/api/**/route.ts` on 2026-11-13 (Section 19, Phase 9). Methods are the exported handlers in each file, in file order. Paths sort with `{param}` segments before literals, and a longer path before the shorter path it extends.
 
 ### `search`
 
@@ -198,17 +198,49 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 | Method(s) | Path |
 |---|---|
 | GET | `/api/v1/admin/affiliate-clicks` |
+| GET | `/api/v1/admin/ai` |
 | GET | `/api/v1/admin/analytics` |
 | GET | `/api/v1/admin/audit-logs` |
-| PATCH | `/api/v1/admin/community-deals/{id}` |
 | GET | `/api/v1/admin/community-deals` |
-| POST | `/api/v1/admin/ebay/preview` |
 | POST | `/api/v1/admin/intake` |
-| POST | `/api/v1/admin/merchants/{slug}/verify` |
-| POST | `/api/v1/admin/newsletter/send` |
 | POST | `/api/v1/admin/sentry-test` |
 | GET | `/api/v1/admin/users` |
 | POST | `/api/v1/admin/visual-search-backfill` |
+
+
+### `v1/admin/ai`
+
+| Method(s) | Path |
+|---|---|
+| POST | `/api/v1/admin/ai/jobs` |
+
+
+### `v1/admin/community-deals`
+
+| Method(s) | Path |
+|---|---|
+| PATCH | `/api/v1/admin/community-deals/{id}` |
+
+
+### `v1/admin/ebay`
+
+| Method(s) | Path |
+|---|---|
+| POST | `/api/v1/admin/ebay/preview` |
+
+
+### `v1/admin/merchants/{slug}`
+
+| Method(s) | Path |
+|---|---|
+| POST | `/api/v1/admin/merchants/{slug}/verify` |
+
+
+### `v1/admin/newsletter`
+
+| Method(s) | Path |
+|---|---|
+| POST | `/api/v1/admin/newsletter/send` |
 
 
 ### `v1/affiliate`
@@ -225,12 +257,24 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
-| PATCH, DELETE | `/api/v1/agent/hunts/{id}` |
 | GET, POST | `/api/v1/agent/hunts` |
 | GET, PUT, DELETE | `/api/v1/agent/memory` |
-| PATCH, DELETE | `/api/v1/agent/rules/{id}` |
 | GET, POST | `/api/v1/agent/rules` |
 | GET | `/api/v1/agent/summary` |
+
+
+### `v1/agent/hunts`
+
+| Method(s) | Path |
+|---|---|
+| PATCH, DELETE | `/api/v1/agent/hunts/{id}` |
+
+
+### `v1/agent/rules`
+
+| Method(s) | Path |
+|---|---|
+| PATCH, DELETE | `/api/v1/agent/rules/{id}` |
 
 
 ### `v1/ai-search`
@@ -251,28 +295,41 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
+| GET, POST | `/api/v1/alerts` |
 | PATCH, DELETE | `/api/v1/alerts/{id}` |
 | POST | `/api/v1/alerts/check` |
 | POST | `/api/v1/alerts/guest` |
-| GET, POST | `/api/v1/alerts/guest/unsubscribe` |
 | GET | `/api/v1/alerts/history` |
-| GET, POST | `/api/v1/alerts` |
+
+
+### `v1/alerts/guest`
+
+| Method(s) | Path |
+|---|---|
+| GET, POST | `/api/v1/alerts/guest/unsubscribe` |
 
 
 ### `v1/analytics`
 
 | Method(s) | Path |
 |---|---|
-| POST | `/api/v1/analytics/events` |
 | GET | `/api/v1/analytics` |
+| POST | `/api/v1/analytics/events` |
+
+
+### `v1/auth`
+
+| Method(s) | Path |
+|---|---|
+| POST | `/api/v1/auth/reset-password` |
 
 
 ### `v1/brands`
 
 | Method(s) | Path |
 |---|---|
-| GET | `/api/v1/brands/{slug}` |
 | GET | `/api/v1/brands` |
+| GET | `/api/v1/brands/{slug}` |
 
 
 ### `v1/bundles`
@@ -286,8 +343,8 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
-| PATCH, DELETE | `/api/v1/buy-list/{id}` |
 | GET, POST | `/api/v1/buy-list` |
+| PATCH, DELETE | `/api/v1/buy-list/{id}` |
 
 
 ### `v1/cashback`
@@ -301,8 +358,8 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
-| GET | `/api/v1/categories/{slug}` |
 | GET | `/api/v1/categories` |
+| GET | `/api/v1/categories/{slug}` |
 
 
 ### `v1/category-inflation`
@@ -324,8 +381,14 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
-| POST | `/api/v1/community-deals/{id}/vote` |
 | GET, POST | `/api/v1/community-deals` |
+
+
+### `v1/community-deals/{id}`
+
+| Method(s) | Path |
+|---|---|
+| POST | `/api/v1/community-deals/{id}/vote` |
 
 
 ### `v1/comparison`
@@ -394,8 +457,8 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
-| GET | `/api/v1/deals/ranked` |
 | GET | `/api/v1/deals` |
+| GET | `/api/v1/deals/ranked` |
 
 
 ### `v1/digests`
@@ -417,9 +480,9 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
+| GET, POST | `/api/v1/fact-check` |
 | GET, PATCH | `/api/v1/fact-check/{id}` |
 | GET | `/api/v1/fact-check/meaning` |
-| GET, POST | `/api/v1/fact-check` |
 
 
 ### `v1/feature-flags`
@@ -433,8 +496,14 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
-| GET | `/api/v1/forecast/{productId}/backtest` |
 | GET | `/api/v1/forecast/{productId}` |
+
+
+### `v1/forecast/{productId}`
+
+| Method(s) | Path |
+|---|---|
+| GET | `/api/v1/forecast/{productId}/backtest` |
 
 
 ### `v1/fx-rates`
@@ -469,19 +538,25 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
-| GET | `/api/v1/live-sessions/{slug}` |
 | GET, POST | `/api/v1/live-sessions` |
+| GET | `/api/v1/live-sessions/{slug}` |
 
 
 ### `v1/merchants`
 
 | Method(s) | Path |
 |---|---|
-| GET, POST | `/api/v1/merchants/{slug}/accuracy` |
-| GET | `/api/v1/merchants/{slug}` |
-| GET | `/api/v1/merchants/{slug}/trust` |
 | GET | `/api/v1/merchants` |
+| GET | `/api/v1/merchants/{slug}` |
 | GET | `/api/v1/merchants/verified` |
+
+
+### `v1/merchants/{slug}`
+
+| Method(s) | Path |
+|---|---|
+| GET, POST | `/api/v1/merchants/{slug}/accuracy` |
+| GET | `/api/v1/merchants/{slug}/trust` |
 
 
 ### `v1/mobile-app`
@@ -495,12 +570,18 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
+| GET | `/api/v1/monitoring` |
 | GET | `/api/v1/monitoring/incidents` |
 | GET | `/api/v1/monitoring/providers` |
-| GET | `/api/v1/monitoring` |
 | GET | `/api/v1/monitoring/sync-history` |
-| POST | `/api/v1/monitoring/uptime/check` |
 | GET | `/api/v1/monitoring/uptime` |
+
+
+### `v1/monitoring/uptime`
+
+| Method(s) | Path |
+|---|---|
+| POST | `/api/v1/monitoring/uptime/check` |
 
 
 ### `v1/newsletter`
@@ -516,28 +597,40 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
+| GET | `/api/v1/notifications` |
 | PATCH | `/api/v1/notifications/{id}` |
 | POST | `/api/v1/notifications/digest` |
 | POST | `/api/v1/notifications/process` |
 | POST | `/api/v1/notifications/read-all` |
-| GET | `/api/v1/notifications` |
 
 
 ### `v1/platforms`
 
 | Method(s) | Path |
 |---|---|
-| GET | `/api/v1/platforms/ebay/search` |
 | GET | `/api/v1/platforms` |
+
+
+### `v1/platforms/ebay`
+
+| Method(s) | Path |
+|---|---|
+| GET | `/api/v1/platforms/ebay/search` |
 
 
 ### `v1/pools`
 
 | Method(s) | Path |
 |---|---|
-| POST | `/api/v1/pools/{id}/join` |
-| GET | `/api/v1/pools/{id}` |
 | GET, POST | `/api/v1/pools` |
+| GET | `/api/v1/pools/{id}` |
+
+
+### `v1/pools/{id}`
+
+| Method(s) | Path |
+|---|---|
+| POST | `/api/v1/pools/{id}/join` |
 
 
 ### `v1/predictions`
@@ -567,16 +660,16 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
-| GET | `/api/v1/price-index/export` |
 | GET | `/api/v1/price-index` |
+| GET | `/api/v1/price-index/export` |
 
 
 ### `v1/price-protection`
 
 | Method(s) | Path |
 |---|---|
-| PATCH, DELETE | `/api/v1/price-protection/{id}` |
 | GET, POST | `/api/v1/price-protection` |
+| PATCH, DELETE | `/api/v1/price-protection/{id}` |
 
 
 ### `v1/prices`
@@ -597,6 +690,14 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
+| GET | `/api/v1/products` |
+| GET | `/api/v1/products/{slug}` |
+
+
+### `v1/products/{slug}`
+
+| Method(s) | Path |
+|---|---|
 | GET | `/api/v1/products/{slug}/budget-alternative` |
 | GET | `/api/v1/products/{slug}/deals` |
 | GET | `/api/v1/products/{slug}/merchants` |
@@ -604,9 +705,7 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 | GET, POST, PATCH | `/api/v1/products/{slug}/qa` |
 | GET | `/api/v1/products/{slug}/review-summary` |
 | GET, POST | `/api/v1/products/{slug}/reviews` |
-| GET | `/api/v1/products/{slug}` |
 | GET | `/api/v1/products/{slug}/similar` |
-| GET | `/api/v1/products` |
 
 
 ### `v1/public`
@@ -614,11 +713,23 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 | Method(s) | Path |
 |---|---|
 | GET | `/api/v1/public/deals` |
-| DELETE | `/api/v1/public/keys/{keyId}` |
 | GET, POST | `/api/v1/public/keys` |
 | GET | `/api/v1/public/prices` |
-| GET | `/api/v1/public/products/{slug}` |
 | GET | `/api/v1/public/products` |
+
+
+### `v1/public/keys`
+
+| Method(s) | Path |
+|---|---|
+| DELETE | `/api/v1/public/keys/{keyId}` |
+
+
+### `v1/public/products`
+
+| Method(s) | Path |
+|---|---|
+| GET | `/api/v1/public/products/{slug}` |
 
 
 ### `v1/push`
@@ -635,15 +746,18 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 | Method(s) | Path |
 |---|---|
 | GET | `/api/v1/recommendations` |
+| POST | `/api/v1/recommendations/feedback` |
+| GET, PUT | `/api/v1/recommendations/personalization` |
+| GET, POST, DELETE | `/api/v1/recommendations/saved` |
 
 
 ### `v1/referrals`
 
 | Method(s) | Path |
 |---|---|
+| POST, GET | `/api/v1/referrals` |
 | POST | `/api/v1/referrals/attribute` |
 | POST | `/api/v1/referrals/click` |
-| POST, GET | `/api/v1/referrals` |
 
 
 ### `v1/retailers`
@@ -720,10 +834,10 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
+| GET, POST | `/api/v1/subscriptions` |
 | POST | `/api/v1/subscriptions/checkout` |
 | GET | `/api/v1/subscriptions/history` |
 | POST | `/api/v1/subscriptions/portal` |
-| GET, POST | `/api/v1/subscriptions` |
 
 
 ### `v1/tech-budget`
@@ -749,9 +863,15 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 | GET, POST | `/api/v1/tools/planner` |
 | GET | `/api/v1/tools/price-history` |
 | GET, POST | `/api/v1/tools/smart-home` |
-| POST | `/api/v1/tools/smart-home/webhook` |
 | GET | `/api/v1/tools/trade-in` |
 | GET, POST | `/api/v1/tools/warranty-claims` |
+
+
+### `v1/tools/smart-home`
+
+| Method(s) | Path |
+|---|---|
+| POST | `/api/v1/tools/smart-home/webhook` |
 
 
 ### `v1/tracking`
@@ -772,8 +892,8 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
-| PATCH, DELETE | `/api/v1/vault/{id}` |
 | GET, POST | `/api/v1/vault` |
+| PATCH, DELETE | `/api/v1/vault/{id}` |
 
 
 ### `v1/visual-search`
@@ -794,19 +914,37 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 
 | Method(s) | Path |
 |---|---|
-| POST | `/api/v1/wishlist-polls/{id}/vote` |
 | GET, POST | `/api/v1/wishlist-polls` |
+
+
+### `v1/wishlist-polls/{id}`
+
+| Method(s) | Path |
+|---|---|
+| POST | `/api/v1/wishlist-polls/{id}/vote` |
 
 
 ### `v1/wishlists`
 
 | Method(s) | Path |
 |---|---|
+| GET, POST | `/api/v1/wishlists` |
+| GET, PATCH, DELETE | `/api/v1/wishlists/{id}` |
+
+
+### `v1/wishlists/{id}`
+
+| Method(s) | Path |
+|---|---|
+| GET, POST | `/api/v1/wishlists/{id}/items` |
+
+
+### `v1/wishlists/{id}/items`
+
+| Method(s) | Path |
+|---|---|
 | DELETE | `/api/v1/wishlists/{id}/items/{itemId}` |
 | GET, POST | `/api/v1/wishlists/{id}/items/external` |
-| GET, POST | `/api/v1/wishlists/{id}/items` |
-| GET, PATCH, DELETE | `/api/v1/wishlists/{id}` |
-| GET, POST | `/api/v1/wishlists` |
 
 
 ### `webhooks/stripe`
@@ -815,12 +953,9 @@ Generated from `app/api/**/route.ts` on 2026-11-12. Methods are the exported han
 |---|---|
 | POST | `/api/webhooks/stripe` |
 
-
----
-
 ## What this doc does not cover
 
-- **Page routes (118 `page.tsx` files)** — see `project-summary.md` and the in-app `/docs` page.
+- **Page routes (122 `page.tsx` files)** — see `project-summary.md` and the in-app `/docs` page.
 - **The 36 AI tools** — see `app/tools/page.tsx` and `project-summary.md`.
-- **`/api-docs` page** — covers 7 of 181 routes; this document supersedes it for API reference.
+- **`/api-docs` page** — covers 7 of 187 routes; this document supersedes it for API reference.
 - **Request/response schemas** — not yet machine-generated. `docs/openapi.json` lists paths and methods only.

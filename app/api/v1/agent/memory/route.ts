@@ -25,6 +25,7 @@ import {
 } from '@/lib/agent-memory';
 import { isMissingTableError, mapMemoryRow } from '../shared';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const MEMORY_COLUMNS =
@@ -55,7 +56,8 @@ export async function GET(request: NextRequest) {
     }
     if (!data) return apiSuccess({ memory: null, setupRequired: false });
     return apiSuccess({ memory: mapMemoryRow(data as Record<string, unknown>), setupRequired: false });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'agent.memory.get', status: 500 });
     return internalError('Failed to fetch agent memory');
   }
 }
@@ -155,7 +157,8 @@ export async function PUT(request: NextRequest) {
       return internalError('Failed to update agent memory');
     }
     return apiSuccess({ memory: mapMemoryRow(data as Record<string, unknown>) }, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'agent.memory.put', status: 500 });
     return internalError('Failed to update agent memory');
   }
 }
@@ -179,7 +182,8 @@ export async function DELETE(request: NextRequest) {
       return internalError('Failed to delete agent memory');
     }
     return apiSuccess({ deleted: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'agent.memory.delete', status: 500 });
     return internalError('Failed to delete agent memory');
   }
 }

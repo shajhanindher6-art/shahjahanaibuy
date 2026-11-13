@@ -7,6 +7,7 @@ import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import { getCachedComparison } from '@/services/ai-comparison';
 import {
   buildGeoAffiliateUrl,
@@ -14,8 +15,13 @@ import {
   resolveGeoCountry,
 } from '@/services/affiliate-geo';
 
+// Section 19, Phase 1 (§12 #10) — expensive inline AI work runs under
+// maxDuration 60 (matching the 5 cron routes), not the platform default.
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'comparison' });
+  const startedAt = Date.now();
 
   // Public AI comparison is read-only compute; cap per IP.
   // Redis-backed when Upstash is configured, in-memory fallback otherwise.
@@ -71,7 +77,8 @@ export async function POST(request: NextRequest) {
     return apiSuccess(withAffiliateLinks, 200, {
       affiliateEnabled: isGeoAffiliateEnabled(),
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'comparison', status: 500, startedAt });
     return internalError('Failed to generate product comparison');
   }
 }

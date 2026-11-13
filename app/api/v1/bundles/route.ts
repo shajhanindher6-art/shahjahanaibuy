@@ -28,6 +28,7 @@ import {
   type BundleCandidate,
 } from '@/services/bundle-allocator';
 
+import { logApiError } from '@/lib/api/error-logging';
 // Live DB data must never be served from a stale edge cache.
 export const dynamic = 'force-dynamic';
 
@@ -175,7 +176,8 @@ export async function GET(request: NextRequest) {
       ...result,
       availableCategories,
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'bundles', status: 500 });
     return internalError('Failed to build a bundle');
   }
 }

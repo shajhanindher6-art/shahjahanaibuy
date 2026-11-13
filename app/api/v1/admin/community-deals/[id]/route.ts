@@ -31,6 +31,7 @@ import {
 import { logApiRequest, requireAdmin, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { recordAdminAction } from '@/services/admin';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const DEAL_COLUMNS =
@@ -99,7 +100,8 @@ export async function PATCH(
     // never fails the admin action itself.
     await recordAdminAction(service, admin.userId, 'community_deal_moderate', 'community_deal', params.id, { action, ...patchFor(action as ModerationAction) }, getClientIp(request));
     return apiSuccess(data);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'admin.community-deals', status: 500 });
     return internalError('Failed to moderate community deal');
   }
 }

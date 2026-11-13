@@ -9,6 +9,7 @@ import { apiSuccess, notFound, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getBrandBySlug } from '@/services/catalog';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(
   request: NextRequest,
   { params }: { params: { slug: string } }
@@ -27,7 +28,8 @@ export async function GET(
     }
 
     return apiSuccess(brand);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'brands', status: 500 });
     return internalError('Failed to fetch brand');
   }
 }

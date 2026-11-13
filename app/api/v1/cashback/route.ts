@@ -9,6 +9,7 @@ import { apiSuccess, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getCashbackOffers } from '@/services/commerce';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'cashback' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -37,7 +38,8 @@ export async function GET(request: NextRequest) {
     const totalPages = Math.ceil(total / pageSize);
 
     return apiSuccess(paged, 200, { page, pageSize, total, totalPages });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'cashback', status: 500 });
     return internalError('Failed to fetch cashback offers');
   }
 }

@@ -1,6 +1,6 @@
 # QA REPORT — SmartBuy AI
 
-> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. Its test counts are stale: it reports 99 tests PASS; the verified suite on 12 Nov 2026 is **216 files / 2,685 tests, 100% PASS** (press-counts JSON says 2,685/216 — matching). Do not cite it as current QA status. Superseded by: `project-summary.md` (Verification status) and `lib/generated/press-counts.json`.
+> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. Its test counts are stale: it reports 99 tests PASS; the verified suite on 13 Nov 2026 is **286 files / 3,425 tests, 100% PASS** (press-counts JSON says 3,425/286 — matching). Do not cite it as current QA status. Superseded by: `project-summary.md` (Verification status) and `lib/generated/press-counts.json`.
 
 **Date:** 2026-07-12  
 **Phase:** 6 — Final Go Live & Deployment

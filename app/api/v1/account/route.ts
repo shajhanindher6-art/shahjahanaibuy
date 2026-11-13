@@ -28,6 +28,7 @@ import {
   isValidDeleteConfirmation,
 } from '@/lib/account-deletion';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function DELETE(request: NextRequest) {
@@ -118,7 +119,8 @@ export async function DELETE(request: NextRequest) {
       skippedTables,
       note: 'Guest (browser-token) push rows and aggregate referral-click counts are not linked to your account and were not deleted.',
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'account', status: 500 });
     return internalError('Account deletion failed. Nothing further was deleted after the failure.');
   }
 }

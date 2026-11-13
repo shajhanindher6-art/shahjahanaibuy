@@ -19,6 +19,7 @@ import {
   type UpdateAlertInput,
 } from '@/services/alerts';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -53,7 +54,8 @@ export async function PATCH(
     }
 
     return apiSuccess(updated);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'alerts.patch', status: 500 });
     return internalError('Failed to update alert');
   }
 }
@@ -79,7 +81,8 @@ export async function DELETE(
     }
 
     return apiSuccess({ id: params.id, deleted: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'alerts.delete', status: 500 });
     return internalError('Failed to delete alert');
   }
 }

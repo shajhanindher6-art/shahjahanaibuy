@@ -48,6 +48,7 @@ function knownStoreHosts(): Set<string> {
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'affiliate.transform' });
+  // Section 19, Phase 9 (§12 #92) — intentionally unwired: pure sync URL transform, no DB/IO that can throw; bad input is a 4xx (unlogged by design).
 
   // Pure URL transform, no DB write — still cap per IP so the
   // batch endpoint cannot be used as a free proxy loop.

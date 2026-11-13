@@ -9,6 +9,7 @@ import { apiSuccess, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getCategoryTree } from '@/services/catalog';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'categories' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -20,7 +21,8 @@ export async function GET(request: NextRequest) {
     const tree = await getCategoryTree(supabase);
 
     return apiSuccess(tree);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'categories', status: 500 });
     return internalError('Failed to fetch category tree');
   }
 }

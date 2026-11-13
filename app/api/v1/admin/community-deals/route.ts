@@ -21,6 +21,7 @@ import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { apiSuccess, internalError, serviceUnavailable } from '@/lib/api/responses';
 import { logApiRequest, requireAdmin, rateLimitResponse } from '@/lib/api/middleware';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const DEAL_COLUMNS =
@@ -59,7 +60,8 @@ export async function GET(request: NextRequest) {
       return internalError('Failed to fetch community deals');
     }
     return apiSuccess(data ?? []);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'admin.community-deals', status: 500 });
     return internalError('Failed to fetch community deals');
   }
 }

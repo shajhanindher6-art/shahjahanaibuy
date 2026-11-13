@@ -23,6 +23,7 @@ import {
 } from '@/lib/api/middleware';
 import { isValidEmail } from '@/lib/local-alerts';
 
+import { logApiError } from '@/lib/api/error-logging';
 const VALID_TYPES = ['price_drop', 'back_in_stock', 'deal'] as const;
 
 export async function POST(request: NextRequest) {
@@ -106,7 +107,8 @@ export async function POST(request: NextRequest) {
       },
       201
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'alerts.guest', status: 500 });
     return internalError('Failed to save the email alert');
   }
 }

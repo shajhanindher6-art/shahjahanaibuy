@@ -33,6 +33,7 @@ import {
 } from '@/lib/agent-hunt';
 import { isMissingTableError as isMissingAgentTable, mapMemoryRow } from '../shared';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const HUNT_COLUMNS =
@@ -103,7 +104,8 @@ export async function GET(request: NextRequest) {
       matches: (matchesData ?? []).map((row) => mapHuntMatchRow(row as Record<string, unknown>, productById)),
       huntsEnabled: true,
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'agent.hunts.get', status: 500 });
     return internalError('Failed to fetch agent hunts');
   }
 }
@@ -182,7 +184,8 @@ export async function POST(request: NextRequest) {
       return internalError('Failed to create agent hunt');
     }
     return apiSuccess({ hunt: mapHuntRow(data as Record<string, unknown>), huntsEnabled: true }, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'agent.hunts.post', status: 500 });
     return internalError('Failed to create agent hunt');
   }
 }

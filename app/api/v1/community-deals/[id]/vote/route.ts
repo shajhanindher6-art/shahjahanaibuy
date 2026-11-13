@@ -14,6 +14,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, internalError, serviceUnavailable, validationError } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 
+import { logApiError } from '@/lib/api/error-logging';
 function isMissingTable(error: { code?: string } | null | undefined): boolean {
   return error?.code === '42P01';
 }
@@ -61,7 +62,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return internalError('Failed to save vote');
     }
     return apiSuccess({ dealId: params.id, value });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'community-deals.vote', status: 500 });
     return internalError('Failed to save vote');
   }
 }

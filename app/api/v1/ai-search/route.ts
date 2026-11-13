@@ -5,8 +5,9 @@
 
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
+import { apiSuccess, badRequest, internalError, rateLimited } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import {
   getCachedAISearch,
   recordSearch,
@@ -14,14 +15,48 @@ import {
   type AISearchOptions,
   type AISearchSortKey,
 } from '@/services/ai-search';
-import { searchWebProducts, type WebSearchResult } from '@/services/external-search';
+// Section 19, Phase 1 (§12 #1, #4, #7, #13) — the web leg runs
+// through the AI engine (SerpAPI provider + daily budget); the
+// anon cap and per-user quota come from the engine's usage module.
+import { getAiEngine } from '@/services/ai-engine';
+import {
+  AI_SEARCH_ANON_PER_MIN,
+  checkAiUserQuota,
+} from '@/services/ai-engine/usage';
+import { type WebSearchOutcome, type WebSearchResult } from '@/services/external-search';
 import type { SearchFilters } from '@/types/ai';
+
+// Section 19, Phase 1 (§12 #10) — expensive inline AI work runs under
+// maxDuration 60 (matching the 5 cron routes), not the platform default.
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'ai-search' });
-  // Rate limit: 20 requests/min per IP (see docs/rate-limits.md).
-  const limited = await rateLimitResponse(`ai-search:${getClientIp(request)}`, 20);
+  const startedAt = Date.now();
+  // Rate limit: 10 requests/min per IP (see docs/rate-limits.md).
+  // Section 19, Phase 1 (§12 #7): tightened from 20/min — this
+  // route can spend SerpAPI free quota (~100–250 searches/month),
+  // and the 24h/7d cache is per-query, so 20 distinct queries/min
+  // could exhaust a month's quota in minutes. The global daily
+  // SerpAPI budget (5 live calls/day) is the second line of defence.
+  const limited = await rateLimitResponse(`ai-search:${getClientIp(request)}`, AI_SEARCH_ANON_PER_MIN);
   if (limited) return limited;
+
+  // Section 19, Phase 1 (§12 #13) — per-user AI quota for
+  // signed-in users (300 AI calls/day across AI routes, in-memory).
+  // Anonymous users keep the per-IP limit above as their floor.
+  // Resolved here (not after the search) so an over-quota user is
+  // stopped before any work — including provider quota — is spent.
+  // The same `auth` is reused below for recordSearch.
+  const auth = await requireAuth(request);
+  if (!('error' in auth)) {
+    const quota = checkAiUserQuota(auth.userId);
+    if (!quota.allowed) {
+      return rateLimited('Daily AI usage limit reached. Try again tomorrow.', {
+        resetAt: quota.resetAt,
+      });
+    }
+  }
 
   try {
     const body = await request.json();
@@ -76,6 +111,12 @@ export async function POST(request: NextRequest) {
     // invented — null when the age is unknown.
     let webFromCache = false;
     let webFetchedAt: string | null = null;
+    // Section 19, Phase 1 (§12 #7) — true when the daily SerpAPI
+    // budget was exhausted, so the web leg was skipped and only
+    // catalog results are served. The search page reads this to
+    // show "Web results unavailable today — showing catalog
+    // results" instead of silently serving catalog-only.
+    let webBudgetExhausted = false;
     const catalogEmpty = result.results.length === 0 && result.total === 0;
     if (catalogEmpty || includeWeb === true) {
       // Effective budget for the web filter: an explicit filter
@@ -83,15 +124,35 @@ export async function POST(request: NextRequest) {
       // budget. E.g. "under 20K PKR" passes 71 here, so SerpAPI
       // rows above $71 are dropped instead of showing $500+ phones.
       const effectiveBudget = options.filters?.budgetMax ?? result.parsedIntent.budget;
-      const web = await searchWebProducts(
-        supabase,
-        searchQuery,
-        typeof pageSize === 'number' ? pageSize : 10,
-        { maxPriceUsd: effectiveBudget }
-      );
+      // Section 19, Phase 1 (§12 #1, #4) — the web leg runs
+      // through the AI engine's SerpAPI provider (fallback chain
+      // + daily budget + usage/latency tracking live there). No
+      // provider available (no key configured) throws
+      // NoAiProviderAvailableError — caught here and answered with
+      // the same disabled outcome the direct call used to return,
+      // so the search behaves exactly as before without a key.
+      let web: WebSearchOutcome;
+      try {
+        const invoked = await getAiEngine().invoke<WebSearchOutcome>('web-search', {
+          supabase,
+          query: searchQuery,
+          limit: typeof pageSize === 'number' ? pageSize : 10,
+          maxPriceUsd: effectiveBudget,
+        });
+        web = invoked.value;
+      } catch {
+        web = {
+          results: [],
+          fromCache: false,
+          disabled: true,
+          fetchedAt: null,
+          budgetExhausted: false,
+        };
+      }
       webResults = web.results;
       webFromCache = web.fromCache;
       webFetchedAt = web.fetchedAt;
+      webBudgetExhausted = web.budgetExhausted === true;
       webSource = web.disabled ? 'web-disabled' : web.results.length > 0 ? 'web' : 'catalog';
     }
 
@@ -104,7 +165,6 @@ export async function POST(request: NextRequest) {
           ? webResults.length
           : result.total + webResults.length
         : result.total;
-    const auth = await requireAuth(request);
     if (!('error' in auth)) {
       void recordSearch(supabase, auth.userId, searchQuery, options.filters ?? null, seenTotal);
     }
@@ -121,6 +181,9 @@ export async function POST(request: NextRequest) {
       // cache, and when they were fetched (see above).
       webFromCache,
       webFetchedAt,
+      // Section 19, Phase 1 (§12 #7) — the honest label for the
+      // catalog fallback when the daily SerpAPI budget is spent.
+      webBudgetExhausted,
       // B10: the resolved "X vs Y" pair for the search page's
       // "Compare these two" CTA — [] when the query had no `vs`
       // or a side could not be resolved.
@@ -133,7 +196,8 @@ export async function POST(request: NextRequest) {
       didYouMean: result.didYouMean ?? null,
       fuzzyCorrected: result.fuzzyCorrected ?? false,
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'ai-search', status: 500, startedAt });
     return internalError('Failed to perform AI search');
   }
 }

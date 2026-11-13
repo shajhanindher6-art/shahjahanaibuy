@@ -9,6 +9,7 @@ import { apiSuccess, notFound, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getCategoryBySlug } from '@/services/catalog';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(
   request: NextRequest,
   { params }: { params: { slug: string } }
@@ -27,7 +28,8 @@ export async function GET(
     }
 
     return apiSuccess(category);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'categories', status: 500 });
     return internalError('Failed to fetch category');
   }
 }

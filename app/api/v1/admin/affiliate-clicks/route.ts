@@ -23,6 +23,7 @@ import { logApiRequest, requireAdmin, rateLimitResponse, getClientIp } from '@/l
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { getAffiliateClickAnalytics } from '@/services/admin';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'admin.affiliate-clicks' });
   // Rate limit: 60 requests/min per IP (see docs/rate-limits.md).
@@ -43,7 +44,8 @@ export async function GET(request: NextRequest) {
   try {
     const analytics = await getAffiliateClickAnalytics(service, days);
     return apiSuccess(analytics, 200);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'admin.affiliate-clicks', status: 500 });
     return internalError('Failed to fetch affiliate click analytics');
   }
 }

@@ -19,6 +19,7 @@ import {
   rateLimitResponse,
   getClientIp,
 } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 
 const UNCHANGED_MESSAGE =
@@ -68,7 +69,19 @@ export async function GET(request: NextRequest) {
   if (!token) return badRequest('An unsubscribe token is required');
 
   const result = await unsubscribeByToken(token);
-  if (!result.ok) return internalError('Could not unsubscribe right now');
+  if (!result.ok) {
+    // Section 19, Phase 9 (§12 #92) — the helper swallows the DB
+    // error by design (anti-enumeration: the response must not say
+    // whether the token existed), so the failure is logged here
+    // with a generic message — never the token — or a DB outage
+    // would 500 invisibly.
+    logApiError(new Error('guest unsubscribe failed'), {
+      request,
+      route: 'alerts.guest.unsubscribe',
+      status: 500,
+    });
+    return internalError('Could not unsubscribe right now');
+  }
   return apiSuccess({ unsubscribed: true, message: UNCHANGED_MESSAGE });
 }
 
@@ -87,6 +100,16 @@ export async function POST(request: NextRequest) {
   if (!token) return badRequest('An unsubscribe token is required');
 
   const result = await unsubscribeByToken(token);
-  if (!result.ok) return internalError('Could not unsubscribe right now');
+  if (!result.ok) {
+    // Section 19, Phase 9 (§12 #92) — see GET above: log the
+    // swallowed DB failure generically (never the token) so a DB
+    // outage does not 500 invisibly; the response stays generic.
+    logApiError(new Error('guest unsubscribe failed'), {
+      request,
+      route: 'alerts.guest.unsubscribe',
+      status: 500,
+    });
+    return internalError('Could not unsubscribe right now');
+  }
   return apiSuccess({ unsubscribed: true, message: UNCHANGED_MESSAGE });
 }

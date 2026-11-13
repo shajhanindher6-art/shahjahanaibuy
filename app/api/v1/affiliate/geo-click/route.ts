@@ -34,6 +34,7 @@ import type { NextRequest } from 'next/server';
 import { apiSuccess } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { logApiError } from '@/lib/api/error-logging';
+import { logger } from '@/lib/config/logger';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import {
   isTrackableClickHost,
@@ -106,7 +107,7 @@ export async function POST(request: NextRequest) {
       isHttpUrl(targetUrl) &&
       isTrackableClickHost(new URL(targetUrl).hostname, knownStoreHosts());
     if (targetUrl && isHttpUrl(targetUrl) && !hostOk) {
-      console.warn('[affiliate-geo-click] non-trackable host, click not stored', {
+      logger.warn('[affiliate-geo-click] non-trackable host, click not stored', {
         host: new URL(targetUrl).hostname,
       });
     }
@@ -118,7 +119,7 @@ export async function POST(request: NextRequest) {
       );
       const supabase = createSupabaseServiceClient();
       if (!supabase) {
-        console.warn(
+        logger.warn(
           '[affiliate-geo-click] service client unavailable; click not stored (SUPABASE_SERVICE_ROLE_KEY missing)'
         );
       } else {

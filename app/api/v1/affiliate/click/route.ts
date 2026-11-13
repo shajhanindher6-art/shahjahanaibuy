@@ -8,6 +8,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'affiliate.click' });
   // Rate limit: 60 requests/min per IP (see docs/rate-limits.md).
@@ -44,7 +45,8 @@ export async function POST(request: NextRequest) {
     });
 
     return apiSuccess({ tracked: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'affiliate.click', status: 500 });
     return internalError('Failed to track affiliate click');
   }
 }

@@ -27,21 +27,21 @@ Only 2 variables are truly required to start: `NEXT_PUBLIC_SUPABASE_URL` and `NE
 | `npm run build` | Production build (must pass with zero errors) |
 | `npm run start` | Start the production server |
 | `npm run typecheck` | `tsc --noEmit` (must be 0 errors) |
-| `npm test` | Full vitest suite (216 files / 2,685 tests, 100% pass — 12 Nov 2026) |
-| `npm run test:a11y` | Runtime axe checks (7/7, local gate only) |
+| `npm test` | Full vitest suite (286 files / 3,425 tests, 100% pass — 13 Nov 2026) |
+| `npm run test:a11y` | Runtime axe checks (31 tests / 5 files, all pass, local gate only) |
 | `npm run lint` | `next lint` |
 | `npm run generate:press-counts` | Regenerate `lib/generated/press-counts.json` from a real test run |
 | `npm run check:press-counts` | Fail if the press-counts JSON is stale |
 
 ## Verification gate (before every push)
 
-`npx tsc --noEmit` = 0 errors · full `npm test` = 100% pass · clean `npm run build` · headless smoke · live recheck after push. **Push only on the user's live approval.** Baseline 12 Nov 2026: tsc 0, vitest 216/2,685 PASS, clean build exit 0 (799 pages, `/products/[slug]` First Load 330 kB, budget ≤350 kB).
+`npx tsc --noEmit` = 0 errors · full `npm test` = 100% pass · clean `npm run build` · headless smoke · live recheck after push. **Push only on the user's live approval.** Baseline 13 Nov 2026: tsc 0, vitest 286/3,425 PASS, clean build exit 0 (802 pages, `/products/[slug]` First Load 338 kB, budget ≤350 kB).
 
 ## Docs
 
 - **`project-summary.md`** — start here: what SmartBuy is, architecture, features, catalogue (honest state), database, env vars, cron jobs, deployment, verification status, owner-gated work, blocked features.
-- **`docs/DEPLOYMENT.md`** — deployment, environment variables, the 51 migrations, the 6 cron jobs, the Stripe live-money gate (`STRIPE_LIVE_LAUNCHED`).
-- **`API_DOCUMENTATION.md`** — API reference, all 181 routes / 244 handlers, tiers & quotas. Machine-readable: **`docs/openapi.json`**.
+- **`docs/DEPLOYMENT.md`** — deployment, environment variables, the 52 migrations, the 6 cron jobs, the Stripe live-money gate (`STRIPE_LIVE_LAUNCHED`).
+- **`API_DOCUMENTATION.md`** — API reference, all 187 routes / 253 handlers, tiers & quotas. Machine-readable: **`docs/openapi.json`**.
 - **`.env.example`** — every environment variable with placeholders (never put a real secret in it).
 - **Topic docs in `docs/`** — `rate-limits.md`, `affiliate-engine.md`, `performance-budgets.md`, `pwa.md`, `alerts-delivery-setup.md`, `sentry-triage.md`, `uptime.md`, `seo.md`, `security-hardening.md`, `visual-search.md`, `responsive-qa.md`, `search-console.md`, `design-system.md`.
 

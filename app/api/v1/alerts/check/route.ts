@@ -50,6 +50,7 @@
 import type { NextRequest } from 'next/server';
 import { apiSuccess, unauthorized, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import { isCronAuthorized } from '@/lib/api/cron-auth';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { refreshTrackedPrices, type PriceRefreshResult } from '@/services/price-refresh';
@@ -73,142 +74,160 @@ export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'alerts.check' });
-  // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
-  const limited = await rateLimitResponse(`alerts.check:${getClientIp(request)}`, 30);
-  if (limited) return limited;
+  const startedAt = Date.now();
 
-  // Section 17, Stage G (§4 #11): timing-safe compare via
-  // lib/api/cron-auth.ts — fails closed when CRON_SECRET is unset.
-  if (!process.env.CRON_SECRET) {
-    return internalError(
-      'CRON_SECRET is not configured; set it in the hosting dashboard before scheduling this endpoint'
-    );
-  }
-  if (!isCronAuthorized(request)) {
-    return unauthorized('Invalid cron secret');
-  }
+  // Section 19, Phase 9 (§12 #92) — outer try/catch: a throw used
+  // to be an unlogged Next 500 (the per-step calls are isolated
+  // by runRefreshStep, but the guard / finish / summary around
+  // them are not). Only thrown (5xx) errors are logged; the
+  // deliberate 500s in the handler (CRON_SECRET / service key
+  // missing) and the 401 stay unlogged — handled config/auth
+  // states, same as the prices/refresh route.
+  try {
+    // Rate limit: 30 requests/min per IP (see docs/rate-limits.md).
+    const limited = await rateLimitResponse(`alerts.check:${getClientIp(request)}`, 30);
+    if (limited) return limited;
 
-  const supabase = createSupabaseServiceClient();
-  if (!supabase) {
-    return internalError(
-      'SUPABASE_SERVICE_ROLE_KEY is not configured; alert checking requires the service-role client'
-    );
-  }
+    // Section 17, Stage G (§4 #11): timing-safe compare via
+    // lib/api/cron-auth.ts — fails closed when CRON_SECRET is unset.
+    if (!process.env.CRON_SECRET) {
+      return internalError(
+        'CRON_SECRET is not configured; set it in the hosting dashboard before scheduling this endpoint'
+      );
+    }
+    if (!isCronAuthorized(request)) {
+      return unauthorized('Invalid cron secret');
+    }
 
-  // Section 15, P1-7 — one run at a time, across all triggers.
-  // When another run is in progress this call skips (200 +
-  // skipped: true) instead of duplicating the chain. Section 18,
-  // item 35 — the guard fails open ONLY while migration 040 is
-  // unapplied (missing table); a guard error fails safe (run not
-  // started, reason 'guard-error'), never unguarded.
-  const guard = await tryStartRefreshRun(supabase, 'alerts-check');
-  if (!guard.started) {
-    const skipMessage =
-      guard.reason === 'guard-error'
-        ? 'The refresh guard could not be read — the run was not started.'
-        : 'Another refresh run is in progress.';
-    const steps: Record<string, RefreshStepSummary> = {
-      refresh: { status: 'skipped', error: skipMessage },
-      alerts: { status: 'skipped', error: skipMessage },
-      notifications: { status: 'skipped', error: skipMessage },
+    const supabase = createSupabaseServiceClient();
+    if (!supabase) {
+      return internalError(
+        'SUPABASE_SERVICE_ROLE_KEY is not configured; alert checking requires the service-role client'
+      );
+    }
+
+    // Section 15, P1-7 — one run at a time, across all triggers.
+    // When another run is in progress this call skips (200 +
+    // skipped: true) instead of duplicating the chain. Section 18,
+    // item 35 — the guard fails open ONLY while migration 040 is
+    // unapplied (missing table); a guard error fails safe (run not
+    // started, reason 'guard-error'), never unguarded.
+    const guard = await tryStartRefreshRun(supabase, 'alerts-check');
+    if (!guard.started) {
+      const skipMessage =
+        guard.reason === 'guard-error'
+          ? 'The refresh guard could not be read — the run was not started.'
+          : 'Another refresh run is in progress.';
+      const steps: Record<string, RefreshStepSummary> = {
+        refresh: { status: 'skipped', error: skipMessage },
+        alerts: { status: 'skipped', error: skipMessage },
+        notifications: { status: 'skipped', error: skipMessage },
+      };
+      return apiSuccess({
+        skipped: true,
+        reason: guard.reason ?? 'run-in-progress',
+        error: guard.error,
+        existingRunId: guard.existingRunId,
+        steps,
+      });
+    }
+
+    // Section 15, P1-1 — every step isolated: a throw (or a load
+    // failure, P1-8) records `failed` with its error, keeps zeroed
+    // fallback counts, and the chain continues. The handler always
+    // returns 200 with per-step results.
+    const zeroRefresh: PriceRefreshResult = {
+      tracked: 0,
+      inserted: 0,
+      unchanged: 0,
+      skippedNoRetailer: 0,
+      skippedNoPrice: 0,
+      failed: 0,
+      loadFailed: false,
     };
+    const zeroAlerts: AlertCheckResult = {
+      checked: 0,
+      triggered: 0,
+      queued: 0,
+      skippedDuplicate: 0,
+      skippedOptedOut: 0,
+      failed: 0,
+      wishlistChecked: 0,
+      wishlistTriggered: 0,
+      wishlistQueued: 0,
+    };
+    const zeroNotifications = { processed: 0, sent: 0, failed: 0 };
+
+    const refresh = await runRefreshStep(
+      'refreshTrackedPrices',
+      () => refreshTrackedPrices(supabase),
+      zeroRefresh,
+      (r) => (r.loadFailed ? (r.loadError ?? 'price load failed') : null)
+    );
+    const alerts = await runRefreshStep(
+      'checkPriceAlerts',
+      () => checkPriceAlerts(supabase),
+      zeroAlerts
+    );
+    const notifications = await runRefreshStep(
+      'processNotificationQueue',
+      () => processNotificationQueue(supabase),
+      zeroNotifications
+    );
+
+    // Section 18, item 38 — per-step counts in the stored steps
+    // JSONB (same mapping as the prices/refresh route; nothing
+    // invented — every count comes from the step's own result).
+    const steps: Record<string, RefreshStepSummary> = {
+      refresh: summarizeStep(refresh, {
+        processed: refresh.result.tracked,
+        succeeded: refresh.result.inserted + refresh.result.unchanged,
+        failed: refresh.result.failed,
+        skipped: refresh.result.skippedNoRetailer + refresh.result.skippedNoPrice,
+      }),
+      alerts: summarizeStep(alerts, {
+        processed: alerts.result.checked,
+        succeeded: alerts.result.triggered,
+        failed: alerts.result.failed,
+        skipped: alerts.result.skippedDuplicate,
+      }),
+      notifications: summarizeStep(notifications, {
+        processed: notifications.result.processed,
+        succeeded: notifications.result.sent,
+        failed: notifications.result.failed,
+      }),
+    };
+    const failedSteps = Object.entries(steps).filter(
+      ([, s]) => s.status === 'failed'
+    );
+    const overallStatus =
+      failedSteps.length === 0
+        ? 'completed'
+        : failedSteps.length === Object.keys(steps).length
+          ? 'failed'
+          : 'completed_with_failures';
+
+    // Section 15, P1-5 — record the run (no-op while migration 040
+    // is unapplied: finishRefreshRun logs and continues).
+    await finishRefreshRun(
+      supabase,
+      guard.runId,
+      steps,
+      overallStatus,
+      failedSteps.length > 0
+        ? failedSteps.map(([name, s]) => `${name}: ${s.error ?? 'failed'}`).join('; ')
+        : undefined
+    );
+
     return apiSuccess({
-      skipped: true,
-      reason: guard.reason ?? 'run-in-progress',
-      error: guard.error,
-      existingRunId: guard.existingRunId,
+      skipped: false,
+      refresh: refresh.result,
+      alerts: alerts.result,
+      notifications: notifications.result,
       steps,
     });
+  } catch (err) {
+    logApiError(err, { request, route: 'alerts.check', status: 500, startedAt });
+    return internalError('Alert check failed');
   }
-
-  // Section 15, P1-1 — every step isolated: a throw (or a load
-  // failure, P1-8) records `failed` with its error, keeps zeroed
-  // fallback counts, and the chain continues. The handler always
-  // returns 200 with per-step results.
-  const zeroRefresh: PriceRefreshResult = {
-    tracked: 0,
-    inserted: 0,
-    unchanged: 0,
-    skippedNoRetailer: 0,
-    skippedNoPrice: 0,
-    failed: 0,
-    loadFailed: false,
-  };
-  const zeroAlerts: AlertCheckResult = {
-    checked: 0,
-    triggered: 0,
-    queued: 0,
-    skippedDuplicate: 0,
-    failed: 0,
-  };
-  const zeroNotifications = { processed: 0, sent: 0, failed: 0 };
-
-  const refresh = await runRefreshStep(
-    'refreshTrackedPrices',
-    () => refreshTrackedPrices(supabase),
-    zeroRefresh,
-    (r) => (r.loadFailed ? (r.loadError ?? 'price load failed') : null)
-  );
-  const alerts = await runRefreshStep(
-    'checkPriceAlerts',
-    () => checkPriceAlerts(supabase),
-    zeroAlerts
-  );
-  const notifications = await runRefreshStep(
-    'processNotificationQueue',
-    () => processNotificationQueue(supabase),
-    zeroNotifications
-  );
-
-  // Section 18, item 38 — per-step counts in the stored steps
-  // JSONB (same mapping as the prices/refresh route; nothing
-  // invented — every count comes from the step's own result).
-  const steps: Record<string, RefreshStepSummary> = {
-    refresh: summarizeStep(refresh, {
-      processed: refresh.result.tracked,
-      succeeded: refresh.result.inserted + refresh.result.unchanged,
-      failed: refresh.result.failed,
-      skipped: refresh.result.skippedNoRetailer + refresh.result.skippedNoPrice,
-    }),
-    alerts: summarizeStep(alerts, {
-      processed: alerts.result.checked,
-      succeeded: alerts.result.triggered,
-      failed: alerts.result.failed,
-      skipped: alerts.result.skippedDuplicate,
-    }),
-    notifications: summarizeStep(notifications, {
-      processed: notifications.result.processed,
-      succeeded: notifications.result.sent,
-      failed: notifications.result.failed,
-    }),
-  };
-  const failedSteps = Object.entries(steps).filter(
-    ([, s]) => s.status === 'failed'
-  );
-  const overallStatus =
-    failedSteps.length === 0
-      ? 'completed'
-      : failedSteps.length === Object.keys(steps).length
-        ? 'failed'
-        : 'completed_with_failures';
-
-  // Section 15, P1-5 — record the run (no-op while migration 040
-  // is unapplied: finishRefreshRun logs and continues).
-  await finishRefreshRun(
-    supabase,
-    guard.runId,
-    steps,
-    overallStatus,
-    failedSteps.length > 0
-      ? failedSteps.map(([name, s]) => `${name}: ${s.error ?? 'failed'}`).join('; ')
-      : undefined
-  );
-
-  return apiSuccess({
-    skipped: false,
-    refresh: refresh.result,
-    alerts: alerts.result,
-    notifications: notifications.result,
-    steps,
-  });
 }

@@ -25,6 +25,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'category-inflation' });
+  // Section 19, Phase 9 (§12 #92) — intentionally unwired: DB failures return an honest empty 200 (fail-safe) and the catch already records them via logger.error, so no 5xx is ever returned for error_log/Sentry capture.
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
   const limited = await rateLimitResponse(`category-inflation:${getClientIp(request)}`, 120);
   if (limited) return limited;

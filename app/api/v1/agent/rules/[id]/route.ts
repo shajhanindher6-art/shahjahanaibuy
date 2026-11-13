@@ -21,6 +21,7 @@ import { validateRuleInput } from '@/lib/agent-memory';
 import { updateAlert } from '@/services/alerts';
 import { isMissingTableError, mapRuleRow } from '../../shared';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const RULE_COLUMNS =
@@ -114,7 +115,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         ? undefined
         : 'Rule updated, but the linked price-drop alert could not be updated — delete and re-create the rule to re-link it.',
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'agent.rules.patch', status: 500 });
     return internalError('Failed to update agent rule');
   }
 }
@@ -152,7 +154,8 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       await updateAlert(supabase, loaded.rule.alertId, auth.userId, { active: false });
     }
     return apiSuccess({ deleted: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'agent.rules.delete', status: 500 });
     return internalError('Failed to delete agent rule');
   }
 }
