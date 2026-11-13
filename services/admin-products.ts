@@ -37,18 +37,34 @@ import { validateGtin } from '@/lib/gtin';
 import {
   normalizePriceVerificationStatus,
   normalizeProductStatus,
+  PRICE_VERIFICATION_STATUSES,
   PRODUCT_STATUSES,
   type PriceVerificationStatus,
   type ProductStatus,
 } from './price-verification';
-import { isValidImageUrl, type QualityScoreContext } from './product-quality-score';
+import {
+  computeProductQualityScore,
+  getDataQualityState,
+  isValidGtin,
+  type DataQualityState,
+  type QualityScoreContext,
+} from './product-quality-score';
+import { getFreshnessStatus } from '@/lib/price-freshness';
+import { validateImageUrl } from '@/lib/image-url';
+import { checkImageAccessible } from '@/services/pipeline/image-processing';
 import {
   deleteProductSpecs,
   listProductSpecsWithAttribution,
   replaceProductSpecs,
   type StoredProductSpec,
 } from './product-attributes';
-import { specKeysForCategory, validateSpecEntries, type SpecEntryInput } from '@/lib/spec-templates';
+import {
+  assessSpecCompleteness,
+  listCategoriesWithoutSpecTemplates,
+  specKeysForCategory,
+  validateSpecEntries,
+  type SpecEntryInput,
+} from '@/lib/spec-templates';
 import type {
   DuplicateCandidate as SweepCandidate,
   DuplicateSweepProduct,
@@ -133,6 +149,23 @@ export interface ListAdminProductsOptions {
   verification?: string;
   page?: number;
   pageSize?: number;
+  /**
+   * Final 100%, F-P2-44 — quality filters. `quality` is the
+   * 5-state data-quality taxonomy value (verified / partial /
+   * unverified / stale / missing); `missing` is a missing-field
+   * filter ('specs' | 'image' | 'gtin' | 'history'); `stale`
+   * keeps only products whose price is stale; `noImage` /
+   * `noGtin` keep only products with no image / no GTIN.
+   * Unlike `status` / `verification` (DB predicates, inert while
+   * 045 is unapplied), these are computed from stored fields via
+   * the same scorer + taxonomy the product rows render, so they
+   * work on the live catalog today.
+   */
+  quality?: string;
+  missing?: string;
+  stale?: boolean;
+  noImage?: boolean;
+  noGtin?: boolean;
 }
 
 export interface ListAdminProductsResult {
@@ -143,7 +176,82 @@ export interface ListAdminProductsResult {
   totalPages: number;
   /** True when the 045 columns are missing and the legacy list ran. */
   columnsMissing: boolean;
+  /** True when the in-memory quality-filter path ran (F-P2-44). */
+  qualityFiltered?: boolean;
   error?: string;
+}
+
+/** Valid `missing` filter values (F-P2-44). */
+export const QUALITY_MISSING_FILTERS = ['specs', 'image', 'gtin', 'history'] as const;
+export type QualityMissingFilter = (typeof QUALITY_MISSING_FILTERS)[number];
+
+export interface QualityFilterInput {
+  quality?: DataQualityState | null;
+  missing?: QualityMissingFilter | null;
+  stale?: boolean;
+  noImage?: boolean;
+  noGtin?: boolean;
+}
+
+/**
+ * Final 100%, F-P2-44 — pure quality-filter predicate. The same
+ * scorer + 5-state taxonomy the admin rows render, so a filtered
+ * list can never disagree with the rows it shows. `ctx` is the
+ * product's `QualityScoreContext` from `getProductQualityContexts`.
+ */
+export function productMatchesQualityFilters(
+  product: AdminProduct,
+  ctx: QualityScoreContext,
+  filters: QualityFilterInput
+): boolean {
+  const score = computeProductQualityScore(
+    {
+      name: product.name,
+      slug: product.slug,
+      brand: product.brand,
+      category: product.category,
+      description: product.description,
+      imageUrl: product.imageUrl,
+      gtin: product.gtin,
+      priceVerificationStatus: product.priceVerificationStatus,
+      priceVerifiedAt: product.priceVerifiedAt,
+      dataFreshness: product.dataFreshness,
+      updatedAt: product.updatedAt,
+    },
+    ctx
+  );
+  if (filters.quality) {
+    const state = getDataQualityState({
+      priceVerificationStatus: product.priceVerificationStatus,
+      priceAgeDays: score.priceAgeDays,
+      merchantCount: ctx.merchantCount ?? 0,
+      hasValidGtin: isValidGtin(product.gtin),
+      hasPriceSource: (ctx.priceSource ?? null) !== null,
+    });
+    if (state.state !== filters.quality) return false;
+  }
+  if (filters.missing === 'specs' && (ctx.specCount ?? 0) > 0) return false;
+  if (
+    filters.missing === 'image' &&
+    (product.imageUrl !== null || (ctx.imageCount ?? 0) > 0)
+  ) {
+    return false;
+  }
+  if (filters.missing === 'gtin' && product.gtin !== null) return false;
+  if (filters.missing === 'history' && ctx.lastPriceRecordedAt !== undefined) return false;
+  if (filters.noImage && (product.imageUrl !== null || (ctx.imageCount ?? 0) > 0)) {
+    return false;
+  }
+  if (filters.noGtin && product.gtin !== null) return false;
+  if (filters.stale) {
+    const lastCheck =
+      ctx.lastPriceRecordedAt ??
+      product.priceVerifiedAt ??
+      product.dataFreshness ??
+      null;
+    if (getFreshnessStatus(lastCheck).status !== 'stale') return false;
+  }
+  return true;
 }
 
 export async function listAdminProducts(
@@ -163,6 +271,26 @@ export async function listAdminProducts(
     ['verified', 'unverified', 'stale'].includes(options.verification)
       ? (options.verification as PriceVerificationStatus)
       : null;
+
+  // Final 100%, F-P2-44 — quality filters are validated here
+  // (unknown values are ignored, never error); the filtering
+  // itself runs in-memory below, after the contexts are read.
+  const QUALITY_STATES: readonly string[] = ['verified', 'partial', 'unverified', 'stale', 'missing'];
+  const qualityFilter =
+    options.quality && QUALITY_STATES.includes(options.quality)
+      ? (options.quality as DataQualityState)
+      : null;
+  const missingFilter =
+    options.missing &&
+    (QUALITY_MISSING_FILTERS as readonly string[]).includes(options.missing)
+      ? (options.missing as QualityMissingFilter)
+      : null;
+  const qualityFiltersActive =
+    qualityFilter !== null ||
+    missingFilter !== null ||
+    options.stale === true ||
+    options.noImage === true ||
+    options.noGtin === true;
 
   const runQuery = async (withNewColumns: boolean) => {
     const columns: string = withNewColumns ? ADMIN_PRODUCT_COLUMNS : ADMIN_PRODUCT_COLUMNS_LEGACY;
@@ -190,9 +318,91 @@ export async function listAdminProducts(
     return { data, error, count };
   };
 
+  // Final 100%, F-P2-44 — the quality-filter path cannot page in
+  // the DB: the filter inputs (score, taxonomy state, freshness)
+  // are computed from stored fields, not stored columns. It
+  // reads the whole matching set (capped at 500, the same cap
+  // the data-quality summary uses) and paginates in memory, so
+  // the total is the filtered total, never a page's count.
+  const runFullQuery = async (withNewColumns: boolean) => {
+    const columns: string = withNewColumns ? ADMIN_PRODUCT_COLUMNS : ADMIN_PRODUCT_COLUMNS_LEGACY;
+    let query = supabase
+      .from('products')
+      .select(columns, { count: 'exact' })
+      .is('deleted_at', null);
+    if (withNewColumns && statusFilter) query = query.eq('status', statusFilter);
+    if (withNewColumns && verificationFilter) {
+      query = query.eq('price_verification_status', verificationFilter);
+    }
+    if (search) {
+      const term = search.replace(/[%_,]/g, '');
+      query = query.or(
+        `name.ilike.%${term}%,description.ilike.%${term}%,brand.ilike.%${term}%,category.ilike.%${term}%`
+      );
+    }
+    const { data, error, count } = (await query
+      .order('created_at', { ascending: false })
+      .limit(500)) as unknown as {
+      data: AdminProductRow[] | null;
+      error: { code?: string; message: string } | null;
+      count: number | null;
+    };
+    return { data, error, count };
+  };
+
   try {
-    let { data, error, count } = await runQuery(true);
     let columnsMissing = false;
+    if (qualityFiltersActive) {
+      // Re-read the full matching set and filter in memory (see
+      // runFullQuery above). A 42703 here retries without the 045
+      // columns, same as the paged path.
+      let full = await runFullQuery(true);
+      if (full.error && isUndefinedColumnError(full.error)) {
+        columnsMissing = true;
+        full = await runFullQuery(false);
+      }
+      if (full.error || !full.data) {
+        logger.warn('listAdminProducts: quality-filter read failed', {
+          error: full.error?.message,
+        });
+        return {
+          products: [],
+          total: 0,
+          page,
+          pageSize,
+          totalPages: 0,
+          columnsMissing,
+          qualityFiltered: true,
+          error: full.error?.message ?? 'Products could not be read.',
+        };
+      }
+      const allProducts = full.data.map(mapAdminProduct);
+      const { contexts } = await getProductQualityContexts(
+        supabase,
+        allProducts.map((p) => p.id)
+      );
+      const filters: QualityFilterInput = {
+        quality: qualityFilter,
+        missing: missingFilter,
+        stale: options.stale === true,
+        noImage: options.noImage === true,
+        noGtin: options.noGtin === true,
+      };
+      const filtered = allProducts.filter((p) =>
+        productMatchesQualityFilters(p, contexts.get(p.id) ?? {}, filters)
+      );
+      const total = filtered.length;
+      return {
+        products: filtered.slice(offset, offset + pageSize),
+        total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
+        columnsMissing,
+        qualityFiltered: true,
+      };
+    }
+    let { data, error, count } = await runQuery(true);
     if (error && isUndefinedColumnError(error)) {
       columnsMissing = true;
       ({ data, error, count } = await runQuery(false));
@@ -284,9 +494,17 @@ export interface AdminProductPatch {
   image_url?: string | null;
   gtin?: string | null;
   status?: string | null;
+  /**
+   * FINAL 100% (F-P0-03) — the admin verification action: both
+   * verification columns are patchable, so an admin can correct a
+   * wrong stamp or date. See validateAdminProductPatch for the
+   * rules: 'verified' requires a check date in the same edit.
+   */
+  price_verification_status?: string | null;
+  price_verified_at?: string | null;
 }
 
-const PATCHABLE_FIELDS = ['name', 'description', 'brand', 'category', 'image_url', 'gtin', 'status'] as const;
+const PATCHABLE_FIELDS = ['name', 'description', 'brand', 'category', 'image_url', 'gtin', 'status', 'price_verification_status', 'price_verified_at'] as const;
 
 /**
  * Pure validation for an admin product patch. Returns the cleaned
@@ -303,6 +521,21 @@ const PATCHABLE_FIELDS = ['name', 'description', 'brand', 'category', 'image_url
  *   (spaces/hyphens stripped). Null clears the GTIN;
  * - status must be a migration 045 value; the column itself may
  *   not exist yet, which the update reports separately.
+ * - price_verification_status must be a migration 045 value
+ *   (FINAL 100%, F-P0-03 — the admin verification action); and
+ *   price_verified_at must be a valid ISO date, never in the
+ *   future. The two columns are validated TOGETHER: setting
+ *   status 'verified' REQUIRES a price_verified_at in the same
+ *   edit — a verified stamp with no check date is verified
+ *   forever (F-P1-01), so the API refuses to create one. Clearing
+ *   the date (null) while setting 'verified' is refused the same
+ *   way. Setting the date on its own (correcting the date on an
+ *   already-verified row) is allowed. This is a manual
+ *   attestation, not a provider fetch: the admin asserts a real
+ *   check happened at the stated time, and the audit log records
+ *   the edit (the route records the patched fields). No timestamp
+ *   is ever backfilled here — a date the admin did not supply is
+ *   never invented.
  */
 export function validateAdminProductPatch(
   body: Record<string, unknown>
@@ -340,11 +573,18 @@ export function validateAdminProductPatch(
   if (body.image_url !== undefined) {
     const { value, error } = asText('image_url', 2048);
     if (error) return { patch: null, error };
-    if (value !== null && !isValidImageUrl(value)) {
-      return {
-        patch: null,
-        error: '"image_url" must be a valid http(s) URL.',
-      };
+    // FINAL 100%, F-P2-27 — the FULL lib/image-url.ts validator
+    // (host-dot, no embedded credentials, no whitespace), not
+    // the protocol-only helper the PATCH used to use. The reason
+    // is returned so the admin knows WHY the URL was rejected.
+    if (value !== null) {
+      const imageCheck = validateImageUrl(value);
+      if (!imageCheck.valid) {
+        return {
+          patch: null,
+          error: `"image_url" is not a valid image URL: ${imageCheck.reason ?? 'invalid URL'}.`,
+        };
+      }
     }
     patch.image_url = value;
   }
@@ -377,6 +617,55 @@ export function validateAdminProductPatch(
     }
     patch.status = raw as ProductStatus;
   }
+  // FINAL 100% (F-P0-03) — both verification columns, validated
+  // together (see the function header). A 'verified' stamp
+  // without a check date is refused: the date must arrive in the
+  // same edit, be a parseable ISO date, and not be in the future
+  // (a check cannot have happened after now). Null clears the
+  // date — allowed on its own (correcting a wrong date), refused
+  // when the same edit sets the status to 'verified'.
+  if (body.price_verification_status !== undefined) {
+    const raw = body.price_verification_status;
+    if (raw === null) {
+      return { patch: null, error: '"price_verification_status" must not be null.' };
+    }
+    if (
+      typeof raw !== 'string' ||
+      !(PRICE_VERIFICATION_STATUSES as readonly string[]).includes(raw)
+    ) {
+      return {
+        patch: null,
+        error: `"price_verification_status" must be one of: ${PRICE_VERIFICATION_STATUSES.join(', ')}.`,
+      };
+    }
+    patch.price_verification_status = raw as PriceVerificationStatus;
+  }
+  if (body.price_verified_at !== undefined) {
+    const raw = body.price_verified_at;
+    if (raw === null) {
+      patch.price_verified_at = null;
+    } else if (typeof raw !== 'string' || raw.trim() === '') {
+      return { patch: null, error: '"price_verified_at" must be an ISO date string or null.' };
+    } else {
+      const parsed = new Date(raw.trim()).getTime();
+      if (!Number.isFinite(parsed)) {
+        return { patch: null, error: '"price_verified_at" must be a valid ISO date string or null.' };
+      }
+      if (parsed > Date.now()) {
+        return { patch: null, error: '"price_verified_at" must not be in the future.' };
+      }
+      patch.price_verified_at = new Date(parsed).toISOString();
+    }
+  }
+  if (patch.price_verification_status === 'verified') {
+    if (patch.price_verified_at === undefined || patch.price_verified_at === null) {
+      return {
+        patch: null,
+        error:
+          'Setting "price_verification_status" to "verified" requires "price_verified_at" (the date of the real check) in the same edit — a verified stamp with no check date is verified forever.',
+      };
+    }
+  }
   if (Object.keys(patch).length === 0) {
     return { patch: null, error: 'No editable field was provided.' };
   }
@@ -407,14 +696,17 @@ export async function updateAdminProduct(
     };
     if (error) {
       if (isUndefinedColumnError(error)) {
-        // The only 045 column an admin patch can touch is `status`;
-        // a legacy row has no such column, so the whole update
-        // fails on it. Report it plainly instead of a generic 500.
+        // The 045 columns an admin patch can touch are `status`
+        // and the two verification columns; a legacy row has none
+        // of them, so the whole update fails on them. Report it
+        // plainly instead of a generic 500.
         return {
           product: null,
           error:
-            patch.status !== undefined
-              ? 'The status column does not exist yet — migration 045 has not been applied, so status cannot be changed.'
+            patch.status !== undefined ||
+            patch.price_verification_status !== undefined ||
+            patch.price_verified_at !== undefined
+              ? 'The status / verification columns do not exist yet — migration 045 has not been applied, so status and verification cannot be changed.'
               : 'The product could not be updated (a column in this edit does not exist yet).',
         };
       }
@@ -749,11 +1041,13 @@ export async function getProductQualityContexts(
       product_id: string;
       in_stock: boolean;
       price_source?: string | null;
+      /** A recorded SKU proves the row is a real listing, not a search URL (F-P1-06). */
+      merchant_sku?: string | null;
     };
     const runMerchantQuery = async (withSource: boolean) => {
       const columns = withSource
-        ? 'product_id, price, in_stock, price_source'
-        : 'product_id, price, in_stock';
+        ? 'product_id, price, in_stock, price_source, merchant_sku'
+        : 'product_id, price, in_stock, merchant_sku';
       return (await supabase
         .from('merchant_products')
         .select(columns)
@@ -775,6 +1069,13 @@ export async function getProductQualityContexts(
       if (!ctx) continue;
       ctx.merchantCount = (ctx.merchantCount ?? 0) + 1;
       if (row.in_stock === true) ctx.inStockMerchantCount = (ctx.inStockMerchantCount ?? 0) + 1;
+      // FINAL 100% (F-P1-06) — a recorded merchant SKU proves the
+      // row is a real listing. The seeded catalog has rows with
+      // NULL SKUs and search URLs; those rows exist but prove
+      // nothing, so the flag stays unset unless a SKU is seen.
+      if (typeof row.merchant_sku === 'string' && row.merchant_sku.trim() !== '') {
+        ctx.hasRealMerchantListing = true;
+      }
       // Rows arrive cheapest first, so the first row's source is
       // the cheapest listing's source.
       if (ctx.priceSource === undefined) ctx.priceSource = row.price_source ?? null;
@@ -1052,19 +1353,39 @@ export interface ProductImageStatus {
   imageUrl: string | null;
   imageUrlValid: boolean;
   imageCount: number;
-  status: 'ok' | 'missing-image' | 'invalid-image-url';
+  status: 'ok' | 'missing-image' | 'invalid-image-url' | 'broken-image';
+  /** HEAD-check verdict (null when reachability was not checked). */
+  reachable: boolean | null;
+  /** When the reachability check ran (null when not checked). */
+  checkedAt: string | null;
 }
 
 export interface ListProductImageStatusResult {
   rows: ProductImageStatus[];
   checked: number;
+  /** True when a reachability HEAD check ran on this call. */
+  reachabilityChecked: boolean;
   error?: string;
+}
+
+export interface ListProductImageStatusOptions {
+  /**
+   * FINAL 100%, F-P2-29 — when true, HEAD-check every valid
+   * image_url (5s timeout each, best-effort). OFF by default:
+   * the review page never blocks on a slow merchant CDN unless
+   * the admin explicitly asks (?check=live). A failed HEAD
+   * check reports 'broken-image', never an error.
+   */
+  checkReachability?: boolean;
+  /** Inject a fetch implementation (tests). */
+  fetchFn?: typeof fetch;
 }
 
 /** Per-product image status: valid image_url + gallery rows. */
 export async function listProductImageStatus(
   supabase: AnySupabaseClient,
-  limit = 50
+  limit = 50,
+  options: ListProductImageStatusOptions = {}
 ): Promise<ListProductImageStatusResult> {
   try {
     const { data: products, error: productsError } = await supabase
@@ -1076,6 +1397,7 @@ export async function listProductImageStatus(
       return {
         rows: [],
         checked: 0,
+        reachabilityChecked: false,
         error: productsError?.message ?? 'Products could not be read.',
       };
     }
@@ -1087,27 +1409,168 @@ export async function listProductImageStatus(
     for (const row of (images ?? []) as Array<{ product_id: string }>) {
       counts.set(row.product_id, (counts.get(row.product_id) ?? 0) + 1);
     }
-    const rows: ProductImageStatus[] = (
-      products as Array<{ id: string; name: string; slug: string; image_url: string | null }>
-    ).map((p) => {
-      const valid = isValidImageUrl(p.image_url);
-      return {
+    const rows: ProductImageStatus[] = [];
+    for (const p of products as Array<{
+      id: string;
+      name: string;
+      slug: string;
+      image_url: string | null;
+    }>) {
+      // FINAL 100%, F-P2-27 — the image review uses the same
+      // full validator as intake/PATCH now (host-dot, no embedded
+      // credentials, no whitespace), not the protocol-only helper.
+      const valid = p.image_url ? validateImageUrl(p.image_url).valid : false;
+      let reachable: boolean | null = null;
+      let checkedAt: string | null = null;
+      let status: ProductImageStatus['status'] = !p.image_url
+        ? 'missing-image'
+        : valid
+          ? 'ok'
+          : 'invalid-image-url';
+      if (options.checkReachability && p.image_url && valid) {
+        const access = await checkImageAccessible(p.image_url, options.fetchFn ?? fetch);
+        reachable = access.reachable;
+        checkedAt = new Date().toISOString();
+        if (!access.reachable) status = 'broken-image';
+      }
+      rows.push({
         productId: p.id,
         name: p.name,
         slug: p.slug,
         imageUrl: p.image_url,
         imageUrlValid: valid,
         imageCount: counts.get(p.id) ?? 0,
-        status: !p.image_url
-          ? 'missing-image'
-          : valid
-            ? 'ok'
-            : 'invalid-image-url',
+        status,
+        reachable,
+        checkedAt,
+      });
+    }
+    return {
+      rows: rows.slice(0, limit),
+      checked: products.length,
+      reachabilityChecked: options.checkReachability === true,
+    };
+  } catch (err) {
+    return { rows: [], checked: 0, reachabilityChecked: false, error: String(err) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// FINAL 100%, F-P1-09 / F-P2-32 — spec completeness + template gaps
+// ---------------------------------------------------------------------------
+
+export interface ProductSpecCompletenessRow {
+  productId: string;
+  name: string;
+  slug: string;
+  category: string | null;
+  hasTemplate: boolean;
+  requiredKeys: string[];
+  missingKeys: string[];
+  unknownKeys: string[];
+  complete: boolean;
+  coverage: number;
+}
+
+export interface ListSpecCompletenessResult {
+  rows: ProductSpecCompletenessRow[];
+  checked: number;
+  error?: string;
+}
+
+/**
+ * Per-product spec completeness: which required template keys
+ * are missing, and which stored keys the template does not know.
+ * Missing keys are FLAGGED here (admin + product surfaces read
+ * this), never silently dropped — a product with 0 of 7 keys is
+ * reported as 0/7, not as "complete".
+ */
+export async function listSpecCompleteness(
+  supabase: AnySupabaseClient,
+  limit = 50
+): Promise<ListSpecCompletenessResult> {
+  try {
+    const { data: products, error: productsError } = await supabase
+      .from('products')
+      .select('id, name, slug, category')
+      .is('deleted_at', null)
+      .limit(500);
+    if (productsError || !products) {
+      return {
+        rows: [],
+        checked: 0,
+        error: productsError?.message ?? 'Products could not be read.',
+      };
+    }
+    const { data: attrs } = await supabase
+      .from('product_attributes')
+      .select('product_id, key')
+      .limit(5000);
+    const keysByProduct = new Map<string, string[]>();
+    for (const row of (attrs ?? []) as Array<{ product_id: string; key: string }>) {
+      const list = keysByProduct.get(row.product_id) ?? [];
+      list.push(row.key);
+      keysByProduct.set(row.product_id, list);
+    }
+    const rows: ProductSpecCompletenessRow[] = (
+      products as Array<{ id: string; name: string; slug: string; category: string | null }>
+    ).map((p) => {
+      const assessment = assessSpecCompleteness(p.category, keysByProduct.get(p.id) ?? []);
+      return {
+        productId: p.id,
+        name: p.name,
+        slug: p.slug,
+        category: p.category,
+        hasTemplate: assessment.hasTemplate,
+        requiredKeys: assessment.requiredKeys,
+        missingKeys: assessment.missingKeys,
+        unknownKeys: assessment.unknownKeys,
+        complete: assessment.complete,
+        coverage: assessment.coverage,
       };
     });
     return { rows: rows.slice(0, limit), checked: products.length };
   } catch (err) {
     return { rows: [], checked: 0, error: String(err) };
+  }
+}
+
+export interface CategoriesWithoutTemplatesResult {
+  /** Distinct live category words with no spec template. */
+  categories: string[];
+  checked: number;
+  error?: string;
+}
+
+/**
+ * FINAL 100%, F-P2-32 — the admin UX list of categories that
+ * lack a spec template. Unknown-category specs cannot be
+ * validated by design (honest), but until now no surface listed
+ * WHICH categories those are. This is that list, read from the
+ * live distinct product categories.
+ */
+export async function listCategoriesMissingSpecTemplates(
+  supabase: AnySupabaseClient
+): Promise<CategoriesWithoutTemplatesResult> {
+  try {
+    const { data: products, error } = await supabase
+      .from('products')
+      .select('category')
+      .is('deleted_at', null)
+      .limit(5000);
+    if (error || !products) {
+      return {
+        categories: [],
+        checked: 0,
+        error: error?.message ?? 'Products could not be read.',
+      };
+    }
+    const categories = listCategoriesWithoutSpecTemplates(
+      (products as Array<{ category: string | null }>).map((p) => p.category)
+    );
+    return { categories, checked: products.length };
+  } catch (err) {
+    return { categories: [], checked: 0, error: String(err) };
   }
 }
 
@@ -1120,6 +1583,20 @@ export interface AdminPriceHistoryRow {
   currency: string | null;
   availability: string | null;
   recordedAt: string;
+  /**
+   * FINAL 100% (F-P1-15 / F-P1-30) — per-row provenance, read
+   * when the 057 columns (source / observed_at /
+   * suspicious_change) and the Final-100% columns (verified /
+   * currency_assumed) exist; null when the row predates them.
+   * `verified` is true only for a row written from a validated
+   * provider response; `currencyAssumed` is true only when the
+   * row's USD was assumed from a NULL currency_id, never observed.
+   */
+  source?: string | null;
+  observedAt?: string | null;
+  suspicious?: boolean | null;
+  verified?: boolean | null;
+  currencyAssumed?: boolean | null;
 }
 
 export interface GetAdminProductPriceHistoryResult {
@@ -1134,12 +1611,29 @@ export async function getAdminProductPriceHistory(
   limit = 50
 ): Promise<GetAdminProductPriceHistoryResult> {
   try {
-    const { data, error } = await supabase
-      .from('price_history')
-      .select('id, product_id, retailer_id, price, currency, availability, recorded_at')
-      .eq('product_id', productId)
-      .order('recorded_at', { ascending: false })
-      .limit(limit);
+    // FINAL 100% (F-P1-15 / F-P1-30) — staged 42703 retry, the
+    // same pattern as the product reads: try the provenance /
+    // verification columns first, fall back to the migration-002
+    // columns when the table predates them, so the read never
+    // fails over an unapplied migration.
+    const runQuery = async (withProvenance: boolean) => {
+      const columns = withProvenance
+        ? 'id, product_id, retailer_id, price, currency, availability, recorded_at, source, observed_at, suspicious_change, verified, currency_assumed'
+        : 'id, product_id, retailer_id, price, currency, availability, recorded_at';
+      return (await supabase
+        .from('price_history')
+        .select(columns)
+        .eq('product_id', productId)
+        .order('recorded_at', { ascending: false })
+        .limit(limit)) as unknown as {
+        data: Array<Record<string, unknown>> | null;
+        error: { code?: string; message: string } | null;
+      };
+    };
+    let { data, error } = await runQuery(true);
+    if (error && isUndefinedColumnError(error)) {
+      ({ data, error } = await runQuery(false));
+    }
     if (error || !data) {
       return { rows: [], error: error?.message ?? 'Price history could not be read.' };
     }
@@ -1157,6 +1651,11 @@ export async function getAdminProductPriceHistory(
         currency: (r.currency as string | null) ?? null,
         availability: (r.availability as string | null) ?? null,
         recordedAt: String(r.recorded_at),
+        source: (r.source as string | null) ?? null,
+        observedAt: (r.observed_at as string | null) ?? null,
+        suspicious: typeof r.suspicious_change === 'boolean' ? r.suspicious_change : null,
+        verified: typeof r.verified === 'boolean' ? r.verified : null,
+        currencyAssumed: typeof r.currency_assumed === 'boolean' ? r.currency_assumed : null,
       })),
     };
   } catch (err) {

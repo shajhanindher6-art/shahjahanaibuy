@@ -343,8 +343,11 @@ async function withSourceLabel(
       asOf = null;
     }
   }
+  // Final 100% — F-P2-18: verifiedDataLabel returns null when no
+  // check date is known, and the answer then falls back to the
+  // recorded-data label — a dateless "verified" is never rendered.
   const label = allVerifiedAndFresh
-    ? verifiedDataLabel(asOf)
+    ? (verifiedDataLabel(asOf) ?? recordedDataLabel(asOf))
     : recordedDataLabel(asOf);
   return { ...answer, content: appendSourceLabel(answer.content, label) };
 }

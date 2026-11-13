@@ -34,6 +34,16 @@ export interface PublicProductRef {
   id: string;
   name: string;
   slug: string;
+  /**
+   * Final 100% — F-P2-21: recorded `products.data_freshness`, so
+   * machine consumers (extension price endpoint) can label the
+   * price's staleness instead of receiving a bare number. Null
+   * when the row carries no check date. The column exists since
+   * migration 002, so it rides the same select (unlike the 045
+   * verification columns, which must never be selected here —
+   * they would 42703 on a pre-045 table and break the lookup).
+   */
+  dataFreshness?: string | null;
 }
 
 export interface PublicProductRow extends PublicProductRef {
@@ -72,17 +82,22 @@ export async function findPublicProductBySlug(
   supabase: AnySupabaseClient,
   slug: string
 ): Promise<PublicProductRef | null> {
-  return runPublicQuery<PublicProductRef>(async (withStatus) => {
+  const row = await runPublicQuery<PublicProductRef & { data_freshness?: string | null }>(async (withStatus) => {
     let query = supabase
       .from('products')
-      .select('id, name, slug')
+      .select('id, name, slug, data_freshness')
       .eq('slug', slug)
       .neq('slug', 'sample-laptop')
       .is('deleted_at', null);
     if (withStatus) query = query.eq('status', PUBLISHED_PRODUCT_STATUS);
     const { data, error } = await query.limit(1).maybeSingle();
-    return { data: data as PublicProductRef | null, error: error as ProductQueryResult<PublicProductRef>['error'] };
+    return { data: data as (PublicProductRef & { data_freshness?: string | null }) | null, error: error as ProductQueryResult<PublicProductRef>['error'] };
   });
+  if (!row) return null;
+  // The DB row carries snake_case data_freshness; map it to the
+  // camelCase ref field (F-P2-21 fix — reading row.dataFreshness
+  // directly would always be undefined).
+  return { id: row.id, name: row.name, slug: row.slug, dataFreshness: row.data_freshness ?? null };
 }
 
 /** Resolve one public product by name match. */
@@ -90,17 +105,19 @@ export async function findPublicProductByName(
   supabase: AnySupabaseClient,
   q: string
 ): Promise<PublicProductRef | null> {
-  return runPublicQuery<PublicProductRef>(async (withStatus) => {
+  const row = await runPublicQuery<PublicProductRef & { data_freshness?: string | null }>(async (withStatus) => {
     let query = supabase
       .from('products')
-      .select('id, name, slug')
+      .select('id, name, slug, data_freshness')
       .ilike('name', `%${q}%`)
       .neq('slug', 'sample-laptop')
       .is('deleted_at', null);
     if (withStatus) query = query.eq('status', PUBLISHED_PRODUCT_STATUS);
     const { data, error } = await query.limit(1).maybeSingle();
-    return { data: data as PublicProductRef | null, error: error as ProductQueryResult<PublicProductRef>['error'] };
+    return { data: data as (PublicProductRef & { data_freshness?: string | null }) | null, error: error as ProductQueryResult<PublicProductRef>['error'] };
   });
+  if (!row) return null;
+  return { id: row.id, name: row.name, slug: row.slug, dataFreshness: row.data_freshness ?? null };
 }
 
 /** List public products for read-only pickers (gifts). */

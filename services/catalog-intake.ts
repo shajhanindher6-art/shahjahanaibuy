@@ -18,7 +18,14 @@
 import { parseCsvDocument } from './providers/csv-provider';
 import { validateGtin } from '@/lib/gtin';
 import { validateImageUrl } from '@/lib/image-url';
+import { validateModelNumber } from '@/lib/model-identity';
+import { validateSpecEntries, type SpecEntryInput } from '@/lib/spec-templates';
+import {
+  validateProductVariant,
+  type ProductVariantInput,
+} from '@/services/pipeline/variants';
 import { nearMissSimilarity, NEAR_MISS_THRESHOLD } from '@/lib/fuzzy-match';
+import { modelsConflict, normalizeBrand, normalizeModel } from '@/lib/model-normalization';
 
 /** Stored in the audit-log details for every approved intake batch. */
 export { INTAKE_SOURCE } from '@/lib/intake-sources';
@@ -33,7 +40,20 @@ export const INTAKE_REQUIRED_COLUMNS = [
   'merchant',
 ] as const;
 
-export const INTAKE_OPTIONAL_COLUMNS = ['description', 'image_url', 'image', 'gtin', 'sku', 'model_number'] as const;
+export const INTAKE_OPTIONAL_COLUMNS = [
+  'description',
+  'image_url',
+  'image',
+  // FINAL 100%, F-P2-34 — extra gallery images, ';'-separated URLs.
+  'image_urls',
+  'gtin',
+  'sku',
+  'model_number',
+  // FINAL 100%, F-P1-22 — specs column (see parseSpecColumn).
+  'specs',
+  // FINAL 100%, F-P2-09 — variants column (see parseVariantColumn).
+  'variants',
+] as const;
 
 /** A row the admin pasted/uploaded, keyed by lower-cased header name. */
 export interface IntakeRowInput {
@@ -56,6 +76,28 @@ export interface IntakeRowInput {
    * state, never a guessed value.
    */
   modelNumber?: string;
+  /**
+   * FINAL 100%, F-P1-22 — specs parsed from the CSV `specs`
+   * column (`ram: 16 GB; storage: 512 GB`). Validated against
+   * the category template in reviewIntakeRows; never invented.
+   */
+  specs?: SpecEntryInput[];
+  /** Parse errors from the `specs` column (empty when it parsed). */
+  specParseErrors?: string[];
+  /**
+   * FINAL 100%, F-P2-09 — variants parsed from the CSV
+   * `variants` column (JSON array, or `name~sku~gtin~key=value`
+   * segments separated by `;;`). Validated in reviewIntakeRows.
+   */
+  variants?: ProductVariantInput[];
+  /** Parse errors from the `variants` column. */
+  variantParseErrors?: string[];
+  /**
+   * FINAL 100%, F-P2-34 — extra gallery image URLs from the
+   * CSV `image_urls` column (';'-separated). Each is validated
+   * like imageUrl; approve writes them as product_images rows.
+   */
+  imageUrls?: string[];
 }
 
 export interface IntakeRowError {
@@ -100,6 +142,9 @@ export interface IntakeReviewedRow {
     gtin?: string;
     sku?: string;
     modelNumber?: string;
+    specs?: SpecEntryInput[];
+    variants?: ProductVariantInput[];
+    imageUrls?: string[];
   } | null;
   /**
    * Admin's explicit per-row choice on a near-duplicate: include it in
@@ -135,6 +180,24 @@ export interface IntakeCatalogContext {
    * it from the live catalog.
    */
   existingGtins?: Map<string, string>;
+  /**
+   * FINAL 100% (F-P1-45/F-P1-46): normalized model + normalized
+   * brand -> slug of the existing product carrying it. The key
+   * is `${normalizeModel(model)}|${normalizeBrand(brand)}`, so
+   * "SM-S928B" variants match each other. Optional like
+   * existingGtins — a missing map means "no model check
+   * available". loadCatalogContext fills it best-effort (the
+   * model_number column exists only after migration 055).
+   */
+  existingModels?: Map<string, string>;
+  /**
+   * FINAL 100% (F-P1-45): slug -> the existing product's
+   * normalized model number (or null when it has none). Lets the
+   * fuzzy leg veto a hold when the models conflict: similar
+   * names for different models are different products, not a
+   * near-duplicate.
+   */
+  existingModelsBySlug?: Map<string, string | null>;
   /** Normalized merchant slug OR name -> merchant id. */
   knownMerchants: Map<string, string>;
   /** Upper-case currency code -> currency id. */
@@ -158,6 +221,12 @@ export interface IntakeInsertPlan {
     currencyId: string;
     merchantSku?: string;
   };
+  /** Validated spec entries from the CSV `specs` column (F-P1-22). */
+  specs?: SpecEntryInput[];
+  /** Validated variants from the CSV `variants` column (F-P2-09). */
+  variants?: ProductVariantInput[];
+  /** Gallery URLs: image_url first, then image_urls (F-P2-34). */
+  galleryUrls?: string[];
   /** The CSV line this insert came from, for the audit trail. */
   rowNumber: number;
 }
@@ -236,6 +305,133 @@ function getField(row: Record<string, string>, keys: string[]): string {
 }
 
 /**
+ * FINAL 100%, F-P1-22 — parse the CSV `specs` column.
+ * Format: `ram: 16 GB; storage: 512 GB` — semicolon-separated
+ * `key: value` pairs. The key must match a template key for the
+ * product's category (checked later, in reviewIntakeRows); this
+ * step only parses the shape. A segment without a colon is a
+ * parse error, never silently dropped. No value is ever invented.
+ */
+export function parseSpecColumn(raw: string): {
+  specs: SpecEntryInput[];
+  errors: string[];
+} {
+  const specs: SpecEntryInput[] = [];
+  const errors: string[] = [];
+  for (const segment of raw.split(';')) {
+    const part = segment.trim();
+    if (!part) continue;
+    const colon = part.indexOf(':');
+    if (colon < 0) {
+      errors.push(`Spec "${part}" has no ":" — use "key: value" (e.g. "ram: 16 GB")`);
+      continue;
+    }
+    const key = part.slice(0, colon).trim().toLowerCase();
+    const value = part.slice(colon + 1).trim();
+    if (!key) {
+      errors.push(`Spec "${part}" has an empty key`);
+      continue;
+    }
+    if (!value) {
+      errors.push(`Spec "${key}" has an empty value`);
+      continue;
+    }
+    specs.push({ key, value });
+  }
+  return { specs, errors };
+}
+
+/**
+ * FINAL 100%, F-P2-09 — parse the CSV `variants` column.
+ * Two shapes: a JSON array (`[{"name":"16 GB / 512 GB","sku":"X",
+ * "gtin":"...","attributes":{"ram":"16 GB"}}]`) or the compact
+ * form — variants separated by `;;`, each
+ * `name~sku~gtin~key=value,key=value` (empty segments allowed).
+ * A variant without a name, or with a malformed segment, is a
+ * parse error, never silently dropped. GTINs are GS1-validated
+ * later, in reviewIntakeRows.
+ */
+export function parseVariantColumn(raw: string): {
+  variants: ProductVariantInput[];
+  errors: string[];
+} {
+  const trimmed = raw.trim();
+  if (!trimmed) return { variants: [], errors: [] };
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (!Array.isArray(parsed)) {
+        return { variants: [], errors: ['Variants JSON must be an array'] };
+      }
+      const variants: ProductVariantInput[] = [];
+      const errors: string[] = [];
+      for (const item of parsed as Array<Record<string, unknown>>) {
+        if (typeof item !== 'object' || item === null || typeof item.name !== 'string') {
+          errors.push('Each variant must be an object with a "name"');
+          continue;
+        }
+        variants.push({
+          name: item.name,
+          ...(typeof item.sku === 'string' ? { sku: item.sku } : {}),
+          ...(typeof item.gtin === 'string' ? { gtin: item.gtin } : {}),
+          ...(typeof item.imageUrl === 'string' ? { imageUrl: item.imageUrl } : {}),
+          ...(item.attributes && typeof item.attributes === 'object'
+            ? { attributes: item.attributes as Record<string, string> }
+            : {}),
+        });
+      }
+      return { variants, errors };
+    } catch {
+      return { variants: [], errors: ['Variants column is not valid JSON'] };
+    }
+  }
+  const variants: ProductVariantInput[] = [];
+  const errors: string[] = [];
+  for (const segment of trimmed.split(';;')) {
+    const part = segment.trim();
+    if (!part) continue;
+    const fields = part.split('~').map((f) => f.trim());
+    const [name = '', sku = '', gtin = '', attrsRaw = ''] = fields;
+    if (fields.length > 4) {
+      errors.push(`Variant "${part}" has too many "~" segments (expected name~sku~gtin~key=value)`);
+      continue;
+    }
+    if (!name) {
+      errors.push(`Variant "${part}" has no name`);
+      continue;
+    }
+    const attributes: Record<string, string> = {};
+    if (attrsRaw) {
+      for (const pair of attrsRaw.split(',')) {
+        const eq = pair.indexOf('=');
+        if (eq < 0) {
+          errors.push(`Variant "${name}" attribute "${pair.trim()}" has no "=" — use "key=value"`);
+          continue;
+        }
+        const k = pair.slice(0, eq).trim();
+        const v = pair.slice(eq + 1).trim();
+        if (k && v) attributes[k] = v;
+      }
+    }
+    variants.push({
+      name,
+      ...(sku ? { sku } : {}),
+      ...(gtin ? { gtin } : {}),
+      ...(Object.keys(attributes).length > 0 ? { attributes } : {}),
+    });
+  }
+  return { variants, errors };
+}
+
+/** Parse the CSV `image_urls` column: ';'-separated URLs. */
+export function parseImageUrlsColumn(raw: string): string[] {
+  return raw
+    .split(';')
+    .map((u) => u.trim())
+    .filter((u) => u.length > 0);
+}
+
+/**
  * Parses intake CSV text into raw row inputs using the shared CSV parser
  * from `CsvProvider` (no second parser). Missing required header columns
  * are reported as header errors (row 1) instead of silently dropping
@@ -283,21 +479,35 @@ export function parseIntakeCsv(csv: string): {
     }
   }
 
-  const rows: IntakeRowInput[] = documentRows.map(({ rowNumber, row }) => ({
-    rowNumber,
-    name: getField(row, ['name']),
-    slug: getField(row, ['slug']),
-    brand: getField(row, ['brand']),
-    category: getField(row, ['category']),
-    price: getField(row, ['price']),
-    currency: getField(row, ['currency']),
-    merchant: getField(row, ['merchant']),
-    description: getField(row, ['description']) || undefined,
-    imageUrl: getField(row, ['image_url', 'image']) || undefined,
-    gtin: getField(row, ['gtin']) || undefined,
-    sku: getField(row, ['sku']) || undefined,
-    modelNumber: getField(row, ['model_number']) || undefined,
-  }));
+  const rows: IntakeRowInput[] = documentRows.map(({ rowNumber, row }) => {
+    const specsRaw = getField(row, ['specs']);
+    const parsedSpecs = specsRaw ? parseSpecColumn(specsRaw) : { specs: [], errors: [] };
+    const variantsRaw = getField(row, ['variants']);
+    const parsedVariants = variantsRaw
+      ? parseVariantColumn(variantsRaw)
+      : { variants: [], errors: [] };
+    const imageUrlsRaw = getField(row, ['image_urls']);
+    return {
+      rowNumber,
+      name: getField(row, ['name']),
+      slug: getField(row, ['slug']),
+      brand: getField(row, ['brand']),
+      category: getField(row, ['category']),
+      price: getField(row, ['price']),
+      currency: getField(row, ['currency']),
+      merchant: getField(row, ['merchant']),
+      description: getField(row, ['description']) || undefined,
+      imageUrl: getField(row, ['image_url', 'image']) || undefined,
+      gtin: getField(row, ['gtin']) || undefined,
+      sku: getField(row, ['sku']) || undefined,
+      modelNumber: getField(row, ['model_number']) || undefined,
+      specs: parsedSpecs.specs.length > 0 ? parsedSpecs.specs : undefined,
+      specParseErrors: parsedSpecs.errors.length > 0 ? parsedSpecs.errors : undefined,
+      variants: parsedVariants.variants.length > 0 ? parsedVariants.variants : undefined,
+      variantParseErrors: parsedVariants.errors.length > 0 ? parsedVariants.errors : undefined,
+      imageUrls: imageUrlsRaw ? parseImageUrlsColumn(imageUrlsRaw) : undefined,
+    };
+  });
 
   return { rows, headerErrors };
 }
@@ -331,6 +541,11 @@ export function reviewIntakeRows(
   const seenNameBrands = new Map<string, number>();
   // Section 20, #9: normalized GTIN -> first row number carrying it.
   const seenGtins = new Map<string, number>();
+  // FINAL 100% (F-P1-45): normalized `model|brand` key -> first
+  // row number carrying it, plus row -> normalized model (for the
+  // fuzzy-leg model-conflict veto below).
+  const seenModels = new Map<string, number>();
+  const seenRowModels = new Map<number, string | null>();
   const reviewed: IntakeReviewedRow[] = [];
 
   for (const input of rows) {
@@ -439,6 +654,79 @@ export function reviewIntakeRows(
         normalizedImageUrl = imageCheck.normalized ?? undefined;
       }
     }
+    // FINAL 100%, F-P2-34 — every extra gallery URL is validated
+    // like image_url; a bad one is a per-row error, never stored.
+    const normalizedImageUrls: string[] = [];
+    for (const extraUrl of input.imageUrls ?? []) {
+      const check = validateImageUrl(extraUrl);
+      if (!check.valid) {
+        errors.push({
+          row,
+          field: 'image_urls',
+          reason: `Image URL "${extraUrl}": ${check.reason ?? 'Invalid image URL'}`,
+        });
+      } else if (check.normalized) {
+        normalizedImageUrls.push(check.normalized);
+      }
+    }
+    // FINAL 100%, F-P1-07 (code half) — a present model number
+    // must be a real model number (digit-bearing, sane chars).
+    // A family word ("X1" with no digit is fine as a NAME, but
+    // as a model_number it is rejected — it would pin nothing).
+    // Missing is fine: honest empty, never guessed.
+    if (input.modelNumber) {
+      const modelCheck = validateModelNumber(input.modelNumber);
+      if (!modelCheck.valid) {
+        errors.push({
+          row,
+          field: 'model_number',
+          reason: modelCheck.reason ?? 'Invalid model number',
+        });
+      }
+    }
+    // FINAL 100%, F-P1-22 (code half) — CSV specs are validated
+    // against the category template, with attribution + rejection
+    // reasons. A spec parse failure, an unknown key, or an empty
+    // value is a per-row error: the row is held, never stored
+    // with a silently dropped spec.
+    let validatedSpecs: SpecEntryInput[] | undefined;
+    if (input.specParseErrors && input.specParseErrors.length > 0) {
+      for (const reason of input.specParseErrors) {
+        errors.push({ row, field: 'specs', reason });
+      }
+    } else if (input.specs && input.specs.length > 0) {
+      const specCheck = validateSpecEntries(input.category, input.specs);
+      if (!specCheck.valid) {
+        for (const reason of specCheck.errors) {
+          errors.push({ row, field: 'specs', reason });
+        }
+      } else {
+        validatedSpecs = specCheck.validEntries;
+      }
+    }
+    // FINAL 100%, F-P2-09 (code half) — CSV variants are
+    // validated (name required, variant GTIN GS1-checked). An
+    // invalid variant holds the row with a reason, never a
+    // silently dropped variant.
+    let validatedVariants: ProductVariantInput[] | undefined;
+    if (input.variantParseErrors && input.variantParseErrors.length > 0) {
+      for (const reason of input.variantParseErrors) {
+        errors.push({ row, field: 'variants', reason });
+      }
+    } else if (input.variants && input.variants.length > 0) {
+      const variantErrors: string[] = [];
+      for (const variant of input.variants) {
+        const check = validateProductVariant(variant);
+        if (!check.valid) variantErrors.push(...check.errors.map((e) => `Variant "${variant.name}": ${e}`));
+      }
+      if (variantErrors.length > 0) {
+        for (const reason of variantErrors) {
+          errors.push({ row, field: 'variants', reason });
+        }
+      } else {
+        validatedVariants = input.variants;
+      }
+    }
 
     const slug = input.slug.toLowerCase();
     const nameBrandKey =
@@ -464,6 +752,21 @@ export function reviewIntakeRows(
       : undefined;
     const seenGtinRow = gtinKey ? seenGtins.get(gtinKey) : undefined;
 
+    // FINAL 100% (F-P1-45/F-P1-46): the MODEL leg. Same
+    // normalized model + same normalized brand is a
+    // near-duplicate hold — a model leg never auto-merges, and a
+    // same-model re-ingest under a different name must be held
+    // instead of creating a second row. Missing model on either
+    // side means no model leg at all.
+    const normalizedModel = normalizeModel(input.modelNumber ?? null);
+    const normalizedBrandKey = normalizeBrand(input.brand ?? null);
+    const modelBrandKey =
+      normalizedModel && normalizedBrandKey ? `${normalizedModel}|${normalizedBrandKey}` : '';
+    const existingModelSlug = modelBrandKey
+      ? (context.existingModels?.get(modelBrandKey) ?? undefined)
+      : undefined;
+    const seenModelRow = modelBrandKey ? seenModels.get(modelBrandKey) : undefined;
+
     if (errors.length > 0) {
       status = 'error';
     } else if (context.existingSlugs.has(slug) || seenSlugs.has(slug)) {
@@ -481,6 +784,18 @@ export function reviewIntakeRows(
       duplicateDetail =
         `Same GTIN (${input.gtin}) as row ${seenGtinRow} in this file. ` +
         `Check before including; a second catalog row for the same GTIN is a duplicate.`;
+    } else if (existingModelSlug) {
+      status = 'near-duplicate';
+      nearDuplicateOf = existingModelSlug;
+      duplicateDetail =
+        `Same model number "${input.modelNumber}" (normalized ${normalizedModel}) as "${existingModelSlug}" with the same brand "${input.brand}". ` +
+        `Check before including; this may be the same product under a different name.`;
+    } else if (seenModelRow !== undefined && seenModelRow !== row) {
+      status = 'near-duplicate';
+      nearDuplicateOf = `row ${seenModelRow} in this file`;
+      duplicateDetail =
+        `Same model number "${input.modelNumber}" (normalized ${normalizedModel}) as row ${seenModelRow} in this file with the same brand "${input.brand}". ` +
+        `Check before including; this may be the same product under a different name.`;
     } else if (nameBrandKey) {
       const existing = context.existingNameBrands.get(nameBrandKey);
       const seenInFile = seenNameBrands.get(nameBrandKey);
@@ -507,7 +822,28 @@ export function reviewIntakeRows(
         const fuzzySeenKey = fuzzyKey
           ? null
           : findFuzzyNameBrandKey(input.name, input.brand, seenNameBrands.keys());
-        if (fuzzyKey) {
+        // FINAL 100% (F-P1-45): a model conflict vetoes the fuzzy
+        // hold — similar names for DIFFERENT recorded models are
+        // different products, not a near-duplicate. Missing model
+        // on either side is not a conflict (modelsConflict is
+        // false when either side is absent).
+        const fuzzyModelVeto = ((): boolean => {
+          if (fuzzyKey) {
+            const fuzzySlug = context.existingNameBrands.get(fuzzyKey);
+            const existingModel = fuzzySlug
+              ? (context.existingModelsBySlug?.get(fuzzySlug) ?? null)
+              : null;
+            return modelsConflict(input.modelNumber ?? null, existingModel);
+          }
+          if (fuzzySeenKey) {
+            const fuzzySeenRow = seenNameBrands.get(fuzzySeenKey);
+            const seenModel =
+              fuzzySeenRow !== undefined ? (seenRowModels.get(fuzzySeenRow) ?? null) : null;
+            return modelsConflict(input.modelNumber ?? null, seenModel);
+          }
+          return false;
+        })();
+        if (fuzzyKey && !fuzzyModelVeto) {
           const fuzzySlug = context.existingNameBrands.get(fuzzyKey);
           const similarity = nearMissSimilarity(
             normalizeIntakeKey(input.name),
@@ -518,7 +854,7 @@ export function reviewIntakeRows(
           duplicateDetail =
             `Similar name "${input.name}" to "${fuzzySlug}" (similarity ${similarity.toFixed(2)}) with the same brand "${input.brand}". ` +
             `Check before including; this may be the same product reworded.`;
-        } else if (fuzzySeenKey) {
+        } else if (fuzzySeenKey && !fuzzyModelVeto) {
           const fuzzySeenRow = seenNameBrands.get(fuzzySeenKey);
           const similarity = nearMissSimilarity(
             normalizeIntakeKey(input.name),
@@ -544,6 +880,12 @@ export function reviewIntakeRows(
       }
       if (gtinKey && !seenGtins.has(gtinKey)) {
         seenGtins.set(gtinKey, row);
+      }
+      if (modelBrandKey && !seenModels.has(modelBrandKey)) {
+        seenModels.set(modelBrandKey, row);
+      }
+      if (!seenRowModels.has(row)) {
+        seenRowModels.set(row, normalizedModel);
       }
     }
 
@@ -574,6 +916,9 @@ export function reviewIntakeRows(
               ...(normalizedGtin ? { gtin: normalizedGtin } : {}),
               ...(input.sku ? { sku: input.sku } : {}),
               ...(input.modelNumber ? { modelNumber: input.modelNumber } : {}),
+              ...(validatedSpecs ? { specs: validatedSpecs } : {}),
+              ...(validatedVariants ? { variants: validatedVariants } : {}),
+              ...(normalizedImageUrls.length > 0 ? { imageUrls: normalizedImageUrls } : {}),
             }
           : null,
     });
@@ -616,6 +961,13 @@ export function planIntakeInsert(reviewedRows: IntakeReviewedRow[]): IntakeInser
     }
 
     const d = reviewed.data;
+    // FINAL 100%, F-P2-34 — gallery URLs ride the plan: the
+    // primary image_url first, then the validated image_urls,
+    // deduped. Approve writes them as product_images rows.
+    const galleryUrls = [
+      ...(d.imageUrl ? [d.imageUrl] : []),
+      ...(d.imageUrls ?? []),
+    ].filter((url, i, arr) => arr.indexOf(url) === i);
     plans.push({
       rowNumber: reviewed.rowNumber,
       product: {
@@ -637,6 +989,9 @@ export function planIntakeInsert(reviewedRows: IntakeReviewedRow[]): IntakeInser
         currencyId: d.currencyId,
         ...(d.sku ? { merchantSku: d.sku } : {}),
       },
+      ...(d.specs ? { specs: d.specs } : {}),
+      ...(d.variants ? { variants: d.variants } : {}),
+      ...(galleryUrls.length > 0 ? { galleryUrls } : {}),
     });
   }
 

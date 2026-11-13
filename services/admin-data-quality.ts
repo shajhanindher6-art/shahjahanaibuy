@@ -38,6 +38,10 @@ import {
   type SourceReliability,
 } from './price-history-quality';
 import {
+  derivePriceState,
+  type PriceState,
+} from '@/lib/verification/price-state';
+import {
   normalizePriceVerificationStatus,
   type PriceVerificationStatus,
 } from './price-verification';
@@ -46,6 +50,10 @@ import {
   resolveLastSuccessfulUpdate,
   type LastSuccessfulUpdate,
 } from './last-successful-update';
+import {
+  getDashboardMerchantReliability,
+  type DashboardMerchantReliabilityRow,
+} from './canonical-merchant-reliability';
 
 export interface AdminDataQualitySummary {
   productsTotal: number;
@@ -72,6 +80,19 @@ export interface AdminDataQualitySummary {
    * when the migration-057 columns do not exist yet.
    */
   sourceReliability: Record<string, SourceReliability>;
+  /**
+   * FINAL 100% (F-P1-50) — the canonical merchant-reliability
+   * data layer for the dashboard page: one row per merchant with
+   * the canonical (policy) score FIRST, plus the two supporting
+   * dimensions (sync + per-source price-history reliability),
+   * each labelled. The dashboard page renders `canonical` as
+   * "Merchant reliability" and the other two under their own
+   * labels — they are never conflated. Empty when the merchants
+   * table could not be read. The dashboard page itself is
+   * another worker's; this field is the clean exposure they
+   * render from.
+   */
+  merchantReliability: DashboardMerchantReliabilityRow[];
   /** True when the 057 provenance columns do not exist yet. */
   historyProvenanceMissing: boolean;
   /** True when the 045 verification columns do not exist yet. */
@@ -100,6 +121,15 @@ export interface AdminDataQualitySummary {
    */
   qualityStates: Record<DataQualityState, number>;
   /**
+   * FINAL 100% (W1, F-P1-29) — the brief's 5-state price machine
+   * distribution across the catalog (Live verified /
+   * Historically verified / Unverified / Stale / Source
+   * unavailable), derived from the same inputs as qualityStates
+   * so the two distributions can never drift apart. Only
+   * LIVE_VERIFIED may be shown with live/current wording.
+   */
+  priceStates: Record<PriceState, number>;
+  /**
    * Sections 21–25, Stage D (item 3) — per-product "last
    * successful update": the last time a real provider response
    * was validated AND saved, distinct from `data_freshness`
@@ -114,6 +144,29 @@ export interface AdminDataQualitySummary {
   productsWithSuccessfulUpdate: number;
   /** True when the 066 `last_successful_update` column does not exist yet (values are derived only). */
   lastSuccessfulUpdateColumnMissing: boolean;
+  /**
+   * Final 100% — F-P2-15: suspicious price changes awaiting
+   * review. Detection existed (assessPriceChange at ingestion /
+   * refresh) but no surface ever listed flagged rows and nothing
+   * alerted on a flag — detection without review. Each entry is
+   * one `price_history` row whose `suspicious_change` flag is set
+   * (migration 057); empty when 057 is unapplied (the flag is
+   * then dropped by the 42703 retry and cannot be listed — see
+   * historyProvenanceMissing + notes). The admin panel renders
+   * this list with a "needs review" banner, and the count is the
+   * notification: any admin opening the data-quality panel sees
+   * it. Email notification needs Resend (owner-gated, not
+   * configured) — recorded as the open half of this item.
+   */
+  suspiciousPriceFlags: Array<{
+    productId: string;
+    productName: string | null;
+    price: number | null;
+    recordedAt: string;
+    source: string | null;
+  }>;
+  /** Count of suspiciousPriceFlags — the review-queue size. */
+  suspiciousPriceFlagCount: number;
   /** Plain-language notes about what could not be measured. */
   notes: string[];
 }
@@ -131,14 +184,18 @@ const EMPTY_SUMMARY: AdminDataQualitySummary = {
   averageDataQualityScore: null,
   historyCoverage: {},
   sourceReliability: {},
+  merchantReliability: [],
   historyProvenanceMissing: false,
   columnsMissing: false,
   merchantSourceMissing: false,
   scoreMayUnderstate: false,
   qualityStates: { verified: 0, partial: 0, unverified: 0, stale: 0, missing: 0 },
+  priceStates: { LIVE_VERIFIED: 0, HISTORICAL_VERIFIED: 0, UNVERIFIED: 0, STALE: 0, SOURCE_UNAVAILABLE: 0 },
   lastSuccessfulUpdate: {},
   productsWithSuccessfulUpdate: 0,
   lastSuccessfulUpdateColumnMissing: false,
+  suspiciousPriceFlags: [],
+  suspiciousPriceFlagCount: 0,
   notes: [],
 };
 
@@ -163,10 +220,14 @@ export async function getAdminDataQualitySummary(
     freshness: { fresh: 0, stale: 0, unknown: 0 },
     historyCoverage: {},
     sourceReliability: {},
+    merchantReliability: [],
     historyProvenanceMissing: false,
     merchantSourceMissing: false,
     scoreMayUnderstate: false,
     qualityStates: { verified: 0, partial: 0, unverified: 0, stale: 0, missing: 0 },
+    priceStates: { LIVE_VERIFIED: 0, HISTORICAL_VERIFIED: 0, UNVERIFIED: 0, STALE: 0, SOURCE_UNAVAILABLE: 0 },
+    suspiciousPriceFlags: [],
+    suspiciousPriceFlagCount: 0,
     notes: [],
   };
 
@@ -237,6 +298,9 @@ export async function getAdminDataQualitySummary(
     }
 
     const productIds = products.map((p) => String(p.id));
+    const productNameById = new Map<string, string>(
+      products.map((p) => [String(p.id), String(p.name ?? '')])
+    );
     summary.productsTotal = products.length;
     if (products.length === 0) {
       summary.notes.push('The catalog is empty — there is no data quality to measure yet.');
@@ -394,9 +458,31 @@ export async function getAdminDataQualitySummary(
           perProduct.push(point);
           historyPointsByProduct.set(row.product_id, perProduct);
           allHistoryPoints.push(point);
+          // Final 100% — F-P2-15: the review queue. A flagged
+          // row is listed here (with product, price, date and
+          // source) so an admin can review it — detection without
+          // a review surface was dead. Only rows whose flag
+          // SURVIVED storage are listed; when 057 is unapplied
+          // the flag is dropped on write and nothing can be
+          // listed (historyProvenanceMissing says so in notes).
+          if (row.suspicious_change === true) {
+            summary.suspiciousPriceFlags.push({
+              productId: row.product_id,
+              productName: productNameById.get(row.product_id) ?? null,
+              price: row.price,
+              recordedAt: row.recorded_at,
+              source: row.source ?? null,
+            });
+          }
         }
       }
       summary.priceHistoryPoints = (error ? 0 : (history ?? []).length);
+      summary.suspiciousPriceFlagCount = summary.suspiciousPriceFlags.length;
+      if (summary.suspiciousPriceFlagCount > 0) {
+        summary.notes.push(
+          `${summary.suspiciousPriceFlagCount} suspicious price change${summary.suspiciousPriceFlagCount === 1 ? '' : 's'} need${summary.suspiciousPriceFlagCount === 1 ? 's' : ''} review — see suspiciousPriceFlags. A flag is a pattern description (spike / fake-sale / inflation), never an accusation; check the merchant listing before acting.`
+        );
+      }
       if (!summary.historyProvenanceMissing) {
         summary.historyCoverage = Object.fromEntries(
           [...historyPointsByProduct.entries()].map(([id, points]) => [
@@ -481,6 +567,19 @@ export async function getAdminDataQualitySummary(
       });
       summary.qualityStates[state.state] += 1;
 
+      // FINAL 100% (W1, F-P1-29) — the brief's 5 states, counted
+      // from the same inputs as the taxonomy above, so the admin
+      // distribution and the per-product price state are the same
+      // function, not two opinions.
+      const priceState = derivePriceState({
+        priceVerificationStatus: status,
+        priceVerifiedAt: (row.price_verified_at as string | null) ?? null,
+        priceAgeDays: score.priceAgeDays,
+        hasRecordedPrice: (merchants?.total ?? 0) > 0 || latestHistory.has(id),
+        hasLiveSource: null,
+      });
+      summary.priceStates[priceState.state] += 1;
+
       // Sections 21–25, Stage D (item 3) — last successful
       // update, distinct from "last checked" (`lastCheck` above):
       // the stored 066 value when the column exists, otherwise
@@ -509,6 +608,20 @@ export async function getAdminDataQualitySummary(
     }
     summary.averageDataQualityScore =
       products.length > 0 ? Math.round((scoreSum / products.length) * 10) / 10 : null;
+    // FINAL 100% (F-P1-50) — canonical merchant reliability for
+    // the dashboard page: one row per merchant, canonical score
+    // first, supporting dimensions labelled. Best-effort: a
+    // failed read leaves the empty array (the page renders an
+    // honest "not available" state, never a guessed score).
+    try {
+      summary.merchantReliability = await getDashboardMerchantReliability(
+        supabase,
+        allHistoryPoints
+      );
+    } catch {
+      summary.merchantReliability = [];
+      summary.notes.push('Merchant reliability could not be computed.');
+    }
     // Section 21–25, Stage H (H-P2-4) — the average is a lower
     // bound while a verification/source column is missing: say so
     // on the surface instead of showing a bare number.

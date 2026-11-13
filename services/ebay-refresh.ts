@@ -10,15 +10,24 @@
  *   merchant_products (eBay row) + data_freshness / next_refresh_at
  *   via the freshness policy layer.
  *
- * MATCHING IS KEYWORD-ONLY (no GTIN/brand match exists — the
- * listings carry no GTIN, and all 10 catalog products have
- * gtin: null). A listing matches only when EVERY token of the
- * product name (plus the brand token) appears in the listing
- * title, and the title contains no accessory word (case, cover,
- * charger, cable …). On ANY doubt the product is SKIPPED and
- * counted as `skippedMismatch` — a wrong-product price is never
- * recorded. The cheapest matching listing wins (Browse already
- * returns cheapest-first).
+ * MATCHING IS SCORED (FINAL 100%, F-P1-43 — was keyword-only):
+ * each listing is scored by services/ebay-matching.ts
+ * (scoreEbayListingMatch): name-token coverage + brand tokens +
+ * GTIN when both sides carry one + normalized model when the
+ * product carries one, with hard vetoes on a GTIN mismatch, a
+ * model mismatch, a model-year token the product does not carry,
+ * and accessory words. Only a score >= 0.85 auto-matches; below
+ * it the listing is skipped as `skippedMismatch` and the score
+ * is recorded on the per-product result for manual review. The
+ * cheapest AUTO-matching listing wins (Browse already returns
+ * cheapest-first). On ANY doubt the product is SKIPPED — a
+ * wrong-product price is never recorded.
+ *
+ * MATCH CONFIDENCE IS PERSISTED (FINAL 100%, F-P1-12): the
+ * winning match's confidence + matched-by are written onto the
+ * merchant_products row when the match_confidence / matched_by
+ * columns exist, and honestly dropped (42703 retry) when they do
+ * not. The per-product result also carries them in-memory.
  *
  * HONEST LABELLING (non-negotiable):
  *   - NO price_history rows for eBay listings: a single snapshot
@@ -34,6 +43,24 @@
  *   - A vanished listing is simply not re-found next run: the old
  *     merchant_products row keeps its last checked price until
  *     the next successful check replaces it.
+ *
+ * DESIGN DECISION — eBay checks are INVISIBLE to history-based
+ * features (Final 100% — F-P2-19, deliberate, NOT a bug to fix
+ * silently): because no price_history row is written here, a live
+ * eBay check moves `data_freshness` + the verified stamp but the
+ * trend, forecast, and deal validation never see the live price —
+ * they read price_history only. The eBay row DOES feed
+ * refreshTrackedPrices on the next run (it inserts a history row
+ * when the recorded price changed), so the live price reaches
+ * history one refresh later, as a recorded price — never as the
+ * live check itself. OPEN OWNER/DESIGN DECISION (recorded, not
+ * decided here): record each eBay snapshot as a history point
+ * (`source: 'ebay-browse-api'`) so history-based features see
+ * live checks immediately, or accept the one-refresh delay. Until
+ * the owner decides, the write behaviour MUST NOT change — the
+ * decision is surfaced instead: EBAY_PRICE_HISTORY_NOTE travels
+ * on every EbayRefreshResult (and therefore on every refresh-run
+ * response), and docs/price-data-pipeline.md states it.
  *
  * ISOLATION (P1-2): per-product try/catch — one product's failure
  * never stops the others — plus a 10s timeout inside the adapter
@@ -60,7 +87,6 @@
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
 import { logApiError } from '@/lib/api/error-logging';
-import { reportAiProviderHealth } from '@/services/ai-engine/health-report';
 import {
   searchEbayListings,
   type EbaySearchResult,
@@ -73,6 +99,11 @@ import {
 } from './freshness';
 import { reserveEbayDailyCall, refundEbayDailyCall } from './ebay-budget';
 import { markProductSuccessfullyUpdated } from './last-successful-update';
+import { scoreEbayListingMatch } from './ebay-matching';
+import { writeListingMatchConfidenceByProduct } from './merchant-listing-match';
+import { recordProviderHealthAttempt } from './provider-health';
+import { matchListingToVariant } from './pipeline/variants';
+import { markProductVerified } from './price-verification';
 
 type FetchFn = typeof fetch;
 
@@ -82,6 +113,22 @@ export type EbayRefreshStatus =
   | 'merchant-missing'
   | 'budget-exhausted'
   | 'unavailable';
+
+/**
+ * Final 100% — F-P2-19: the design decision, in one string that
+ * travels on every refresh result. eBay live checks deliberately
+ * write NO price_history row (a single snapshot of an ephemeral
+ * asking price is not a history), so trend, forecast, and deal
+ * validation — all history-based — never see a live eBay price
+ * until refreshTrackedPrices records it on a later run. OPEN
+ * owner/design decision: record each snapshot as a history point
+ * (source 'ebay-browse-api') or accept the one-refresh delay.
+ * The write behaviour must not change silently; the decision is
+ * surfaced here, in the refresh-run response, and in
+ * docs/price-data-pipeline.md.
+ */
+export const EBAY_PRICE_HISTORY_NOTE =
+  'eBay live checks write no price_history row by design (a single snapshot of an ephemeral asking price is not a history), so trend, forecast, and deal validation do not see a live eBay price until a later refresh records it. Open owner/design decision: record each eBay snapshot as a history point (source ebay-browse-api) or accept the one-refresh delay.';
 
 export type EbayProductOutcome =
   | 'updated'
@@ -97,6 +144,19 @@ export interface EbayRefreshProductResult {
   outcome: EbayProductOutcome;
   price?: number;
   currency?: string;
+  /**
+   * FINAL 100% (F-P1-12): the scored match behind this outcome
+   * (0–1 over the available legs), or null when no listing was
+   * scored / matched. Never a guessed number.
+   */
+  matchConfidence?: number | null;
+  /** Which leg carried the match ('gtin' | 'model' | 'name-brand' | ...). */
+  matchedBy?: string | null;
+  /** True when the best listing scored below the auto threshold and needs manual review. */
+  matchReviewRequired?: boolean;
+  /** Variant the listing matched, when the product has variants (F-P1-47). */
+  variantId?: string | null;
+  variantMatchedBy?: string | null;
 }
 
 export interface EbayRefreshResult {
@@ -124,6 +184,14 @@ export interface EbayRefreshResult {
    */
   budgetRefunded: number;
   error?: string;
+  /**
+   * Final 100% — F-P2-19: EBAY_PRICE_HISTORY_NOTE, on every
+   * result, so any consumer of a refresh run can see that eBay
+   * live checks are invisible to history-based features — and
+   * that this is a deliberate design decision awaiting an owner
+   * call, not a missing write.
+   */
+  historyNote: string;
   products: EbayRefreshProductResult[];
 }
 
@@ -138,70 +206,27 @@ const MAX_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [500, 1000];
 
 /**
- * Words that mark a listing as an accessory for the product
- * rather than the product itself. The match is deliberately
- * conservative: skipping a genuine bundle is harmless (the old
- * recorded price stands), recording a phone case as a phone
- * price is not.
+ * FINAL 100% (F-P1-43): the accessory-word list and tokenizer
+ * moved to services/ebay-matching.ts, where they are vetoes
+ * inside the scored matcher instead of the whole match.
  */
-const ACCESSORY_WORDS = new Set([
-  'case',
-  'cover',
-  'charger',
-  'cable',
-  'keyboard',
-  'screen',
-  'protector',
-  'stand',
-  'mount',
-  'bag',
-  'sleeve',
-  'skin',
-  'replacement',
-  'battery',
-  'adapter',
-  'dock',
-  'stylus',
-  'strap',
-  'band',
-  'lens',
-  'filter',
-]);
-
-function tokenize(value: string): string[] {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .filter((t) => t.length > 0);
-}
 
 /**
- * Keyword-only match: every product-name token AND the brand
- * token must appear in the listing title, and no accessory word
- * may appear. Exported for tests.
+ * Legacy boolean matcher, kept for its existing callers/tests.
+ * FINAL 100% (F-P1-43): it now delegates to the scored matcher
+ * (services/ebay-matching.ts) — `true` exactly when the scored
+ * decision is 'auto'. Keyword containment alone no longer
+ * matches: a different model year, a GTIN mismatch, or a model
+ * mismatch now vetoes.
  */
 export function ebayListingMatchesProduct(
   productName: string,
   productBrand: string | null,
   listingTitle: string
 ): boolean {
-  const titleTokens = new Set(tokenize(listingTitle));
-  const nameTokens = tokenize(productName);
-  if (nameTokens.length === 0) return false;
-  for (const token of nameTokens) {
-    if (!titleTokens.has(token)) return false;
-  }
-  if (productBrand) {
-    for (const token of tokenize(productBrand)) {
-      if (!titleTokens.has(token)) return false;
-    }
-  }
-  for (const token of titleTokens) {
-    if (ACCESSORY_WORDS.has(token)) return false;
-  }
-  return true;
+  return (
+    scoreEbayListingMatch({ productName, productBrand, listingTitle }).decision === 'auto'
+  );
 }
 
 function sleep(ms: number): Promise<void> {
@@ -220,6 +245,7 @@ const ZERO_RESULT: EbayRefreshResult = {
   failed: 0,
   budgetExhausted: false,
   budgetRefunded: 0,
+  historyNote: EBAY_PRICE_HISTORY_NOTE,
   products: [],
 };
 
@@ -239,25 +265,27 @@ export async function refreshEbayPrices(
   const startedAt = Date.now();
   try {
     const inner = await refreshEbayPricesInner(supabase, result, options);
-    // Section 20, §12 #52 — provider_health is written live for
-    // the eBay adapter (best-effort; a missing provider_health
-    // table never fails the run). Only real attempts are
-    // recorded: 'ok' with at least one product checked is a
-    // success; 'unavailable' is a failure. 'not-configured',
-    // 'merchant-missing' and 'budget-exhausted' are config/cap
-    // states, not provider health, and are not recorded.
-    if (inner.checked > 0 && inner.status === 'ok') {
-      await reportAiProviderHealth(supabase, 'ebay', {
-        success: true,
-        responseMs: Date.now() - startedAt,
-      });
-    } else if (inner.status === 'unavailable') {
-      await reportAiProviderHealth(supabase, 'ebay', {
-        success: false,
-        responseMs: Date.now() - startedAt,
-        ...(inner.error ? { error: inner.error.slice(0, 200) } : {}),
-      });
-    }
+    // Section 20, §12 #52 + FINAL 100% (F-P2-04) — health is
+    // written on BOTH trails for every outcome via
+    // recordProviderHealthAttempt (services/provider-health.ts):
+    // `data_sources.last_sync_*` is stamped on success AND on
+    // failure (a failed sync has a timestamp too); the
+    // `provider_health` trail keeps its Section 20 semantics —
+    // only real attempts are recorded there ('ok' with at least
+    // one product checked is a success; 'unavailable' is a
+    // failure; 'not-configured', 'merchant-missing' and
+    // 'budget-exhausted' are config/cap states, not provider
+    // health, and are not recorded on that trail).
+    const includeProviderHealth =
+      (inner.checked > 0 && inner.status === 'ok') || inner.status === 'unavailable';
+    await recordProviderHealthAttempt(supabase, {
+      providerKey: 'ebay',
+      outcome: inner.status === 'ok' ? 'success' : 'failed',
+      error: inner.status === 'ok' ? undefined : (inner.error ?? `eBay refresh ended: ${inner.status}`),
+      recordsChecked: inner.checked,
+      responseMs: Date.now() - startedAt,
+      includeProviderHealth,
+    });
     return inner;
   } catch (err) {
     // The step never throws: an unexpected failure degrades the
@@ -273,10 +301,12 @@ export async function refreshEbayPrices(
       status: 500,
       context: { phase: 'unexpected-failure' },
     });
-    await reportAiProviderHealth(supabase, 'ebay', {
-      success: false,
+    await recordProviderHealthAttempt(supabase, {
+      providerKey: 'ebay',
+      outcome: 'failed',
+      error: String(err).slice(0, 500),
       responseMs: Date.now() - startedAt,
-      error: String(err).slice(0, 200),
+      includeProviderHealth: true,
     });
     result.status = 'unavailable';
     result.error = err instanceof Error ? err.message : String(err);
@@ -381,12 +411,30 @@ async function refreshEbayPricesInner(
   const dueIds = due.map((d) => d.id);
   const { data: productRows, error: productError } = await supabase
     .from('products')
-    .select('id, name, slug, brand, refresh_priority')
+    .select('id, name, slug, brand, gtin, refresh_priority')
     .in('id', dueIds);
   if (productError || !productRows) {
     result.status = 'unavailable';
     result.error = `Could not load due products: ${productError?.message ?? 'no rows returned'}`;
     return result;
+  }
+  // FINAL 100% (F-P1-45/F-P1-46): the model numbers for the due
+  // products, best-effort in one read. The model_number column
+  // exists only after migration 055 is applied — a failed read
+  // means "no model leg available", never a failed run.
+  const modelById = new Map<string, string | null>();
+  try {
+    const { data: modelRows, error: modelError } = await supabase
+      .from('products')
+      .select('id, model_number')
+      .in('id', dueIds);
+    if (!modelError && modelRows) {
+      for (const row of modelRows as Array<{ id: string; model_number: string | null }>) {
+        modelById.set(row.id, row.model_number);
+      }
+    }
+  } catch {
+    // Best-effort only: matching proceeds without the model leg.
   }
   // Keep the policy layer's due order (priority, then oldest).
   const byId = new Map(
@@ -395,8 +443,9 @@ async function refreshEbayPricesInner(
       name: string;
       slug: string;
       brand: string | null;
+      gtin: string | null;
       refresh_priority: number;
-    }>).map((p) => [p.id, p])
+    }>).map((p) => [p.id, { ...p, modelNumber: modelById.get(p.id) ?? null }])
   );
   const products = dueIds
     .map((id) => byId.get(id))
@@ -468,6 +517,8 @@ async function refreshOneProduct(
     name: string;
     slug: string;
     brand: string | null;
+    gtin?: string | null;
+    modelNumber?: string | null;
     refresh_priority: number;
   },
   result: EbayRefreshResult,
@@ -476,7 +527,13 @@ async function refreshOneProduct(
   const push = (
     outcome: EbayProductOutcome,
     price?: number,
-    currency?: string
+    currency?: string,
+    extra?: Partial<
+      Pick<
+        EbayRefreshProductResult,
+        'matchConfidence' | 'matchedBy' | 'matchReviewRequired' | 'variantId' | 'variantMatchedBy'
+      >
+    >
   ): EbayProductOutcome => {
     result.products.push({
       productId: product.id,
@@ -484,6 +541,7 @@ async function refreshOneProduct(
       outcome,
       ...(price !== undefined ? { price } : {}),
       ...(currency ? { currency } : {}),
+      ...(extra ?? {}),
     });
     return outcome;
   };
@@ -562,14 +620,86 @@ async function refreshOneProduct(
     return push('skipped-no-listing');
   }
 
-  const match = search.listings.find(
-    (l) =>
-      l.price !== null &&
-      ebayListingMatchesProduct(product.name, product.brand, l.title)
-  );
+  // FINAL 100% (F-P1-43/F-P1-12): SCORED matching. Every priced
+  // listing is scored (name coverage + brand + GTIN + normalized
+  // model, with vetoes); only an 'auto' decision matches. The
+  // best-scoring listing wins; a best score below the auto
+  // threshold is recorded on the per-product result
+  // (matchReviewRequired) instead of being silently skipped, so
+  // an admin can review it. A vetoed listing never matches.
+  const scored = search.listings
+    .filter((l) => l.price !== null)
+    .map((l) => ({
+      listing: l,
+      score: scoreEbayListingMatch({
+        productName: product.name,
+        productBrand: product.brand,
+        productModel: product.modelNumber ?? null,
+        productGtin: product.gtin ?? null,
+        listingTitle: l.title,
+        listingGtin: l.gtin ?? null,
+      }),
+    }))
+    .sort((a, b) => (b.score.score ?? -1) - (a.score.score ?? -1));
+  const bestScored = scored[0];
+  const match = bestScored && bestScored.score.decision === 'auto' ? bestScored.listing : undefined;
+  const matchInfo = bestScored
+    ? {
+        matchConfidence: bestScored.score.confidence,
+        matchedBy: bestScored.score.matchedBy,
+        matchReviewRequired: bestScored.score.decision === 'review',
+      }
+    : { matchConfidence: null, matchedBy: null, matchReviewRequired: false };
   if (!match) {
     result.skippedMismatch += 1;
-    return push('skipped-mismatch');
+    if (bestScored) {
+      logger.warn('refreshEbayPrices: best eBay listing did not auto-match', {
+        productId: product.id,
+        decision: bestScored.score.decision,
+        score: bestScored.score.score,
+        reasons: bestScored.score.reasons,
+      });
+    }
+    const entry: EbayRefreshProductResult = {
+      productId: product.id,
+      slug: product.slug,
+      outcome: 'skipped-mismatch',
+      ...matchInfo,
+    };
+    result.products.push(entry);
+    return 'skipped-mismatch';
+  }
+
+  // FINAL 100% (F-P1-47): variant matching. When the product
+  // has stored variants, the matched listing is matched to a
+  // variant (SKU -> GTIN -> model -> attributes). Honest-empty
+  // when there are no variants: the listing attaches to the
+  // product, and variantId stays null.
+  let variantId: string | null = null;
+  let variantMatchedBy: string | null = null;
+  try {
+    const { data: variantRows, error: variantError } = await supabase
+      .from('product_variants')
+      .select('id, sku, gtin, attributes')
+      .eq('product_id', product.id)
+      .is('deleted_at', null);
+    if (!variantError && variantRows && variantRows.length > 0) {
+      const variantMatch = matchListingToVariant(
+        { sku: match.itemId, gtin: match.gtin ?? null, modelNumber: product.modelNumber ?? null },
+        (variantRows as Array<Record<string, unknown>>).map((row) => ({
+          id: String(row.id),
+          sku: (row.sku as string | null) ?? null,
+          gtin: (row.gtin as string | null) ?? null,
+          attributes: (row.attributes as Record<string, unknown>) ?? {},
+        }))
+      );
+      if (variantMatch.variant) {
+        variantId = variantMatch.variant.id;
+        variantMatchedBy = variantMatch.matchedBy;
+      }
+    }
+  } catch {
+    // Best-effort only: variant matching never fails the product match.
   }
 
   const currency = (match.currency ?? 'USD').toUpperCase();
@@ -702,6 +832,23 @@ async function refreshOneProduct(
   } catch {
     // Freshness bookkeeping must never fail the product.
   }
+  // FINAL 100% (F-P0-02): the live check re-verifies the PRODUCTS
+  // rollup too. Until now the 'verified' stamp landed on the
+  // merchant_products row only, and every public surface reads
+  // the products rollup — so no refresh could ever make a product
+  // 'verified'. The stamp carries the real Browse check time
+  // (nowIso), never the approve time, and never fires without a
+  // matched live listing (this code runs only after the upsert
+  // above succeeded). Best-effort: 045 unapplied reports
+  // columnsMissing, never fails the product.
+  try {
+    await markProductVerified(supabase, product.id, {
+      source: 'ebay-browse-api',
+      verifiedAt: nowIso,
+    });
+  } catch {
+    // Verification bookkeeping must never fail the product.
+  }
   // Sections 21–25, Stage D — a real provider response was
   // validated and saved (the merchant row above), so this is a
   // successful update, not just a check. Best-effort: the
@@ -712,5 +859,25 @@ async function refreshOneProduct(
   } catch {
     // Freshness bookkeeping must never fail the product.
   }
-  return push(existing ? 'updated' : 'inserted', price, currency);
+  // FINAL 100% (F-P1-12): persist the match confidence on the
+  // listing row (writes when the columns exist; honest null
+  // otherwise). Best-effort: a missing column never fails the
+  // product.
+  if (matchInfo.matchConfidence !== null && matchInfo.matchConfidence !== undefined) {
+    try {
+      await writeListingMatchConfidenceByProduct(
+        supabase,
+        product.id,
+        ebayMerchantId,
+        matchInfo.matchConfidence,
+        matchInfo.matchedBy ?? 'name-brand'
+      );
+    } catch {
+      // Best-effort only.
+    }
+  }
+  return push(existing ? 'updated' : 'inserted', price, currency, {
+    ...matchInfo,
+    ...(variantId ? { variantId, variantMatchedBy } : {}),
+  });
 }

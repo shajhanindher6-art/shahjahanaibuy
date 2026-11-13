@@ -57,6 +57,14 @@
  *     freshness dimension in services/ai-deals.ts.
  * Do NOT add a third scorer. If the two ever need merging, that
  * is a Stage E decision, not a deletion.
+ *
+ * FINAL 100% (F-P1-50) — SUPPORTING DIMENSION, NOT CANONICAL:
+ * this scorer is NOT "merchant reliability" on any surface — it
+ * is the sync/freshness dimension of deal ranking. The canonical
+ * scorer is the policy scorer (services/merchant-reliability.ts,
+ * single entry point services/canonical-merchant-reliability.ts).
+ * The 061 snapshot writer stores this score inside `signals` as
+ * a labelled dimension, never as a second score column.
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';

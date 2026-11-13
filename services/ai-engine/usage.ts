@@ -111,6 +111,15 @@ export interface AiProviderBudgetState {
 export interface AiUsageSummary {
   generatedAt: string;
   note: string;
+  /**
+   * Final 100%, F-P2-56 — machine-readable enforcement labelling.
+   * 'shared' = Upstash counters active (cross-instance, real
+   * enforcement). 'per-instance' = in-memory counters only: a user
+   * can exceed the daily quota by hitting different Vercel
+   * instances. Never claim shared enforcement when this is
+   * 'per-instance'.
+   */
+  enforcement: 'shared' | 'per-instance';
   providers: Array<{
     key: string;
     calls: number;
@@ -386,6 +395,8 @@ export function getAiUsageSummary(): AiUsageSummary {
   return {
     generatedAt: new Date().toISOString(),
     note: IN_MEMORY_NOTE,
+    // Sync summary never consults Upstash — always per-instance.
+    enforcement: 'per-instance',
     providers,
     capabilities,
     budgets: Object.keys(PROVIDER_DAILY_BUDGETS).map((key) => getProviderBudgetState(key)),
@@ -478,6 +489,7 @@ export async function getAiUsageSummaryAsync(): Promise<AiUsageSummary> {
   );
   return {
     ...summary,
+    enforcement: sharedActive ? 'shared' : 'per-instance',
     budgets,
     note:
       summary.note +

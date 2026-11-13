@@ -53,6 +53,13 @@ import {
   validateProviderCurrency,
 } from '@/services/refresh-currency';
 import { markProductSuccessfullyUpdated } from '@/services/last-successful-update';
+import {
+  assessPriceChange,
+  insertPriceHistoryRow,
+  isDuplicatePricePoint,
+  PRICE_HISTORY_SOURCES,
+  type PriceHistorySource,
+} from '@/services/price-history-quality';
 
 /**
  * Sections 21–25, Stage B (B11) — the refresh-leg re-check.
@@ -68,6 +75,133 @@ export function validateProviderRefreshResult(fresh: unknown):
   const result = validateRawProduct(fresh);
   if (result.success) return { ok: true, data: result.data };
   return { ok: false, errors: result.errors };
+}
+
+// ---------------------------------------------------------------------------
+// Shared history write for the price processors (FINAL 100%, W3, F-P1-33)
+// ---------------------------------------------------------------------------
+
+export interface ProcessorPricePointInput {
+  productId: string;
+  retailerId: string;
+  price: number;
+  currency: string;
+  /** Availability as supplied by the source; 'unknown' when not supplied. */
+  availability?: string | null;
+  url?: string | null;
+  /** Provenance the row may claim; null claims none (never guessed). */
+  source?: PriceHistorySource | null;
+  /**
+   * When the price was observed. An explicit null means
+   * "observation time unknown" and is stored as NULL — a re-record
+   * must never claim it observed the price "now".
+   */
+  observedAt?: string | null;
+}
+
+export interface ProcessorPricePointResult {
+  recorded: boolean;
+  /** True when the point was skipped as an unchanged re-record. */
+  duplicateSkipped: boolean;
+  suspicious: boolean;
+  error?: string;
+}
+
+/**
+ * The ONLY way a worker processor writes a price_history row.
+ * Both direct `.insert({…, recorded_at: now()})` calls that used
+ * to live here bypassed this: no source, no observed_at, no
+ * suspicious assessment, no dedupe. This helper reads the latest
+ * recorded point for the (product, retailer) pair, assesses the
+ * new point against the last 30, skips an unchanged re-record
+ * (same price + same availability), and inserts through
+ * `insertPriceHistoryRow` — every row therefore carries source,
+ * observed_at and a suspicious flag (or the 42703 legacy retry
+ * when migration 057 is unapplied). An invalid price (non-finite
+ * or ≤ 0) is rejected, never inserted.
+ */
+export async function recordProcessorPricePoint(
+  supabase: Awaited<ReturnType<typeof getServiceClient>>,
+  input: ProcessorPricePointInput
+): Promise<ProcessorPricePointResult> {
+  if (!Number.isFinite(input.price) || input.price <= 0) {
+    return {
+      recorded: false,
+      duplicateSkipped: false,
+      suspicious: false,
+      error: `Invalid price for history: ${String(input.price)}`,
+    };
+  }
+  const availability = input.availability ?? 'unknown';
+  const nowIso = new Date().toISOString();
+  let history: Array<{ price: number; recordedAt: string }> = [];
+  let latestAvailability: string | null = null;
+  try {
+    const { data } = await supabase
+      .from('price_history')
+      .select('price, availability, recorded_at')
+      .eq('product_id', input.productId)
+      .eq('retailer_id', input.retailerId)
+      .order('recorded_at', { ascending: false })
+      .limit(30);
+    const rows = (data ?? []) as Array<{
+      price: number | string;
+      availability?: string | null;
+      recorded_at: string;
+    }>;
+    latestAvailability = rows.length > 0 ? (rows[0].availability ?? null) : null;
+    history = rows
+      .map((row) => ({
+        price: parseFloat(String(row.price)),
+        recordedAt: row.recorded_at,
+      }))
+      .filter((p) => Number.isFinite(p.price));
+  } catch {
+    history = [];
+  }
+  if (
+    isDuplicatePricePoint(
+      history.length > 0
+        ? { price: history[0].price, availability: latestAvailability }
+        : null,
+      input.price,
+      availability
+    )
+  ) {
+    return { recorded: false, duplicateSkipped: true, suspicious: false };
+  }
+  const assessment = assessPriceChange(history, input.price, nowIso);
+  if (assessment.suspicious) {
+    logger.warn('Processor: suspicious price change flagged', {
+      productId: input.productId,
+      reasons: assessment.reasons,
+    });
+  }
+  const source: PriceHistorySource | null =
+    input.source && (PRICE_HISTORY_SOURCES as readonly string[]).includes(input.source)
+      ? input.source
+      : null;
+  const { error } = await insertPriceHistoryRow(supabase, {
+    product_id: input.productId,
+    retailer_id: input.retailerId,
+    price: input.price,
+    currency: input.currency,
+    availability,
+    url: input.url ?? null,
+    recorded_at: nowIso,
+    source,
+    observed_at: input.observedAt === undefined ? nowIso : input.observedAt,
+    suspicious_change: assessment.suspicious,
+  });
+  if (error) {
+    return {
+      recorded: false,
+      duplicateSkipped: false,
+      suspicious: assessment.suspicious,
+      error: error.message,
+    };
+  }
+  return { recorded: true, duplicateSkipped: false, suspicious: assessment.suspicious };
 }
 
 // ---------------------------------------------------------------------------
@@ -301,21 +435,37 @@ async function processPriceUpdate(
   const data = job.data as any;
 
   const supabase = await getServiceClient();
-  const { error } = await supabase.from('price_history').insert({
-    product_id: data.productId,
-    retailer_id: data.retailerId,
-    price: data.price,
+  // FINAL 100% (W3, F-P1-33) — this used to write a raw
+  // `.insert({…, recorded_at: now()})` with no source, no
+  // observed_at, no suspicious assessment and no dedupe. Every
+  // history write now goes through recordProcessorPricePoint.
+  // Availability is 'unknown' when the job did not supply one —
+  // the old `?? 'in_stock'` asserted stock nobody observed.
+  // observed_at is null (unknown): a price.update job carries no
+  // observation time, and claiming "now" would invent one.
+  const result = await recordProcessorPricePoint(supabase, {
+    productId: data.productId,
+    retailerId: data.retailerId,
+    price: Number(data.price),
     currency: data.currency,
-    availability: data.availability ?? 'in_stock',
+    availability: data.availability ?? 'unknown',
     url: data.url ?? null,
-    recorded_at: new Date().toISOString(),
+    source: null,
+    observedAt: null,
   });
 
-  if (error) {
+  if (!result.recorded && result.error) {
     return {
       success: false,
       processed: 0,
-      errors: [error.message],
+      errors: [result.error],
+    };
+  }
+  if (result.duplicateSkipped) {
+    return {
+      success: true,
+      processed: 0,
+      metadata: { duplicateSkipped: true },
     };
   }
 
@@ -366,6 +516,10 @@ async function processPriceRefresh(
 
   const registry = getProviderRegistry();
   let processed = 0;
+  // FINAL 100% (W3, F-P1-33) — re-fetches that confirm an unchanged
+  // price record no new history row (dedupe), but they are still
+  // successful fetches: they count toward `success` below.
+  let duplicatesSkipped = 0;
   const errors: string[] = [];
   // Sections 21–25, Stage D (item 4) — price points recorded
   // with the currency explicitly assumed as USD because the
@@ -476,9 +630,18 @@ async function processPriceRefresh(
       category: validatedData.category ?? undefined,
       gtin: validatedData.gtin ?? undefined,
       url: validatedData.url ?? undefined,
+      // FINAL 100% (W5, F-P1-45): the product modelNumber is
+      // `string | null` in the validated row; RawProductData
+      // only allows `string | undefined` — same normalization.
+      modelNumber: validatedData.modelNumber ?? undefined,
       variants: validatedData.variants?.map((v) => ({
         ...v,
         gtin: v.gtin ?? undefined,
+        // FINAL 100% (W5, F-P1-45): the variant modelNumber is
+        // `string | null` in the validated row; RawProductData
+        // only allows `string | undefined` — same null-means-
+        // absent normalization as the other text fields above.
+        modelNumber: v.modelNumber ?? undefined,
       })),
     };
 
@@ -493,19 +656,38 @@ async function processPriceRefresh(
     const providerCurrency = validateProviderCurrency(fresh.currency);
     const recordedCurrency = providerCurrency ?? DEFAULT_CURRENCY_CODE;
     if (!providerCurrency) currencyAssumedUsd += 1;
-    const { error: insertError } = await supabase.from('price_history').insert({
-      product_id: productId,
-      retailer_id: source.retailer_id,
+    // FINAL 100% (W3, F-P1-33) — this used to write a raw
+    // `.insert({…, recorded_at: now()})` with no source, no
+    // observed_at, no suspicious assessment and no dedupe. The
+    // point arrived through a provider fetch, so its source is
+    // 'merchant-feed' and its observed time is the fetch time —
+    // never the insert time. An unchanged re-fetch records
+    // nothing (duplicateSkipped) but still counts as a successful
+    // fetch for this source.
+    const historyResult = await recordProcessorPricePoint(supabase, {
+      productId,
+      retailerId: source.retailer_id,
       price: fresh.price,
       currency: recordedCurrency,
       availability: fresh.availability,
       url: fresh.url ?? null,
-      recorded_at: new Date().toISOString(),
+      source: 'merchant-feed',
+      observedAt: new Date(fetchStart).toISOString(),
     });
 
-    if (insertError) {
-      touchProvider(provider.key, false, insertError.message);
-      errors.push(insertError.message);
+    if (historyResult.error) {
+      touchProvider(provider.key, false, historyResult.error);
+      errors.push(historyResult.error);
+    } else if (historyResult.duplicateSkipped) {
+      touchProvider(provider.key, true);
+      duplicatesSkipped += 1;
+      // A re-fetch that confirms the recorded price is a
+      // successful update of the record, even with no new point.
+      try {
+        await markProductSuccessfullyUpdated(supabase, productId);
+      } catch {
+        // Freshness bookkeeping must never fail the refresh.
+      }
     } else {
       touchProvider(provider.key, true);
       processed++;
@@ -555,10 +737,10 @@ async function processPriceRefresh(
   }
 
   return {
-    success: processed > 0,
+    success: processed > 0 || duplicatesSkipped > 0,
     processed,
     errors: errors.length > 0 ? errors : undefined,
-    metadata: { currencyAssumedUsd },
+    metadata: { currencyAssumedUsd, duplicatesSkipped },
   };
 }
 

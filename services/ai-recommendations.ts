@@ -351,7 +351,11 @@ function mapProductRow(row: Record<string, unknown>): Product {
     category: row.category as string | null,
     imageUrl: row.image_url as string | null,
     gtin: row.gtin as string | null,
-    confidenceScore: row.confidence_score as number,
+    // Final 100% — F-P2-03: the legacy `confidence_score`
+    // (field-presence count, floored at 50) is NOT emitted on
+    // the Product object any more — getRecommendations serializes
+    // it into /api/v1/recommendations. Internal readers must use
+    // the 7-dimension data-quality score instead.
     // Section 20, §12 #82 — populate the verification rollup (see
     // ai-deals.ts: the 045 column is not selected yet, so this reads
     // 'unverified' until 045 applies and the select grows).

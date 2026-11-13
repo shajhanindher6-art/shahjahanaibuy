@@ -371,9 +371,14 @@ export async function compareProducts(
           p.priceVerificationStatus === 'verified' &&
           getFreshnessStatus(p.dataFreshness ?? null).status === 'fresh'
       );
+    // Final 100% — F-P2-18: verifiedDataRangeLabel returns null
+    // when no check date is known for any compared product; the
+    // verdict then falls back to the recorded-data range label —
+    // a dateless "verified" is never rendered.
     const sourceLabel =
       `${allVerifiedAndFresh
-        ? verifiedDataRangeLabel(products.map((p) => p.dataFreshness ?? null))
+        ? (verifiedDataRangeLabel(products.map((p) => p.dataFreshness ?? null)) ??
+          recordedDataRangeLabel(products.map((p) => p.dataFreshness ?? null)))
         : recordedDataRangeLabel(products.map((p) => p.dataFreshness ?? null))} ` +
       `The closing recommendation in this summary is ${GENERAL_GUIDANCE_LABEL}.`;
 

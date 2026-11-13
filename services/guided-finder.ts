@@ -74,6 +74,13 @@ export interface GuidedCandidate {
   bestPriceUsd: number | null;
   compareAtUsd: number | null;
   merchantName: string | null;
+  /**
+   * Final 100% — F-P0-06: the product row's recorded
+   * `data_freshness`, so price surfaces can label the price's age
+   * instead of rendering it as current. Null when the row carries
+   * no check date — the surface then renders "Price age unknown".
+   */
+  dataFreshness?: string | null;
   /** Canonical Deal Score, or null when no unexpired prediction exists. */
   dealScore: number | null;
 }
@@ -971,7 +978,12 @@ export async function loadGuidedCandidates(
         brand: p.brand,
         category: p.category,
         image_url: p.imageUrl,
-        confidence_score: p.confidenceScore ?? 50,
+        // Final 100% (F-P2-03): the legacy field-presence count is
+        // an internal enrich input only — it is never serialized
+        // on a GuidedCandidate — and it is NEVER defaulted to the
+        // old 50 floor (getProducts no longer emits it at all).
+        // An unreadable row scores 0 here, not 50.
+        confidence_score: p.confidenceScore ?? 0,
       }))
     );
     if (enriched.length === 0) return [];
@@ -1038,6 +1050,10 @@ export async function loadGuidedCandidates(
       bestPriceUsd: p.price,
       compareAtUsd: p.bestRetailer.compareAt,
       merchantName: p.bestRetailer.name,
+      // Final 100% — F-P0-06: freshness rides with the pick so
+      // the Budget Finder (and every other guided surface) can
+      // label the price's age instead of showing it as current.
+      dataFreshness: products.find((row) => row.id === p.id)?.dataFreshness ?? null,
       dealScore: scoreByProduct.get(p.id) ?? null,
     }));
   } catch {

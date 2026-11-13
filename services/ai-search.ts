@@ -868,6 +868,20 @@ export async function aiSearch(
 
     const products = (data ?? []) as unknown as Array<Record<string, unknown>>;
     let results: AISearchResult[] = products.map((row) => {
+      // Final 100% — F-P2-03: the legacy `confidence_score` is a
+      // field-presence count (name +15, GTIN +20, …), floored at 50
+      // by the DB default — never a completion or quality score.
+      // It is NOT emitted on the Product object any more (the
+      // public products API already omits it; ai-search was still
+      // serializing it inside every result). The search relevance
+      // score below still uses the raw column value as ONE input
+      // via the local `fieldPresenceScore` — internal ranking only,
+      // never exposed on the payload.
+      const fieldPresenceScore =
+        typeof row.confidence_score === 'number' &&
+        Number.isFinite(row.confidence_score)
+          ? (row.confidence_score as number)
+          : 50;
       const product: Product = {
         id: row.id as string,
         name: row.name as string,
@@ -877,7 +891,6 @@ export async function aiSearch(
         category: row.category as string | null,
         imageUrl: row.image_url as string | null,
         gtin: row.gtin as string | null,
-        confidenceScore: row.confidence_score as number,
         // Section 20, §12 #82 — populate the verification rollup
         // (same 045 note as ai-deals.ts).
         priceVerificationStatus: normalizePriceVerificationStatus(
@@ -926,7 +939,7 @@ export async function aiSearch(
 
       const score = Math.min(
         100,
-        (product.confidenceScore ?? 50) +
+        fieldPresenceScore +
           matchedAttributes.length * 15 +
           matchedTerms.length * 5 +
           nameMatchedTerms.length * 5

@@ -100,6 +100,106 @@ export async function recordDataSourceSync(
   }
 }
 
+export interface ProviderDataSourceConfig {
+  /** Registry provider key, e.g. 'ebay'. */
+  providerKey: string;
+  /** Display name for the providers / data_sources rows. */
+  name?: string;
+  /** Provider category for the providers row, e.g. 'official_api'. */
+  type?: string;
+}
+
+/**
+ * FINAL 100% (F-P2-04) — the generic half of ensureCsvDataSource:
+ * make sure a `providers` row AND a `data_sources` row exist for
+ * a provider key, so `recordDataSourceSync` has somewhere to
+ * write the last-sync stamp. (recordDataSourceSync alone updates
+ * zero rows when no data_sources row exists — the write silently
+ * goes nowhere.) Idempotent; never throws. Only call it after a
+ * REAL provider attempt: creating the rows is bookkeeping for an
+ * attempt that happened, never a claim that a source is
+ * configured — the provider's own isAvailable() still decides
+ * that.
+ */
+export async function ensureProviderDataSource(
+  supabase: AnySupabaseClient,
+  config: ProviderDataSourceConfig
+): Promise<EnsureCsvDataSourceResult> {
+  const providerKey = config.providerKey.trim();
+  if (!providerKey) return 'skipped';
+  try {
+    const { data: provider, error: providerError } = await supabase
+      .from('providers')
+      .select('id')
+      .eq('key', providerKey)
+      .maybeSingle();
+    let providerId = (provider as { id: string } | null)?.id ?? null;
+    if (providerError) {
+      logger.warn('ensureProviderDataSource: providers lookup failed', {
+        provider: providerKey,
+        error: providerError.message,
+      });
+      return 'skipped';
+    }
+    if (!providerId) {
+      const { data: created, error: createError } = await supabase
+        .from('providers')
+        .upsert(
+          {
+            key: providerKey,
+            name: config.name ?? providerKey,
+            type: config.type ?? 'official_api',
+            active: true,
+          },
+          { onConflict: 'key' }
+        )
+        .select('id')
+        .single();
+      if (createError || !created) {
+        logger.warn('ensureProviderDataSource: providers upsert failed', {
+          provider: providerKey,
+          error: createError?.message,
+        });
+        return 'skipped';
+      }
+      providerId = (created as { id: string }).id;
+    }
+    const { data: existing, error: existingError } = await supabase
+      .from('data_sources')
+      .select('id')
+      .eq('provider_id', providerId)
+      .maybeSingle();
+    if (existingError) {
+      logger.warn('ensureProviderDataSource: data_sources lookup failed', {
+        provider: providerKey,
+        error: existingError.message,
+      });
+      return 'skipped';
+    }
+    if (existing) return 'exists';
+    const { error: insertError } = await supabase.from('data_sources').insert({
+      provider_id: providerId,
+      name: config.name ?? providerKey,
+      source_type: config.type ?? 'official_api',
+      active: true,
+    });
+    if (insertError) {
+      logger.warn('ensureProviderDataSource: data_sources insert failed', {
+        provider: providerKey,
+        error: insertError.message,
+      });
+      return 'skipped';
+    }
+    return 'created';
+  } catch (err) {
+    logger.warn('ensureProviderDataSource: unexpected failure', {
+      provider: providerKey,
+      error: String(err),
+    });
+    return 'skipped';
+  }
+}
+
 export interface CsvDataSourceConfig {
   /** Public CSV file URL (the same value as CSV_SOURCE_URL). */
   sourceUrl: string;

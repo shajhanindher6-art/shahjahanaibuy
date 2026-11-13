@@ -28,6 +28,8 @@
  * category word.
  */
 
+import { normalizeSpecValue } from '@/lib/spec-value-normalization';
+
 export interface SpecTemplateEntry {
   /** product_attributes.key for this spec. */
   key: string;
@@ -52,7 +54,9 @@ export type SpecTemplateCategory =
   | 'smartwatch'
   | 'accessories'
   | 'wearables'
-  | 'monitor';
+  | 'monitor'
+  | 'gaming'
+  | 'home-electronics';
 
 /** Canonical spec keys per category, as data — not UI copy. */
 export const SPEC_TEMPLATES: Record<SpecTemplateCategory, SpecTemplateEntry[]> = {
@@ -139,6 +143,29 @@ export const SPEC_TEMPLATES: Record<SpecTemplateCategory, SpecTemplateEntry[]> =
     { key: 'panel', label: 'Panel type' },
     { key: 'connectivity', label: 'Connectivity' },
   ],
+  // FINAL 100%, F-P2-13 — Gaming and Home electronics had no
+  // template, so specs for those categories could not be
+  // validated at all. Keys are canonical spec keys only — no
+  // values are recorded here, and an unknown value stays unknown.
+  gaming: [
+    { key: 'processor', label: 'Processor' },
+    { key: 'graphics', label: 'Graphics' },
+    { key: 'ram', label: 'RAM', units: ['GB'] },
+    { key: 'storage', label: 'Storage', units: ['GB', 'TB'] },
+    { key: 'display', label: 'Display', units: ['inch'] },
+    { key: 'refresh_rate', label: 'Refresh rate', units: ['Hz'] },
+    { key: 'battery', label: 'Battery', units: ['Wh', 'mAh', 'hours'] },
+    { key: 'connectivity', label: 'Connectivity' },
+  ],
+  'home-electronics': [
+    { key: 'display', label: 'Display', units: ['inch'] },
+    { key: 'resolution', label: 'Resolution' },
+    { key: 'connectivity', label: 'Connectivity' },
+    { key: 'power', label: 'Power', units: ['W'] },
+    { key: 'weight', label: 'Weight', units: ['g', 'kg'] },
+    { key: 'compatibility', label: 'Compatibility' },
+    { key: 'material', label: 'Material' },
+  ],
 };
 
 /** Category words that resolve to a template (`phone` → smartphone). */
@@ -175,6 +202,14 @@ const CATEGORY_ALIASES: Record<string, SpecTemplateCategory> = {
   monitors: 'monitor',
   display: 'monitor',
   displays: 'monitor',
+  gaming: 'gaming',
+  games: 'gaming',
+  console: 'gaming',
+  consoles: 'gaming',
+  'home electronics': 'home-electronics',
+  'home-electronics': 'home-electronics',
+  'home appliance': 'home-electronics',
+  'home appliances': 'home-electronics',
 };
 
 /** Resolve a free-text category to its template, or null when it has none. */
@@ -255,7 +290,96 @@ export function validateSpecEntries(
       errors.push(`Spec "${key}" takes no unit, got "${unit}"`);
       continue;
     }
-    validEntries.push({ key, value, ...(unit ? { unit } : {}) });
+    validEntries.push({
+      key,
+      // FINAL 100%, F-P2-35 — value normalization at write time:
+      // "16GB" → "16 GB", "sixteen" → "16". The UNIT is NOT
+      // folded into the value: it lives in its own column and
+      // formatAttributeValue appends it at render time, so
+      // folding it here would render "16 GB GB". The standalone
+      // normalizeSpecValue(value, unit) form is for values whose
+      // unit is not stored separately.
+      value: normalizeSpecValue(value).value,
+      ...(unit ? { unit } : {}),
+    });
   }
   return { valid: errors.length === 0, errors, validEntries };
+}
+
+// ---------------------------------------------------------------------------
+// FINAL 100%, F-P1-09 — spec completeness flagging (never silent)
+// ---------------------------------------------------------------------------
+
+export interface SpecCompleteness {
+  /** False when the category has no template (nothing can be required). */
+  hasTemplate: boolean;
+  /** Template keys for the category (empty when no template). */
+  requiredKeys: string[];
+  /** Template keys with no stored value. */
+  missingKeys: string[];
+  /** Stored keys the template does not know — reported, never dropped. */
+  unknownKeys: string[];
+  /** True only when a template exists and no key is missing. */
+  complete: boolean;
+  /** Stored template keys / total template keys (0 when no template). */
+  coverage: number;
+}
+
+/**
+ * Flag a product's spec completeness against its category
+ * template: which required keys are missing, and which stored
+ * keys the template does not know. Unknown stored keys are
+ * REPORTED here — the validator already rejects them on write,
+ * so an unknown key in storage is a legacy row, never a silent
+ * drop. A category with no template reports hasTemplate false
+ * and complete false, never "complete" by default.
+ */
+export function assessSpecCompleteness(
+  category: string | null | undefined,
+  storedKeys: string[]
+): SpecCompleteness {
+  const template = specTemplateForCategory(category);
+  if (!template) {
+    return {
+      hasTemplate: false,
+      requiredKeys: [],
+      missingKeys: [],
+      unknownKeys: [...new Set(storedKeys.map((k) => k.trim().toLowerCase()).filter(Boolean))],
+      complete: false,
+      coverage: 0,
+    };
+  }
+  const requiredKeys = template.map((e) => e.key);
+  const stored = new Set(storedKeys.map((k) => k.trim().toLowerCase()).filter(Boolean));
+  const missingKeys = requiredKeys.filter((k) => !stored.has(k));
+  const unknownKeys = [...stored].filter((k) => !requiredKeys.includes(k));
+  const present = requiredKeys.length - missingKeys.length;
+  return {
+    hasTemplate: true,
+    requiredKeys,
+    missingKeys,
+    unknownKeys,
+    complete: missingKeys.length === 0,
+    coverage: requiredKeys.length === 0 ? 0 : present / requiredKeys.length,
+  };
+}
+
+/** Categories (from the distinct category words supplied) with no spec template. */
+export function listCategoriesWithoutSpecTemplates(
+  categories: Array<string | null | undefined>
+): string[] {
+  const seen = new Set<string>();
+  const missing: string[] = [];
+  for (const category of categories) {
+    const label = (category ?? '').trim();
+    if (!label || seen.has(label.toLowerCase())) continue;
+    seen.add(label.toLowerCase());
+    if (!specTemplateForCategory(label)) missing.push(label);
+  }
+  return missing;
+}
+
+/** All template category keys (11 since F-P2-13). */
+export function specTemplateCategories(): SpecTemplateCategory[] {
+  return Object.keys(SPEC_TEMPLATES) as SpecTemplateCategory[];
 }

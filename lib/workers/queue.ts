@@ -73,6 +73,21 @@ export interface DeadLetterEntry {
   error: string;
   attempts: number;
   failedAt: string;
+  /**
+   * Final 100%, F-P2-46 — whether this entry was durably stored
+   * in `error_log` (migration 048) by `persistDeadLetterEntry`:
+   * 'pending' while the best-effort write is in flight,
+   * 'inserted' when the durable trail has it, 'missing-table'
+   * while 048 is unapplied (in-memory is the only record),
+   * 'failed' when the write itself errored. Admin surfaces
+   * render this label so an in-memory entry is never mistaken
+   * for a durable one. The in-memory DLQ itself stays volatile
+   * by design (max 1,000, per-instance, lost on redeploy) — a
+   * truly durable cross-instance queue needs a queue table the
+   * owner has not approved; the `error_log` trail is the durable
+   * half this code can provide.
+   */
+  persisted?: 'pending' | 'inserted' | 'missing-table' | 'failed';
 }
 
 const DLQ_ERROR_LOG_ROUTE = 'queue.dlq';
@@ -118,13 +133,19 @@ async function persistDeadLetterEntryBestEffort(entry: DeadLetterEntry): Promise
       env.supabaseServiceRoleKey ?? env.supabaseAnonKey,
       { auth: { persistSession: false } }
     );
-    await persistDeadLetterEntry(
+    const outcome = await persistDeadLetterEntry(
       supabase as unknown as import('@/lib/supabase/types').AnySupabaseClient,
       entry
     );
+    // Final 100%, F-P2-46 — record the durable outcome on the
+    // entry itself, so admin surfaces can label it volatile vs
+    // durable. `recordDeadLetter` holds the same object reference,
+    // so this mutation is visible to `getDeadLetterQueue()`.
+    entry.persisted = outcome;
   } catch (err) {
     // Persistence must never fail the queue: the in-memory entry
     // is the record of last resort on this instance.
+    entry.persisted = 'failed';
     logger.warn('persistDeadLetterEntry: failed', { error: String(err) });
   }
 }
@@ -132,6 +153,8 @@ async function persistDeadLetterEntryBestEffort(entry: DeadLetterEntry): Promise
 const deadLetterQueue: DeadLetterEntry[] = [];
 
 function recordDeadLetter(entry: DeadLetterEntry): void {
+  // Final 100%, F-P2-46 — the durable write is in flight from here.
+  entry.persisted = 'pending';
   deadLetterQueue.push(entry);
   // Keep the DLQ bounded to avoid unbounded memory growth.
   if (deadLetterQueue.length > 1000) deadLetterQueue.shift();

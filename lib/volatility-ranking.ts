@@ -10,14 +10,30 @@
  * null and an honest "not enough recorded points" row, never a
  * zero-filled volatility.
  *
+ * FINAL 100% (W3, F-P1-36) — the 2-point minimum was not enough:
+ * the live seed's 4 points per product all carry the same
+ * ×1.05/×1.02/×1.00/×1.00 shape, so every product ranked "Stable"
+ * at ~2.1% CV with the order decided by the name tie-break — a
+ * seed-constructed ranking presented as a stability ranking.
+ * Ranking now shares the unified gate (lib/price-history-gates.ts):
+ * at least 5 recorded points AND a fresh latest point. A gated
+ * row keeps stats null and carries gateReason, so the page says
+ * WHY it is unranked instead of silently dropping it.
+ *
  * This is NOT the Price History Explorer: that tool shows levels
  * (low/high/average/biggest drop); this one measures dispersion
  * (how much the price moved around its own mean).
  */
 
+import { assessHistoryGate, HISTORY_MIN_POINTS } from '@/lib/price-history-gates';
+
+export { HISTORY_MIN_POINTS as VOLATILITY_MIN_POINTS };
+
 export interface VolatilityPoint {
   price: number;
   recordedAt: string;
+  /** Migration 057 source, when recorded (null pre-057). */
+  source?: string | null;
 }
 
 export type VolatilitySort = 'most-stable' | 'most-volatile' | 'name';
@@ -101,6 +117,14 @@ export interface VolatilityRow {
   stats: VolatilityStats | null;
   /** 1-based rank by stability (1 = most stable); null when unranked. */
   rank: number | null;
+  /**
+   * FINAL 100% (W3, F-P1-36) — why the row is unranked, when it
+   * is: the unified 5-point + freshness gate reason. Null when
+   * the row cleared the gate (stats present).
+   */
+  gateReason: string | null;
+  /** Whole days since the latest recorded point (null when unknown). */
+  ageDays: number | null;
 }
 
 /** One product's volatility row from its recorded points. */
@@ -112,12 +136,17 @@ export function buildVolatilityRow(
     brand: string | null;
     category: string | null;
   },
-  points: ReadonlyArray<VolatilityPoint | null | undefined>
+  points: ReadonlyArray<VolatilityPoint | null | undefined>,
+  now: Date = new Date()
 ): VolatilityRow {
   const valid = (points ?? []).filter(
     (p): p is VolatilityPoint =>
       !!p && Number.isFinite(Number(p.price)) && !!p.recordedAt
   );
+  // FINAL 100% (W3, F-P1-36) — unified gate: 5 recorded points
+  // AND a fresh latest point. computeVolatility's own 2-point
+  // floor still applies underneath (a gated row never reaches it).
+  const gate = assessHistoryGate(valid, now);
   return {
     productId: product.id,
     name: product.name,
@@ -125,8 +154,10 @@ export function buildVolatilityRow(
     brand: product.brand,
     category: product.category,
     pointCount: valid.length,
-    stats: computeVolatility(valid),
+    stats: gate.gated ? null : computeVolatility(valid),
     rank: null,
+    gateReason: gate.gated ? gate.reason : null,
+    ageDays: gate.ageDays,
   };
 }
 
