@@ -27,6 +27,7 @@ import {
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { normalizeReorderIntervalDays } from '@/lib/vault-reorder';
 
+import { logApiError } from '@/lib/api/error-logging';
 function isMissingTable(error: { code?: string } | null | undefined): boolean {
   return error?.code === '42P01';
 }
@@ -70,7 +71,8 @@ export async function GET(request: NextRequest) {
       return internalError('Failed to fetch vault items');
     }
     return apiSuccess(data ?? [], 200, { vaultEnabled: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'vault.get', status: 500 });
     return internalError('Failed to fetch vault items');
   }
 }
@@ -153,7 +155,8 @@ export async function POST(request: NextRequest) {
       return internalError('Failed to save vault item');
     }
     return apiSuccess(data, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'vault.post', status: 500 });
     return internalError('Failed to save vault item');
   }
 }

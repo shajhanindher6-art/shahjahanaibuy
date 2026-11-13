@@ -37,6 +37,7 @@ import {
   type WarrantyPlanInput,
 } from '@/lib/warranty-plans';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'warranty-plans' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -62,6 +63,7 @@ export async function GET(request: NextRequest) {
     const plans = await getWarrantyPlansByCategory(supabase, category);
     return apiSuccess(plans, 200, { warrantyEnabled: true });
   } catch (err) {
+    logApiError(err, { request, route: 'warranty-plans.get', status: 500 });
     logger.error('[warranty-plans] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch warranty plans');
   }
@@ -122,7 +124,8 @@ export async function POST(request: NextRequest) {
     const created = await createWarrantyPlan(supabase, input);
     if (!created) return internalError('Failed to create warranty plan');
     return apiSuccess(created, 201, { warrantyEnabled: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'warranty-plans.post', status: 500 });
     return internalError('Failed to create warranty plan');
   }
 }

@@ -24,6 +24,7 @@ import {
   TRADE_IN_EMPTY_MESSAGE,
 } from '@/lib/trade-in-finder';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -69,7 +70,8 @@ export async function GET(request: NextRequest) {
       refurbishedNote:
         'Certified refurbished listings are not invented: no refurbished inventory is recorded. Check the product page — every retailer link there is a real link to that retailer, where certified refurbished offers appear when the retailer has them.',
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.trade-in', status: 500 });
     return internalError('Failed to load the trade-in finder');
   }
 }

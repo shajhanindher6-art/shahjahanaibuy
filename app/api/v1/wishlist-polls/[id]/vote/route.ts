@@ -22,6 +22,7 @@ import {
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getPollResults } from '@/lib/wishlist-polls';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 function isMissingTable(error: { code?: string } | null | undefined): boolean {
@@ -87,7 +88,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const { poll: updated, pollsEnabled } = await getPollResults(supabase, params.id, auth.userId);
     if (!updated) return notFound('Poll not found');
     return apiSuccess(updated, 200, { pollsEnabled });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'wishlist-polls.vote', status: 500 });
     return internalError('Failed to save vote');
   }
 }

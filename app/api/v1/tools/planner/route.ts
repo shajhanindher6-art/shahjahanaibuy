@@ -34,6 +34,7 @@ import {
   type PlannerItemInput,
 } from '@/lib/monthly-planner';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const PLANS_NOT_READY =
@@ -88,7 +89,8 @@ export async function GET(request: NextRequest) {
       return internalError('Failed to fetch monthly plan');
     }
     return apiSuccess({ plan, items: items ?? [], month, plannerEnabled: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.planner.get', status: 500 });
     return internalError('Failed to fetch monthly plan');
   }
 }
@@ -231,7 +233,8 @@ export async function POST(request: NextRequest) {
       },
       201
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.planner.post', status: 500 });
     return internalError('Failed to build monthly plan');
   }
 }

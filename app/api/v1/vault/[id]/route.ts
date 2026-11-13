@@ -20,6 +20,7 @@ import {
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { normalizeReorderIntervalDays } from '@/lib/vault-reorder';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -83,7 +84,8 @@ export async function PATCH(
     }
     if (!data || data.length === 0) return notFound('Vault item not found');
     return apiSuccess({ id: params.id, ...updates });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'vault.patch', status: 500 });
     return internalError('Failed to update vault item');
   }
 }
@@ -111,7 +113,8 @@ export async function DELETE(
     if (error) return internalError('Failed to delete vault item');
     if (!data || data.length === 0) return notFound('Vault item not found');
     return apiSuccess({ deleted: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'vault.delete', status: 500 });
     return internalError('Failed to delete vault item');
   }
 }

@@ -47,6 +47,7 @@ import {
   type SmartHomeRule,
 } from '@/lib/smart-home-agent';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
   try {
     rawBody = await request.text();
   } catch {
+    // Malformed request body (400) — client-side, not a server error, so not logged to error_log.
     return badRequest('Request body could not be read');
   }
 
@@ -78,6 +80,7 @@ export async function POST(request: NextRequest) {
   try {
     body = JSON.parse(rawBody) as unknown;
   } catch {
+    // Malformed JSON (400) — client-side, not a server error, so not logged to error_log.
     return badRequest('Request body must be JSON');
   }
   const payload = body as Record<string, unknown>;
@@ -151,6 +154,7 @@ export async function POST(request: NextRequest) {
         'Trigger accepted. A reorder was prepared as a pending confirmation — no order was placed and nothing was charged. The user must confirm explicitly on the product page.',
     });
   } catch (err) {
+    logApiError(err, { request, route: 'tools.smart-home.webhook', status: 500 });
     logger.error('[tools.smart-home.webhook] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to handle the smart-home trigger');
   }

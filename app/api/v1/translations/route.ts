@@ -35,6 +35,7 @@ import {
   type TranslationSource,
 } from '@/lib/product-translations';
 
+import { logApiError } from '@/lib/api/error-logging';
 // Live DB data must never be served from a stale edge cache.
 export const dynamic = 'force-dynamic';
 
@@ -77,7 +78,8 @@ export async function GET(request: NextRequest) {
 
     const translations = await getProductTranslations(supabase, productId);
     return apiSuccess({ translations, count: translations.length });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'translations.get', status: 500 });
     return internalError('Failed to load translations');
   }
 }
@@ -135,7 +137,8 @@ export async function POST(request: NextRequest) {
       return internalError('Failed to save translation');
     }
     return apiSuccess({ translation: data }, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'translations.post', status: 500 });
     return internalError('Failed to save translation');
   }
 }

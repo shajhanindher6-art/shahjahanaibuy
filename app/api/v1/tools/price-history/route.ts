@@ -23,6 +23,7 @@ import {
   sortHistorySummaries,
 } from '@/lib/price-history-explorer';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -63,7 +64,8 @@ export async function GET(request: NextRequest) {
       note: 'Stats come from recorded price history only. Each product shows how many recorded points its stats are based on (currently 4 points over 30 days, Amazon only) — no smoothing or interpolation.',
       generatedAt: new Date().toISOString(),
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.price-history', status: 500 });
     return internalError('Failed to build the price history explorer');
   }
 }

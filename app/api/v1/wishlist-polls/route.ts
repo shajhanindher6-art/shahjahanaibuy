@@ -31,6 +31,7 @@ import {
   validatePollQuestion,
 } from '@/lib/wishlist-polls';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 function isMissingTable(error: { code?: string } | null | undefined): boolean {
@@ -66,6 +67,7 @@ export async function GET(request: NextRequest) {
     const { polls, pollsEnabled } = await getPollsForWishlist(supabase, wishlistId, userId);
     return apiSuccess(polls, 200, { pollsEnabled });
   } catch (err) {
+    logApiError(err, { request, route: 'wishlist-polls.get', status: 500 });
     logger.error('[wishlist-polls] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch wishlist polls');
   }
@@ -164,7 +166,8 @@ export async function POST(request: NextRequest) {
       201,
       { pollsEnabled: true }
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'wishlist-polls.post', status: 500 });
     return internalError('Failed to create poll');
   }
 }

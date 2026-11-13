@@ -16,6 +16,7 @@ import { apiSuccess, internalError } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getUserTracking } from '@/services/tracking';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'tracking' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -30,7 +31,8 @@ export async function GET(request: NextRequest) {
     const tracking = await getUserTracking(supabase, auth.userId);
 
     return apiSuccess(tracking);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tracking', status: 500 });
     return internalError('Failed to fetch tracking dashboard');
   }
 }

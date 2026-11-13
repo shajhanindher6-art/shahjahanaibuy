@@ -43,13 +43,23 @@ import {
   serviceUnavailable,
 } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import {
-  captionPublicImageUrl,
-  embedText,
-  embedTextClip,
   isPublicImageUrl,
   isVectorSearchConfigured,
+  type HfResult,
 } from '@/services/visual-search';
+// Section 19, Phase 1 (§12 #1, #4, #8, #9) — caption + embedding
+// run through the AI engine (HF CLIP → MiniLM fallback chain,
+// usage/latency tracking, durable provider-health reporting).
+import { getAiEngine, type AIEngineResult } from '@/services/ai-engine';
+import { reportAiProviderHealth } from '@/services/ai-engine/health-report';
+// Section 19, Phase 1 (§12 #7) — tightened anon cap (10 → 5/min).
+import { VISUAL_SEARCH_ANON_PER_MIN } from '@/services/ai-engine/usage';
+
+// Section 19, Phase 1 (§12 #10) — expensive inline AI work runs under
+// maxDuration 60 (matching the 5 cron routes), not the platform default.
+export const maxDuration = 60;
 
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 10;
@@ -130,66 +140,39 @@ async function enrichMatches(
 }
 
 /**
- * CLIP path: returns a finished response when the CLIP table has
- * rows and the CLIP embedding + match succeed, or null to fall
- * through to the MiniLM path. Any CLIP-side failure degrades to
- * MiniLM — the CLIP table being absent/empty is normal (dormant
- * until the owner runs the SQL + local script), never an error.
+ * Run one embedding-space RPC (`match_clip_products` or
+ * `match_products`) and normalise the result. A missing-table
+ * error is reported as a failure the caller can recognise (the
+ * table simply is not set up yet), never thrown.
  */
-async function tryClipPath(
+async function matchEmbeddingRpc(
   service: SupabaseClient,
-  caption: string,
+  rpcName: string,
+  vector: number[],
   limit: number
-): Promise<Response | null> {
-  const { count, error: countError } = await service
-    .from('product_clip_embeddings')
-    .select('product_id', { count: 'exact', head: true });
-  if (countError) {
-    if (!isMissingTableError(countError)) {
-      logger.warn('visual-search: CLIP table check failed', { error: countError.message });
-    }
-    return null;
-  }
-  if (!count || count === 0) return null; // no CLIP embeddings yet — MiniLM path
-
-  const embedded = await embedTextClip(caption);
-  if (!embedded.ok) {
-    logger.warn('visual-search: CLIP embedding failed, falling back to MiniLM', {
-      error: embedded.error,
-    });
-    return null;
-  }
-
-  const { data: rpcData, error: rpcError } = await service.rpc('match_clip_products', {
-    query_embedding: embedded.value,
+): Promise<
+  | { ok: true; matches: RpcMatch[] }
+  | { ok: false; error: { code?: string; message?: string } | null }
+> {
+  const { data, error } = await service.rpc(rpcName, {
+    query_embedding: vector,
     match_count: limit,
   });
-  if (rpcError) {
-    if (!isMissingTableError(rpcError)) {
-      logger.warn('visual-search: match_clip_products failed, falling back to MiniLM', {
-        error: rpcError.message,
-      });
-    }
-    return null;
-  }
-  const matches = (Array.isArray(rpcData) ? rpcData : []) as RpcMatch[];
-  if (matches.length === 0) return null;
-
-  const enriched = await enrichMatches(service, matches);
-  if (!enriched.ok) return internalError('Visual search failed');
-  return apiSuccess(enriched.results, 200, {
-    mode: 'vector-clip',
-    caption,
-    note: 'CLIP vector match — the caption was embedded with CLIP (512-dim text encoder) and matched against the locally generated CLIP embeddings (1 = closest). Prices are the lowest recorded merchant price, when one exists.',
-  });
+  if (error) return { ok: false, error };
+  return { ok: true, matches: (Array.isArray(data) ? data : []) as RpcMatch[] };
 }
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'visual-search' });
+  const startedAt = Date.now();
 
   // Each call spends Hugging Face quota, so the tightest cap here:
-  // 10/min per IP. Redis-backed when Upstash is configured.
-  const limited = await rateLimitResponse(`visual-search:${getClientIp(request)}`, 10);
+  // 5/min per IP (Section 19, Phase 1, §12 #7 — tightened from
+  // 10/min). Redis-backed when Upstash is configured.
+  const limited = await rateLimitResponse(
+    `visual-search:${getClientIp(request)}`,
+    VISUAL_SEARCH_ANON_PER_MIN
+  );
   if (limited) return limited;
 
   if (!isVectorSearchConfigured()) {
@@ -198,82 +181,192 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const body = await request.json().catch(() => null);
-  const imageUrl = typeof body?.imageUrl === 'string' ? body.imageUrl.trim() : '';
-  const captionInput = typeof body?.caption === 'string' ? body.caption.trim() : '';
-  const rawLimit = typeof body?.limit === 'number' ? body.limit : DEFAULT_LIMIT;
-  const limit = Math.min(Math.max(Math.floor(rawLimit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
+  try {
+    const body = await request.json().catch(() => null);
+    const imageUrl = typeof body?.imageUrl === 'string' ? body.imageUrl.trim() : '';
+    const captionInput = typeof body?.caption === 'string' ? body.caption.trim() : '';
+    const rawLimit = typeof body?.limit === 'number' ? body.limit : DEFAULT_LIMIT;
+    const limit = Math.min(Math.max(Math.floor(rawLimit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
 
-  if (!imageUrl && !captionInput) {
-    return badRequest(
-      'Provide a public image URL (imageUrl) or a text description (caption) to match against the catalog.'
-    );
-  }
-  if (imageUrl && !isPublicImageUrl(imageUrl)) {
-    return badRequest('imageUrl must be a public http(s) URL.');
-  }
-
-  // Resolve the text to embed: caption the public image, or use the
-  // caller-supplied caption as-is. The photo itself is never stored.
-  let caption = captionInput;
-  if (imageUrl) {
-    const captioned = await captionPublicImageUrl(imageUrl);
-    if (!captioned.ok) {
-      return captioned.retryable
-        ? serviceUnavailable(captioned.error)
-        : badRequest(captioned.error);
-    }
-    caption = captioned.value;
-  }
-
-  const service = createSupabaseServiceClient();
-  if (!service) {
-    return serviceUnavailable(
-      'Visual search is not fully configured on this site yet (database service client unavailable).'
-    );
-  }
-
-  // CLIP path first, when the CLIP table has rows. Any CLIP-side
-  // failure falls through to MiniLM below — never an error.
-  const clipResponse = await tryClipPath(service, caption, limit);
-  if (clipResponse) return clipResponse;
-
-  const embedded = await embedText(caption);
-  if (!embedded.ok) {
-    return embedded.retryable
-      ? serviceUnavailable(embedded.error)
-      : badRequest(embedded.error);
-  }
-
-  const { data: rpcData, error: rpcError } = await service.rpc('match_products', {
-    query_embedding: embedded.value,
-    match_count: limit,
-  });
-  if (rpcError) {
-    if (isMissingTableError(rpcError)) {
-      return serviceUnavailable(
-        'Product embeddings are not set up yet. An admin needs to run supabase/add-visual-embeddings.sql (and, for the CLIP path, supabase/add-clip-embeddings.sql + scripts/embed-products-local.mjs) and the backfill once (see docs/visual-search.md).'
+    if (!imageUrl && !captionInput) {
+      return badRequest(
+        'Provide a public image URL (imageUrl) or a text description (caption) to match against the catalog.'
       );
     }
-    logger.error('visual-search: match_products failed', { error: rpcError.message });
-    return internalError('Visual search failed');
-  }
+    if (imageUrl && !isPublicImageUrl(imageUrl)) {
+      return badRequest('imageUrl must be a public http(s) URL.');
+    }
 
-  const matches = (Array.isArray(rpcData) ? rpcData : []) as RpcMatch[];
-  if (matches.length === 0) {
-    return apiSuccess([], 200, {
+    const service = createSupabaseServiceClient();
+    if (!service) {
+      return serviceUnavailable(
+        'Visual search is not fully configured on this site yet (database service client unavailable).'
+      );
+    }
+
+    // Section 19, Phase 1 (§12 #8) — durable HF provider health.
+    // The HF service itself has no Supabase client in scope, so
+    // the route reports each engine-routed HF call here from the
+    // engine result (backend key + latency). Best-effort: a
+    // missing table / RLS denial never fails the search.
+    const reportHf = (success: boolean, latencyMs: number, error?: string) =>
+      reportAiProviderHealth(service, 'huggingface', {
+        success,
+        responseMs: latencyMs,
+        ...(error ? { error: error.slice(0, 200) } : {}),
+      });
+
+    // Resolve the text to embed: caption the public image, or use the
+    // caller-supplied caption as-is. The photo itself is never stored.
+    let caption = captionInput;
+    if (imageUrl) {
+      // Section 19, Phase 1 (§12 #1) — captioning via the engine's
+      // HF caption provider. The value IS the HfResult: the route
+      // decides 503 vs 400 from its `retryable` flag, exactly as
+      // the old direct call did.
+      let captioned: AIEngineResult<HfResult<string>>;
+      try {
+        captioned = await getAiEngine().invoke<HfResult<string>>('visual-caption', { imageUrl });
+      } catch (err) {
+        return serviceUnavailable(
+          err instanceof Error
+            ? err.message
+            : 'Visual search service failed. Please try again later.'
+        );
+      }
+      void reportHf(
+        captioned.value.ok,
+        captioned.latencyMs,
+        captioned.value.ok ? undefined : captioned.value.error
+      );
+      if (!captioned.value.ok) {
+        return captioned.value.retryable
+          ? serviceUnavailable(captioned.value.error)
+          : badRequest(captioned.value.error);
+      }
+      caption = captioned.value.value;
+    }
+
+    // CLIP table check (was inside tryClipPath): does the CLIP
+    // table have rows? A missing table / zero rows is normal
+    // (dormant until the owner runs the SQL + local script) — the
+    // MiniLM path serves instead, never an error.
+    const { count: clipCount, error: clipCountError } = await service
+      .from('product_clip_embeddings')
+      .select('product_id', { count: 'exact', head: true });
+    if (clipCountError && !isMissingTableError(clipCountError)) {
+      logger.warn('visual-search: CLIP table check failed', { error: clipCountError.message });
+    }
+    const preferClip = !clipCountError && !!clipCount && clipCount > 0;
+
+    // Section 19, Phase 1 (§12 #4) — embedding via the engine:
+    // CLIP first, MiniLM fallback; `fallbackUsed` says which
+    // served and is disclosed in meta. An engine throw means BOTH
+    // providers failed; the last error carries the `retryable`
+    // flag, exactly as the old direct calls did (503 retryable vs
+    // 400 bad input).
+    const embedFailureResponse = (err: unknown): Response => {
+      const retryable = (err as { retryable?: unknown })?.retryable === true;
+      const message =
+        err instanceof Error ? err.message : 'Visual search service failed. Please try again later.';
+      return retryable ? serviceUnavailable(message) : badRequest(message);
+    };
+    const invokeEmbed = async (prefer: boolean): Promise<AIEngineResult<number[]>> => {
+      const invokeStart = Date.now();
+      try {
+        const res = await getAiEngine().invoke<number[]>('visual-embed', {
+          text: caption,
+          preferClip: prefer,
+        });
+        void reportHf(true, Date.now() - invokeStart);
+        return res;
+      } catch (err) {
+        void reportHf(
+          false,
+          Date.now() - invokeStart,
+          err instanceof Error ? err.message : 'embedding failed'
+        );
+        throw err;
+      }
+    };
+
+    let embedded: AIEngineResult<number[]>;
+    try {
+      embedded = await invokeEmbed(preferClip);
+    } catch (err) {
+      return embedFailureResponse(err);
+    }
+    let fallbackUsed = embedded.fallbackUsed;
+
+    // CLIP path first, when the CLIP table has rows. Any CLIP-side
+    // failure (RPC error, zero matches) falls through to MiniLM
+    // below — never an error.
+    if (embedded.providerKey === 'huggingface-clip') {
+      const clipRes = await matchEmbeddingRpc(
+        service,
+        'match_clip_products',
+        embedded.value,
+        limit
+      );
+      if (clipRes.ok && clipRes.matches.length > 0) {
+        const enriched = await enrichMatches(service, clipRes.matches);
+        if (!enriched.ok) return internalError('Visual search failed');
+        return apiSuccess(enriched.results, 200, {
+          mode: 'vector-clip',
+          caption,
+          fallbackUsed,
+          note: 'CLIP vector match — the caption was embedded with CLIP (512-dim text encoder) and matched against the locally generated CLIP embeddings (1 = closest). Prices are the lowest recorded merchant price, when one exists.',
+        });
+      }
+      if (!clipRes.ok && !isMissingTableError(clipRes.error)) {
+        logger.warn('visual-search: match_clip_products failed, falling back to MiniLM', {
+          error: clipRes.error?.message,
+        });
+      }
+      // Fall through to MiniLM: re-embed without CLIP.
+      try {
+        embedded = await invokeEmbed(false);
+      } catch (err) {
+        return embedFailureResponse(err);
+      }
+      fallbackUsed = true;
+    }
+
+    const { data: rpcData, error: rpcError } = await service.rpc('match_products', {
+      query_embedding: embedded.value,
+      match_count: limit,
+    });
+    if (rpcError) {
+      if (isMissingTableError(rpcError)) {
+        return serviceUnavailable(
+          'Product embeddings are not set up yet. An admin needs to run supabase/add-visual-embeddings.sql (and, for the CLIP path, supabase/add-clip-embeddings.sql + scripts/embed-products-local.mjs) and the backfill once (see docs/visual-search.md).'
+        );
+      }
+      logger.error('visual-search: match_products failed', { error: rpcError.message });
+      return internalError('Visual search failed');
+    }
+
+    const matches = (Array.isArray(rpcData) ? rpcData : []) as RpcMatch[];
+    if (matches.length === 0) {
+      return apiSuccess([], 200, {
+        mode: 'vector',
+        caption,
+        fallbackUsed,
+        note: 'No matches yet — the catalog has no product embeddings. An admin needs to run the backfill once (see docs/visual-search.md).',
+      });
+    }
+
+    const enriched = await enrichMatches(service, matches);
+    if (!enriched.ok) return internalError('Visual search failed');
+
+    return apiSuccess(enriched.results, 200, {
       mode: 'vector',
       caption,
-      note: 'No matches yet — the catalog has no product embeddings. An admin needs to run the backfill once (see docs/visual-search.md).',
+      fallbackUsed,
+      note: 'Vector match — similarity is cosine similarity against the catalog embeddings (1 = closest). Prices are the lowest recorded merchant price, when one exists.',
     });
+  } catch (err) {
+    logApiError(err, { request, route: 'visual-search', status: 500, startedAt });
+    return internalError('Visual search failed');
   }
-
-  const enriched = await enrichMatches(service, matches);
-  if (!enriched.ok) return internalError('Visual search failed');
-
-  return apiSuccess(enriched.results, 200, {
-    mode: 'vector',
-    caption,
-    note: 'Vector match — similarity is cosine similarity against the catalog embeddings (1 = closest). Prices are the lowest recorded merchant price, when one exists.',
-  });
 }

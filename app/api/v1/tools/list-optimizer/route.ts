@@ -32,6 +32,7 @@ import {
 } from '@/lib/list-optimizer';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const LIST_COLUMNS = 'id, user_id, name, created_at';
@@ -167,7 +168,8 @@ export async function GET(request: NextRequest) {
       return internalError('Failed to fetch shopping lists');
     }
     return apiSuccess({ lists: data ?? [], listsEnabled: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.list-optimizer.get', status: 500 });
     return internalError('Failed to fetch shopping lists');
   }
 }
@@ -191,6 +193,7 @@ export async function POST(request: NextRequest) {
     try {
       items = normalizeListItems(body?.items);
     } catch (err) {
+      // User input error (422) — not a server error, so not logged to error_log.
       return validationError(err instanceof Error ? err.message : 'Invalid items.');
     }
 
@@ -242,7 +245,8 @@ export async function POST(request: NextRequest) {
 
     const optimization = await loadOptimization(supabase, items);
     return apiSuccess({ list, items, optimization, listsEnabled: true }, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.list-optimizer.post', status: 500 });
     return internalError('Failed to save shopping list');
   }
 }

@@ -9,6 +9,7 @@ import { apiSuccess, notFound, internalError } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { removeWishlistItem } from '@/services/wishlists';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string; itemId: string } }
@@ -35,7 +36,8 @@ export async function DELETE(
     }
 
     return apiSuccess({ id: params.itemId, deleted: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'wishlists.items', status: 500 });
     return internalError('Failed to remove wishlist item');
   }
 }

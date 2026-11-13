@@ -28,6 +28,7 @@ import { logApiRequest, rateLimitResponse, requireAuth } from '@/lib/api/middlew
 import { isMissingTableError } from '@/lib/agent-hunt';
 import { planFutureYou, validateFutureYouGoal } from '@/lib/future-you';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const GOALS_NOT_READY =
@@ -156,7 +157,8 @@ export async function GET(request: NextRequest) {
     });
 
     return apiSuccess({ goals: enriched, futureYouEnabled: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.future-you.get', status: 500 });
     return internalError('Failed to fetch saving goals');
   }
 }
@@ -245,7 +247,8 @@ export async function POST(request: NextRequest) {
       },
       201
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.future-you.post', status: 500 });
     return internalError('Failed to create saving goal');
   }
 }
