@@ -106,6 +106,15 @@ export interface Product {
   category: string | null;
   imageUrl: string | null;
   gtin: string | null;
+  /**
+   * Section 20, #6 (migration 055, unapplied): manufacturer
+   * model number, recorded verbatim. Optional so rows read
+   * before the migration (and every existing Product literal
+   * in tests) keep compiling — services/products.ts always
+   * sets it, defaulting to null. Null = not recorded, never
+   * a guessed value (0/10 live products have one).
+   */
+  modelNumber?: string | null;
   confidenceScore: number;
   dataFreshness: string;
   createdAt: string;

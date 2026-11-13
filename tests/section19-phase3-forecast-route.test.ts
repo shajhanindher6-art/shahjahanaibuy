@@ -14,6 +14,9 @@ const PRICE_ROWS = [
   { price: 95, recorded_at: '2026-10-11T00:00:00.000Z' },
   { price: 90, recorded_at: '2026-10-21T00:00:00.000Z' },
   { price: 85, recorded_at: '2026-10-31T00:00:00.000Z' },
+  // 5 points: the Section 20 (§12 #46) forecast minimum — 4
+  // points would return 'not-enough-history' with no forecasts.
+  { price: 80, recorded_at: '2026-11-10T00:00:00.000Z' },
 ];
 
 type Row = Record<string, unknown>;

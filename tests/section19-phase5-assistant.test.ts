@@ -165,13 +165,17 @@ const MERCHANT_PRODUCTS: Row[] = [
 
 // MacBook: falls to its recorded low. Dell: rises to its high.
 // Mystery Gadget: a single point (not enough history to judge).
+// Section 20, §12 #46: a competitiveness verdict needs at least
+// 5 recorded points — so MacBook and Dell each carry 5.
 const PRICE_HISTORY: Row[] = [
   { product_id: 'p1', price: 1099, recorded_at: '2026-10-01T00:00:00.000Z' },
   { product_id: 'p1', price: 1049, recorded_at: '2026-10-15T00:00:00.000Z' },
+  { product_id: 'p1', price: 1049, recorded_at: '2026-10-22T00:00:00.000Z' },
   { product_id: 'p1', price: 999, recorded_at: '2026-11-02T00:00:00.000Z' },
   { product_id: 'p1', price: 999, recorded_at: '2026-11-10T00:00:00.000Z' },
   { product_id: 'p2', price: 999, recorded_at: '2026-10-01T00:00:00.000Z' },
   { product_id: 'p2', price: 1049, recorded_at: '2026-10-15T00:00:00.000Z' },
+  { product_id: 'p2', price: 1099, recorded_at: '2026-10-22T00:00:00.000Z' },
   { product_id: 'p2', price: 1099, recorded_at: '2026-11-02T00:00:00.000Z' },
   { product_id: 'p2', price: 1099, recorded_at: '2026-11-10T00:00:00.000Z' },
   { product_id: 'p3', price: 50, recorded_at: '2026-11-10T00:00:00.000Z' },
@@ -200,7 +204,9 @@ describe('competitivenessAssistant — verdict from recorded history + merchants
       FALLBACK_REGION
     );
     expect(answer.content).toContain('Is the price of MacBook Air 13 competitive?');
-    expect(answer.content).toContain('Current verified price: $999.00');
+    // Section 20, §12 #82: the price is RECORDED, never "verified"
+    // — no product in this catalog carries a verified stamp.
+    expect(answer.content).toContain('Current recorded price: $999.00');
     expect(answer.content).toContain('2 merchants list this product');
     expect(answer.content).toContain('Cheapest: Amazon at $999.00');
     expect(answer.content).toContain('most expensive: Best Buy at $1,018.98');
@@ -228,6 +234,9 @@ describe('competitivenessAssistant — verdict from recorded history + merchants
       FALLBACK_REGION
     );
     expect(answer.content).toContain("don't have enough recorded price history");
+    // Section 20, §12 #46: the honest count is named — 1 point
+    // exists, it is just not enough to judge (needs 5).
+    expect(answer.content).toContain('only 1 recorded price point so far');
     expect(answer.content).not.toContain('Verdict: yes');
     expect(answer.content).not.toContain('Verdict: not competitive');
   });
@@ -250,8 +259,11 @@ describe('prosConsAssistant — real ai-summary output + recorded signals only',
       FALLBACK_REGION
     );
     expect(answer.content).toContain('Pros and cons of MacBook Air 13:');
-    // Real pros from the ai-summary output (brand + near-low price).
-    expect(answer.content).toContain('From established brand: Apple');
+    // Real pros from the ai-summary output (near-low price only).
+    // Section 20, §12 #83: the old "From established brand: Apple"
+    // pro is REMOVED — a brand name alone is not evidence of
+    // quality, so no brand-reputation claim may appear here.
+    expect(answer.content).not.toContain('From established brand');
     expect(answer.content).toContain('Currently near its lowest recorded price');
     // Recorded signals, kept separate.
     expect(answer.content).toContain('From recorded data:');
@@ -298,10 +310,16 @@ describe('generateChatResponse — routing + source label (#53/#54/#55)', () => 
     expect(answer.content).not.toContain('Best pick for you');
   });
 
-  it('every assistant answer carries the verified-data source label (#55)', async () => {
+  it('every assistant answer carries the recorded-data source label (#55, §12 #82)', async () => {
     const answer = await generateChatResponse(stub(), 'best laptop under $1000', [], {});
     expect(answer.content).toContain('Best pick for you: MacBook Air 13');
-    expect(answer.content).toContain('Source: based on verified recorded data');
+    // Section 20, §12 #82: verifiedDataLabel only when every
+    // product is verified AND fresh — this catalog is unverified,
+    // so the recorded-data label is the honest one.
+    expect(answer.content).toContain(
+      'Source: based on recorded catalog data from the SmartBuy catalog (prices last checked Nov 12, 2026 — recorded prices, not checked live at the merchant)'
+    );
+    expect(answer.content).not.toContain('based on verified recorded data');
   });
 
   it('a single-product answer labels the data with its real freshness timestamp', async () => {
@@ -311,7 +329,7 @@ describe('generateChatResponse — routing + source label (#53/#54/#55)', () => 
       [],
       {}
     );
-    expect(answer.content).toContain('Source: based on verified recorded data');
+    expect(answer.content).toContain('Source: based on recorded catalog data');
     expect(answer.content).toContain('prices last checked Nov 12, 2026');
   });
 });

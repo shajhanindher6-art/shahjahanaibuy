@@ -123,17 +123,19 @@ describe('#28 — legacy engine guard below 5 points', () => {
 // ---------------------------------------------------------------------------
 
 describe('#29 — OLS confidence on flat/thin series', () => {
-  it('flat 4-point series → low band: 21% / 16% / 9% (was 76 / 71 / 64)', () => {
+  it('flat 5-point series → low band: 15% / 10% / 5% (Section 20, §12 #46: below 5 points there is no forecast)', () => {
     const result = computeForecast([
       fpoint(100, 0),
       fpoint(100, 10),
       fpoint(100, 20),
       fpoint(100, 30),
+      fpoint(100, 40),
     ]);
     expect(result.status).toBe('ok');
     // Flatness is weak evidence, not strong: R² counts as 0, and
-    // thin history caps confidence at 25% (the buy-wait cap).
-    expect(result.forecasts.map((f) => f.confidencePct)).toEqual([21, 16, 9]);
+    // at the 5-point minimum there is no point-count bonus — the
+    // old 4-point figures (21 / 16 / 9) no longer occur.
+    expect(result.forecasts.map((f) => f.confidencePct)).toEqual([15, 10, 5]);
     for (const f of result.forecasts) {
       expect(f.confidencePct).toBeLessThan(40);
       expect(f.direction).toBe('flat');
@@ -153,37 +155,52 @@ describe('#29 — OLS confidence on flat/thin series', () => {
     }
   });
 
-  it('2-point exact fit → capped at 25% and longer horizons score lower', () => {
-    const result = computeForecast([fpoint(100, 0), fpoint(90, 10)]);
-    expect(result.forecasts[0].confidencePct).toBe(25);
-    expect(result.forecasts[2].confidencePct).toBeLessThan(
-      result.forecasts[0].confidencePct
+  it('2-point exact fit → not-enough-history; a 5-point exact fit is NOT capped (the thin cap is subsumed by the 5-point minimum)', () => {
+    const thin = computeForecast([fpoint(100, 0), fpoint(90, 10)]);
+    expect(thin.status).toBe('not-enough-history');
+    expect(thin.forecasts).toEqual([]);
+    // The OLS formula itself is unchanged (Section 20, §12 #45:
+    // rebase deferred, formula untouched): a non-flat 5-point
+    // perfect fit scores the full 15 + 55×R² = 70 at 7d, minus the
+    // horizon penalty — longer horizons still score lower.
+    const five = computeForecast([
+      fpoint(100, 0),
+      fpoint(95, 10),
+      fpoint(90, 20),
+      fpoint(85, 30),
+      fpoint(80, 40),
+    ]);
+    expect(five.status).toBe('ok');
+    expect(five.forecasts.map((f) => f.confidencePct)).toEqual([70, 65, 58]);
+    expect(five.forecasts[2].confidencePct).toBeLessThan(
+      five.forecasts[0].confidencePct
     );
-    expect(result.forecasts[2].confidencePct).toBe(13);
   });
 
-  it('non-flat 4-point series with a perfect fit → capped at 25% too', () => {
+  it('non-flat 5-point series with a perfect fit → full confidence, no thin cap', () => {
     const result = computeForecast([
       fpoint(100, 0),
       fpoint(95, 10),
       fpoint(90, 20),
       fpoint(85, 30),
+      fpoint(80, 40),
     ]);
-    for (const f of result.forecasts) {
-      expect(f.confidencePct).toBeLessThanOrEqual(25);
-    }
-    // The range math is untouched: 30-day centre is still 70.
-    expect(result.forecasts.find((f) => f.horizonDays === 30)!.central).toBe(70);
+    expect(result.status).toBe('ok');
+    expect(result.forecasts.map((f) => f.confidencePct)).toEqual([70, 65, 58]);
+    // The range math is untouched: 30-day centre is still on the
+    // fitted line (slope −0.5/day, day 70 → 65).
+    expect(result.forecasts.find((f) => f.horizonDays === 30)!.central).toBe(65);
   });
 
-  it('the stale doc example is now real: flat 4-point 7d reads "21% confidence (low)"', () => {
+  it('the doc example is now real: flat 5-point 7d reads "15% confidence (low)"', () => {
     const result = computeForecast([
       fpoint(100, 0),
       fpoint(100, 10),
       fpoint(100, 20),
       fpoint(100, 30),
+      fpoint(100, 40),
     ]);
-    expect(result.forecasts[0].confidencePct).toBe(21);
+    expect(result.forecasts[0].confidencePct).toBe(15);
   });
 });
 
@@ -192,13 +209,42 @@ describe('#29 — OLS confidence on flat/thin series', () => {
 // ---------------------------------------------------------------------------
 
 describe('#32 — TRACK PRICE + COMPARE ALTERNATIVES as engine verdicts', () => {
-  it('thin history + near (not at) the low → track_price', () => {
+  it('thin history (4 points) + near (not at) the low → not_enough_data, no track_price invented', () => {
+    // Section 20, §12 #46 unified the minimum at 5: 4 points no
+    // longer issue any verdict. NOTE — the old track_price verdict
+    // fired only when lowConfidence was true (≤ 4 points), so under
+    // the unified minimum that trigger became unreachable. Section 20
+    // REDEFINED the trigger instead of retiring the verdict: near-low
+    // on a 5–11-point low-confidence history (confidence ≤ 45%) —
+    // see the two tests below. It must NOT be "fixed" by lowering
+    // the minimum back.
     const prediction = predictBuyVsWait(bwpoints([1100, 1050, 1000, 1030]));
-    expect(prediction.recommendation).toBe('track_price');
-    expect(prediction.reason).toContain('Track the price');
-    expect(prediction.reason).toContain('$1030.00');
-    expect(prediction.reason).toContain('$1000.00');
+    expect(prediction.recommendation).toBe('not_enough_data');
+    expect(prediction.confidence).toBe(0);
+    expect(prediction.reason).toContain('only 4 recorded prices');
+    expect(prediction.reason).toContain('at least 5 are needed');
     expect(prediction.lowConfidence).toBe(true);
+  });
+
+  it('near-low on a 5-point low-confidence history → track_price (Section 20 redefinition)', () => {
+    // 5 points, current $104 within 5% above the $100 low (not at
+    // it), confidence 45 (the 5–11-point tier), flat trend (slope
+    // ~0.4%, no rising-trend wait signal): no strong signal yet.
+    const prediction = predictBuyVsWait(bwpoints([104, 100, 103, 101, 104]));
+    expect(prediction.recommendation).toBe('track_price');
+    expect(prediction.confidence).toBe(45);
+    expect(prediction.reason).toContain('Track the price');
+    expect(prediction.reason).toContain('only 5 recorded points');
+  });
+
+  it('same near-low shape on deeper history (12 points) → wait, not track_price', () => {
+    // Confidence 60 on 12 points: the signal is strong enough to
+    // judge, so track_price must not fire.
+    const prediction = predictBuyVsWait(
+      bwpoints([100, 102, 104, 103, 105, 104, 103, 102, 104, 103, 105, 104])
+    );
+    expect(prediction.recommendation).toBe('wait');
+    expect(prediction.confidence).toBe(60);
   });
 
   it('cheaper alternative (≥5% cheaper) → compare_alternatives', () => {
@@ -219,10 +265,10 @@ describe('#32 — TRACK PRICE + COMPARE ALTERNATIVES as engine verdicts', () => 
   });
 
   it('no options → the old verdicts are unchanged', () => {
-    expect(predictBuyVsWait(bwpoints([1099, 1049, 999, 999])).recommendation).toBe(
+    expect(predictBuyVsWait(bwpoints([1099, 1049, 999, 999, 999])).recommendation).toBe(
       'buy_now'
     );
-    expect(predictBuyVsWait(bwpoints([999, 1049, 1099, 1099])).recommendation).toBe(
+    expect(predictBuyVsWait(bwpoints([999, 1049, 1099, 1099, 1099])).recommendation).toBe(
       'wait'
     );
     expect(predictBuyVsWait(bwpoints([500])).recommendation).toBe('not_enough_data');
@@ -231,7 +277,7 @@ describe('#32 — TRACK PRICE + COMPARE ALTERNATIVES as engine verdicts', () => 
 
 describe('#33 — budget input into the buy-wait verdict', () => {
   it('price above budget → wait with the gap stated, never buy_now', () => {
-    const prediction = predictBuyVsWait(bwpoints([1100, 1050, 1000, 990]), {
+    const prediction = predictBuyVsWait(bwpoints([1100, 1050, 1000, 990, 990]), {
       budgetUsd: 900,
     });
     // 990 is at its recorded low — without a budget this would be
@@ -244,7 +290,7 @@ describe('#33 — budget input into the buy-wait verdict', () => {
   });
 
   it('price within budget → verdict unchanged', () => {
-    const prediction = predictBuyVsWait(bwpoints([1100, 1050, 1000, 990]), {
+    const prediction = predictBuyVsWait(bwpoints([1100, 1050, 1000, 990, 990]), {
       budgetUsd: 1200,
     });
     expect(prediction.recommendation).toBe('buy_now');
@@ -252,7 +298,7 @@ describe('#33 — budget input into the buy-wait verdict', () => {
   });
 
   it('no budget supplied → behaviour unchanged', () => {
-    const prediction = predictBuyVsWait(bwpoints([1100, 1050, 1000, 990]));
+    const prediction = predictBuyVsWait(bwpoints([1100, 1050, 1000, 990, 990]));
     expect(prediction.recommendation).toBe('buy_now');
     expect(prediction.budgetGapUsd).toBeNull();
   });
@@ -260,7 +306,7 @@ describe('#33 — budget input into the buy-wait verdict', () => {
 
 describe('buy-wait freshness qualification (§12 #20 note)', () => {
   it('stale latest price → verdict qualified with the age', () => {
-    const prediction = predictBuyVsWait(bwpoints([1099, 1049, 999, 999], 10));
+    const prediction = predictBuyVsWait(bwpoints([1099, 1049, 999, 999, 999], 10));
     expect(prediction.priceStale).toBe(true);
     expect(prediction.daysSinceLastPrice).toBe(10);
     expect(prediction.reason).toContain('10 days old');
@@ -270,7 +316,7 @@ describe('buy-wait freshness qualification (§12 #20 note)', () => {
   });
 
   it('fresh latest price → not stale, no qualification', () => {
-    const prediction = predictBuyVsWait(bwpoints([1099, 1049, 999, 999], 1));
+    const prediction = predictBuyVsWait(bwpoints([1099, 1049, 999, 999, 999], 1));
     expect(prediction.priceStale).toBe(false);
     expect(prediction.daysSinceLastPrice).toBe(1);
     expect(prediction.reason).not.toContain('stale data');
@@ -479,6 +525,7 @@ describe('#35 — configurable prediction periods', () => {
     fpoint(95, 10),
     fpoint(90, 20),
     fpoint(85, 30),
+    fpoint(80, 40),
   ];
 
   it('defaults stay [7, 30, 90]', () => {
