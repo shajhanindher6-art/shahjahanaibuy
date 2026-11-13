@@ -325,13 +325,16 @@ describe('findDuplicate', () => {
   it('matches by GTIN first', async () => {
     const client = fakeClient({ products: [{ id: 'prod-gtin', gtin: '027242920910' }] });
     const out = await findDuplicate(client, normalizedFixture());
-    expect(out).toEqual({ existingProductId: 'prod-gtin', isDuplicate: true, matchedBy: 'gtin', confidence: 1 });
+    // Final 100% — F-P1-03: a GTIN match is capped at 0.9, never
+    // absolute certainty. existingModelNumber rides along from
+    // the F-P1-45 model leg (null when the row has no model).
+    expect(out).toEqual({ existingProductId: 'prod-gtin', isDuplicate: true, matchedBy: 'gtin', confidence: 0.9, existingModelNumber: null });
   });
 
   it('falls back to slug when the GTIN does not match', async () => {
     const client = fakeClient({ products: [{ id: 'prod-slug', slug: 'sony-wh-1000xm5' }] });
     const out = await findDuplicate(client, normalizedFixture());
-    expect(out).toEqual({ existingProductId: 'prod-slug', isDuplicate: true, matchedBy: 'slug', confidence: 1 });
+    expect(out).toEqual({ existingProductId: 'prod-slug', isDuplicate: true, matchedBy: 'slug', confidence: 1, existingModelNumber: null });
   });
 
   it('returns no duplicate when neither GTIN nor slug matches', async () => {
@@ -356,6 +359,7 @@ describe('findDuplicate', () => {
       isDuplicate: true,
       matchedBy: 'name-brand',
       confidence: 1,
+      existingModelNumber: null,
     });
   });
 

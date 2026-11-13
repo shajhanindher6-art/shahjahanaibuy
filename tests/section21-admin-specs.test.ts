@@ -28,7 +28,7 @@ import { validateSpecCorrection } from '@/services/admin-products';
 
 const state = vi.hoisted(() => ({
   user: null as { id: string } | null,
-  profile: null as { roles?: { name?: string | null } | null } | null,
+  profile: null as { roles?: { name?: string | null; permissions?: string[] } | null } | null,
   serviceAvailable: true,
   product: null as Record<string, unknown> | null,
   auditInserts: [] as Array<Record<string, unknown>>,
@@ -139,7 +139,7 @@ beforeEach(() => {
 
 function asAdmin() {
   state.user = { id: 'admin-1' };
-  state.profile = { roles: { name: 'admin' } };
+  state.profile = { roles: { name: 'admin', permissions: ['*'] } };
 }
 
 describe('GET /api/v1/admin/products/[id]/specs — route guard + read (K12)', () => {

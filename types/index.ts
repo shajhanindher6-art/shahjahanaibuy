@@ -115,7 +115,17 @@ export interface Product {
    * a guessed value (0/10 live products have one).
    */
   modelNumber?: string | null;
-  confidenceScore: number;
+  /**
+   * Final 100% — F-P2-03 (legacy, optional): the pipeline's
+   * field-presence count (name +15, GTIN +20, …), floored at 50
+   * by the DB default. It is NOT a data-completeness or quality
+   * score and is NO LONGER emitted by the public products API
+   * (services/products.ts mapProduct omits it). Internal readers
+   * (pipeline gate, SEO plumbing) may still set it; API
+   * consumers must use the 7-dimension data-quality score
+   * instead. Absent = not carried, never 50-by-default.
+   */
+  confidenceScore?: number;
   dataFreshness: string;
   createdAt: string;
   updatedAt: string;
@@ -129,6 +139,16 @@ export interface Product {
   status?: import('@/services/price-verification').ProductStatus;
   priceVerificationStatus?: import('@/services/price-verification').PriceVerificationStatus;
   priceVerifiedAt?: string | null;
+  /**
+   * FINAL 100% (F-P1-29) — the brief's 5-state price machine
+   * (lib/verification/price-state.ts), derived from the same
+   * inputs as the verification stamp. Present only when the
+   * caller proved a price is recorded (an in-stock merchant
+   * listing); absent = unknown, never guessed — a product with
+   * no price shown carries no price state. Only LIVE_VERIFIED
+   * may be shown with live/current wording.
+   */
+  priceState?: import('@/lib/verification/price-state').PriceStateResult;
 }
 
 export interface ProductImage {
@@ -149,6 +169,29 @@ export interface PriceHistory {
   availability: string;
   url: string | null;
   recordedAt: string;
+  /**
+   * FINAL 100% (W3, F-P1-37) — migration 057 provenance, or null
+   * when the live table predates 057 (no source was ever recorded
+   * for that row — never guessed). `suspicious` is the 057 flag.
+   */
+  source?: string | null;
+  observedAt?: string | null;
+  suspicious?: boolean | null;
+  /**
+   * FINAL 100% (W1, F-P1-15 / F-P1-30) — per-row verification
+   * flag and assumed-currency flag. True only when the row was
+   * written from a validated provider response (verified), or
+   * when its USD was assumed from a NULL currency_id
+   * (currencyAssumed). Null when the row predates the columns —
+   * the columns need a future migration; see
+   * services/price-history-quality.ts.
+   */
+  verified?: boolean | null;
+  currencyAssumed?: boolean | null;
+  /** Whole days since this row was recorded (null when unparseable). */
+  ageDays?: number | null;
+  /** True when this row is older than STALE_PRICE_DAYS. */
+  isStale?: boolean;
 }
 
 export interface ProductSource {

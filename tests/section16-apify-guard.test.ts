@@ -12,13 +12,13 @@
  *
  * These tests assert only that fail-closed behaviour, with the vars
  * UNSET (the real-world state: scraping is a hard standing rule and
- * the vars must stay unset). The vars are deliberately NEVER set in
- * this file — not even to fake values — per the registry guard
- * comment: if they are ever set, that is an owner decision outside
- * this codebase. So there is no "available" branch test here; the
- * live path is owner-gated and untestable without real credentials.
- * A global-fetch spy proves search()/fetch() make no network call
- * while unavailable.
+ * the vars must stay unset) — plus, since the Final 100% kill-switch
+ * (F-P1-59), the same assertions WITH the vars set to fake values:
+ * setting them must change nothing, because isAvailable() now
+ * hard-fails in code and the constructor never reads the env. The
+ * fake values here are never real credentials and never leave the
+ * test process. A global-fetch spy proves search()/fetch() make no
+ * network call while unavailable.
  */
 
 import { describe, expect, it, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
@@ -28,6 +28,15 @@ import {
   getProviderRegistry,
   resetProviderRegistry,
 } from '@/services/providers/registry';
+
+function readApifySource(): string {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('node:fs') as typeof import('node:fs');
+  return fs.readFileSync(
+    `${process.cwd()}/services/providers/apify-provider.ts`,
+    'utf8'
+  );
+}
 
 describe('ApifyProvider — fails closed without env vars (#49)', () => {
   const savedToken = process.env.APIFY_API_TOKEN;
@@ -54,6 +63,25 @@ describe('ApifyProvider — fails closed without env vars (#49)', () => {
     expect(new ApifyProvider().isAvailable()).toBe(false);
   });
 
+  it('isAvailable() stays false EVEN WHEN both vars are set (kill-switch, Final 100% F-P1-59)', () => {
+    process.env.APIFY_API_TOKEN = 'apify-token-set-in-dashboard';
+    process.env.APIFY_ACTOR_ID = 'some-actor-id';
+    expect(new ApifyProvider().isAvailable()).toBe(false);
+  });
+
+  it('search() still throws NOT_CONFIGURED with both vars set and makes no network call', async () => {
+    process.env.APIFY_API_TOKEN = 'apify-token-set-in-dashboard';
+    process.env.APIFY_ACTOR_ID = 'some-actor-id';
+    const provider = new ApifyProvider();
+    await expect(provider.search({ query: 'laptop', limit: 10 })).rejects.toThrow(
+      ProviderNotConfiguredError
+    );
+    await expect(provider.search({ query: 'laptop', limit: 10 })).rejects.toThrow(
+      /scraping is banned/
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('search() throws NOT_CONFIGURED without env vars and makes no network call', async () => {
     const provider = new ApifyProvider();
     await expect(provider.search({ query: 'laptop', limit: 10 })).rejects.toThrow(
@@ -76,18 +104,15 @@ describe('ApifyProvider — fails closed without env vars (#49)', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('search() still returns [] when only one var would be missing — both are required', async () => {
-    // Neither var is set in this file by design (see header), so the
-    // constructor reads the same empty env twice: the provider can
-    // never be half-available. The two-var requirement is locked by
-    // the source itself.
-    const src = await import('node:fs').then((fs) =>
-      fs.readFileSync(
-        `${process.cwd()}/services/providers/apify-provider.ts`,
-        'utf8'
-      )
-    );
-    expect(src).toContain('return Boolean(this.token && this.actorId);');
+  it('the kill-switch is in the source: isAvailable() hard-fails (Final 100% F-P1-59)', () => {
+    // The old two-var requirement ('return Boolean(this.token &&
+    // this.actorId);') is gone by design: a Vercel env edit used
+    // to be able to activate scraping. The source must now contain
+    // the unconditional hard-fail and must NOT read the env vars.
+    const src = readApifySource();
+    expect(src).toContain('return false;');
+    expect(src).not.toContain('process.env.APIFY_API_TOKEN');
+    expect(src).not.toContain('process.env.APIFY_ACTOR_ID');
   });
 });
 

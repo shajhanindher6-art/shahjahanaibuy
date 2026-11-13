@@ -70,6 +70,17 @@ vi.mock('@/lib/supabase/service', () => ({
   },
 }));
 
+// The page now calls requireAdminPage() first (Final 100%,
+// F-P1-62). That guard reads cookies() via the server Supabase
+// client, which throws outside a request context — so the guard is
+// mocked here to resolve: these tests cover the page's rendered
+// copy, not the guard itself (the guard is covered by its own
+// module + the layout tests). Mocking it is not skipping auth:
+// production still runs the real guard first.
+vi.mock('@/lib/admin-page-guard', () => ({
+  requireAdminPage: async () => 'test-admin-user-id',
+}));
+
 // The page reads the in-process dead-letter queue. It is mocked
 // (empty by default, one entry on demand) so the render test is
 // deterministic and does not pull the queue module's transitive

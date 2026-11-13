@@ -394,6 +394,8 @@ type Row = Record<string, unknown>;
 function fakeInsertClient(opts: {
   /** First insert into `table` fails with this code (then the retry runs). */
   failFirstWithCode?: string;
+  /** Fail the first N inserts into `table` with `failFirstWithCode`. */
+  failFirstN?: number;
   table?: string;
 }): AnySupabaseClient & { inserts: Array<{ table: string; row: Row }> } {
   const inserts: Array<{ table: string; row: Row }> = [];
@@ -408,7 +410,7 @@ function fakeInsertClient(opts: {
           const shouldFail =
             opts.table === table &&
             opts.failFirstWithCode !== undefined &&
-            calls === 1;
+            calls <= (opts.failFirstN ?? 1);
           return Promise.resolve({
             data: null,
             error: shouldFail
@@ -442,11 +444,14 @@ describe('insertPriceHistoryRow (42703 fail-safe)', () => {
       source: 'live',
       suspicious_change: true,
       currency: 'EUR',
+      // Final 100%, F-P1-58 — migration 060: the recorded code
+      // travels with the history row, verbatim from `currency`.
+      currency_code: 'EUR',
     });
     expect(client.inserts[0].row.observed_at).toBeTruthy();
   });
 
-  it('retries without the migration-057 columns on 42703', async () => {
+  it('retries without currency_code only on 42703 (provenance kept)', async () => {
     const client = fakeInsertClient({ failFirstWithCode: '42703', table: 'price_history' });
     const { error } = await insertPriceHistoryRow(client, {
       product_id: 'p1',
@@ -459,8 +464,33 @@ describe('insertPriceHistoryRow (42703 fail-safe)', () => {
     });
     expect(error).toBeNull();
     expect(client.inserts).toHaveLength(2);
-    expect(client.inserts[1].row).not.toHaveProperty('source');
-    expect(client.inserts[1].row).toMatchObject({ price: 90, currency: 'USD' });
+    // Tier 2 keeps the 057 provenance columns and drops only the
+    // 060 currency_code — a missing 060 column must not drop the
+    // source/observed_at/suspicious_change the row already had.
+    expect(client.inserts[1].row).toMatchObject({ price: 90, currency: 'USD', source: 'live' });
+    expect(client.inserts[1].row).not.toHaveProperty('currency_code');
+  });
+
+  it('retries with legacy columns only when both newer tiers 42703', async () => {
+    const client = fakeInsertClient({
+      failFirstWithCode: '42703',
+      failFirstN: 2,
+      table: 'price_history',
+    });
+    const { error } = await insertPriceHistoryRow(client, {
+      product_id: 'p1',
+      retailer_id: 'r1',
+      price: 90,
+      currency: 'USD',
+      availability: 'in_stock',
+      source: 'live',
+      suspicious_change: false,
+    });
+    expect(error).toBeNull();
+    expect(client.inserts).toHaveLength(3);
+    expect(client.inserts[2].row).not.toHaveProperty('source');
+    expect(client.inserts[2].row).not.toHaveProperty('currency_code');
+    expect(client.inserts[2].row).toMatchObject({ price: 90, currency: 'USD' });
   });
 
   it('returns a non-42703 error instead of retrying', async () => {

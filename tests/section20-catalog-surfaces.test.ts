@@ -304,7 +304,14 @@ describe('Section 20 #9 — findDuplicateCandidates (retroactive sweep)', () => 
     ...overrides,
   });
 
-  it('same GTIN under a different slug is a confidence-1 GTIN candidate', () => {
+  // FINAL 100% (F-P1-03 / F-P1-42): a GTIN match is capped at
+  // 0.9, never 1.0 — a GTIN is a strong signal, not identity
+  // proof (a mistyped or reused GTIN must not collapse to
+  // certainty). Corroboration by a second leg is what reaches
+  // 1.0; see GTIN_MATCH_CONFIDENCE in
+  // services/pipeline/deduplication.ts and the bands in
+  // services/matching-review.ts.
+  it('same GTIN under a different slug is a confidence-0.9 GTIN candidate', () => {
     const candidates = findDuplicateCandidates([
       product({ id: 'p-1', slug: 'macbook-air-13', gtin: '9780123' }),
       product({ id: 'p-2', slug: 'macbook-air-13-copy', name: 'MacBook Air 13 (2024)', gtin: '978-0-123' }),
@@ -316,7 +323,7 @@ describe('Section 20 #9 — findDuplicateCandidates (retroactive sweep)', () => 
       duplicateOfProductId: 'p-1',
       duplicateOfSlug: 'macbook-air-13',
       matchedBy: 'gtin',
-      confidence: 1,
+      confidence: 0.9,
     });
     expect(candidates[0].reasons.join(' ')).toContain('GTIN');
   });
@@ -533,6 +540,9 @@ describe('Section 20 #9 — findDuplicate pipeline legs', () => {
     category: 'Laptops',
     imageUrl: null,
     gtin: null,
+    // FINAL 100% (F-P1-45/F-P1-46) — NormalizedProduct requires
+    // the canonical model number (null when the feed carries none).
+    modelNumber: null,
     confidenceScore: 50,
     images: [],
     price: 999,
@@ -553,7 +563,9 @@ describe('Section 20 #9 — findDuplicate pipeline legs', () => {
       client as unknown as Parameters<typeof findDuplicate>[0],
       { ...normalized, gtin: '9780123' }
     );
-    expect(result).toMatchObject({ isDuplicate: true, matchedBy: 'gtin', confidence: 1 });
+    // FINAL 100% (F-P1-03): GTIN confidence is capped at 0.9 —
+    // see the comment above the sweep test.
+    expect(result).toMatchObject({ isDuplicate: true, matchedBy: 'gtin', confidence: 0.9 });
   });
 
   it('exact normalized name+brand matches when GTIN and slug do not', async () => {

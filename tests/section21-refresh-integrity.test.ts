@@ -828,7 +828,12 @@ describe('residual re-stamp paths R1–R3 (item 7)', () => {
     expect(inserts[1].observed_at).toBe('2026-11-13T10:00:00.000Z');
 
     const src = repoFile('services', 'price-refresh.ts');
-    expect(src).toContain('lowest.updated_at');
+    // FINAL 100% (F-P1-34): the refresh now records history PER
+    // merchant, not just the lowest in-stock listing — the loop
+    // variable is `row` (one merchant row per iteration), not
+    // `lowest`. The R3 contract is unchanged: observed_at is the
+    // merchant row's own write time, never "now".
+    expect(src).toContain('row.updated_at');
     expect(src).toContain('observed_at: observedAt');
     expect(src).not.toContain('observed_at: nowIso');
   });

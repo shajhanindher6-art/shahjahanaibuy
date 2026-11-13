@@ -31,6 +31,10 @@ import path from 'path';
  * tests/buying-considerations.test.tsx (the "Before you buy"
  * component render) and tests/owner-error-log-list.test.tsx
  * (the owner error-log route filter) — same jsdom environment.
+ *
+ * Final 100% (W2-RESUME #2): this config also runs
+ * tests/w2-label-honesty-render.test.tsx (the ProductCard
+ * 5-state label render pin — F-P1-04).
  */
 export default defineConfig({
   resolve: {
@@ -50,6 +54,7 @@ export default defineConfig({
       'tests/section19-phase3-best-time-to-buy.test.tsx',
       'tests/buying-considerations.test.tsx',
       'tests/owner-error-log-list.test.tsx',
+      'tests/w2-label-honesty-render.test.tsx',
     ],
     setupFiles: ['./tests/setup.ts'],
     environment: 'jsdom',

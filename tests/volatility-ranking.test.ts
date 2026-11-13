@@ -72,14 +72,32 @@ describe('buildVolatilityRow / sortVolatilityRows', () => {
     category: 'Category',
   });
 
+  // FINAL 100% (W3, F-P1-36) — rows are gated on the unified
+  // 5-point + freshness rule, so fixtures need 5 points with a
+  // fresh latest point. `now` is passed explicitly: the old
+  // fixtures' 2026-11-02 latest point is stale against the real
+  // clock, and a row test must not depend on the run date.
+  const NOW = new Date('2026-11-05T00:00:00.000Z');
+  const FIVE_POINTS = [
+    { price: 100, recordedAt: '2026-10-05T00:00:00.000Z' },
+    { price: 102, recordedAt: '2026-10-15T00:00:00.000Z' },
+    { price: 98, recordedAt: '2026-10-25T00:00:00.000Z' },
+    { price: 100, recordedAt: '2026-11-02T00:00:00.000Z' },
+    { price: 101, recordedAt: '2026-11-04T00:00:00.000Z' },
+  ];
+  const VOLATILE_POINTS = [
+    { price: 100, recordedAt: '2026-10-05T00:00:00.000Z' },
+    { price: 150, recordedAt: '2026-10-15T00:00:00.000Z' },
+    { price: 90, recordedAt: '2026-10-25T00:00:00.000Z' },
+    { price: 160, recordedAt: '2026-11-02T00:00:00.000Z' },
+    { price: 80, recordedAt: '2026-11-04T00:00:00.000Z' },
+  ];
+
   it('ranks the most stable product first and labels every row with its point count', () => {
     const rows = [
-      buildVolatilityRow(product('b', 'Volatile'), [
-        { price: 100, recordedAt: '2026-10-03T00:00:00.000Z' },
-        { price: 150, recordedAt: '2026-11-02T00:00:00.000Z' },
-      ]),
-      buildVolatilityRow(product('a', 'Steady'), POINTS),
-      buildVolatilityRow(product('c', 'NoHistory'), []),
+      buildVolatilityRow(product('b', 'Volatile'), VOLATILE_POINTS, NOW),
+      buildVolatilityRow(product('a', 'Steady'), FIVE_POINTS, NOW),
+      buildVolatilityRow(product('c', 'NoHistory'), [], NOW),
     ];
     const sorted = sortVolatilityRows(rows, 'most-stable');
     expect(sorted[0].name).toBe('Steady');
@@ -90,21 +108,36 @@ describe('buildVolatilityRow / sortVolatilityRows', () => {
     expect(sorted[2].name).toBe('NoHistory');
     expect(sorted[2].rank).toBeNull();
     expect(sorted[2].stats).toBeNull();
-    expect(volatilityPointLabel(sorted[0].pointCount)).toBe('from 4 recorded points');
+    expect(sorted[2].gateReason).toMatch(/5 recorded points/);
+    expect(volatilityPointLabel(sorted[0].pointCount)).toBe('from 5 recorded points');
     expect(volatilityPointLabel(1)).toBe('from 1 recorded point');
   });
 
   it('most-volatile sort reverses the ranking', () => {
     const rows = [
-      buildVolatilityRow(product('a', 'Steady'), POINTS),
-      buildVolatilityRow(product('b', 'Volatile'), [
-        { price: 100, recordedAt: '2026-10-03T00:00:00.000Z' },
-        { price: 150, recordedAt: '2026-11-02T00:00:00.000Z' },
-      ]),
+      buildVolatilityRow(product('a', 'Steady'), FIVE_POINTS, NOW),
+      buildVolatilityRow(product('b', 'Volatile'), VOLATILE_POINTS, NOW),
     ];
     const sorted = sortVolatilityRows(rows, 'most-volatile');
     expect(sorted[0].name).toBe('Volatile');
     expect(sorted[0].rank).toBe(1);
+  });
+
+  it('a 4-point series is gated even when fresh — the seed shape ranks nothing', () => {
+    const row = buildVolatilityRow(product('a', 'Seed'), POINTS, NOW);
+    expect(row.stats).toBeNull();
+    expect(row.rank).toBeNull();
+    expect(row.gateReason).toMatch(/4 of 5 recorded points/);
+  });
+
+  it('a 5-point stale series is gated, with the age in the reason', () => {
+    const row = buildVolatilityRow(
+      product('a', 'Stale'),
+      FIVE_POINTS,
+      new Date('2026-12-01T00:00:00.000Z')
+    );
+    expect(row.stats).toBeNull();
+    expect(row.gateReason).toMatch(/stale/);
   });
 
   it('parseVolatilitySort defaults unknown values to most-stable', () => {

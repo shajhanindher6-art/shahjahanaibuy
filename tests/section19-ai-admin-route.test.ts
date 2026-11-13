@@ -21,7 +21,7 @@ import { GET } from '@/app/api/v1/admin/ai/route';
 
 const state = vi.hoisted(() => ({
   user: null as { id: string } | null,
-  profile: null as { roles?: { name?: string | null } } | null,
+  profile: null as { roles?: { name?: string | null; permissions?: string[] } } | null,
   outcomes: { data: [] as Array<Record<string, unknown>>, error: null as { code?: string; message?: string } | null },
   errorLog: { data: [] as Array<Record<string, unknown>>, error: null as { code?: string; message?: string } | null },
 }));
@@ -144,7 +144,7 @@ describe('GET /api/v1/admin/ai (§12 #71)', () => {
 
   it('admin → 200 with providers, usage, accuracy and errors shape', async () => {
     state.user = { id: 'user-admin-1' };
-    state.profile = { roles: { name: 'admin' } };
+    state.profile = { roles: { name: 'admin', permissions: ['*'] } };
     const res = await GET(adminAiRequest());
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -170,7 +170,7 @@ describe('GET /api/v1/admin/ai (§12 #71)', () => {
 
   it('admin, tables missing (032/048 unapplied) → tableMissing flags, still 200', async () => {
     state.user = { id: 'user-admin-1' };
-    state.profile = { roles: { name: 'admin' } };
+    state.profile = { roles: { name: 'admin', permissions: ['*'] } };
     state.outcomes = { data: null as unknown as [], error: { code: 'PGRST205', message: 'Could not find the table' } };
     state.errorLog = { data: null as unknown as [], error: { code: '42P01', message: 'relation does not exist' } };
     const res = await GET(adminAiRequest());

@@ -411,23 +411,23 @@ describe('ApifyProvider token transport (#99)', () => {
     else delete process.env.APIFY_ACTOR_ID;
   });
 
-  it('sends the token as an Authorization header, never in the URL', async () => {
-    let capturedUrl = '';
-    let capturedHeaders: Record<string, string> = {};
+  it('kill-switch (Final 100%, F-P1-59): vars set still means unavailable — no request is ever made', async () => {
+    let fetchCalls = 0;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: string, init: { headers: Record<string, string> }) => {
-        capturedUrl = url;
-        capturedHeaders = init.headers;
+      vi.fn(async () => {
+        fetchCalls += 1;
         return new Response(JSON.stringify({ items: [] }), { status: 200 });
       })
     );
     const provider = new ApifyProvider();
-    expect(provider.isAvailable()).toBe(true);
-    await provider.search({ query: 'phone' });
-    expect(capturedUrl).not.toContain('token=');
-    expect(capturedUrl).not.toContain('tok-123');
-    expect(capturedHeaders.Authorization).toBe('Bearer tok-123');
+    // The ban is code, not env: setting the vars must NOT activate it.
+    expect(provider.isAvailable()).toBe(false);
+    await expect(provider.search({ query: 'phone' })).rejects.toThrow(/Apify is rejected/);
+    // No request at all — so the token can never leak into a URL
+    // (the old #99 guarantee, now vacuous by construction: the
+    // provider throws before any fetch).
+    expect(fetchCalls).toBe(0);
   });
 
   it('the provider source never interpolates the token into a URL (#99)', () => {
@@ -435,7 +435,8 @@ describe('ApifyProvider token transport (#99)', () => {
     // at the Authorization-header call site (describing what NOT to
     // do); the real guarantee is that the token is interpolated
     // exactly once, on the Authorization header line, never into a
-    // URL. The behavioural test above proves the URL carries no token.
+    // URL. The behavioural test above proves no request is made at
+    // all under the kill-switch, so the token cannot leak anywhere.
     const src = readSource('services/providers/apify-provider.ts');
     const tokenUses = src.split('\n').filter((line) => line.includes('${this.token}'));
     expect(tokenUses).toHaveLength(1);
@@ -674,10 +675,18 @@ describe('audit rows + error-logging + provider-health wiring (#97, #53, #52)', 
   });
 
   it('eBay + registry providers report health via recordProviderHealth (#52)', () => {
-    // eBay adapter: refreshEbayPrices reports through the
-    // best-effort wrapper (which calls recordProviderHealth).
+    // eBay adapter: refreshEbayPrices reports through
+    // recordProviderHealthAttempt (FINAL 100%, F-P2-04), which
+    // writes BOTH trails — provider_health (via
+    // reportAiProviderHealth) and data_sources.last_sync_* —
+    // and funnels into recordProviderHealth. The direct
+    // reportAiProviderHealth call in ebay-refresh.ts was
+    // replaced by this wrapper; the funnel is unchanged.
     expect(readSource('services/ebay-refresh.ts')).toContain(
-      "reportAiProviderHealth(supabase, 'ebay'"
+      'recordProviderHealthAttempt(supabase, {'
+    );
+    expect(readSource('services/provider-health.ts')).toContain(
+      'reportAiProviderHealth(supabase, attempt.providerKey, {'
     );
     // Registry providers: the price.refresh processor reports
     // each provider fetch (success / failure / response time).

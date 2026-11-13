@@ -41,7 +41,7 @@ const fakeWishlists = vi.hoisted(() => ({
 }));
 
 function adminProfileRow() {
-  return { role_id: 'role-admin', roles: { name: 'admin' } };
+  return { role_id: 'role-admin', roles: { name: 'admin', permissions: ['*'] } };
 }
 
 function makeServiceClient() {

@@ -107,6 +107,12 @@ export interface ProductAttribute {
   unit: string | null;
   group: string | null;
   sortOrder: number;
+  /** Per-spec source (migration 058; undefined when unapplied). */
+  source?: string | null;
+  /** When the spec value was verified (migration 058; undefined when unapplied). */
+  verifiedAt?: string | null;
+  /** Who verified it (migration 058; undefined when unapplied). */
+  verifiedBy?: string | null;
 }
 
 // ---------------------------------------------------------------------------

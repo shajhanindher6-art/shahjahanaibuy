@@ -221,7 +221,8 @@ describe('run counts in steps JSONB (item 38)', () => {
     };
 
     // refresh: p1 changed 95 → 90 (inserted), p2 unchanged at 80.
-    expect(body.data.steps.refresh.counts).toEqual({ processed: 2, succeeded: 2, failed: 0, skipped: 0 });
+    // FINAL 100%: counts now also carry suspiciousPriceChanges (0 here).
+    expect(body.data.steps.refresh.counts).toEqual({ processed: 2, succeeded: 2, failed: 0, skipped: 0, suspiciousPriceChanges: 0 });
     // stock: all three products tracked and recorded.
     expect(body.data.steps.stock.counts).toEqual({ processed: 3, succeeded: 3, failed: 0 });
     // guestAlerts: p3 at 70 against a $100 target.
@@ -236,8 +237,11 @@ describe('run counts in steps JSONB (item 38)', () => {
     const stored = tables['price_refresh_runs'][0] as Row & {
       steps: Record<string, { counts?: Record<string, number> }>;
     };
-    expect(stored.status).toBe('completed');
-    expect(stored.steps.refresh.counts).toEqual({ processed: 2, succeeded: 2, failed: 0, skipped: 0 });
+    // FINAL 100% (F-P1-28, K10b): this harness fetches no live
+    // provider prices (only recorded rows are re-read), so the
+    // stored status is completed_no_live_source, never 'completed'.
+    expect(stored.status).toBe('completed_no_live_source');
+    expect(stored.steps.refresh.counts).toEqual({ processed: 2, succeeded: 2, failed: 0, skipped: 0, suspiciousPriceChanges: 0 });
     expect(stored.steps.hunts.counts).toBeUndefined();
   });
 });

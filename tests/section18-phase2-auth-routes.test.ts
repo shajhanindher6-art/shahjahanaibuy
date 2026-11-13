@@ -38,7 +38,7 @@ vi.mock('@/lib/supabase/service', () => ({
       select: (_cols?: string) => ({
         eq: (_col: string, _value: string) => ({
           single: async () => ({
-            data: { role_id: 'role-admin', roles: { name: 'admin' } },
+            data: { role_id: 'role-admin', roles: { name: 'admin', permissions: ['*'] } },
             error: null,
           }),
         }),

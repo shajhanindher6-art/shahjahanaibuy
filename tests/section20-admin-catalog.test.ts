@@ -241,24 +241,39 @@ describe('shouldFlipVerifiedToStale', () => {
     expect(shouldFlipVerifiedToStale('verified', '2026-11-12T08:00:00.000Z', now)).toBe(false);
   });
 
-  it('never flips unverified, stale, or unknown-age rows', () => {
+  it('never flips unverified or stale rows', () => {
     expect(shouldFlipVerifiedToStale('unverified', '2026-10-01T08:00:00.000Z', now)).toBe(false);
     expect(shouldFlipVerifiedToStale('stale', '2026-10-01T08:00:00.000Z', now)).toBe(false);
-    expect(shouldFlipVerifiedToStale('verified', null, now)).toBe(false);
-    expect(shouldFlipVerifiedToStale('verified', 'not-a-date', now)).toBe(false);
+    expect(shouldFlipVerifiedToStale(null, null, now)).toBe(false);
+  });
+
+  it('flips a verified stamp with no check date, or an unparseable one (FINAL 100%, F-P1-01)', () => {
+    // A dateless verified stamp used to be verified forever: the
+    // old predicate returned false for a null age and the SQL
+    // `.lt(cutoff)` could never match a NULL verified_at. The
+    // currency of a check that cannot be dated cannot be proven,
+    // so the stamp lapses to stale instead.
+    expect(shouldFlipVerifiedToStale('verified', null, now)).toBe(true);
+    expect(shouldFlipVerifiedToStale('verified', 'not-a-date', now)).toBe(true);
   });
 });
 
 describe('flipStaleVerificationStatuses', () => {
-  it('flips verified products and merchant rows older than the cutoff', async () => {
+  it('flips verified products and merchant rows older than the cutoff, plus dateless ones (F-P1-01)', async () => {
     const client = fakeClient((table) => {
       if (table === 'products') return ok([{ id: 'p1' }, { id: 'p2' }]);
       if (table === 'merchant_products') return ok([{ id: 'm1' }]);
       return ok([]);
     });
     const result = await flipStaleVerificationStatuses(client, new Date('2026-11-13T08:00:00.000Z'));
-    expect(result.flippedProducts).toBe(2);
-    expect(result.flippedMerchantRows).toBe(1);
+    // The fake returns the same rows for BOTH passes (dated-old
+    // via `.lt(cutoff)` AND dateless via `.is(price_verified_at,
+    // null)`), so the counts are 2+2 products and 1+1 merchant
+    // rows. The per-row distinction — an old row AND a dateless
+    // row each flip exactly once — is pinned precisely in
+    // tests/final100-verification-spine.test.ts.
+    expect(result.flippedProducts).toBe(4);
+    expect(result.flippedMerchantRows).toBe(2);
     expect(result.columnsMissing).toBe(false);
   });
 
@@ -289,7 +304,11 @@ describe('refreshTrackedPrices stale flip (#68 wiring)', () => {
     });
     const result = await refreshTrackedPrices(client);
     expect(result.tracked).toBe(0);
-    expect(result.staleFlipped).toBe(3);
+    // 3 rows per pass (2 products + 1 merchant row) × 2 passes
+    // (dated-old + dateless, F-P1-01) — the fake returns the same
+    // rows for both passes; see the flipStaleVerificationStatuses
+    // test above.
+    expect(result.staleFlipped).toBe(6);
   });
 });
 

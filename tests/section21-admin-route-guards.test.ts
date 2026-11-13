@@ -36,7 +36,7 @@ function readRepo(relativePath: string): string {
   return readFileSync(join(process.cwd(), relativePath), 'utf8');
 }
 
-type ProfileRow = { roles?: { name?: string | null } | null } | null;
+type ProfileRow = { roles?: { name?: string | null; permissions?: string[] } | null } | null;
 
 const state = vi.hoisted(() => ({
   user: null as { id: string } | null,
@@ -156,7 +156,7 @@ describe('GET /api/v1/admin/data-quality — route guard (K1)', () => {
 
   it('signed-in admin user → 200 with the data-quality summary', async () => {
     state.user = { id: 'admin-1' };
-    state.profile = { roles: { name: 'admin' } };
+    state.profile = { roles: { name: 'admin', permissions: ['*'] } };
     const res = await getDataQuality(adminRequest('/api/v1/admin/data-quality', '203.0.113.13'));
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -169,7 +169,7 @@ describe('GET /api/v1/admin/data-quality — route guard (K1)', () => {
 
   it('service client missing → 500, never a pass-through', async () => {
     state.user = { id: 'admin-1' };
-    state.profile = { roles: { name: 'admin' } };
+    state.profile = { roles: { name: 'admin', permissions: ['*'] } };
     state.serviceAvailable = false;
     const res = await getDataQuality(adminRequest('/api/v1/admin/data-quality', '203.0.113.14'));
     expect(res.status).toBe(500);
@@ -207,7 +207,7 @@ describe('GET /api/v1/admin/products — route guard (K1)', () => {
 
   it('signed-in admin user → 200 with the product list', async () => {
     state.user = { id: 'admin-1' };
-    state.profile = { roles: { name: 'admin' } };
+    state.profile = { roles: { name: 'admin', permissions: ['*'] } };
     const res = await getAdminProducts(adminRequest('/api/v1/admin/products', '203.0.113.17'));
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -251,7 +251,7 @@ describe('GET /api/v1/admin/users — route guard (Sections 21–25, Stage G, G-
 
   it('signed-in admin user → 200 with the user list and no secret fields', async () => {
     state.user = { id: 'admin-1' };
-    state.profile = { roles: { name: 'admin' } };
+    state.profile = { roles: { name: 'admin', permissions: ['*'] } };
     const res = await getAdminUsers(adminRequest('/api/v1/admin/users', '203.0.113.23'));
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -335,7 +335,7 @@ describe('app/admin/layout.tsx — page guard for /admin/products + /admin/inges
 
   it('service client missing → NEXT_REDIRECT to /dashboard (fail closed)', async () => {
     state.user = { id: 'admin-1' };
-    state.profile = { roles: { name: 'admin' } };
+    state.profile = { roles: { name: 'admin', permissions: ['*'] } };
     state.serviceAvailable = false;
     await expect(AdminLayout({ children: 'probe' })).rejects.toThrow(
       'NEXT_REDIRECT:/dashboard'
@@ -344,7 +344,7 @@ describe('app/admin/layout.tsx — page guard for /admin/products + /admin/inges
 
   it('signed-in admin user → children render, no redirect', async () => {
     state.user = { id: 'admin-1' };
-    state.profile = { roles: { name: 'admin' } };
+    state.profile = { roles: { name: 'admin', permissions: ['*'] } };
     const element = (await AdminLayout({ children: 'probe' })) as unknown as {
       props: { children: unknown };
     };

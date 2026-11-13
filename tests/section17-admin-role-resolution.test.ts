@@ -27,7 +27,10 @@ import { join } from 'node:path';
 import {
   resolveRoleName,
   isAdminRoleRow,
+  hasAdminPermission,
+  resolveRolePermissions,
   fetchProfileRoleName,
+  fetchProfileRoleWithPermissions,
   PROFILE_ROLE_SELECT,
   type ProfileRoleRow,
 } from '@/lib/admin-role';
@@ -40,9 +43,58 @@ function read(rel: string): string {
 
 // --- Item 7: pure resolver --------------------------------------------
 
+// --- Final 100%, F-P1-61: permissions JSONB wiring -------------------
+
+describe('resolveRolePermissions / hasAdminPermission (permissions JSONB)', () => {
+  it('returns the permissions array from the join', () => {
+    expect(resolveRolePermissions({ roles: { name: 'admin', permissions: ['*'] } })).toEqual(['*']);
+    expect(resolveRolePermissions({ roles: { name: 'merchant', permissions: ['manage:products'] } })).toEqual([
+      'manage:products',
+    ]);
+  });
+
+  it('returns [] for a missing / non-array / empty permissions value', () => {
+    expect(resolveRolePermissions(null)).toEqual([]);
+    expect(resolveRolePermissions({ roles: { name: 'admin' } })).toEqual([]);
+    expect(resolveRolePermissions({ roles: { name: 'admin', permissions: 'not-an-array' } })).toEqual([]);
+    expect(resolveRolePermissions({ roles: { name: 'admin', permissions: [] } })).toEqual([]);
+  });
+
+  it('admin + wildcard passes; admin + empty permissions fails closed', () => {
+    expect(hasAdminPermission({ roles: { name: 'admin', permissions: ['*'] } })).toBe(true);
+    expect(hasAdminPermission({ roles: { name: 'admin', permissions: ['admin:access'] } })).toBe(true);
+    expect(hasAdminPermission({ roles: { name: 'admin' } })).toBe(false);
+    expect(hasAdminPermission({ roles: { name: 'admin', permissions: [] } })).toBe(false);
+    expect(hasAdminPermission({ roles: { name: 'user', permissions: ['*'] } })).toBe(false);
+  });
+
+  it('PROFILE_ROLE_SELECT reads the permissions column', () => {
+    expect(PROFILE_ROLE_SELECT).toContain('permissions');
+  });
+
+  it('fetchProfileRoleWithPermissions returns name + permissions', async () => {
+    const client = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            single: async () => ({
+              data: { role_id: 'r1', roles: { name: 'admin', permissions: ['*'] } },
+              error: null,
+            }),
+          }),
+        }),
+      }),
+    } as never;
+    await expect(fetchProfileRoleWithPermissions(client, 'u-1')).resolves.toEqual({
+      roleName: 'admin',
+      permissions: ['*'],
+    });
+  });
+});
+
 describe('resolveRoleName (role_id → roles.name)', () => {
   it('returns the joined roles.name', () => {
-    expect(resolveRoleName({ role_id: 'r1', roles: { name: 'admin' } })).toBe('admin');
+    expect(resolveRoleName({ role_id: 'r1', roles: { name: 'admin', permissions: ['*'] } })).toBe('admin');
     expect(resolveRoleName({ role_id: 'r2', roles: { name: 'user' } })).toBe('user');
     expect(resolveRoleName({ role_id: 'r3', roles: { name: 'premium' } })).toBe('premium');
   });
@@ -57,14 +109,14 @@ describe('resolveRoleName (role_id → roles.name)', () => {
   });
 
   it('tolerates the array embed shape (first element wins)', () => {
-    expect(resolveRoleName({ roles: [{ name: 'admin' }] } as ProfileRoleRow)).toBe('admin');
+    expect(resolveRoleName({ roles: [{ name: 'admin', permissions: ['*'] }] } as ProfileRoleRow)).toBe('admin');
     expect(resolveRoleName({ roles: [] } as ProfileRoleRow)).toBe('user');
   });
 });
 
 describe('isAdminRoleRow', () => {
   it('is true only for exactly admin', () => {
-    expect(isAdminRoleRow({ roles: { name: 'admin' } })).toBe(true);
+    expect(isAdminRoleRow({ roles: { name: 'admin', permissions: ['*'] } })).toBe(true);
     expect(isAdminRoleRow({ roles: { name: 'user' } })).toBe(false);
     expect(isAdminRoleRow({ roles: { name: 'Admin' } })).toBe(false);
     expect(isAdminRoleRow(null)).toBe(false);
@@ -86,7 +138,7 @@ function mockSingleClient(result: { data: unknown; error: unknown }) {
 describe('fetchProfileRoleName', () => {
   it('selects the roles join and returns the admin name', async () => {
     const { client, select } = mockSingleClient({
-      data: { role_id: 'r1', roles: { name: 'admin' } },
+      data: { role_id: 'r1', roles: { name: 'admin', permissions: ['*'] } },
       error: null,
     });
     await expect(fetchProfileRoleName(client, 'u-1')).resolves.toBe('admin');
@@ -125,7 +177,7 @@ describe('getAllUsers role mapping', () => {
 
   it('resolves roles.name into a flat role string and drops the nested embed', async () => {
     const { client, select } = mockListClient([
-      { id: 'u-1', email: 'a@x.com', role_id: 'r1', roles: { name: 'admin' } },
+      { id: 'u-1', email: 'a@x.com', role_id: 'r1', roles: { name: 'admin', permissions: ['*'] } },
       { id: 'u-2', email: 'b@x.com', role_id: 'r2', roles: { name: 'user' } },
       { id: 'u-3', email: 'c@x.com', role_id: null, roles: null },
     ]);

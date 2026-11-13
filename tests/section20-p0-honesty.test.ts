@@ -233,8 +233,17 @@ describe('§12 #82 — AI inputs carry verification status; "verified" is earned
     expect(label).not.toContain('verified recorded data');
   });
 
-  it('the verified label is only the verified wording (callers must gate it on verified + fresh)', () => {
-    expect(verifiedDataLabel('2026-11-02T07:13:52Z')).toContain('based on verified recorded data');
+  it('the verified label says what was verified, by whom, and when — and renders nothing when the date is unknown', () => {
+    // Final 100% — F-P2-18: the old "based on verified recorded
+    // data" wording never said what/by whom/when. The label now
+    // names all three, and returns null (render nothing) when no
+    // check date is known.
+    const label = verifiedDataLabel('2026-11-02T07:13:52Z');
+    expect(label).toContain('prices verified');
+    expect(label).toContain("SmartBuy's live price check");
+    expect(label).toContain('Nov 2, 2026');
+    expect(label).toContain('real fetch');
+    expect(verifiedDataLabel(null)).toBeNull();
   });
 });
 

@@ -35,19 +35,18 @@
  *   (c) A provider that errors, throws, or returns success with
  *       zero processed rows likewise refreshes nothing.
  *
- * KNOWN GAP (K10b, route level — documented, not hidden): the
- * refresh ROUTE (app/api/v1/prices/refresh/route.ts) computes
- * `overallStatus` as 'completed' whenever no step has status
- * 'failed', and the pipeline step deliberately carries NO isFailed
- * predicate — so a no-provider run IS recorded in
- * `price_refresh_runs` as 'completed' (route header: "the run must
- * not report `completed_with_failures` just because no live
- * merchant adapter is configured yet"). The service-level pins
- * above are the fetch-nothing guarantee; making the run record
- * distinguish "completed, nothing fetched" is a route behaviour
- * change for the coordinator, not something this test file can
- * assert into existence. The route's current computation is
- * pinned by source below so any change is deliberate.
+ * FIXED (K10b, route level — FINAL 100%, W1, F-P1-28): the
+ * refresh ROUTE (app/api/v1/prices/refresh/route.ts) no longer
+ * records a no-provider run as 'completed'. The overall status
+ * now comes from `resolveRefreshRunStatus`
+ * (services/refresh-run.ts): zero failed steps + zero live prices
+ * fetched = 'completed_no_live_source', and the response carries
+ * `status` + `livePricesFetched` so /status can render it
+ * honestly. The old computation ("no failed steps → 'completed'")
+ * is gone — the route source pins below assert the resolver, the
+ * new status value, and the response fields. Migration 040's
+ * CHECK was widened in the (still unapplied) file so the new
+ * status can be stored when the owner applies it.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -327,7 +326,7 @@ describe('provider errors / empty results — likewise no successful refresh (K1
 });
 
 describe('control: a genuine success DOES stamp — so the zero-write pins above are meaningful', () => {
-  it('a validated provider save refreshes the product and moves only the freshness stamp', async () => {
+  it('a validated provider save refreshes the product and moves the freshness + verification stamps', async () => {
     mockRegistry.available = [{ key: 'csv' }];
     mockProcessor.fn.mockResolvedValue({ success: true, processed: 1 });
     const { refreshPricesViaPipeline } = await import(
@@ -338,15 +337,27 @@ describe('control: a genuine success DOES stamp — so the zero-write pins above
 
     expect(result.refreshed).toBe(1);
     expect(result.failed).toBe(0);
-    // Exactly one products write: markProductRefreshed
-    // (data_freshness / next_refresh_at). The wrapper itself never
-    // writes last_successful_update — that stamp lives inside the
-    // real `price.refresh` processor (lib/workers/processors.ts:525),
-    // which is mocked here, so it cannot appear on this path.
-    expect(calls.updates).toHaveLength(1);
+    // Exactly TWO products writes: markProductRefreshed
+    // (data_freshness / next_refresh_at) AND the FINAL-100%
+    // (F-P0-02) rollup markProductVerified (price_verification_
+    // status 'verified' + price_verified_at) — the same live check
+    // that moves freshness also re-verifies the products row.
+    // The wrapper itself never writes last_successful_update —
+    // that stamp lives inside the real `price.refresh` processor
+    // (lib/workers/processors.ts:525), which is mocked here, so it
+    // cannot appear on this path.
+    expect(calls.updates).toHaveLength(2);
     expect(calls.updates[0].table).toBe('products');
     expect(calls.updates[0].payload).toHaveProperty('data_freshness');
     expect(calls.updates[0].payload).not.toHaveProperty(
+      LAST_SUCCESSFUL_UPDATE_COLUMN
+    );
+    expect(calls.updates[1].table).toBe('products');
+    expect(calls.updates[1].payload).toMatchObject({
+      price_verification_status: 'verified',
+    });
+    expect(calls.updates[1].payload).toHaveProperty('price_verified_at');
+    expect(calls.updates[1].payload).not.toHaveProperty(
       LAST_SUCCESSFUL_UPDATE_COLUMN
     );
   });
@@ -407,17 +418,21 @@ describe('markProductSuccessfullyUpdated contract — what stamps last_successfu
   });
 });
 
-describe('route-level overall status — current behaviour, pinned deliberately (K10b gap)', () => {
-  it('the route records a run completed whenever no step failed — including a no-provider run', () => {
+describe('route-level overall status — the K10b fix (F-P1-28)', () => {
+  it('a no-provider run is recorded as completed_no_live_source, never completed', () => {
     const route = readRepo('app/api/v1/prices/refresh/route.ts');
     // The pipeline step has no isFailed predicate (available:false
     // is a skip), so with every other step ok, failedSteps is
-    // empty and overallStatus is 'completed' — even though nothing
-    // was fetched. Change this only as a deliberate route
-    // behaviour change; the service-level pins above are the
-    // fetch-nothing guarantee.
+    // empty — but the run must NOT be called 'completed' when no
+    // live price was fetched. The resolver distinguishes that:
+    // zero live prices + zero failures = 'completed_no_live_source'.
+    // A job must never be called successful when no provider data
+    // was retrieved.
     expect(route).toContain("reason: 'no-available-provider'");
-    expect(route).toContain('failedSteps.length === 0');
-    expect(route).toContain("? 'completed'");
+    expect(route).toContain('resolveRefreshRunStatus');
+    expect(route).toContain('completed_no_live_source');
+    expect(route).toContain('livePricesFetched');
+    expect(route).toContain('status: overallStatus');
+    expect(route).not.toContain("? 'completed'");
   });
 });

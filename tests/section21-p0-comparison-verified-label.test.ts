@@ -276,8 +276,11 @@ describe('compareProducts — verified label is earned, never assumed (P0 #1)', 
     const comparison = await compareProducts(db.client, ['p1', 'p2']);
 
     expect(comparison).not.toBeNull();
-    expect(comparison!.sourceLabel).toContain('based on verified recorded data');
-    expect(comparison!.aiSummary).toContain('Source: based on verified recorded data');
+    // Final 100% — F-P2-18: the verified label now says what was
+    // verified, by whom, and when — "prices verified by SmartBuy's
+    // live price check … on <date>".
+    expect(comparison!.sourceLabel).toContain("prices verified by SmartBuy's live price check");
+    expect(comparison!.aiSummary).toContain("Source: prices verified by SmartBuy's live price check");
     expect(comparison!.products[0].priceVerificationStatus).toBe('verified');
   });
 
