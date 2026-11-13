@@ -259,6 +259,55 @@ describe('AIEngine.invoke fallback chain', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Engine input freshness (Section 21, Stage E, E-P2-1)
+// ---------------------------------------------------------------------------
+
+describe('AIEngine.invoke input freshness (E-P2-1)', () => {
+  function freshEngine(): AIEngine {
+    const registry = new AIEngineRegistry();
+    registry.register(fakeProvider('a', ['search'], async () => 'v'));
+    return new AIEngine(registry);
+  }
+
+  it('a stale input is labelled stale on the result (callers can qualify the copy)', async () => {
+    const engine = freshEngine();
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const result = await engine.invoke<string>('search', {
+      dataFreshness: thirtyDaysAgo,
+      priceVerificationStatus: 'unverified',
+    });
+    expect(result.value).toBe('v');
+    expect(result.inputFreshness).toBeDefined();
+    expect(result.inputFreshness?.priceStale).toBe(true);
+    expect(result.inputFreshness?.priceVerificationStatus).toBe('unverified');
+    expect(result.inputFreshness?.daysSinceLastCheck).toBeGreaterThanOrEqual(30);
+    expect(result.inputFreshness?.basisLabel).toContain('stale');
+    expect(result.inputFreshness?.basisLabel).toContain('Recorded prices, unverified');
+  });
+
+  it('a fresh input is labelled not-stale', async () => {
+    const engine = freshEngine();
+    const result = await engine.invoke<string>('search', {
+      dataFreshness: new Date().toISOString(),
+      priceVerificationStatus: 'verified',
+    });
+    expect(result.inputFreshness?.priceStale).toBe(false);
+    expect(result.inputFreshness?.priceVerificationStatus).toBe('verified');
+    expect(result.inputFreshness?.daysSinceLastCheck).toBe(0);
+    expect(result.inputFreshness?.basisLabel).not.toContain('stale');
+  });
+
+  it('an input with no freshness fields defaults to unverified / unknown age, never stale', async () => {
+    const engine = freshEngine();
+    const result = await engine.invoke<string>('search', {});
+    expect(result.inputFreshness?.priceVerificationStatus).toBe('unverified');
+    expect(result.inputFreshness?.priceStale).toBe(false);
+    expect(result.inputFreshness?.daysSinceLastCheck).toBeNull();
+    expect(result.inputFreshness?.basisLabel).toContain('last check unknown');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Retry
 // ---------------------------------------------------------------------------
 

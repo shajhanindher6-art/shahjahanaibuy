@@ -5,8 +5,10 @@
  * ApifyProvider is registered unconditionally so the registry knows
  * about it, but it FAILS CLOSED unless BOTH APIFY_API_TOKEN and
  * APIFY_ACTOR_ID are set — isAvailable() is false and search() /
- * fetch() return empty / null without touching the network
- * (services/providers/apify-provider.ts:166-175, 196-201, 216-221).
+ * fetch() THROW a typed ProviderNotConfiguredError naming the ban,
+ * without touching the network (Sections 21–25, Stage B, B1: the
+ * old silent [] / null let callers read "no results" as if Apify
+ * had been checked — a banned source must never look checked).
  *
  * These tests assert only that fail-closed behaviour, with the vars
  * UNSET (the real-world state: scraping is a hard standing rule and
@@ -21,6 +23,7 @@
 
 import { describe, expect, it, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { ApifyProvider } from '@/services/providers/apify-provider';
+import { ProviderNotConfiguredError } from '@/services/providers/errors';
 import {
   getProviderRegistry,
   resetProviderRegistry,
@@ -51,20 +54,25 @@ describe('ApifyProvider — fails closed without env vars (#49)', () => {
     expect(new ApifyProvider().isAvailable()).toBe(false);
   });
 
-  it('search() returns [] without env vars and makes no network call', async () => {
+  it('search() throws NOT_CONFIGURED without env vars and makes no network call', async () => {
     const provider = new ApifyProvider();
-    const results = await provider.search({ query: 'laptop', limit: 10 });
-    expect(results).toEqual([]);
+    await expect(provider.search({ query: 'laptop', limit: 10 })).rejects.toThrow(
+      ProviderNotConfiguredError
+    );
+    await expect(provider.search({ query: 'laptop', limit: 10 })).rejects.toThrow(
+      /scraping is banned/
+    );
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('fetch() returns null without env vars and makes no network call', async () => {
+  it('fetch() throws NOT_CONFIGURED without env vars and makes no network call', async () => {
     const provider = new ApifyProvider();
-    const result = await provider.fetch({
-      externalId: 'B0C123',
-      retailerSlug: 'amazon',
-    });
-    expect(result).toBeNull();
+    await expect(
+      provider.fetch({
+        externalId: 'B0C123',
+        retailerSlug: 'amazon',
+      })
+    ).rejects.toThrow(ProviderNotConfiguredError);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

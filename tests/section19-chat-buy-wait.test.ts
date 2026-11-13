@@ -268,6 +268,6 @@ describe('generateChatResponse routes buy/wait questions to the verdict handler'
 
   it('still routes general questions to recommendations', async () => {
     const answer = await generateChatResponse(stub(), 'best laptop under $1000', [], {});
-    expect(answer.content).toContain('Best pick');
+    expect(answer.content).toContain('Lowest price pick');
   });
 });

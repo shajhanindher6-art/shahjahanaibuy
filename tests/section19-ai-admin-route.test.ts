@@ -93,7 +93,17 @@ vi.mock('@/services/ai-engine/providers', () => ({
 }));
 
 vi.mock('@/services/ai-engine/usage', () => ({
+  // Section 21–25, Stage J, J-P2-6 — the route reads the async
+  // summary (shared budgets when Upstash is configured, memory
+  // fallback otherwise); the mock provides both shapes.
   getAiUsageSummary: () => ({
+    generatedAt: '2026-11-12T23:00:00.000Z',
+    note: 'In-memory per-instance counters (reset on deploy; not shared across instances).',
+    providers: [],
+    capabilities: [],
+    budgets: [{ key: 'serpapi', used: 0, budget: 5, remaining: 5, exhausted: false }],
+  }),
+  getAiUsageSummaryAsync: async () => ({
     generatedAt: '2026-11-12T23:00:00.000Z',
     note: 'In-memory per-instance counters (reset on deploy; not shared across instances).',
     providers: [],

@@ -73,6 +73,14 @@ CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS boolean
 LANGUAGE sql
 SECURITY DEFINER
+-- Section 21–25, Stage J, J-P2-11 — hardening: pin the search
+-- path so a future search_path manipulation cannot redirect the
+-- unqualified names in this body. The body already qualifies
+-- public.profiles / public.roles, so the practical risk was nil;
+-- this is defense-in-depth, matching 047's function. This edit
+-- activates ONLY when 017 is next re-applied by the owner — do
+-- NOT re-apply 017 for this line alone.
+SET search_path = public
 STABLE
 AS $$
   SELECT EXISTS (

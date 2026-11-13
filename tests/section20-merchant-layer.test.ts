@@ -250,6 +250,9 @@ function fakeListing(overrides: Partial<EbayListing> = {}): EbayListing {
     itemWebUrl: 'https://www.ebay.com/itm/ebay-1',
     imageUrl: null,
     ...overrides,
+    // EbayListing.gtin is required `string | null` (S21 B12) —
+    // an override that sets it to undefined must not leak through.
+    gtin: overrides.gtin ?? null,
   };
 }
 
@@ -320,11 +323,22 @@ describe('provider registry — CSV / Amazon / Best Buy registration (#57, #58)'
     expect(new BestBuyProvider().getNotConfiguredReason()).toMatch(/no .* API client exists/i);
   });
 
-  it('amazon / bestbuy search and fetch return empty, never fake rows', async () => {
-    expect(await new AmazonProvider().search({ query: 'laptop' })).toEqual([]);
-    expect(await new AmazonProvider().fetch({ externalId: 'x', retailerSlug: 'amazon' })).toBeNull();
-    expect(await new BestBuyProvider().search({ query: 'laptop' })).toEqual([]);
-    expect(await new BestBuyProvider().fetch({ externalId: 'x', retailerSlug: 'bestbuy' })).toBeNull();
+  it('amazon / bestbuy search and fetch throw NOT_CONFIGURED, never fake rows', async () => {
+    // Sections 21–25, Stage B (B1) — was a silent [] / null, which
+    // callers read as "checked, no results". There is no client, so
+    // a search is not a search: it throws a typed error naming why.
+    await expect(new AmazonProvider().search({ query: 'laptop' })).rejects.toThrow(
+      /no live price integration/
+    );
+    await expect(
+      new AmazonProvider().fetch({ externalId: 'x', retailerSlug: 'amazon' })
+    ).rejects.toThrow(/no live price integration/);
+    await expect(new BestBuyProvider().search({ query: 'laptop' })).rejects.toThrow(
+      /no live price integration/
+    );
+    await expect(
+      new BestBuyProvider().fetch({ externalId: 'x', retailerSlug: 'bestbuy' })
+    ).rejects.toThrow(/no live price integration/);
   });
 
   it('amazon / bestbuy are available-gated on their keys (stub: still no client)', async () => {
@@ -333,8 +347,12 @@ describe('provider registry — CSV / Amazon / Best Buy registration (#57, #58)'
     expect(new AmazonProvider().isAvailable()).toBe(true);
     expect(new BestBuyProvider().isAvailable()).toBe(true);
     // A set key must never be read as "live": no client exists yet.
-    expect(await new AmazonProvider().search({ query: 'laptop' })).toEqual([]);
-    expect(await new BestBuyProvider().search({ query: 'laptop' })).toEqual([]);
+    await expect(new AmazonProvider().search({ query: 'laptop' })).rejects.toThrow(
+      /no .* client exists yet/
+    );
+    await expect(new BestBuyProvider().search({ query: 'laptop' })).rejects.toThrow(
+      /no .* client exists yet/
+    );
   });
 });
 
@@ -369,7 +387,10 @@ describe('CsvProvider (#58, #99)', () => {
     const fetchSpy = vi.fn(async () => new Response(csv, { status: 200 }));
     vi.stubGlobal('fetch', fetchSpy);
     const provider = new CsvProvider({ csvUrl: 'http://127.0.0.1/feed.csv' });
-    expect(await provider.search({ query: 'phone' })).toEqual([]);
+    // Sections 21–25, Stage B (B1 + B6) — was a silent [], cached
+    // as a successful empty parse. A refused fetch now throws a
+    // typed error, so no caller can read it as "feed checked".
+    await expect(provider.search({ query: 'phone' })).rejects.toThrow(/SSRF/);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

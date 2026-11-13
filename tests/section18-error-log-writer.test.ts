@@ -42,6 +42,29 @@ function fakeService(insertImpl: (row: Record<string, unknown>) => Promise<Inser
   return { client, inserts };
 }
 
+/**
+ * Section 21, Stage E (W2) — deterministic wait for the
+ * fire-and-forget error_log writer: a plain bounded polling loop
+ * instead of vitest's waitFor helper (this was the last waitFor
+ * call in the tree). `logApiError` fires the write and returns immediately,
+ * so the test cannot await the write directly — it polls the
+ * fake client's inserts. The 5s bound is kept on purpose
+ * (Section 19, Phase 0 §12 #90: the 1s default was too tight
+ * under parallel load); the loop exits as soon as the insert
+ * lands, and the `expect` after it fails loudly on timeout.
+ */
+async function waitForInserts(
+  inserts: Array<{ table: string; row: Record<string, unknown> }>,
+  count = 1,
+  timeoutMs = 5000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (inserts.length < count) {
+    if (Date.now() >= deadline) break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 describe('insertErrorLogRow', () => {
   it('inserts the row with the 048 columns and returns inserted', async () => {
     const { client, inserts } = fakeService(() => ({ error: null }));
@@ -202,9 +225,10 @@ describe('logApiError persists to error_log', () => {
       startedAt: Date.now(),
     });
     expect(returned).toBe('req-writer');
-    // Section 19, Phase 0 (§12 #90): explicit 5s timeout — the
-    // 1s default is too tight under parallel load.
-    await vi.waitFor(() => expect(inserts).toHaveLength(1), { timeout: 5000 });
+    // Fire-and-forget writer: poll the fake inserts with the
+    // plain bounded loop (see waitForInserts above).
+    await waitForInserts(inserts);
+    expect(inserts).toHaveLength(1);
     expect(inserts[0].row).toMatchObject({
       level: 'error',
       message: 'boom',
@@ -223,9 +247,10 @@ describe('logApiError persists to error_log', () => {
     expect(() =>
       logApiError(new Error('boom'), { route: 'x', status: 500 })
     ).not.toThrow();
-    // Section 19, Phase 0 (§12 #90): explicit 5s timeout — the
-    // 1s default is too tight under parallel load.
-    await vi.waitFor(() => expect(inserts).toHaveLength(1), { timeout: 5000 });
+    // Fire-and-forget writer: poll the fake inserts with the
+    // plain bounded loop (see waitForInserts above).
+    await waitForInserts(inserts);
+    expect(inserts).toHaveLength(1);
   });
 
   it('writer failure never throws and the log line still lands', async () => {

@@ -379,12 +379,14 @@ describe('getRankedDeals — featured evidence gate + value term (§12 #59/#60)'
     const supabase = createStubSupabase(
       {
         deal_rankings: [],
-        // Section 20, §12 #67: the old +10 confidence term is gone,
-        // so the old fixture scores 67.5 — no longer "high". The
-        // fixture, not the bar, is fixed: the deal ends within 24h,
-        // a legitimate +20 flash term — 50 + 25*0.5 + 20 (flash)
-        // + 5 (value: $999 within 15% of the recorded low $900)
-        // = 87.5, a genuinely high score on a flagged history.
+        // Section 20, §12 #67: the old +10 confidence term is gone.
+        // Sections 21–25, Stage E (E-P1-2): the discount term
+        // counts only on a 'validated' discount — this history is
+        // `flagged`, so the claimed 25% contributes 0. The score
+        // is 50 + 0 + 20 (flash: ends within 24h) + 5 (value:
+        // $999 within 15% of the recorded low $900) = 75 — still
+        // at the featured bar, on a flagged history, and featured
+        // is withheld anyway (validation is not 'validated').
         // The end is relative to now so the flash term never
         // expires out from under the test.
         deals: [
@@ -404,7 +406,7 @@ describe('getRankedDeals — featured evidence gate + value term (§12 #59/#60)'
     const result = await getRankedDeals(supabase, { limit: 10 });
     expect(result.deals).toHaveLength(1);
     const ranked = result.deals[0];
-    expect(ranked.aiScore).toBeCloseTo(87.5, 5);
+    expect(ranked.aiScore).toBeCloseTo(75, 5);
     expect(ranked.aiScore).toBeGreaterThanOrEqual(75);
     expect(ranked.discountValidation?.status).toBe('flagged');
     expect(ranked.isFeatured).toBe(false);
@@ -426,8 +428,10 @@ describe('getRankedDeals — duplicate-deal dedupe (§12 #66)', () => {
     const result = await getRankedDeals(supabase, { limit: 10 });
     expect(result.deals).toHaveLength(1);
     expect(result.deals[0].dealId).toBe('d-dup-1');
-    // One deal_rankings insert, not two.
-    expect(inserts).toHaveLength(1);
+    // One deal_rankings insert, not two (the E-P1-4 audit row
+    // lands in ai_recommendation_audit, so filter to deal_rankings).
+    const rankingInserts = inserts.filter((row) => row.table === 'deal_rankings');
+    expect(rankingInserts).toHaveLength(1);
   });
 
   it('deals that differ in discount value are NOT collapsed', async () => {

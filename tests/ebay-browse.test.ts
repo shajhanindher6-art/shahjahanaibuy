@@ -131,6 +131,9 @@ describe('searchEbayListings', () => {
       condition: 'New',
       itemWebUrl: 'https://www.ebay.com/itm/1',
       imageUrl: 'https://i.ebayimg.com/1.jpg',
+      // Section 21–25, Stage C (B12) — no GTIN in the listing, so
+      // the honest value is null, never invented.
+      gtin: null,
     });
     expect(result.listings[1].imageUrl).toBeNull();
     // Token fetched once (cached), search called once, cheapest-first.

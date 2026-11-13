@@ -447,8 +447,16 @@ describe('Section 20 #9 — intake GTIN leg (same GTIN, different slug)', () => 
   });
 
   it('a repeated GTIN inside one file flags the second row', () => {
+    // Sections 21–25, Stage C (B3): the fuzzy name leg flags
+    // 'MacBook Air 13 (2024)' against the existing 'MacBook Air
+    // 13', so this GTIN-repeat test uses an unrelated product
+    // name — otherwise the FIRST row is already near-duplicate
+    // (fuzzy), not valid, and the test pins the wrong leg.
     const review = reviewIntakeRows(
-      [row({ slug: 'a-one', gtin: '5901234123457' }), row({ rowNumber: 3, slug: 'a-two', gtin: '5901234123457' })],
+      [
+        row({ slug: 'a-one', name: 'Aurora Widget', brand: 'Aurora', gtin: '5901234123457' }),
+        row({ rowNumber: 3, slug: 'a-two', name: 'Aurora Widget', brand: 'Aurora', gtin: '5901234123457' }),
+      ],
       context()
     );
     expect(review.rows[0].status).toBe('valid');
@@ -459,7 +467,12 @@ describe('Section 20 #9 — intake GTIN leg (same GTIN, different slug)', () => 
   it('a context without existingGtins (older caller) does not crash and stays valid', () => {
     const { existingGtins: _dropped, ...legacy } = context();
     void _dropped;
-    const review = reviewIntakeRows([row()], legacy);
+    // Unrelated name/brand (see above): the B3 fuzzy leg would
+    // otherwise hold the default 'MacBook Air 13 (2024)' row.
+    const review = reviewIntakeRows(
+      [row({ name: 'Aurora Widget', brand: 'Aurora', gtin: '5901234123457' })],
+      legacy
+    );
     expect(review.rows[0].status).toBe('valid');
   });
 
@@ -529,6 +542,9 @@ describe('Section 20 #9 — findDuplicate pipeline legs', () => {
     externalId: 'ext-1',
     retailerSlug: 'amazon',
     raw: undefined,
+    // NormalizedProduct now requires specs + variants (S21 B1/B4).
+    specs: [],
+    variants: [],
   };
 
   it('GTIN match wins (same GTIN, different slug)', async () => {

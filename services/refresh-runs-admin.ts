@@ -23,6 +23,18 @@
 
 import type { RefreshRunRow, RefreshStepCounts, RefreshStepSummary } from '@/services/refresh-run';
 import type { AnySupabaseClient } from '@/lib/supabase/types';
+import { assertAdminServiceAccess } from '@/lib/admin-role';
+
+/**
+ * Sections 21–25, Stage G, G-P1-4 — defense-in-depth options.
+ * Pass `adminUserId` (the already-authenticated user id) and the
+ * service re-checks the admin role before reading. Optional ONLY
+ * so existing unit tests without an auth context keep compiling;
+ * every production caller passes it.
+ */
+export interface AdminServiceOptions {
+  adminUserId?: string;
+}
 
 const RUNS_TABLE = 'price_refresh_runs';
 
@@ -47,8 +59,12 @@ export interface ListRefreshRunsResult {
  */
 export async function listRefreshRuns(
   supabase: AnySupabaseClient,
-  limit = 50
+  limit = 50,
+  opts: AdminServiceOptions = {}
 ): Promise<ListRefreshRunsResult> {
+  if (opts.adminUserId !== undefined) {
+    await assertAdminServiceAccess(supabase, opts.adminUserId);
+  }
   try {
     const { data, error } = await supabase
       .from(RUNS_TABLE)

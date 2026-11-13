@@ -18,17 +18,20 @@
  *   §12 #31) and validateRawProduct rejects a bad check digit — the
  *   fixture GTIN below is check-digit-valid, and the old "50-char
  *   GTIN accepted" assertion was updated to expect rejection.
- * - No minimum-confidence gate on ingest: a score-15 product
- *   (name only, price 0) still passes validation (audit §12 #16).
- *   (The gate itself lives in ingestProduct's CREATE branch —
- *   Section 20, §12 #26 — so the update-path test below, which
- *   ingests a thin product into an EXISTING product, still passes.)
+ * - Minimum-confidence gate: a score-15 product is rejected on
+ *   BOTH paths now — Sections 21–25, Stage C (B9) extended the
+ *   Section 20 create-path gate (§12 #16) to updates, so a thin
+ *   feed row can no longer overwrite a catalogued product's
+ *   confidence with a 15. The update test below uses a
+ *   gate-passing score-30 row to prove the stored score is still
+ *   raw (no 50-floor), and a second test pins the thin-row
+ *   rejection.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { validateRawProduct } from '@/services/pipeline/validation';
 import { normalizeProduct } from '@/services/pipeline/normalization';
 import { findDuplicate, normalizeDedupeText, nameTokenSimilarity, NAME_BRAND_FUZZY_THRESHOLD } from '@/services/pipeline/deduplication';
-import { processImages } from '@/services/pipeline/image-processing';
+import { processImages, processImagesDetailed } from '@/services/pipeline/image-processing';
 import { assignCategory } from '@/services/pipeline/category-assignment';
 import { detectBrand } from '@/services/pipeline/brand-detection';
 import type { AnySupabaseClient } from '@/lib/supabase/types';
@@ -456,9 +459,94 @@ describe('processImages', () => {
     expect(await processImages([])).toEqual([]);
   });
 
-  it('uploadToStorage logs but still returns the URLs (not yet implemented)', async () => {
-    const out = await processImages(['https://example.com/a.jpg'], { uploadToStorage: true });
-    expect(out).toEqual([{ url: 'https://example.com/a.jpg', isPrimary: true }]);
+  // Sections 21–25, Stage K (K7) — the placeholder is GONE, so the
+  // test now pins the REAL behaviour instead of flagging a gap:
+  // with an allowlisted host, a configured bucket and an injected
+  // uploader, `uploadToStorage: true` stores the image and returns
+  // the stored URL; without any of those three, it keeps the
+  // hotlink and says so (uploadStatus 'not-configured'), never
+  // claiming a store that did not happen.
+  it('uploadToStorage stores an allowlisted image and returns the stored URL', async () => {
+    vi.stubEnv('IMAGE_ALLOWED_HOSTS', 'example.com');
+    vi.stubEnv('IMAGE_STORAGE_BUCKET', 'test-bucket');
+    try {
+      const uploaded: Array<{ path: string; bytes: Uint8Array; contentType: string }> = [];
+      const uploader = {
+        upload: async (path: string, bytes: Uint8Array, contentType: string) => {
+          uploaded.push({ path, bytes, contentType });
+          return { path, error: null };
+        },
+      };
+      const fetchFn = (async () =>
+        new Response(new Uint8Array([1, 2, 3, 4]), {
+          headers: { 'content-type': 'image/jpeg' },
+        })) as unknown as typeof fetch;
+      const detailed = await processImagesDetailed(['https://example.com/a.jpg'], {
+        uploadToStorage: true,
+        storageUploader: uploader,
+        fetchFn,
+      });
+      expect(detailed).toHaveLength(1);
+      expect(detailed[0].uploadStatus).toBe('stored');
+      expect(detailed[0].uploadedUrl).toBe(`test-bucket/${uploaded[0].path}`);
+      expect(uploaded).toHaveLength(1);
+      expect(uploaded[0].contentType).toBe('image/jpeg');
+      // The simple wrapper returns the original URL; the stored
+      // URL rides in the detailed result (`uploadedUrl`) — callers
+      // that persist images use processImagesDetailed.
+      const simple = await processImages(['https://example.com/a.jpg'], {
+        uploadToStorage: true,
+        storageUploader: uploader,
+        fetchFn,
+      });
+      expect(simple).toEqual([{ url: 'https://example.com/a.jpg', isPrimary: true }]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('uploadToStorage keeps the hotlink when the host is not allowlisted', async () => {
+    vi.stubEnv('IMAGE_ALLOWED_HOSTS', 'cdn.example.test');
+    vi.stubEnv('IMAGE_STORAGE_BUCKET', 'test-bucket');
+    try {
+      const uploader = {
+        upload: async () => ({ path: 'x.jpg', error: null }),
+      };
+      const fetchFn = (async () =>
+        new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/jpeg' } })) as unknown as typeof fetch;
+      const detailed = await processImagesDetailed(['https://example.com/a.jpg'], {
+        uploadToStorage: true,
+        storageUploader: uploader,
+        fetchFn,
+      });
+      expect(detailed).toHaveLength(1);
+      expect(detailed[0].uploadStatus).toBe('not-configured');
+      expect(detailed[0].uploadedUrl).toBeNull();
+      expect(detailed[0].url).toBe('https://example.com/a.jpg');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('uploadToStorage keeps the hotlink when no bucket is configured', async () => {
+    vi.stubEnv('IMAGE_ALLOWED_HOSTS', 'example.com');
+    vi.stubEnv('IMAGE_STORAGE_BUCKET', '');
+    try {
+      const uploader = {
+        upload: async () => ({ path: 'x.jpg', error: null }),
+      };
+      const fetchFn = (async () =>
+        new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/jpeg' } })) as unknown as typeof fetch;
+      const detailed = await processImagesDetailed(['https://example.com/a.jpg'], {
+        uploadToStorage: true,
+        storageUploader: uploader,
+        fetchFn,
+      });
+      expect(detailed[0].uploadStatus).toBe('not-configured');
+      expect(detailed[0].uploadedUrl).toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 
@@ -724,6 +812,36 @@ describe('ingestProduct failure paths', () => {
   });
 
   it('update path writes the RAW confidence score — the 50-floor is gone (§12 #66)', async () => {
+    // Sections 21–25, Stage C (B9) — the fixture changed: the
+    // gate now applies to UPDATES as well as creates, so the old
+    // score-15 / price-0 row is rejected outright (see the next
+    // test). This row clears the gate — name + price + known
+    // availability scores exactly 30 — but stays below 50, so it
+    // still proves the point: the stored score is the raw 30, not
+    // floored to 50.
+    ingestState.slugMatchId = 'prod-existing';
+    const { ingestProduct } = await import('@/services/pipeline/ingestion');
+    const thin = {
+      externalId: 'ext-thin',
+      retailerSlug: 'amazon',
+      name: 'Widget',
+      price: 29,
+      currency: 'USD',
+      availability: 'in_stock' as const,
+    };
+    const result = await ingestProduct(thin, 'test-provider');
+    expect(result.success).toBe(true);
+    expect(result.action).toBe('updated');
+    // Two products-table writes: the data update, then the
+    // Sections 21–25 Stage D stamp of last_successful_update
+    // (migration 066) on a successful update.
+    expect(ingestState.productUpdates).toHaveLength(2);
+    // Was Math.max(score, 50); now the unfloored score (30).
+    expect(ingestState.productUpdates[0].confidence_score).toBe(30);
+    expect(ingestState.productUpdates[1].last_successful_update).toBeTruthy();
+  });
+
+  it('update path rejects a thin row that fails the gate (B9)', async () => {
     ingestState.slugMatchId = 'prod-existing';
     const { ingestProduct } = await import('@/services/pipeline/ingestion');
     const thin = {
@@ -735,11 +853,10 @@ describe('ingestProduct failure paths', () => {
       availability: 'unknown' as const,
     };
     const result = await ingestProduct(thin, 'test-provider');
-    expect(result.success).toBe(true);
-    expect(result.action).toBe('updated');
-    expect(ingestState.productUpdates).toHaveLength(1);
-    // Was Math.max(score, 50); now the unfloored score (name only = 15).
-    expect(ingestState.productUpdates[0].confidence_score).toBe(15);
+    expect(result.success).toBe(false);
+    expect(result.action).toBe('rejected');
+    expect(result.errors?.join(' ')).toContain('Ingest gate');
+    expect(ingestState.productUpdates).toHaveLength(0);
   });
 
   it('create path rejects a thin product below the confidence gate (§12 #16)', async () => {

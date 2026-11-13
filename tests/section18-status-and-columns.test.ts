@@ -413,7 +413,7 @@ describe('explicit column lists (item 30)', () => {
     expect(providers[0]).toEqual({
       providerKey: 'resend', status: 'healthy', successCount: 3, failureCount: 1,
       consecutiveFailures: 0, lastSuccessAt: '2026-11-12T00:00:00Z',
-      lastFailureAt: '2026-11-11T00:00:00Z', avgResponseMs: 42,
+      lastFailureAt: '2026-11-11T00:00:00Z', lastError: 'x', avgResponseMs: 42,
     });
     const syncs = await getSyncHistory(fakeClient);
     expect(syncs[0]?.recordsFetched).toBe(5);

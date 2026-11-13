@@ -64,10 +64,44 @@ export interface RefreshStepOutcome<T> {
 }
 
 /**
+ * Section 21–25, Stage J, J-P2-9 — scrub error text before it is
+ * stored in `price_refresh_runs` (publicly readable: the
+ * `price_refresh_runs_select_public` policy is TO anon USING true).
+ * Step errors used to carry raw `err.message` strings, which can
+ * contain Supabase/PostgREST text (table/column names, codes).
+ * Only messages from the safe allowlist below are stored verbatim
+ * (they are written by this module and carry no infra detail);
+ * everything else is replaced by a generic sentence. The full
+ * detail is already logged server-side (logger.warn) at the site
+ * that produced the error, so nothing diagnostic is lost — it
+ * just never lands in a publicly readable column.
+ */
+const SAFE_REFRESH_RUN_ERRORS = [
+  'Failed to load step data',
+  'Run never finished',
+] as const;
+
+export function scrubRefreshRunError(message: string | null | undefined): string {
+  const GENERIC = 'Step failed — details logged server-side.';
+  if (!message) return GENERIC;
+  if (SAFE_REFRESH_RUN_ERRORS.some((prefix) => message.startsWith(prefix))) return message;
+  return GENERIC;
+}
+
+/**
  * Run one refresh-chain step in isolation. `isFailed` lets a step
  * report its own load failure without throwing (P1-8): it receives
  * the step's result and returns an error message, or null when the
  * step genuinely succeeded.
+ *
+ * Sections 21–25 (gate fix) — the error here is RAW on purpose.
+ * This outcome feeds the CRON_SECRET-only cron response, where the
+ * operator needs the real reason ('checker exploded',
+ * 'price_history: ...'). The scrub for the publicly readable
+ * `price_refresh_runs` table lives at the storage boundary only
+ * (finishRefreshRun scrubs every step error before writing).
+ * Scrubbing here used to blank the response too, which broke the
+ * P1-1/P1-8 route tests and hid the failing step from the caller.
  */
 export async function runRefreshStep<T>(
   label: string,
@@ -96,6 +130,12 @@ export type RefreshStepSummary = {
   error?: string;
   /** Section 18, item 38 — per-step counts, where honestly computed. */
   counts?: RefreshStepCounts;
+  /**
+   * Sections 21–25, Stage D (item 5) — how many times the step
+   * ran in this run (1 normally, 2 when the chain-level retry
+   * re-ran it). Stored so the run record shows a retry happened.
+   */
+  attempts?: number;
 };
 
 export function summarizeStep<T>(
@@ -103,6 +143,13 @@ export function summarizeStep<T>(
   /** Section 18, item 38 — omit when the step computes no counts. */
   counts?: RefreshStepCounts
 ): RefreshStepSummary {
+  // Sections 21–25 (gate fix) — the error is carried RAW here:
+  // this summary is returned in the CRON_SECRET-only cron
+  // response, and finishRefreshRun scrubs it before writing the
+  // publicly readable run row. Scrubbing here blanked the response
+  // and broke the S18 "keeps the error and the counts together"
+  // test for no security gain — the storage boundary is where
+  // the public policy applies.
   const summary: RefreshStepSummary = outcome.error
     ? { status: outcome.status, error: outcome.error }
     : { status: outcome.status };
@@ -173,6 +220,79 @@ export function sanitizeRefreshStepLoadError(table: string, error: unknown): str
     error: detail,
   });
   return REFRESH_STEP_LOAD_ERROR_MESSAGE;
+}
+
+/**
+ * Sections 21–25, Stage D (item 5) — chain-level retry for the
+ * refresh route. Per-step isolation (runRefreshStep) already
+ * keeps one failed step from killing the chain, but a failed
+ * wave was never retried AS A CHAIN: a transient DB blip in wave
+ * B failed the step for the whole 6h cycle. This helper retries
+ * ONLY the steps that failed, ONCE, after a backoff — bounded
+ * (max 2 attempts per step per run), recorded (the route stamps
+ * `attempts: 2` on retried step summaries), and safe: every
+ * refresh step is change-only / idempotent by construction, so a
+ * re-run cannot double-record a price, double-queue an alert, or
+ * double-send a digest (each has its own dedupe/guard).
+ *
+ * The caller supplies `rerun(name)`, which re-runs one named
+ * step and returns its fresh outcome (or null when the name is
+ * unknown — never throws: a rerun that throws is recorded as a
+ * still-failed outcome). The helper sleeps ONCE before the retry
+ * pass (not between steps — the steps are independent), and
+ * returns the fresh outcomes keyed by step name.
+ */
+export const CHAIN_RETRY_DELAY_MS = 2000;
+/** Total attempts per step per run: the first pass + one retry. */
+export const CHAIN_RETRY_MAX_ATTEMPTS = 2;
+
+export interface ChainRetryResult {
+  /** Steps that were retried (in rerun order). */
+  retried: string[];
+  /** Steps that recovered on retry (status 'ok' after retry). */
+  recovered: string[];
+  /** Steps still failed after the retry. */
+  stillFailed: string[];
+  /** Fresh outcomes for the retried steps, keyed by step name. */
+  outcomes: Map<string, RefreshStepOutcome<unknown>>;
+}
+
+export async function retryFailedRefreshSteps(
+  failedNames: string[],
+  rerun: (name: string) => Promise<RefreshStepOutcome<unknown> | null>,
+  options?: {
+    delayMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+  }
+): Promise<ChainRetryResult> {
+  const result: ChainRetryResult = {
+    retried: [],
+    recovered: [],
+    stillFailed: [],
+    outcomes: new Map(),
+  };
+  if (failedNames.length === 0) return result;
+  const delayMs = options?.delayMs ?? CHAIN_RETRY_DELAY_MS;
+  const sleepFn =
+    options?.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  await sleepFn(delayMs);
+  for (const name of failedNames) {
+    result.retried.push(name);
+    try {
+      const outcome = await rerun(name);
+      if (!outcome) {
+        result.stillFailed.push(name);
+        continue;
+      }
+      result.outcomes.set(name, outcome);
+      if (outcome.status === 'ok') result.recovered.push(name);
+      else result.stillFailed.push(name);
+    } catch (err) {
+      logger.warn('chain retry: rerun failed', { step: name, error: String(err) });
+      result.stillFailed.push(name);
+    }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -394,13 +514,27 @@ export async function finishRefreshRun(
 ): Promise<void> {
   if (!runId) return;
   try {
+    // Section 21–25, Stage J, J-P2-9 — `steps` and `error` are
+    // publicly readable (TO anon policy); never store raw infra
+    // text. The scrub lives HERE, at the storage boundary only:
+    // the cron response carries the same summaries raw (see
+    // runRefreshStep / summarizeStep), so the operator still sees
+    // the real reason while the public row never does.
+    const storedSteps: Record<string, RefreshStepSummary> = {};
+    for (const [name, summary] of Object.entries(steps)) {
+      storedSteps[name] = summary.error
+        ? { ...summary, error: scrubRefreshRunError(summary.error) }
+        : summary;
+    }
     const { error: updateError } = await supabase
       .from(RUNS_TABLE)
       .update({
         status,
         finished_at: new Date().toISOString(),
-        steps,
-        error: error ?? null,
+        steps: storedSteps,
+        // Section 21–25, Stage J, J-P2-9 — `error` is publicly
+        // readable (TO anon policy); never store raw infra text.
+        error: error ? scrubRefreshRunError(error) : null,
       })
       .eq('id', runId);
     if (updateError) {

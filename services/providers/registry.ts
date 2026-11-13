@@ -1,4 +1,6 @@
 import { logger } from '@/lib/config/logger';
+import { logProviderConfigIssues } from '@/services/provider-config';
+import { ProviderNotConfiguredError } from './errors';
 import type { DataProvider, ProviderCategory } from './types';
 import { MockProvider } from './mock-provider';
 import { ApifyProvider } from './apify-provider';
@@ -9,12 +11,17 @@ import { BestBuyProvider } from './bestbuy-provider';
 /**
  * Priority ordering for provider categories. Lower index = higher priority.
  * Used by getPreferred() to select the best available provider.
+ *
+ * Sections 21–25, Stage B (B9): 'affiliate_tag_only' sits BELOW
+ * csv_import — a tag stamps links, it fetches no data, so it must
+ * never outrank a provider that can actually return rows.
  */
 const CATEGORY_PRIORITY: ProviderCategory[] = [
   'official_api',
   'affiliate_feed',
-  'scraping',
   'csv_import',
+  'affiliate_tag_only',
+  'scraping',
   'merchant_upload',
   'mock',
 ];
@@ -109,24 +116,53 @@ export class ProviderRegistry {
   }
 
   /**
-   * Get the preferred provider for a specific retailer. If a retailer override
-   * is registered and that provider is available, it is returned. Otherwise the
-   * global priority ordering is used.
+   * Get the preferred provider for a specific retailer.
+   *
+   * Sections 21–25, Stage B (B5) — NO silent cross-merchant
+   * fallback. The old code returned the global preferred provider
+   * when the retailer's override was unavailable, so a request
+   * for merchant X could be served by merchant Y's adapter with
+   * only a warn log. Now: an override that is unavailable returns
+   * undefined (the caller reports "no provider for <retailer>"),
+   * and a retailer with no override at all also returns
+   * undefined — the caller must say so, not quietly serve
+   * another merchant's data. Use requireForRetailer() when the
+   * caller wants the failure as a typed error.
    */
   getForRetailer(retailerSlug: string): DataProvider | undefined {
     const overrideKey = this.retailerOverrides.get(retailerSlug.toLowerCase());
-    if (overrideKey) {
-      const override = this.providers.get(overrideKey);
-      if (override && override.isAvailable()) {
-        return override;
-      }
-      logger.warn('ProviderRegistry.getForRetailer — override unavailable, falling back', {
+    if (!overrideKey) {
+      logger.warn('ProviderRegistry.getForRetailer — no provider override for retailer', {
         retailerSlug,
-        overrideKey,
       });
+      return undefined;
     }
+    const override = this.providers.get(overrideKey);
+    if (override && override.isAvailable()) {
+      return override;
+    }
+    logger.warn('ProviderRegistry.getForRetailer — override unavailable, no fallback to another merchant', {
+      retailerSlug,
+      overrideKey,
+    });
+    return undefined;
+  }
 
-    return this.getPreferred();
+  /**
+   * Sections 21–25, Stage B (B5) — like getForRetailer, but the
+   * failure is a typed error naming the requested merchant, so
+   * callers can surface it instead of silently serving another
+   * merchant's data.
+   */
+  requireForRetailer(retailerSlug: string): DataProvider {
+    const provider = this.getForRetailer(retailerSlug);
+    if (provider) return provider;
+    const overrideKey = this.retailerOverrides.get(retailerSlug.toLowerCase());
+    const override = overrideKey ? this.providers.get(overrideKey) : undefined;
+    const reason =
+      override?.getNotConfiguredReason() ??
+      `No provider is configured for merchant '${retailerSlug}' — no silent fallback to another merchant is allowed.`;
+    throw new ProviderNotConfiguredError(overrideKey ?? retailerSlug, reason);
   }
 }
 
@@ -159,6 +195,11 @@ export function getProviderRegistry(): ProviderRegistry {
   if (registrySingleton) return registrySingleton;
 
   registrySingleton = new ProviderRegistry();
+  // Sections 21–25, Stage B (B10) — validate provider config at
+  // startup: bad/missing config is named at boot (warn/error
+  // logs), never discovered mid-refresh. Never throws — no
+  // provider is critical.
+  logProviderConfigIssues();
   if (process.env.NODE_ENV !== 'production') {
     registrySingleton.register(new MockProvider());
   }
@@ -166,14 +207,16 @@ export function getProviderRegistry(): ProviderRegistry {
   // the registry knows about it, but it FAILS CLOSED without env
   // vars — ApifyProvider.isAvailable() is false unless BOTH
   // APIFY_API_TOKEN and APIFY_ACTOR_ID are set, and search()/fetch()
-  // return empty/null in that case (see services/providers/
-  // apify-provider.ts). The vars MUST stay unset: scraping is a
-  // hard standing rule (blocked category 10), .env.example lists
-  // them as empty placeholders only, and no code anywhere sets
-  // them. Registering the provider does not enable scraping; it
-  // only keeps the fail-closed path testable. If the vars are ever
-  // set, that is an owner decision outside this codebase — do not
-  // set them here, in tests, in fixtures, or in .env.example.
+  // now THROW a typed NOT_CONFIGURED error in that case (see
+  // services/providers/apify-provider.ts). The vars MUST stay
+  // unset: scraping is a hard standing rule — Apify is REJECTED /
+  // BANNED, never an approved provider (Sections 21–25, Stage B,
+  // B8) — .env.example lists them as empty placeholders only,
+  // and no code anywhere sets them. Registering the provider does
+  // not enable scraping; it only keeps the fail-closed path
+  // testable. If the vars are ever set, that is an owner decision
+  // outside this codebase — do not set them here, in tests, in
+  // fixtures, or in .env.example.
   registrySingleton.register(new ApifyProvider());
 
   // Section 20, §12 #58 — CsvProvider, registered from env config.
@@ -191,9 +234,11 @@ export function getProviderRegistry(): ProviderRegistry {
   // Both are fail-closed stubs (see amazon-provider.ts /
   // bestbuy-provider.ts): no live price client exists for either,
   // so they are never available until their keys exist AND a real
-  // client is built. The retailer overrides only matter once a
-  // provider IS available; until then getForRetailer falls back
-  // to the global ordering, exactly as before.
+  // client is built — and even with a key, search()/fetch() throw
+  // NOT_CONFIGURED (Sections 21–25, Stage B, B1). The retailer
+  // overrides only matter once a provider IS available; until
+  // then getForRetailer returns undefined for that retailer —
+  // never another merchant's provider (B5).
   registrySingleton.register(new AmazonProvider());
   registrySingleton.register(new BestBuyProvider());
   registrySingleton.setRetailerOverride('amazon', 'amazon');

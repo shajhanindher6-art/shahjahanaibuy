@@ -336,7 +336,7 @@ describe('P1-1 per-step isolation (refresh route)', () => {
   });
 
   it('a throwing alerts step is reported failed and later steps still run', async () => {
-    mocks.checkPriceAlerts.mockRejectedValueOnce(new Error('checker exploded'));
+    mocks.checkPriceAlerts.mockRejectedValue(new Error('checker exploded'));
     const res = await refreshPOST(refreshRequest());
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as {
@@ -355,7 +355,7 @@ describe('P1-1 per-step isolation (refresh route)', () => {
   });
 
   it('a throwing notifications step is reported failed and stock/guest steps still run', async () => {
-    mocks.processNotificationQueue.mockRejectedValueOnce(new Error('queue exploded'));
+    mocks.processNotificationQueue.mockRejectedValue(new Error('queue exploded'));
     const res = await refreshPOST(refreshRequest());
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as {
@@ -384,7 +384,7 @@ describe('P1-1 per-step isolation (refresh route)', () => {
 
 describe('P1-1 per-step isolation (alerts/check route)', () => {
   it('a throwing alerts step is reported failed and notifications still run', async () => {
-    mocks.checkPriceAlerts.mockRejectedValueOnce(new Error('checker exploded'));
+    mocks.checkPriceAlerts.mockRejectedValue(new Error('checker exploded'));
     const res = await alertsCheckPOST(alertsCheckRequest());
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as {
@@ -646,15 +646,19 @@ describe('P1-5 price_refresh_runs record', () => {
   });
 
   it('records completed_with_failures when a step fails', async () => {
-    mocks.checkPriceAlerts.mockRejectedValueOnce(new Error('checker exploded'));
+    mocks.checkPriceAlerts.mockRejectedValue(new Error('checker exploded'));
     await refreshPOST(refreshRequest());
     const rows = fakeDb.tables.price_refresh_runs!.rows;
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe('completed_with_failures');
     const steps = rows[0].steps as Record<string, { status: string; error?: string }>;
     expect(steps.alerts.status).toBe('failed');
-    expect(steps.alerts.error).toContain('checker exploded');
-    expect(rows[0].error).toContain('alerts: checker exploded');
+    // J-P2-9: the stored row is publicly readable, so the stored
+    // error is the scrubbed generic sentence — the raw 'checker
+    // exploded' text lives only in the cron response (P1-1 above)
+    // and the server log, never in price_refresh_runs.
+    expect(steps.alerts.error).toBe('Step failed — details logged server-side.');
+    expect(rows[0].error).toBe('Step failed — details logged server-side.');
   });
 
   it('the alerts/check run is recorded with its own source', async () => {

@@ -89,7 +89,11 @@ describe('formatForecastBasis — built from a real computeForecast run', () => 
   });
 
   it('a 20-point history labels itself with 20 points (more history, same label shape)', () => {
-    const start = new Date('2026-08-01T00:00:00Z').getTime();
+    // Sections 21–25, Stage E (E-P1-1): computeForecast returns
+    // 'stale-data' when the latest point is older than 7 days, so
+    // the fixture must end near today — the old absolute 2026-08-01
+    // start ended 10 days ago and the status flipped.
+    const start = Date.now() - 19 * 5 * 86_400_000;
     const day = 86_400_000;
     const points: ForecastPoint[] = Array.from({ length: 20 }, (_, i) => ({
       price: 1000 + Math.sin(i) * 15 - i * 2,

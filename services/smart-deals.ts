@@ -17,12 +17,21 @@
  *   the product, its brand, or its category matches the user's
  *   activity. Every `reason` string is built from those same real
  *   fields, never from a claimed discount that is not in the deal row.
+ *
+ * Section 21, Stage E (E-P1-2) — the discountPercentage * 0.25
+ * term counts ONLY when the row's discount validation passed
+ * ('validated', see services/ai-deals.ts): an unvalidated claimed
+ * discount must not rank here either. The aiScore term already
+ * carries the same gate (its own claimed-discount terms are 0
+ * unless validated), so this widget no longer double-counts an
+ * unvalidated claim.
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
 import { getCachedRankedDeals } from './ai-deals';
 import { getRecommendations } from './ai-recommendations';
+import { recordAiRecommendation } from './ai-recommendation-audit';
 
 export interface SmartDeal {
   dealId: string | null;
@@ -117,12 +126,26 @@ export async function getSmartDealRecommendations(
         // Section 19, Phase 0 (§12 #24): a null percentage (fixed
         // deal, no recorded price) contributes 0 to the score and
         // shows no "% off" reason — never a fabricated number.
+        // Section 21, Stage E (E-P1-2): the claimed-discount
+        // term counts ONLY when the discount validated against
+        // recorded history — an unvalidated claim must not rank.
         const discountPct = d.discountPercentage ?? 0;
-        const score = d.aiScore + discountPct * 0.25 + trendingBoost + personalBoost;
+        const discountValidated = d.discountValidation?.status === 'validated';
+        const score =
+          d.aiScore +
+          (discountValidated ? discountPct * 0.25 : 0) +
+          trendingBoost +
+          personalBoost;
 
         const reasons: string[] = [];
         if (isPersonal) reasons.push('Matches your recent activity');
-        if (discountPct > 0) reasons.push(`${Math.round(discountPct)}% off`);
+        // Sections 21–25, Stage H (H-P2-1) — the "% off" reason is
+        // a CLAIMED discount: it prints only when the discount
+        // validated against recorded history (same gate as the
+        // score term above), and it is qualified "vs list price"
+        // — never a bare "% off" from an unobserved list price.
+        if (discountPct > 0 && discountValidated)
+          reasons.push(`${Math.round(discountPct)}% off vs list price`);
         if (d.savingsAmount > 0) reasons.push(`Save $${d.savingsAmount.toFixed(2)}`);
         if (views >= maxViews * 0.5 && views > 0) reasons.push('Trending now');
         if (d.dealType === 'flash') reasons.push('Flash deal — ends soon');
@@ -162,6 +185,28 @@ export async function getSmartDealRecommendations(
         ? { ...d, reason: `${d.reason} · Top trending pick` }
         : d
     );
+    // Section 21, Stage E (E-P1-4) — audit the smart-deal picks:
+    // the signed-in user id when known (null = guest), the top
+    // picks, and the validation basis of the top pick. The
+    // recorder never throws; its durable write no-ops until
+    // migration 065 applies.
+    recordAiRecommendation(supabase, {
+      surface: 'smart-deals',
+      userId,
+      productIds: sliced
+        .slice(0, 3)
+        .map((d) => d.productId)
+        .filter((id): id is string => typeof id === 'string'),
+      recommendation: `Smart deal picks: ${sliced
+        .slice(0, 3)
+        .map((d) => d.product?.name ?? 'deal')
+        .join(', ')}`,
+      basis: {
+        discountValidationStatus:
+          ranked.deals.find((r) => r.productId === sliced[0]?.productId)
+            ?.discountValidation?.status ?? null,
+      },
+    });
     return { deals: sliced, basedOn };
   } catch (err) {
     logger.error('getSmartDealRecommendations: unexpected error', { error: String(err) });

@@ -312,7 +312,7 @@ describe('generateChatResponse — routing + source label (#53/#54/#55)', () => 
 
   it('every assistant answer carries the recorded-data source label (#55, §12 #82)', async () => {
     const answer = await generateChatResponse(stub(), 'best laptop under $1000', [], {});
-    expect(answer.content).toContain('Best pick for you: MacBook Air 13');
+    expect(answer.content).toContain('Lowest price pick for you: MacBook Air 13');
     // Section 20, §12 #82: verifiedDataLabel only when every
     // product is verified AND fresh — this catalog is unverified,
     // so the recorded-data label is the honest one.
@@ -371,7 +371,7 @@ describe('conversational follow-ups (#56) — session context resolves the previ
     const answer = await generateChatResponse(stub(), 'and the cheaper one?', history, {});
     expect(answer.content).toContain('MacBook Air 13');
     expect(answer.content).toContain('Dell XPS 13');
-    expect(answer.content).toContain('Best pick: MacBook Air 13');
+    expect(answer.content).toContain('Lowest price pick: MacBook Air 13');
   });
 
   it('"is it competitive?" resolves against the previous single product', async () => {

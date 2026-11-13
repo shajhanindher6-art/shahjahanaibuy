@@ -49,8 +49,8 @@ import { env } from '@/lib/config/env';
 import { withAiRetry, isRetryableStatus } from '@/services/ai-engine/retry';
 import {
   recordAiCall,
-  spendProviderBudget,
-  isProviderBudgetExhausted,
+  spendProviderBudgetAsync,
+  isProviderBudgetExhaustedAsync,
 } from '@/services/ai-engine/usage';
 
 // Client-safe helpers live in services/visual-search-client.ts (zero
@@ -218,18 +218,30 @@ export interface VisualLensOutcome {
 export async function searchVisualByImageUrlWithMeta(imageUrl: string): Promise<VisualLensOutcome> {
   const key = env.serpApiKey;
   if (!key || !imageUrl) return { matches: [], fromCache: false, fetchedAt: null };
+  // Sections 21–25, Stage K (K2) — defense in depth: the /scan route
+  // guards the Lens leg before calling (S20 #95), but this helper is
+  // also reachable via the AI engine provider
+  // (services/ai-engine/providers.ts:268), so it must not hand an
+  // unvalidated user URL to SerpAPI itself. A rejected URL returns []
+  // (never throws) and never reaches the network — the caller falls
+  // back honestly. The guard runs BEFORE the cache lookup, so a cached
+  // entry for a private URL is never served either.
+  if (!isPublicImageUrl(imageUrl) || !(await isSafePublicImageUrl(imageUrl))) {
+    logger.warn('visual-search: Lens URL rejected by SSRF guard', { imageUrl });
+    return { matches: [], fromCache: false, fetchedAt: null };
+  }
   const cacheKey = visualSearchCacheKey('lens', imageUrl);
   const hit = visualCacheGet<VisualMatch[]>(cacheKey);
   if (hit) {
     return { matches: hit.value, fromCache: true, fetchedAt: hit.fetchedAt };
   }
-  if (isProviderBudgetExhausted('serpapi')) {
+  if (await isProviderBudgetExhaustedAsync('serpapi')) {
     logger.warn('visual-search: daily SerpAPI budget exhausted, skipping Lens call');
     return { matches: [], fromCache: false, fetchedAt: null };
   }
   // A live attempt spends one unit of the daily budget whether it
   // succeeds or not (SerpAPI bills per request).
-  spendProviderBudget('serpapi');
+  await spendProviderBudgetAsync('serpapi');
   const callStart = Date.now();
   try {
     const url = new URL(LENS_ENDPOINT);
@@ -327,7 +339,7 @@ async function hfFetch(
   // Section 19, Phase 1 (§12 #7) — global daily HF budget. When
   // exhausted, no live call is made; the caller falls back
   // honestly (keyword-assisted / catalog) instead of burning more.
-  if (isProviderBudgetExhausted('huggingface')) {
+  if (await isProviderBudgetExhaustedAsync('huggingface')) {
     return {
       ok: false,
       error: 'Hugging Face visual features are unavailable today (daily provider budget reached). Please try again tomorrow.',
@@ -336,7 +348,7 @@ async function hfFetch(
   }
   // A live attempt spends one unit of the daily budget whether it
   // succeeds or not.
-  spendProviderBudget('huggingface');
+  await spendProviderBudgetAsync('huggingface');
   const callStart = Date.now();
   try {
     // Section 19, Phase 1 (§12 #6) — honour the `retryable`

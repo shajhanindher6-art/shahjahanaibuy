@@ -162,21 +162,26 @@ describe('getRankedDeals — fixed-discount percentage is derived, never invente
     // Real derivation: 20 / 99 * 100 = 20.2 (1 decimal).
     expect(ranked.discountPercentage).toBe(20.2);
     expect(ranked.discountPercentage).not.toBe(2);
-    // aiScore consumes the honest percentage: 50 + 20.2*0.5 + 10
-    // (Section 19, Phase 2 §12 #59 value term: current $99 is at
-    // the recorded low $99) = 70.1. Section 20, §12 #67: the old
-    // +10 confidence term is REMOVED — no completeness term in
-    // the score.
-    expect(ranked.aiScore).toBeCloseTo(70.1, 5);
-    // …but the score is ABOVE the 75 featured bar and the deal is
-    // still NOT featured: only 1 recorded price point, so the
+    // Sections 21–25, Stage E (E-P1-2): the percentage is derived
+    // and DISPLAYED, but it only FEEDS aiScore on a 'validated'
+    // discount — with 1 recorded price point the validation is
+    // `insufficient`, so the discount term contributes 0. aiScore
+    // is 50 + 0 (unvalidated discount) + 10 (Section 19, Phase 2
+    // §12 #59 value term: current $99 is at the recorded low $99)
+    // = 60. Section 20, §12 #67: the old +10 confidence term is
+    // REMOVED — no completeness term in the score.
+    expect(ranked.aiScore).toBeCloseTo(60, 5);
+    // Still NOT featured: only 1 recorded price point, so the
     // §12 #60 evidence gate withholds the flag (validation
     // `insufficient`). Score ≠ featured.
     expect(ranked.isFeatured).toBe(false);
     expect(ranked.currentPrice).toBe(99);
-    // The stored row keeps the honest percentage too.
-    expect(inserts).toHaveLength(1);
-    expect(inserts[0].discount_percentage).toBe(20.2);
+    // The stored row keeps the honest percentage too. (The stub
+    // captures EVERY insert: the E-P1-4 audit row lands in
+    // ai_recommendation_audit, so filter to deal_rankings.)
+    const rankingInserts = inserts.filter((row) => row.table === 'deal_rankings');
+    expect(rankingInserts).toHaveLength(1);
+    expect(rankingInserts[0].discount_percentage).toBe(20.2);
   });
 
   it('$20 off with no recorded price reports null and contributes 0 to the score', async () => {
@@ -201,8 +206,9 @@ describe('getRankedDeals — fixed-discount percentage is derived, never invente
     expect(ranked.currentPrice).toBeNull();
     // The NOT NULL column stores 0 as a placeholder; the API
     // surface above is what must stay null.
-    expect(inserts).toHaveLength(1);
-    expect(inserts[0].discount_percentage).toBe(0);
+    const rankingInserts = inserts.filter((row) => row.table === 'deal_rankings');
+    expect(rankingInserts).toHaveLength(1);
+    expect(rankingInserts[0].discount_percentage).toBe(0);
   });
 
   it('percentage deals keep their merchant-stated value unchanged', async () => {
@@ -261,11 +267,13 @@ describe('getRankedDeals — fixed-discount percentage is derived, never invente
     expect(result.deals[0].discountPercentage).toBe(20.2);
     expect(result.deals[0].discountPercentage).not.toBe(2);
     // Re-scored with the honest percentage + the §12 #59 value
-    // term (current $99 at the recorded low $99): 50 + 20.2*0.5
-    // + 10 (value) = 70.1. Section 20, §12 #67: the old +10
-    // confidence term is REMOVED. Still not featured:
-    // 1 history point → validation `insufficient` (§12 #60 gate).
-    expect(result.deals[0].aiScore).toBeCloseTo(70.1, 5);
+    // term (current $99 at the recorded low $99): 50 + 0
+    // (E-P1-2: 1 history point → validation `insufficient`, so
+    // the unvalidated discount term contributes 0) + 10 (value)
+    // = 60. Section 20, §12 #67: the old +10 confidence term is
+    // REMOVED. Still not featured: validation `insufficient`
+    // (§12 #60 gate).
+    expect(result.deals[0].aiScore).toBeCloseTo(60, 5);
     expect(result.deals[0].isFeatured).toBe(false);
   });
 });

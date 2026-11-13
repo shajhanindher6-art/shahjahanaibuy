@@ -288,6 +288,6 @@ describe('generateChatResponse routes coupon intent first', () => {
 
   it('still routes general questions to recommendations', async () => {
     const answer = await generateChatResponse(stub(), 'best laptop under $1000', [], {});
-    expect(answer.content).toContain('Best pick');
+    expect(answer.content).toContain('Lowest price pick');
   });
 });

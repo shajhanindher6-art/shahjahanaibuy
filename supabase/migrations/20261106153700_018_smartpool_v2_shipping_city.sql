@@ -27,14 +27,27 @@
 -- these columns: until this runs, the API returns null for both
 -- and the UI degrades to the honest empty states (never a crash,
 -- never fake data).
+--
+-- SECTION 21–25 GUARD (I-P1-3): applied status is UNKNOWN — only
+-- the owner can check schema_migrations, and the repo cannot
+-- prove whether this file (or the standalone owner file
+-- supabase/add-smartpools.sql that creates `pools`) was ever run.
+-- The DO block below is the safe choice either way: when `pools`
+-- was never created it no-ops with a NOTICE instead of failing
+-- outright on `relation "pools" does not exist`; when the file
+-- was already applied, ADD COLUMN IF NOT EXISTS is a no-op the
+-- same way. The old trailing verification SELECT is replaced by
+-- the NOTICE inside the block, because the SELECT itself would
+-- fail on a database without the `pools` table.
 -- ============================================================
 
-ALTER TABLE pools ADD COLUMN IF NOT EXISTS shipping_estimate_usd numeric(12, 2);
-ALTER TABLE pools ADD COLUMN IF NOT EXISTS city text;
-
--- Verify (the SQL editor shows only this last result):
-SELECT column_name, data_type
-FROM information_schema.columns
-WHERE table_schema = 'public' AND table_name = 'pools'
-  AND column_name IN ('shipping_estimate_usd', 'city')
-ORDER BY column_name;
+DO $$
+BEGIN
+  IF to_regclass('public.pools') IS NOT NULL THEN
+    ALTER TABLE pools ADD COLUMN IF NOT EXISTS shipping_estimate_usd numeric(12, 2);
+    ALTER TABLE pools ADD COLUMN IF NOT EXISTS city text;
+    RAISE NOTICE '018: pools.shipping_estimate_usd + pools.city present.';
+  ELSE
+    RAISE NOTICE '018: skipped — public.pools does not exist (run supabase/add-smartpools.sql first, then re-run this file).';
+  END IF;
+END $$;

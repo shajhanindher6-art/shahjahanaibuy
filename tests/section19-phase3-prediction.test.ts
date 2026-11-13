@@ -304,15 +304,19 @@ describe('#33 — budget input into the buy-wait verdict', () => {
   });
 });
 
-describe('buy-wait freshness qualification (§12 #20 note)', () => {
-  it('stale latest price → verdict qualified with the age', () => {
+describe('buy-wait freshness withholding (§12 #20 note, revised Section 21 E-P2-2)', () => {
+  it('stale latest price → verdict WITHHELD, not merely qualified', () => {
     const prediction = predictBuyVsWait(bwpoints([1099, 1049, 999, 999, 999], 10));
     expect(prediction.priceStale).toBe(true);
     expect(prediction.daysSinceLastPrice).toBe(10);
     expect(prediction.reason).toContain('10 days old');
-    expect(prediction.reason).toContain('based on stale data');
-    // The verdict itself still stands — it is qualified, not suppressed.
-    expect(prediction.recommendation).toBe('buy_now');
+    expect(prediction.reason).toContain('No verdict');
+    expect(prediction.reason).toContain('freshness window');
+    // The old "qualified, not suppressed" contract is retired: a
+    // "Buy Now" on a 10-day-old price still reads as a current
+    // recommendation, so the verdict is withheld entirely.
+    expect(prediction.recommendation).toBe('not_enough_data');
+    expect(prediction.confidence).toBe(0);
   });
 
   it('fresh latest price → not stale, no qualification', () => {

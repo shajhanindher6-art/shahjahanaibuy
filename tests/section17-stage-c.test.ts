@@ -601,6 +601,11 @@ describe('intake approve — pending → published (item 15)', () => {
 
 const mockRegistry = vi.hoisted(() => ({
   available: [] as Array<{ key: string }>,
+  // Sections 21–25, Stage B (B2) — refreshPricesViaPipeline reads
+  // getAll() for the unavailable-reason string, so the mock
+  // registry must provide it (was missing → getAll is not a
+  // function when no provider is available).
+  all: [] as Array<{ name: string; getNotConfiguredReason: () => string | null }>,
 }));
 const mockProcessor = vi.hoisted(() => ({
   fn: vi.fn(),
@@ -609,6 +614,7 @@ const mockProcessor = vi.hoisted(() => ({
 vi.mock('@/services/providers', () => ({
   getProviderRegistry: () => ({
     getAvailable: () => mockRegistry.available,
+    getAll: () => mockRegistry.all,
   }),
 }));
 

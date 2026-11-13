@@ -102,12 +102,17 @@ const CSV = [
 ].join('\n');
 
 describe('CsvProvider', () => {
-  it('is unavailable with no csv and no csvUrl; search/fetch return empty', async () => {
+  it('is unavailable with no csv and no csvUrl; search/fetch throw NOT_CONFIGURED', async () => {
     const provider = new CsvProvider({});
     expect(provider.key).toBe('csv');
     expect(provider.isAvailable()).toBe(false);
-    expect(await provider.search({ query: 'sony' })).toEqual([]);
-    expect(await provider.fetch({ externalId: 'ext-sony-1', retailerSlug: 'amazon' })).toBeNull();
+    // Sections 21–25, Stage B (B1) — was a silent [] / null, read
+    // as "checked, no results". Unconfigured now throws a typed
+    // error naming the missing source.
+    await expect(provider.search({ query: 'sony' })).rejects.toThrow(/no source configured/);
+    await expect(
+      provider.fetch({ externalId: 'ext-sony-1', retailerSlug: 'amazon' })
+    ).rejects.toThrow(/no source configured/);
   });
 
   it('parses rows and drops the nameless row', async () => {
@@ -208,13 +213,13 @@ describe('CsvProvider', () => {
     }
   });
 
-  it('returns [] without fetching when the SSRF guard refuses the csvUrl (§12 #99)', async () => {
+  it('throws without fetching when the SSRF guard refuses the csvUrl (§12 #99)', async () => {
     csvGuardState.pass = false;
     const fetchSpy = vi.fn(async () => new Response(CSV, { status: 200 }));
     vi.stubGlobal('fetch', fetchSpy);
     try {
       const provider = new CsvProvider({ csvUrl: 'https://169.254.169.254/feed.csv' });
-      expect(await provider.search({ query: '' })).toEqual([]);
+      await expect(provider.search({ query: '' })).rejects.toThrow(/SSRF/);
       expect(fetchSpy).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
@@ -222,11 +227,11 @@ describe('CsvProvider', () => {
     }
   });
 
-  it('returns [] when the csvUrl fetch fails (non-OK or network error)', async () => {
+  it('throws when the csvUrl fetch fails (non-OK or network error)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 500 })));
     try {
       const provider = new CsvProvider({ csvUrl: 'https://example.com/feed.csv' });
-      expect(await provider.search({ query: '' })).toEqual([]);
+      await expect(provider.search({ query: '' })).rejects.toThrow(/HTTP 500/);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -236,8 +241,10 @@ describe('CsvProvider', () => {
     }));
     try {
       const provider = new CsvProvider({ csvUrl: 'https://example.com/feed.csv' });
-      expect(await provider.search({ query: '' })).toEqual([]);
-      expect(await provider.fetch({ externalId: 'x', retailerSlug: 'amazon' })).toBeNull();
+      await expect(provider.search({ query: '' })).rejects.toThrow(/network down/);
+      await expect(
+        provider.fetch({ externalId: 'x', retailerSlug: 'amazon' })
+      ).rejects.toThrow(/network down/);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -324,17 +331,21 @@ describe('ProviderRegistry', () => {
     expect(registry.getAvailable()).toEqual([]);
   });
 
-  it('getForRetailer honours an override when available, else falls back', () => {
+  it('getForRetailer honours an override when available, else returns undefined — no silent fallback', () => {
     const registry = new ProviderRegistry();
     const mock = new MockProvider();
     registry.register(mock);
     registry.register(new CsvProvider({ csv: CSV }));
     registry.setRetailerOverride('amazon', 'csv');
     expect(registry.getForRetailer('amazon')?.key).toBe('csv');
-    // Override to an unavailable provider falls back to preferred.
+    // Sections 21–25, Stage B — an override pointing at an
+    // unavailable provider used to fall back to another merchant
+    // silently. It now returns undefined: the caller must record
+    // "no provider for this retailer" honestly, never fetch from
+    // a merchant the retailer did not ask for.
     registry.setRetailerOverride('amazon', 'csv');
     registry.unregister('csv');
-    expect(registry.getForRetailer('amazon')?.key).toBe('mock');
+    expect(registry.getForRetailer('amazon')).toBeUndefined();
   });
 
   it('unregister removes a provider; get/getAll/getByCategory reflect it', () => {

@@ -168,6 +168,9 @@ function fakeListing(overrides: Partial<EbayListing> = {}): EbayListing {
     itemWebUrl: 'https://www.ebay.com/itm/ebay-1',
     imageUrl: null,
     ...overrides,
+    // EbayListing.gtin is required `string | null` (S21 B12) —
+    // an override that sets it to undefined must not leak through.
+    gtin: overrides.gtin ?? null,
   };
 }
 

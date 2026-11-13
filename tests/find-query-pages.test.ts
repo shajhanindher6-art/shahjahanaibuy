@@ -147,7 +147,10 @@ describe('find store links', () => {
     }
   });
 
-  it('every link is a real https URL on the store domain with no placeholders', { timeout: 60000 }, () => {
+  it('every link is a real https URL on the store domain with no placeholders', { timeout: 10000 }, () => {
+    // Section 21, Stage E (W2): bound cut from 60000 to 10000 —
+    // the test is pure CPU (500 queries x 83 links) and measures
+    // ~2.4s; 10s keeps ~4x headroom without masking a hang.
     for (const term of SEARCH_TERMS) {
       const links = getFindQueryStoreLinks(term.query);
       expect(links.length).toBe(83);

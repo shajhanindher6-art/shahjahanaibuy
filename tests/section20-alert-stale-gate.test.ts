@@ -40,6 +40,11 @@
  * - The alert types' own firing logic (significant-drop / trend /
  *   opportunity / back-in-stock transition): tests/section19-phase6-
  *   alert-intelligence.test.ts.
+ *
+ * Section 21, P0 #2 — the guest-path cases below were added here
+ * (this file had 0 guest cases): checkGuestEmailAlerts
+ * (app/api/v1/prices/refresh/route.ts) now carries the same 7-day
+ * stale gate, counted in GuestAlertsResult.skippedStale.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -47,6 +52,8 @@ import {
   alertUnknownAgeNote,
   checkPriceAlerts,
 } from '@/services/alert-checker';
+import { checkGuestEmailAlerts } from '@/services/guest-alerts';
+import type { RefreshSharedReads } from '@/services/price-refresh';
 import { STALE_PRICE_DAYS } from '@/lib/price-freshness';
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 
@@ -535,5 +542,197 @@ describe('checkPriceAlerts — wishlist stale gate (§12 #81)', () => {
     expect(result.wishlistQueued).toBe(0);
     expect(result.skippedStale).toBe(1);
     expect(queuedNotifications(db)).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 21, P0 #2 — checkGuestEmailAlerts stale gate
+// ---------------------------------------------------------------------------
+// The guest path had NO stale gate at all: checkGuestEmailAlerts
+// selected recorded_at then dropped it, priceByProduct was
+// Map<string, number> only, and shouldTriggerGuestAlert took no
+// date — so a guest alert would announce "is now $Y!" on an
+// 11-day-old seed price the moment Resend is configured. The gate
+// is the same 7-day rule as the signed-in checker above
+// (STALE_PRICE_DAYS = 7): price-claiming guest triggers
+// (price_drop, and back_in_stock when a price is printed) on a
+// stale record are suppressed and counted in skippedStale; an
+// unknown age fires but the body is qualified; deal alerts make
+// no "is now" claim and are not gated.
+
+describe('checkGuestEmailAlerts — guest stale gate (§12 #81, Section 21 P0 #2)', () => {
+  function guestAlertRow(overrides: Partial<Row> = {}): Row {
+    return {
+      id: 'g1',
+      email: 'guest@example.com',
+      product_id: 'p1',
+      alert_type: 'price_drop',
+      target_price: 100,
+      guest_token: null,
+      last_triggered_at: null,
+      last_triggered_price: null,
+      trigger_count: 0,
+      active: true,
+      created_at: daysAgo(2),
+      ...overrides,
+    };
+  }
+
+  function guestDb(overrides: Record<string, Row[]>): StubDb {
+    return createStubSupabase({
+      guest_email_alerts: [],
+      products: PRODUCTS,
+      price_history: [],
+      deals: [],
+      guest_notification_queue: [],
+      ...overrides,
+    });
+  }
+
+  function queuedGuestEmails(db: StubDb): Row[] {
+    return db.inserts.filter((i) => i.table === 'guest_notification_queue').map((i) => i.row);
+  }
+
+  function guestAlertUpdates(db: StubDb): Row[] {
+    return db.updates.filter((u) => u.table === 'guest_email_alerts').map((u) => u.patch);
+  }
+
+  it('SUPPRESSES a guest price_drop on an 11-day-old price: no "is now $Y!" from stale data', async () => {
+    const db = guestDb({
+      guest_email_alerts: [guestAlertRow({ alert_type: 'price_drop', target_price: 100 })],
+      price_history: [historyRow('p1', 90, daysAgo(11))],
+    });
+    const result = await checkGuestEmailAlerts(db.client, new Set());
+
+    expect(result.checked).toBe(1);
+    expect(result.triggered).toBe(0);
+    expect(result.queued).toBe(0);
+    expect(result.skippedStale).toBe(1);
+    // Suppression is total: nothing queued, no trigger record,
+    // and last_triggered_at is NOT advanced (the alert stays armed).
+    expect(queuedGuestEmails(db)).toHaveLength(0);
+    expect(guestAlertUpdates(db)).toHaveLength(0);
+  });
+
+  it('fires a guest price_drop on a fresh price (recorded today)', async () => {
+    const db = guestDb({
+      guest_email_alerts: [guestAlertRow({ alert_type: 'price_drop', target_price: 100 })],
+      price_history: [historyRow('p1', 90, daysAgo(0))],
+    });
+    const result = await checkGuestEmailAlerts(db.client, new Set());
+
+    expect(result.triggered).toBe(1);
+    expect(result.queued).toBe(1);
+    expect(result.skippedStale).toBe(0);
+    expect(queuedGuestEmails(db)).toHaveLength(1);
+    expect(String(queuedGuestEmails(db)[0].subject)).toContain('is now $90.00!');
+    expect(guestAlertUpdates(db)).toHaveLength(1);
+  });
+
+  it('fires a guest price_drop recorded exactly 7 days ago (boundary: stale is > 7 days)', async () => {
+    const db = guestDb({
+      guest_email_alerts: [guestAlertRow({ alert_type: 'price_drop', target_price: 100 })],
+      price_history: [historyRow('p1', 90, daysAgo(7))],
+    });
+    const result = await checkGuestEmailAlerts(db.client, new Set());
+
+    expect(result.triggered).toBe(1);
+    expect(result.queued).toBe(1);
+    expect(result.skippedStale).toBe(0);
+  });
+
+  it('fires a guest price_drop with no recorded check date but qualifies the body', async () => {
+    // A price_history row with recorded_at null: unknown age does
+    // NOT suppress, but the body must never read as a confirmed
+    // current price.
+    const db = guestDb({
+      guest_email_alerts: [guestAlertRow({ alert_type: 'price_drop', target_price: 100 })],
+      price_history: [historyRow('p1', 90, null as unknown as string)],
+    });
+    const result = await checkGuestEmailAlerts(db.client, new Set());
+
+    expect(result.triggered).toBe(1);
+    expect(result.queued).toBe(1);
+    expect(result.skippedStale).toBe(0);
+    expect(String(queuedGuestEmails(db)[0].body)).toContain('Price age unknown');
+    expect(String(queuedGuestEmails(db)[0].body)).toContain('may be out of date');
+  });
+
+  it('SUPPRESSES a guest back_in_stock alert whose printed price is 11 days old', async () => {
+    const db = guestDb({
+      guest_email_alerts: [guestAlertRow({ alert_type: 'back_in_stock', target_price: null })],
+      price_history: [historyRow('p1', 90, daysAgo(11), 'in_stock')],
+    });
+    // The transition set comes from this run's availability
+    // snapshots, so the event itself is current — the stale part
+    // is the "$90.00" printed in the body.
+    const result = await checkGuestEmailAlerts(db.client, new Set(['p1']));
+
+    expect(result.triggered).toBe(0);
+    expect(result.queued).toBe(0);
+    expect(result.skippedStale).toBe(1);
+    expect(queuedGuestEmails(db)).toHaveLength(0);
+    expect(guestAlertUpdates(db)).toHaveLength(0);
+  });
+
+  it('fires a guest back_in_stock alert on a fresh price', async () => {
+    const db = guestDb({
+      guest_email_alerts: [guestAlertRow({ alert_type: 'back_in_stock', target_price: null })],
+      price_history: [historyRow('p1', 90, daysAgo(0), 'in_stock')],
+    });
+    const result = await checkGuestEmailAlerts(db.client, new Set(['p1']));
+
+    expect(result.triggered).toBe(1);
+    expect(result.queued).toBe(1);
+    expect(result.skippedStale).toBe(0);
+    expect(String(queuedGuestEmails(db)[0].subject)).toContain('Back in stock: Sony Headphones');
+  });
+
+  it('a guest deal alert still fires on a stale price (it makes no "is now" claim)', async () => {
+    const db = guestDb({
+      guest_email_alerts: [guestAlertRow({ alert_type: 'deal', target_price: null })],
+      price_history: [historyRow('p1', 90, daysAgo(11))],
+      deals: [
+        { product_id: 'p1', active: true, deleted_at: null, end_at: daysAgo(-30) },
+      ],
+    });
+    const result = await checkGuestEmailAlerts(db.client, new Set());
+
+    expect(result.triggered).toBe(1);
+    expect(result.queued).toBe(1);
+    expect(result.skippedStale).toBe(0);
+    expect(String(queuedGuestEmails(db)[0].subject)).toContain('New deal: Sony Headphones');
+  });
+
+  it('the SHARED-READS path carries recorded_at too: a stale shared row suppresses', async () => {
+    // price_history is EMPTY here on purpose: the only way the
+    // step can see the $90 price is the shared historyRows. If
+    // the shared path dropped recorded_at, this would fire.
+    const db = guestDb({
+      guest_email_alerts: [guestAlertRow({ alert_type: 'price_drop', target_price: 100 })],
+      price_history: [],
+    });
+    const shared: RefreshSharedReads = {
+      refreshIds: [],
+      stockIds: ['p1'],
+      guestProductIds: ['p1'],
+      merchantRows: [],
+      historyRows: [
+        {
+          product_id: 'p1',
+          retailer_id: 'r1',
+          price: 90,
+          availability: 'in_stock',
+          recorded_at: daysAgo(11),
+        },
+      ],
+    };
+    const result = await checkGuestEmailAlerts(db.client, new Set(), shared);
+
+    expect(result.checked).toBe(1);
+    expect(result.triggered).toBe(0);
+    expect(result.queued).toBe(0);
+    expect(result.skippedStale).toBe(1);
+    expect(queuedGuestEmails(db)).toHaveLength(0);
   });
 });

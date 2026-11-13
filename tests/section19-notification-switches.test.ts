@@ -292,7 +292,7 @@ describe('processNotificationQueue honours the master switches (before dispatchi
     const db = dispatchDb([settingsRow({ price_alerts: false })]);
     const result = await processNotificationQueue(db.client);
 
-    expect(result).toEqual({ processed: 1, sent: 0, failed: 1 });
+    expect(result).toEqual({ processed: 1, sent: 0, failed: 1, partial: 0 });
     expect(mockedSendPriceAlertEmail).not.toHaveBeenCalled();
     const failed = db.updates.filter(
       (u) => u.table === 'notification_queue' && u.patch.status === 'failed'
@@ -304,7 +304,7 @@ describe('processNotificationQueue honours the master switches (before dispatchi
     const db = dispatchDb([settingsRow()]);
     const result = await processNotificationQueue(db.client);
 
-    expect(result).toEqual({ processed: 1, sent: 1, failed: 0 });
+    expect(result).toEqual({ processed: 1, sent: 1, failed: 0, partial: 0 });
     expect(mockedSendPriceAlertEmail).toHaveBeenCalledTimes(1);
     expect(mockedSendPriceAlertEmail).toHaveBeenCalledWith(
       'u1@example.test',
@@ -323,7 +323,7 @@ describe('processNotificationQueue honours the master switches (before dispatchi
     const db = dispatchDb([settingsRow({ email_notifications: false })]);
     const result = await processNotificationQueue(db.client);
 
-    expect(result).toEqual({ processed: 1, sent: 0, failed: 1 });
+    expect(result).toEqual({ processed: 1, sent: 0, failed: 1, partial: 0 });
     expect(mockedSendPriceAlertEmail).not.toHaveBeenCalled();
   });
 });

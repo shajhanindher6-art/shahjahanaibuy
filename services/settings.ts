@@ -33,17 +33,22 @@ export async function getUserSettings(
 
   if (!data) return null;
 
+  return mapUserSettings(data as Record<string, unknown>);
+}
+
+/** Snake_case row → camelCase UserSettings (shared by read + save). */
+function mapUserSettings(row: Record<string, unknown>): UserSettings {
   return {
-    id: data.id,
-    userId: data.user_id,
-    currency: data.currency,
-    language: data.language,
-    timezone: data.timezone,
-    emailNotifications: data.email_notifications,
-    pushNotifications: data.push_notifications,
-    priceAlerts: data.price_alerts,
-    createdAt: data.created_at,
-    updatedAt: data.updated_at,
+    id: row.id as string,
+    userId: row.user_id as string,
+    currency: row.currency as string,
+    language: row.language as string,
+    timezone: row.timezone as string,
+    emailNotifications: row.email_notifications as boolean,
+    pushNotifications: row.push_notifications as boolean,
+    priceAlerts: row.price_alerts as boolean,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
   };
 }
 
@@ -51,7 +56,8 @@ export async function updateUserSettings(
   supabase: AnySupabaseClient,
   userId: string,
   input: UpdateSettingsInput
-): Promise<UserSettings | null> {  const updateData: Record<string, unknown> = {};
+): Promise<UserSettings | null> {
+  const updateData: Record<string, unknown> = {};
   if (input.currency !== undefined) updateData.currency = input.currency;
   if (input.language !== undefined) updateData.language = input.language;
   if (input.timezone !== undefined) updateData.timezone = input.timezone;
@@ -61,10 +67,17 @@ export async function updateUserSettings(
     updateData.push_notifications = input.pushNotifications;
   if (input.priceAlerts !== undefined) updateData.price_alerts = input.priceAlerts;
 
+  // Sections 21–25, Stage F (F10) — UPSERT, not UPDATE-only. The
+  // old code updated by user_id and returned null when the row did
+  // not exist yet, so a user with no settings row could never save
+  // (the row must already exist). `user_id` is UNIQUE (migration
+  // 001) and the RLS insert/update-own policies both exist, so one
+  // upsert creates the row when missing (DB defaults fill the
+  // untouched columns) and updates it when present — atomically,
+  // with no read-then-write race.
   const { data, error } = await supabase
     .from('user_settings')
-    .update(updateData)
-    .eq('user_id', userId)
+    .upsert({ user_id: userId, ...updateData }, { onConflict: 'user_id' })
     .select('id, user_id, currency, language, timezone, email_notifications, push_notifications, price_alerts, created_at, updated_at')
     .maybeSingle();
 
@@ -72,7 +85,9 @@ export async function updateUserSettings(
     throw new Error(`Failed to update settings: ${error.message}`);
   }
 
-  return data as UserSettings | null;
+  if (!data) return null;
+
+  return mapUserSettings(data as Record<string, unknown>);
 }
 
 /**

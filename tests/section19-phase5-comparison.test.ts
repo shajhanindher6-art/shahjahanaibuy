@@ -16,7 +16,10 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { compareProducts, formatShipping } from '@/services/ai-comparison';
-import { scoreMerchantReliability } from '@/services/merchant-reliability';
+import {
+  getMerchantReliability,
+  scoreMerchantReliability,
+} from '@/services/merchant-reliability';
 import { buildSuitabilityExplanations } from '@/services/comparison-suitability';
 import type { ComparisonProduct } from '@/types/ai';
 import type { AnySupabaseClient } from '@/lib/supabase/types';
@@ -261,6 +264,58 @@ describe('scoreMerchantReliability — recorded signals only', () => {
   });
 });
 
+// Section 21, Stage E (W2, A10) — pin the LIVE path, not just the
+// pure scorer: `getMerchantReliability` is the DB reader that
+// ai-comparison.ts and provider-status.ts actually call, and it
+// delegates to `scoreMerchantReliability` internally. The audit's
+// "zero callers" premise is false — these tests fail if the reader
+// stops delegating (the scores below only come out right through
+// the pure scorer) or stops degrading to not-enough-data.
+describe('getMerchantReliability — live DB reader path (A10)', () => {
+  it('scores a recorded merchant from the DB (Amazon: 40/medium via the pure scorer)', async () => {
+    const result = await getMerchantReliability(stub(), {
+      id: 'm-amazon',
+      name: 'Amazon',
+      websiteUrl: 'https://www.amazon.com',
+      active: true,
+    });
+    // 10 directory + 10 website + 0 verified (false) + 0 grade
+    // (warranty recorded but return/reputation missing → no
+    // grade) + 10 coverage (2 listings) + 10 policy (24mo
+    // warranty recorded).
+    expect(result.score).toBe(40);
+    expect(result.level).toBe('medium');
+    expect(result.notEnoughData).toBe(false);
+    expect(result.merchantId).toBe('m-amazon');
+    expect(result.explanation).toContain('Reliability 40/100 (medium)');
+  });
+
+  it('a bare-listing merchant degrades to not-enough-data, never a guessed score', async () => {
+    const result = await getMerchantReliability(stub(), {
+      id: 'm-bb',
+      name: 'Best Buy',
+      websiteUrl: null,
+      active: true,
+    });
+    expect(result.score).toBeNull();
+    expect(result.level).toBe('unknown');
+    expect(result.notEnoughData).toBe(true);
+    expect(result.explanation).toContain('Not enough data to score Best Buy');
+  });
+
+  it('a missing merchant never throws — not-enough-data with the merchant named', async () => {
+    const result = await getMerchantReliability(stub(), {
+      id: 'm-ghost',
+      name: 'Ghost Store',
+      websiteUrl: null,
+      active: true,
+    });
+    expect(result.score).toBeNull();
+    expect(result.notEnoughData).toBe(true);
+    expect(result.explanation).toContain('Ghost Store');
+  });
+});
+
 describe('compareProducts — warranty / shipping / seller / reliability rows', () => {
   it('renders recorded warranty + shipping + seller, and nulls where nothing is recorded', async () => {
     const comparison = await compareProducts(stub(), ['p1', 'p2']);
@@ -302,14 +357,24 @@ describe('compareProducts — warranty / shipping / seller / reliability rows', 
     expect(bestBuy.reliability?.explanation).toContain('Not enough data to score Best Buy');
   });
 
-  it('source label (#55): the verdict carries the verified-data label with the freshness range', async () => {
+  it('source label (#55, Section 21 P0 #1): unverified products get the RECORDED-data label, never "verified"', async () => {
+    // The stub products carry NO price_verification_status stamp
+    // (unverified) and p2's price is 11 days stale — the old
+    // assertion pinned the bug: it expected "based on verified
+    // recorded data" here. The Section 21 gate earns "verified"
+    // only when every compared product is verified AND fresh
+    // (see tests/section21-p0-comparison-verified-label.test.ts
+    // for the verified+fresh case). The range dates still come
+    // from the real data_freshness values.
     const comparison = await compareProducts(stub(), ['p1', 'p2']);
     expect(comparison).not.toBeNull();
-    expect(comparison!.sourceLabel).toContain('based on verified recorded data');
+    expect(comparison!.sourceLabel).not.toContain('based on verified recorded data');
+    expect(comparison!.sourceLabel).toContain('based on recorded catalog data');
     expect(comparison!.sourceLabel).toContain('Nov 2, 2026');
     expect(comparison!.sourceLabel).toContain('Nov 12, 2026');
     expect(comparison!.sourceLabel).toContain('general guidance');
-    expect(comparison!.aiSummary).toContain('Source: based on verified recorded data');
+    expect(comparison!.aiSummary).toContain('Source: based on recorded catalog data');
+    expect(comparison!.aiSummary).not.toContain('based on verified recorded data');
   });
 
   it('suitability (#51): each requirement names the winning product + the real reason', async () => {

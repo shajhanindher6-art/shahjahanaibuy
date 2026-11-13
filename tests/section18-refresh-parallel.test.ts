@@ -227,7 +227,7 @@ describe('refresh waves run concurrently where independent (item 37)', () => {
       // Section 19, Phase 3 (§12 #34) prediction-outcome step,
       // which runs in wave C with the other post-refresh steps.
       expect(Object.keys(body.data.steps).sort()).toEqual(
-        ['alerts', 'digest', 'ebay', 'guestAlerts', 'guestEmail', 'hunts', 'notifications', 'outcomes', 'pipeline', 'refresh', 'savedSearches', 'stock']
+        ['alertExpiry', 'alerts', 'digest', 'ebay', 'guestAlerts', 'guestEmail', 'hunts', 'notifications', 'outcomes', 'pipeline', 'refresh', 'savedSearches', 'stock']
       );
       expect(routeMocks.checkPriceAlerts).toHaveBeenCalled();
       expect(routeMocks.runHunts).toHaveBeenCalled();

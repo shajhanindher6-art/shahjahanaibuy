@@ -61,7 +61,11 @@ describe('describePlatformStatus', () => {
     // Section 20, §12 #51 — Best Buy is recorded rows only, never
     // 'live' (no adapter, credential, or verified call exists).
     expect(byId('best-buy').status).toBe('recorded-prices-only');
-    expect(byId('local-stores').status).toBe('live');
+    // Sections 21–25, Stage B (B7) — was 'live': a static
+    // search-link directory is not a live integration, same as the
+    // other directory entries.
+    expect(byId('local-stores').status).toBe('search-links-only');
+    expect(byId('global-fallback').status).toBe('search-links-only');
   });
 
   it('marks Amazon tag-only only when its tag is set, and never leaks the tag', () => {

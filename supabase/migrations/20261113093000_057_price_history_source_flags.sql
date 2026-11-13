@@ -36,13 +36,21 @@
 -- (40 rows, Amazon only — audit §2), so labelling them 'seed'
 -- states what they are; the seed file itself calls them
 -- "DEMO/placeholder launch prices, not live retailer prices".
--- The WHERE clause (source IS NULL) makes the backfill safe to
--- run once and a no-op afterwards. It does NOT re-run the seed
--- and it inserts no rows.
--- If this migration is applied AFTER live (non-seed) rows exist,
--- check first which rows are genuinely seed rows before running
--- the UPDATE — rows recorded after the seed instant with a live
--- source must keep source NULL, not be labelled 'seed'.
+-- The WHERE clause scopes the backfill to the SEED INSTANT ONLY:
+-- `recorded_at < DATE '2026-11-03'` (the seed ran 2026-11-02 and
+-- every seed row carries recorded_at = seed instant minus 0/7/14/
+-- 30 days, so all 40 seed rows are before 2026-11-03 UTC). A row
+-- recorded on or after 2026-11-03 is NOT a seed row — it is a
+-- live fetch, a manual-intake price, or a DB re-read — and keeps
+-- source NULL rather than being mislabelled 'seed'. (Section
+-- 21–25 fix, I-P1-6: the previous WHERE clause had no time bound
+-- and would have labelled every post-seed row 'seed' as well.)
+-- The UPDATE is idempotent: re-running it labels nothing new,
+-- because labelled rows no longer match `source IS NULL`.
+-- It does NOT re-run the seed and it inserts no rows. The DO
+-- block after the UPDATE reports the counts (labelled vs still
+-- unlabelled) as a NOTICE, so the owner can see the split at
+-- apply time.
 
 ALTER TABLE price_history
   ADD COLUMN IF NOT EXISTS source text;
@@ -54,16 +62,45 @@ ALTER TABLE price_history
   ADD COLUMN IF NOT EXISTS suspicious_change boolean NOT NULL DEFAULT false;
 
 -- Provenance vocabulary (NULL = no provenance claimed).
-ALTER TABLE price_history
-  ADD CONSTRAINT price_history_source_check
-  CHECK (source IS NULL OR source IN ('seed', 'live', 'manual-intake', 'ebay-browse-api', 'merchant-feed'));
+-- Section 21–25 fix (I-P1-6): the ADD CONSTRAINT is wrapped in
+-- a DO block guarded on pg_constraint, so a re-run is a no-op
+-- instead of failing on the duplicate constraint and leaving a
+-- half-applied state. (This was the only unguarded statement in
+-- the file; every other statement already uses IF NOT EXISTS.)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'price_history_source_check'
+      AND conrelid = 'public.price_history'::regclass
+  ) THEN
+    ALTER TABLE price_history
+      ADD CONSTRAINT price_history_source_check
+      CHECK (source IS NULL OR source IN ('seed', 'live', 'manual-intake', 'ebay-browse-api', 'merchant-feed'));
+  END IF;
+END $$;
 
 -- Existing rows are the seed/demo rows: label them, and carry
 -- their recorded time into observed_at. Never re-run the seed.
+-- Seed-instant scoped (I-P1-6): only rows recorded before
+-- 2026-11-03 are seed rows; later rows keep source NULL.
 UPDATE price_history
   SET source = 'seed',
       observed_at = recorded_at
-  WHERE source IS NULL;
+  WHERE source IS NULL
+    AND recorded_at < DATE '2026-11-03';
+
+-- Apply-time report: how many rows were labelled seed vs left
+-- without provenance. NOTICE only — never fails the migration.
+DO $$
+DECLARE
+  labelled int;
+  unlabelled int;
+BEGIN
+  SELECT count(*) INTO labelled FROM public.price_history WHERE source = 'seed';
+  SELECT count(*) INTO unlabelled FROM public.price_history WHERE source IS NULL;
+  RAISE NOTICE '057: % price_history rows labelled seed; % rows left without provenance (recorded after the 2026-11-02 seed instant).', labelled, unlabelled;
+END $$;
 
 CREATE INDEX IF NOT EXISTS price_history_source_idx
   ON price_history (source)

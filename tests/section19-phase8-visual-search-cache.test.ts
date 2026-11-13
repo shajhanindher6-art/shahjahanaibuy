@@ -13,9 +13,12 @@
  *   engine tests cover budget exhaustion itself).
  *
  * Isolation: `resetAiUsage()` before each test (budgets are
- * per-instance in-memory) + `clearVisualSearchCache()`. The caption
- * test uses a literal public IP URL (8.8.8.8) so the SSRF guard
- * passes without a DNS lookup in the sandbox.
+ * per-instance in-memory) + `clearVisualSearchCache()`. The Lens
+ * tests use literal public IP URLs (8.8.8.8) so the SSRF guard
+ * passes without a DNS lookup in the sandbox — Sections 21–25,
+ * Stage K (K2) runs the guard BEFORE the cache lookup, and
+ * example.com fails DNS in the sandbox, so the helper returns []
+ * with zero fetch calls and every cache assertion breaks.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -66,7 +69,7 @@ describe('visual-search Lens cache (§12 #11)', () => {
       })
     );
 
-    const first = await searchVisualByImageUrlWithMeta('https://example.com/phone.jpg');
+    const first = await searchVisualByImageUrlWithMeta('https://8.8.8.8/phone.jpg');
     expect(first.fromCache).toBe(false);
     expect(first.fetchedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(first.matches).toHaveLength(1);
@@ -75,7 +78,7 @@ describe('visual-search Lens cache (§12 #11)', () => {
     // One live Lens call spent one unit of the daily SerpAPI budget.
     expect(getProviderBudgetState('serpapi').used).toBe(1);
 
-    const second = await searchVisualByImageUrlWithMeta('https://example.com/phone.jpg');
+    const second = await searchVisualByImageUrlWithMeta('https://8.8.8.8/phone.jpg');
     expect(second.fromCache).toBe(true);
     expect(second.fetchedAt).toBe(first.fetchedAt);
     expect(second.matches).toEqual(first.matches);
@@ -84,7 +87,7 @@ describe('visual-search Lens cache (§12 #11)', () => {
     expect(getProviderBudgetState('serpapi').used).toBe(1);
 
     // The plain wrapper keeps the old shape (VisualMatch[]).
-    const plain = await searchVisualByImageUrl('https://example.com/phone.jpg');
+    const plain = await searchVisualByImageUrl('https://8.8.8.8/phone.jpg');
     expect(plain).toEqual(first.matches);
     expect(fetchCalls).toBe(1);
   });
@@ -99,8 +102,8 @@ describe('visual-search Lens cache (§12 #11)', () => {
         return { ok: true, status: 200, json: async () => ({ visual_matches: [] }) };
       })
     );
-    await searchVisualByImageUrl('https://example.com/a.jpg');
-    await searchVisualByImageUrl('https://example.com/b.jpg');
+    await searchVisualByImageUrl('https://8.8.8.8/a.jpg');
+    await searchVisualByImageUrl('https://8.8.8.8/b.jpg');
     expect(fetchCalls).toBe(2);
   });
 
@@ -114,8 +117,8 @@ describe('visual-search Lens cache (§12 #11)', () => {
         return { ok: false, status: 500, json: async () => ({}) };
       })
     );
-    expect(await searchVisualByImageUrl('https://example.com/fail.jpg')).toEqual([]);
-    expect(await searchVisualByImageUrl('https://example.com/fail.jpg')).toEqual([]);
+    expect(await searchVisualByImageUrl('https://8.8.8.8/fail.jpg')).toEqual([]);
+    expect(await searchVisualByImageUrl('https://8.8.8.8/fail.jpg')).toEqual([]);
     // Phase 1 retry (§12 #6): a 500 is retried 3× per logical call,
     // so 2 logical calls = 6 fetches. The point is the SECOND call
     // still fetched (3 more attempts) instead of serving a cached

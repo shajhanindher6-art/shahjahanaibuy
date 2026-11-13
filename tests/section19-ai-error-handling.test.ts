@@ -360,8 +360,10 @@ describe('Timeout paths — abort / timeout is retried, then fails honestly (#81
       fetchCalls++;
       throw new DOMException('The operation was aborted.', 'AbortError');
     });
+    // Literal public IP URL: the K2 SSRF guard runs before the
+    // fetch, and example.com fails DNS in the sandbox (0 calls).
     const matches = await searchVisualByImageUrl(
-      `https://example.com/timeout-probe-${Date.now()}.jpg`
+      `https://8.8.8.8/timeout-probe-${Date.now()}.jpg`
     );
     expect(fetchCalls).toBe(3); // retried as a retryable (abort) failure
     expect(matches).toEqual([]);

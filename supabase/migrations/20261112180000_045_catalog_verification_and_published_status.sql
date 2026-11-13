@@ -99,6 +99,26 @@ END $$;
 -- ---------------------------------------------------------------------------
 -- C. price_history UNIQUE index, duplicate-guarded (item 16)
 -- ---------------------------------------------------------------------------
+-- SECTION 21–25 NOTE (I-P2-6): the duplicate check for this index
+-- already lives IN THIS FILE — the DO block below checks for
+-- duplicate (product_id, retailer_id, recorded_at) rows first and,
+-- if any exist, raises a NOTICE and creates nothing, so the
+-- migration never fails halfway on a live table with history.
+-- RUNBOOK STEP (for the apply runbook — no code change needed):
+-- before applying 045, run this pre-flight query in the SQL
+-- editor and de-duplicate any rows it returns first:
+--
+--   SELECT product_id, retailer_id, recorded_at, count(*)
+--   FROM public.price_history
+--   GROUP BY product_id, retailer_id, recorded_at
+--   HAVING count(*) > 1;
+--
+-- If the query returns 0 rows, the index below will be created.
+-- If it returns rows, de-duplicate the live rows (owner decision
+-- which copy to keep — never delete silently), then re-run this
+-- section-C block. After applying, read the NOTICE output: if it
+-- says the index was NOT created, the de-duplication step above
+-- is still pending.
 DO $$
 BEGIN
   IF NOT EXISTS (

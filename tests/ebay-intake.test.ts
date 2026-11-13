@@ -22,6 +22,9 @@ function listing(overrides: Partial<EbayListing> = {}): EbayListing {
     condition: 'New',
     itemWebUrl: 'https://www.ebay.com/itm/123456789012',
     imageUrl: 'https://i.ebayimg.com/fake-1.jpg',
+    // Section 21–25, Stage C (B12) — synthetic listings carry no
+    // GTIN unless a test sets one.
+    gtin: null,
     ...overrides,
   };
 }

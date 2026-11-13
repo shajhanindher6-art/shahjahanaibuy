@@ -9,7 +9,12 @@ import {
 } from '@/lib/monthly-planner';
 import { predictBuyVsWait } from '@/services/buy-wait-prediction';
 
-function points(prices: number[], startIso = '2026-09-01T00:00:00.000Z') {
+// Sections 21–25, Stage E (E-P2-2): buy-wait verdicts are WITHHELD
+// on a stale latest price (> 7 days), so fixtures must end near
+// today — the old absolute 2026-09-01 start made every fixture
+// stale and every decision 'wait'. Points are 5 days apart, so a
+// 5-point fixture spans 20 days ending today.
+function points(prices: number[], startIso = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString()) {
   const start = Date.parse(startIso);
   return prices.map((price, i) => ({
     price,

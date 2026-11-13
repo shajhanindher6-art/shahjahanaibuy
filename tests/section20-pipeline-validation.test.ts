@@ -167,7 +167,49 @@ describe('spec templates', () => {
     ]);
     // 'phone' is an accepted alias of smartphone.
     expect(specKeysForCategory('phone')).toEqual(specKeysForCategory('smartphone'));
-    expect(specKeysForCategory('headphones')).toEqual([]);
+    // Sections 21–25, Stage C (B10) — headphones / camera /
+    // smartwatch / accessories / wearables / monitor gained
+    // templates too (9 categories); headphones is no longer [].
+    expect(specKeysForCategory('headphones')).toEqual([
+      'driver',
+      'battery',
+      'noise_cancelling',
+      'connectivity',
+      'bluetooth',
+      'weight',
+    ]);
+    expect(specKeysForCategory('camera')).toEqual([
+      'sensor',
+      'megapixels',
+      'lens_mount',
+      'video',
+      'display',
+      'battery',
+      'weight',
+    ]);
+    expect(specKeysForCategory('smartwatch')).toEqual([
+      'display',
+      'battery',
+      'sensors',
+      'water_resistance',
+      'connectivity',
+      'weight',
+    ]);
+    expect(specKeysForCategory('accessories')).toEqual([
+      'connectivity',
+      'battery',
+      'compatibility',
+      'weight',
+      'material',
+    ]);
+    expect(specKeysForCategory('monitor')).toEqual([
+      'display',
+      'resolution',
+      'refresh_rate',
+      'panel',
+      'connectivity',
+    ]);
+    expect(specKeysForCategory('unknown-category-xyz')).toEqual([]);
     expect(SPEC_TEMPLATES.laptop.find((e) => e.key === 'ram')?.units).toEqual(['GB']);
   });
 
