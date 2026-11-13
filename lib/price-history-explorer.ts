@@ -23,6 +23,7 @@ import {
   type TrendPoint,
   type TrendStats,
 } from '@/lib/price-trend';
+import { assessHistoryGate } from '@/lib/price-history-gates';
 
 export type ExplorerSort = 'biggest-drop' | 'lowest-price' | 'current-price' | 'name';
 
@@ -60,12 +61,29 @@ export interface ProductHistorySummary {
   drops: PriceDrop[];
   /** Largest single recorded drop, or null when none recorded. */
   biggestDrop: PriceDrop | null;
+  /**
+   * FINAL 100% (W3, F-P1-36) — why the summary is gated, when it
+   * is: the unified 5-point + freshness gate reason. A gated
+   * summary keeps stats AND biggestDrop null — the live seed's
+   * identical −2.86% "biggest drop" on all 10 products was a
+   * seed-constructed step (×1.05 → ×1.02) presented as each
+   * product's biggest real price drop. Null when ungated.
+   */
+  gateReason: string | null;
+  /** Whole days since the latest recorded point (null when unknown). */
+  ageDays: number | null;
 }
 
 /**
  * Build one product's summary from its recorded points (any order
  * in, oldest-first out). Invalid points are dropped by the trend
- * helpers, never treated as zero.
+ * helpers, never treated as zero. The summary is gated by the
+ * unified 5-point + freshness rule (lib/price-history-gates.ts):
+ * below 5 points, or with a stale latest point, stats and
+ * biggestDrop are null and gateReason says why — the raw points
+ * and the drop list are still returned, so the page can show the
+ * recorded points themselves while withholding the interpretive
+ * verdicts drawn from them.
  */
 export function buildProductHistorySummary(
   product: {
@@ -75,7 +93,8 @@ export function buildProductHistorySummary(
     brand: string | null;
     category: string | null;
   },
-  history: TrendPoint[]
+  history: TrendPoint[],
+  now: Date = new Date()
 ): ProductHistorySummary {
   const points = [...history]
     .filter(
@@ -88,10 +107,11 @@ export function buildProductHistorySummary(
       (a, b) =>
         new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()
     );
-  const stats = computeTrendStats(points);
+  const gate = assessHistoryGate(points, now);
+  const stats = gate.gated ? null : computeTrendStats(points);
   const drops = computePriceDrops(points);
   const biggestDrop =
-    drops.length === 0
+    gate.gated || drops.length === 0
       ? null
       : drops.reduce((best, d) => (d.dropPercent > best.dropPercent ? d : best), drops[0]);
   return {
@@ -105,6 +125,8 @@ export function buildProductHistorySummary(
     stats,
     drops,
     biggestDrop,
+    gateReason: gate.gated ? gate.reason : null,
+    ageDays: gate.ageDays,
   };
 }
 

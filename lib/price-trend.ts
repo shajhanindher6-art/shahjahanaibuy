@@ -10,6 +10,8 @@
 export interface TrendPoint {
   price: number;
   recordedAt: string;
+  /** Migration 057 source, when recorded (null pre-057). */
+  source?: string | null;
 }
 
 export interface PriceDrop {

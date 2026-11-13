@@ -119,6 +119,28 @@ export const env = {
   cloudflareR2AccountId: process.env.CLOUDFLARE_R2_ACCOUNT_ID,
   cloudflareR2AccessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID,
   cloudflareR2SecretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+
+  // Provider keys (Final 100%, F-P2-59) — the three keys that used
+  // to bypass this file now read through it. All optional: unset =
+  // provider reports not_configured (fail-closed, never a live
+  // claim). A set key still means no client exists for Amazon /
+  // Best Buy (see the provider headers) — the key alone never makes
+  // a provider live. Never commit real values.
+  //
+  // Getters, not snapshot values: providers read these at call
+  // time, and tests (Section 20 merchant-layer) set the vars after
+  // import — a snapshot taken at import would stay stale and the
+  // provider would never see the key. The same staleness is why
+  // the providers used to read process.env directly.
+  get amazonCreatorsApiKey(): string | undefined {
+    return process.env.AMAZON_CREATORS_API_KEY;
+  },
+  get bestbuyApiKey(): string | undefined {
+    return process.env.BESTBUY_API_KEY;
+  },
+  get csvSourceUrl(): string | undefined {
+    return process.env.CSV_SOURCE_URL;
+  },
 } as const;
 
 export type Env = typeof env;

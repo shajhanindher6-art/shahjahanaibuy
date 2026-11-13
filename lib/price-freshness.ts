@@ -145,6 +145,32 @@ export function alertUnknownAgeNote(): string {
 }
 
 /**
+ * Surface-level freshness gate (Final 100% — F-P0-06). One wording
+ * for every price surface that shows a RECORDED price: product
+ * pages, search results, comparison, deals, tools, SEO offers.
+ * Returns null when the price is fresh (no qualification needed),
+ * otherwise the honest qualifier to render alongside the price —
+ * a stale price must never render as current, and an unknown age
+ * must never render as fresh. Callers render the returned string
+ * verbatim next to the price; they never invent a fresher label.
+ */
+export function formatRecordedPriceNote(
+  value: string | Date | null | undefined,
+  now: Date = new Date(),
+): string | null {
+  const { status, ageDays } = getFreshnessStatus(value, now);
+  if (status === 'fresh') return null;
+  if (status === 'stale') {
+    const age = ageDays ?? 0;
+    return (
+      `Recorded price — last checked ${age} day${age === 1 ? '' : 's'} ago; ` +
+      `it may be out of date.`
+    );
+  }
+  return 'Recorded price — price age unknown; it may be out of date.';
+}
+
+/**
  * Freshness gate for INTERPRETIVE verdicts (Section 19, Phase 2
  * §12 #20). A "good time to buy" / "near its lowest" verdict that
  * reasons about a stale price must be suppressed or qualified —

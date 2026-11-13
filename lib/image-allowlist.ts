@@ -46,6 +46,14 @@ export function getAllowedImageHosts(): string[] {
  * hosts. Fail-closed on every side: an empty/missing list rejects
  * everything, an unparseable or non-http(s) value rejects, and a
  * host that is merely a subdomain of a listed host rejects.
+ *
+ * FINAL 100%, F-P2-25 — this exact-host rule is the CANONICAL
+ * allowlist. `services/pipeline/image-processing.ts` used to allow
+ * subdomains via `endsWith('.' + host)`; it now delegates here, so
+ * the two implementations can no longer disagree. Exact-host is
+ * the stricter rule: a listed `example.com` must never silently
+ * authorize `evil.example.com` — the owner lists each host
+ * explicitly.
  */
 export function isAllowedImageHost(
   value: unknown,
@@ -67,4 +75,36 @@ export function isAllowedImageHost(
   }
   if (!hostname) return false;
   return allowed.has(hostname);
+}
+
+export interface ImageAllowlistConfig {
+  /** Lower-cased, deduped hosts from IMAGE_ALLOWED_HOSTS. */
+  hosts: string[];
+  /** True only when at least one host is configured. */
+  configured: boolean;
+  /**
+   * Honest status line for admin/docs. When unconfigured it says
+   * plainly that no merchant image host is known yet (F-P1-41,
+   * owner-gated) — the allowlist is fail-closed, never "all hosts".
+   */
+  status: string;
+}
+
+/**
+ * FINAL 100%, F-P1-08 — allowlist configuration as data: the
+ * configured hosts, whether anything is configured at all, and
+ * the honest status line. The actual host list is owner-gated
+ * (F-P1-41): no merchant image host is known yet, so `hosts` is
+ * empty until the owner supplies IMAGE_ALLOWED_HOSTS.
+ */
+export function getImageAllowlistConfig(): ImageAllowlistConfig {
+  const hosts = getAllowedImageHosts();
+  return {
+    hosts,
+    configured: hosts.length > 0,
+    status:
+      hosts.length > 0
+        ? `${hosts.length} image host(s) allowlisted`
+        : 'No image host allowlisted — IMAGE_ALLOWED_HOSTS is unset and no merchant image host is known yet (owner-gated, F-P1-41). Image storage upload is disabled until hosts are supplied.',
+  };
 }

@@ -36,6 +36,14 @@ export interface FreshnessRow {
   ageDays: number | null;
   /** True when the last recorded price is older than STALE_PRICE_DAYS. */
   stale: boolean;
+  /**
+   * Final 100% — F-P2-16: true when NO check date is recorded at
+   * all. `stale` is false for unknown age (a pure stale/not-stale
+   * predicate), so consumers must never read `stale === false` as
+   * "fresh" — read `ageUnknown` first. The catalog-freshness tool
+   * renders "Age unknown" for these rows, never a Fresh badge.
+   */
+  ageUnknown: boolean;
   /** Number of recorded price_history points. */
   pointCount: number;
   /** True when the product has no image URL (imageUrl null). */
@@ -75,6 +83,10 @@ export function buildFreshnessRow(
     lastRecordedLabel: formatLastChecked(lastRecordedAt),
     ageDays: getPriceAgeDays(lastRecordedAt, now),
     stale: isPriceStale(lastRecordedAt, now),
+    // Final 100% — F-P2-16: unknown age is its own state, never
+    // "not stale" read as fresh. lastRecordedAt is null exactly
+    // when no usable point exists.
+    ageUnknown: lastRecordedAt === null,
     pointCount: valid.length,
     missingImage: !product.imageUrl,
     missingGtin: !product.gtin,

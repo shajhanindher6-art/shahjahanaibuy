@@ -19,8 +19,8 @@
 
 import type { Metadata } from 'next';
 import {
+  getFreshnessStatus,
   getPriceAgeDays,
-  isPriceStale,
   STALE_PRICE_DAYS,
 } from '@/lib/price-freshness';
 import {
@@ -37,7 +37,23 @@ export interface ProductSeoData {
   category: string | null;
   imageUrl: string | null;
   gtin: string | null;
-  confidenceScore: number;
+  /**
+   * FINAL 100%, F-P2-33 — per-image verification verdict for the
+   * primary gallery image (migration 069; null when unknown or
+   * when the product has no gallery rows). buildProductMetadata
+   * emits og:image / twitter:image only when the image is not
+   * KNOWN broken: 'unreachable' / 'invalid' suppress the tags,
+   * 'verified' / 'unchecked' / null keep the previous behaviour
+   * (the products.image_url hotlink). Honest-empty when no image
+   * URL exists at all.
+   */
+  imageVerificationStatus?: import('@/services/pipeline/image-processing').ImageVerificationStatus | null;
+  /**
+   * Final 100% — F-P2-03 (legacy, optional): the pipeline's
+   * field-presence count. Never rendered, never a completion
+   * score; kept optional so older literals keep compiling.
+   */
+  confidenceScore?: number;
   /** Cheapest recorded merchant price, or null when no priced listing exists. */
   lowestPrice: number | null;
   /**
@@ -91,7 +107,8 @@ export interface ProductInitialData {
   category: string | null;
   imageUrl: string | null;
   gtin: string | null;
-  confidenceScore: number;
+  /** Final 100% — F-P2-03: legacy field-presence count, optional, never rendered. */
+  confidenceScore?: number;
 }
 
 export function toInitialProduct(seo: ProductSeoData): ProductInitialData {
@@ -128,6 +145,16 @@ export function buildProductMetadata(
   const description = buildProductDescription(seo);
   const url = `${siteUrl}/products/${seo.slug}`;
   const ogTitle = `${seo.name} — SmartBuy AI`;
+  // FINAL 100%, F-P2-33 — social image only when a (verified or
+  // unchecked) image exists; a KNOWN-broken image is never
+  // advertised to crawlers, and no image means no og:image /
+  // twitter:image tags at all (honest-empty).
+  const socialImageUrl =
+    seo.imageUrl &&
+    seo.imageVerificationStatus !== 'unreachable' &&
+    seo.imageVerificationStatus !== 'invalid'
+      ? seo.imageUrl
+      : null;
   return {
     title: seo.name,
     description,
@@ -138,15 +165,15 @@ export function buildProductMetadata(
       url,
       type: 'website',
       locale: 'en_US',
-      images: seo.imageUrl
-        ? [{ url: seo.imageUrl, alt: seo.name }]
+      images: socialImageUrl
+        ? [{ url: socialImageUrl, alt: seo.name }]
         : undefined,
     },
     twitter: {
       card: 'summary_large_image',
       title: ogTitle,
       description,
-      images: seo.imageUrl ? [seo.imageUrl] : undefined,
+      images: socialImageUrl ? [socialImageUrl] : undefined,
       // NOTE: no `site` / `creator` here — those need a real @handle
       // and SmartBuy AI has no verified X/Twitter handle on record.
       // Inventing one would put a false handle in every product
@@ -191,11 +218,13 @@ export function deriveOfferPriceValidUntil(
  *
  * Section 16, item 12: the offers block is SUPPRESSED when the
  * recorded price is stale (older than STALE_PRICE_DAYS) — crawlers
- * must never read a stale price as a current offer. While fresh,
- * the offer carries priceValidUntil (recorded when present,
- * otherwise derived from data_freshness by
- * deriveOfferPriceValidUntil). `now` is injectable for tests; it
- * defaults to the request time.
+ * must never read a stale price as a current offer. Final 100%
+ * (F-P2-16): an UNKNOWN age suppresses the offer too — a missing
+ * check date is not "not stale", so no offer renders without a
+ * known-fresh price. While fresh, the offer carries
+ * priceValidUntil (recorded when present, otherwise derived from
+ * data_freshness by deriveOfferPriceValidUntil). `now` is
+ * injectable for tests; it defaults to the request time.
  */
 export function buildProductJsonLd(
   seo: ProductSeoData,
@@ -204,10 +233,14 @@ export function buildProductJsonLd(
 ): string {
   const url = `${siteUrl}/products/${seo.slug}`;
   // Stale recorded price → no offer at all (see the policy above).
-  // A missing freshness timestamp is NOT stale (nothing to label),
-  // so an offer with no recorded freshness still renders — without
-  // a priceValidUntil, exactly as before.
-  const offerStale = isPriceStale(seo.dataFreshness, now);
+  // Final 100% — F-P2-16: an UNKNOWN age is treated the same way.
+  // isPriceStale returns false when no check date is recorded, and
+  // that false used to read as "not stale" — i.e. implicitly fresh
+  // — so an offer with no recorded freshness still rendered. An
+  // offer is only shown when the price is KNOWN fresh; unknown age
+  // suppresses the offer exactly like stale age does.
+  const freshness = getFreshnessStatus(seo.dataFreshness, now);
+  const offerStale = freshness.status !== 'fresh';
   const showOffer = seo.lowestPrice !== null && !offerStale;
   const priceValidUntil =
     seo.priceValidUntil ?? deriveOfferPriceValidUntil(seo.dataFreshness, now);

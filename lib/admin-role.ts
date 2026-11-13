@@ -32,7 +32,15 @@ import type { AnySupabaseClient } from '@/lib/supabase/types';
 /** PostgREST select fragment that resolves a profile's role name via
  *  the `role_id → roles.name` join — the same shape
  *  `services/profiles.ts` (`getProfile`) already selects. */
-export const PROFILE_ROLE_SELECT = 'role_id, roles ( name )';
+export const PROFILE_ROLE_SELECT = 'role_id, roles ( name, permissions )';
+/**
+ * Final 100%, F-P1-61 — the select fragment now also reads
+ * `roles.permissions` (the `permissions` JSONB array from migration
+ * 001, seeded e.g. `["*"]` for admin, `["manage:products"]` for
+ * merchant). The permissions column was never read before this
+ * change; it is now wired into every admin check (see
+ * `hasAdminPermission` below).
+ */
 
 /**
  * One row of a `profiles` select that embeds the `roles` relation.
@@ -42,8 +50,49 @@ export const PROFILE_ROLE_SELECT = 'role_id, roles ( name )';
  */
 export type ProfileRoleRow = {
   role_id?: string | null;
-  roles?: { name?: string | null } | Array<{ name?: string | null }> | null;
+  roles?: {
+    name?: string | null;
+    /** The role's `permissions` JSONB array (migration 001 seed). */
+    permissions?: unknown;
+  } | Array<{
+    name?: string | null;
+    permissions?: unknown;
+  }> | null;
 };
+
+/**
+ * Pure permission resolution: the `roles.permissions` JSONB array
+ * from the join, or `[]` when there is no row, no join, or the value
+ * is not an array of strings. Never throws, never defaults to admin.
+ * (Final 100%, F-P1-61 — the permissions column was never read
+ * before this change.)
+ */
+export function resolveRolePermissions(row: ProfileRoleRow | null | undefined): string[] {
+  if (!row) return [];
+  const roles = row.roles;
+  const raw = Array.isArray(roles) ? roles[0]?.permissions : roles?.permissions;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((p): p is string => typeof p === 'string' && p.length > 0);
+}
+
+/**
+ * True only when the row is the admin role AND its permissions
+ * grant admin access — the wildcard `'*'` (the seeded admin value)
+ * or the explicit `'admin:access'` permission. Fail-closed by
+ * design: a missing/empty/non-array permissions value is NO admin
+ * action, even for a row whose name is 'admin'. This is the bounded
+ * wiring of the `permissions` JSONB into the existing admin-role
+ * check — it is NOT a full RBAC system: there is still no
+ * per-permission architecture, no admin user management UI, and no
+ * route-level permission beyond admin/not-admin. That remaining
+ * architecture gap is documented, not hidden (see
+ * docs/migration-runbook.md / the owner checklist §5b).
+ */
+export function hasAdminPermission(row: ProfileRoleRow | null | undefined): boolean {
+  if (!isAdminRoleRow(row)) return false;
+  const permissions = resolveRolePermissions(row);
+  return permissions.includes('*') || permissions.includes('admin:access');
+}
 
 /**
  * Pure role-name resolution: the `roles.name` from the join, or
@@ -82,6 +131,28 @@ export async function fetchProfileRoleName(
 }
 
 /**
+ * Fetch one user's role name AND permissions via the service-role
+ * client (Final 100%, F-P1-61). Returns `null` on any DB error or
+ * missing profile so callers fail closed — never `'admin'`.
+ * `fetchProfileRoleName` (above) is kept for callers that only need
+ * the name; admin guards must use this one (or `hasAdminPermission`
+ * on the row) so the `permissions` JSONB is actually enforced.
+ */
+export async function fetchProfileRoleWithPermissions(
+  client: AnySupabaseClient,
+  userId: string
+): Promise<{ roleName: string; permissions: string[] } | null> {
+  const { data, error } = await client
+    .from('profiles')
+    .select(PROFILE_ROLE_SELECT)
+    .eq('id', userId)
+    .single();
+  if (error || !data) return null;
+  const row = data as unknown as ProfileRoleRow;
+  return { roleName: resolveRoleName(row), permissions: resolveRolePermissions(row) };
+}
+
+/**
  * Defense-in-depth role re-check — Sections 21–25, Stage G,
  * G-P1-4 (audit §1 #26).
  *
@@ -113,8 +184,11 @@ export async function assertAdminServiceAccess(
   if (!adminUserId) {
     throw new Error('Admin access required');
   }
-  const roleName = await fetchProfileRoleName(client, adminUserId);
-  if (roleName !== 'admin') {
+  // Final 100%, F-P1-61 — the permissions JSONB is enforced here
+  // too: an admin-named role with no '*' / 'admin:access'
+  // permission (or no permissions value at all) is denied.
+  const role = await fetchProfileRoleWithPermissions(client, adminUserId);
+  if (!role || role.roleName !== 'admin' || !(role.permissions.includes('*') || role.permissions.includes('admin:access'))) {
     throw new Error('Admin access required');
   }
 }

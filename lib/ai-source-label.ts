@@ -6,11 +6,13 @@
  * labels its answers' source; the assistant and comparison surfaces
  * never did). Two kinds exist:
  *
- *   - "verified recorded data": the answer was computed ONLY from
- *     rows in the SmartBuy database (recorded prices, price history,
- *     coupons, deals, reviews, specs). The label names the data's
- *     timestamp when one is known — a price verdict is only as fresh
- *     as its last recorded check.
+ *   - "prices verified by SmartBuy's live price check … on
+ *     <date>": the answer was computed ONLY from rows in the
+ *     SmartBuy database AND every price behind it was checked
+ *     against merchant data by a real fetch, fresh within the
+ *     window. The label names what was verified (prices), by whom
+ *     (SmartBuy's live price check), and when (the check date);
+ *     with no known check date it renders nothing at all.
  *   - "general guidance": text that is NOT verified against live
  *     product data (generic shopping advice, e.g. "consider your
  *     priorities"). The assistant never produces general-knowledge
@@ -23,9 +25,6 @@
  * answer's content by the caller (services/chat.ts,
  * services/ai-comparison.ts), never silently dropped.
  */
-
-/** The verified-data label core (shared wording, one place). */
-export const VERIFIED_DATA_LABEL = 'based on verified recorded data';
 
 /** The general-guidance label core (shared wording, one place). */
 export const GENERAL_GUIDANCE_LABEL =
@@ -66,41 +65,52 @@ export function recordedDataLabel(asOf: string | null): string {
 }
 
 /**
- * Verified-data label, with the data's timestamp when known.
- * `asOf` is the product's real `data_freshness` (or latest recorded
- * price point) — never a fabricated stamp; null means the age is
- * genuinely unknown, and the label says so instead of implying
- * freshness.
+ * Verified-data label (Final 100% — F-P2-18). The old wording
+ * ("based on verified recorded data") never said WHAT was
+ * verified, BY WHOM, or WHEN — a reader could not tell a live
+ * merchant check from a typed-in row. The label now names all
+ * three: WHAT = the prices behind the answer; BY WHOM = SmartBuy's
+ * live price check, a real fetch against merchant data (never a
+ * hand-typed price); WHEN = the check date. When the check date is
+ * unknown it returns null — the caller must render NOTHING (and
+ * fall back to the recorded-data label), never a dateless
+ * "verified". Callers may only use this label after proving
+ * verified-AND-fresh (see services/chat.ts, ai-comparison.ts);
+ * the function itself trusts its caller on the gate and owns
+ * only the wording + the null-on-unknown rule.
+ *
+ * `asOf` is the product's real `data_freshness` (or latest
+ * recorded price point) — never a fabricated stamp.
  */
-export function verifiedDataLabel(asOf: string | null): string {
+export function verifiedDataLabel(asOf: string | null): string | null {
   const date = formatLabelDate(asOf);
-  if (date) {
-    return `Source: ${VERIFIED_DATA_LABEL} from the SmartBuy catalog (prices last checked ${date}).`;
-  }
+  if (!date) return null;
   return (
-    `Source: ${VERIFIED_DATA_LABEL} from the SmartBuy catalog ` +
-    `(recorded prices, price history, coupons and deals as listed in our database — ` +
-    `not live merchant prices, and no freshness timestamp is recorded for this data).`
+    `Source: prices verified by SmartBuy's live price check against merchant data on ${date} ` +
+    `— the prices behind this answer were checked by a real fetch, not typed in by hand.`
   );
 }
 
 /**
  * Verified-data label for a RANGE of freshness timestamps (the
  * comparison verdict covers 2–5 products, each with its own
- * `data_freshness`). `asOfList` holds the real timestamps that exist;
- * when none exist the label says the age is unknown.
+ * `data_freshness`). Same what/by-whom/when wording as
+ * verifiedDataLabel, over the oldest→newest check range. Returns
+ * null when no check date is known for any compared product —
+ * the caller falls back to the recorded-data range label.
  */
-export function verifiedDataRangeLabel(asOfList: Array<string | null>): string {
+export function verifiedDataRangeLabel(asOfList: Array<string | null>): string | null {
   const dates = asOfList
     .map((iso) => (iso ? new Date(iso).getTime() : NaN))
     .filter((t) => Number.isFinite(t));
-  if (dates.length === 0) return verifiedDataLabel(null);
+  if (dates.length === 0) return null;
   const oldest = formatLabelDate(new Date(Math.min(...dates)).toISOString());
   const newest = formatLabelDate(new Date(Math.max(...dates)).toISOString());
   if (oldest === newest) return verifiedDataLabel(new Date(Math.min(...dates)).toISOString());
   return (
-    `Source: ${VERIFIED_DATA_LABEL} from the SmartBuy catalog ` +
-    `(prices last checked ${oldest} to ${newest} across the compared products).`
+    `Source: prices verified by SmartBuy's live price check against merchant data ` +
+    `(checked ${oldest} to ${newest} across the compared products) ` +
+    `— the prices behind this verdict were checked by a real fetch, not typed in by hand.`
   );
 }
 
@@ -141,6 +151,6 @@ export function generalGuidanceLabel(): string {
 export function appendSourceLabel(content: string, label: string): string {
   const trimmed = content.trimEnd();
   if (trimmed.endsWith(label)) return content;
-  if (/Source: (based on verified recorded data|based on recorded catalog data|general guidance)/.test(trimmed)) return content;
+  if (/Source: (prices verified by SmartBuy's live price check|based on recorded catalog data|general guidance)/.test(trimmed)) return content;
   return `${trimmed}\n\n${label}`;
 }

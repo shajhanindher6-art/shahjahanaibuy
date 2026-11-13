@@ -18,6 +18,7 @@
 
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getCachedProductBySlug } from '@/services/products';
+import { getProductImagesWithVerification } from '@/services/product-images';
 import { getCachedMerchantProducts } from '@/services/commerce';
 import { getCachedReviewSummary } from '@/services/reviews';
 import { deriveOfferPriceValidUntil } from '@/lib/product-seo';
@@ -43,6 +44,20 @@ export async function getProductSeo(
     const cheapest = listings[0] ?? null;
     const summary = await getCachedReviewSummary(supabase, product.id);
 
+    // FINAL 100%, F-P2-33 — the primary gallery image's
+    // verification verdict (migration 069; null when unknown or
+    // when there are no gallery rows). A known-broken image must
+    // never become the og:image; an unchecked hotlink keeps the
+    // previous behaviour.
+    let imageVerificationStatus: ProductSeoData['imageVerificationStatus'] = null;
+    try {
+      const gallery = await getProductImagesWithVerification(supabase, product.id);
+      const primary = gallery.images.find((img) => img.isPrimary) ?? gallery.images[0];
+      imageVerificationStatus = primary?.verificationStatus ?? null;
+    } catch {
+      imageVerificationStatus = null;
+    }
+
     return {
       id: product.id,
       name: product.name,
@@ -51,6 +66,7 @@ export async function getProductSeo(
       brand: product.brand,
       category: product.category,
       imageUrl: product.imageUrl,
+      imageVerificationStatus,
       gtin: product.gtin,
       confidenceScore: product.confidenceScore,
       lowestPrice: cheapest ? cheapest.price : null,

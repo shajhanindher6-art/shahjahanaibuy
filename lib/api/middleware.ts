@@ -7,7 +7,11 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { logger } from '@/lib/config/logger';
 import { getRequestId } from './request-id';
-import { isAdminRoleRow, PROFILE_ROLE_SELECT } from '@/lib/admin-role';
+import {
+  hasAdminPermission,
+  PROFILE_ROLE_SELECT,
+  type ProfileRoleRow,
+} from '@/lib/admin-role';
 import { unauthorized, forbidden, internalError, rateLimited } from './responses';
 import { checkRateLimitDistributed } from './rate-limit';
 import type { NextRequest } from 'next/server';
@@ -65,7 +69,10 @@ export async function requireAdmin(request: NextRequest): Promise<
     .select(PROFILE_ROLE_SELECT)
     .eq('id', auth.userId)
     .single();
-  if (!isAdminRoleRow(profile as { roles?: { name?: string | null } } | null)) {
+  // Final 100%, F-P1-61 — the `permissions` JSONB is enforced:
+  // an admin-named role with no '*' / 'admin:access' permission
+  // (or no permissions value at all) is denied, fail-closed.
+  if (!hasAdminPermission(profile as unknown as ProfileRoleRow | null)) {
     return { error: forbidden('Admin access required') };
   }
 

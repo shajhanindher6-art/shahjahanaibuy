@@ -10,8 +10,12 @@
  * a note, never a fabricated row.
  *
  * CSV columns: product_slug, product_name, price_usd, currency,
- * availability, recorded_at. Rows are oldest-first, exactly as
- * recorded.
+ * availability, recorded_at, source, observed_at, suspicious,
+ * verified, currency_assumed. Rows are oldest-first, exactly as
+ * recorded. The last five columns are the F-P1-15 / F-P1-30
+ * per-row flags (migration 057 + the future verified /
+ * currency_assumed columns): empty when the row predates the
+ * columns — never guessed.
  */
 
 export interface PriceHistoryExportRow {
@@ -21,10 +25,27 @@ export interface PriceHistoryExportRow {
   currency: string;
   availability: string;
   recordedAt: string;
+  /** Migration 057 provenance, or null/undefined when not recorded. */
+  source?: string | null;
+  /** Migration 057 observation time, or null/undefined when not recorded. */
+  observedAt?: string | null;
+  /** Migration 057 suspicious-change flag, or null/undefined when unknown. */
+  suspicious?: boolean | null;
+  /**
+   * FINAL 100% (F-P1-15) — true only when the row was written
+   * from a validated provider response. Null/undefined when the
+   * row predates the column (unknown, never guessed).
+   */
+  verified?: boolean | null;
+  /**
+   * FINAL 100% (F-P1-30) — true when the row's USD was assumed
+   * from a NULL currency_id. Null/undefined when unknown.
+   */
+  currencyAssumed?: boolean | null;
 }
 
 export const PRICE_HISTORY_EXPORT_CSV_HEADERS =
-  'product_slug,product_name,price_usd,currency,availability,recorded_at';
+  'product_slug,product_name,price_usd,currency,availability,recorded_at,source,observed_at,suspicious,verified,currency_assumed';
 
 export function priceHistoryExportFileName(
   productSlug: string,
@@ -47,6 +68,13 @@ export function priceHistoryRowsToCsv(rows: PriceHistoryExportRow[]): string {
       csvEscape(r.currency),
       csvEscape(r.availability),
       csvEscape(r.recordedAt),
+      csvEscape(r.source ?? ''),
+      csvEscape(r.observedAt ?? ''),
+      r.suspicious === null || r.suspicious === undefined ? '' : String(r.suspicious),
+      r.verified === null || r.verified === undefined ? '' : String(r.verified),
+      r.currencyAssumed === null || r.currencyAssumed === undefined
+        ? ''
+        : String(r.currencyAssumed),
     ].join(',')
   );
   return [PRICE_HISTORY_EXPORT_CSV_HEADERS, ...lines].join('\n') + '\n';
@@ -70,6 +98,11 @@ export function priceHistoryRowsToJson(
           currency: r.currency,
           availability: r.availability,
           recordedAt: r.recordedAt,
+          source: r.source ?? null,
+          observedAt: r.observedAt ?? null,
+          suspicious: r.suspicious ?? null,
+          verified: r.verified ?? null,
+          currencyAssumed: r.currencyAssumed ?? null,
         })),
       },
       null,

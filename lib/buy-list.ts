@@ -94,7 +94,10 @@ export async function getBuyList(
     .from('buy_list_items')
     .select('id, user_id, product_id, merchant_product_id, quantity, created_at')
     .eq('user_id', userId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    // Final 100%, F-P2-60 — hard cap: a per-user list must never
+    // return an unbounded row set.
+    .limit(100);
   if (error) {
     if (isMissingTableError(error)) return { items: [], enabled: false };
     return { items: [], enabled: true, error };

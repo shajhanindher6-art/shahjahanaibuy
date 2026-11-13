@@ -2,11 +2,12 @@
 
 > Status: **complete coverage** — every API route handler enforces a rate
 > limit. Regenerated 2026-11-13 ~12:35 PKT from the live route tree
-> (266 handlers: GET 142, POST 88, DELETE 18, PATCH 14, PUT 4 — counted
+> (266 handlers), updated 2026-11-13 ~15:20 PKT to the live tree
+> (268 handlers: GET 143, POST 89, DELETE 18, PATCH 14, PUT 4 — counted
 > from `app/api/**/route.ts` by extracting the first `rateLimitResponse()`
 > call in each exported handler; the 4 named limits resolve to ai-search
 > 10, scan 5, visual-search 5, ai-qa 20). All 160 rows from the 2026-11-10
-> table are unchanged; 106 handlers were added since.
+> table are unchanged; 108 handlers were added since.
 > `tests/rate-limit-coverage.test.ts` fails the build if a new handler is
 > added without a limit, so this table stays honest.
 
@@ -86,6 +87,8 @@
 | `/v1/admin/ebay/preview/route.ts` | POST | `admin.ebay-preview:<ip|user|key>` | 30 |
 | `/v1/admin/intake/route.ts` | POST | `admin.intake:<ip|user|key>` | 30 |
 | `/v1/admin/jobs/dead-letter/route.ts` | GET | `admin.jobs.dead-letter:<ip|user|key>` | 60 |
+| `/v1/admin/merchant-listings/route.ts` | GET | `admin.merchant-listings:<ip|user|key>` | 60 |
+| `/v1/admin/merchant-listings/route.ts` | POST | `admin.merchant-listings:<ip|user|key>` | 20 |
 | `/v1/admin/merchants/[slug]/verify/route.ts` | POST | `admin-merchants-verify:<ip|user|key>` | 30 |
 | `/v1/admin/monitoring/alert-delivery/route.ts` | GET | `admin.monitoring.alert-delivery:<ip|user|key>` | 60 |
 | `/v1/admin/monitoring/jobs/route.ts` | GET | `admin.monitoring.jobs:<ip|user|key>` | 60 |

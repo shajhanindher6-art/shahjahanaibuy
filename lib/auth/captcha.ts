@@ -18,7 +18,11 @@
  *   3. While either key is unset, `verifyCaptchaToken()` returns
  *      `{ verified: false, reason: 'not-configured' }` and the
  *      proxies SKIP the check (documented fail-open — the
- *      server-side rate limit is the active backstop until then).
+ *      server-side rate limit is the active backstop until then)
+ *      — UNLESS `REQUIRE_CAPTCHA=true` is set (Final 100%,
+ *      F-P1-63): then the proxies FAIL CLOSED with 503 instead of
+ *      skipping. The flag defaults OFF and must only be turned on
+ *      after both keys are set in Vercel.
  *
  * No keys live in this repo. The Turnstile siteverify call uses
  * the standard Cloudflare endpoint and sends only the token + the
@@ -44,6 +48,27 @@ export function getCaptchaConfig(): CaptchaConfig {
 export function isCaptchaConfigured(): boolean {
   return getCaptchaConfig().configured;
 }
+
+/**
+ * FINAL 100%, F-P1-63 — explicit captcha requirement flag.
+ *
+ * `REQUIRE_CAPTCHA=true` (Vercel env, owner-set) means captcha is
+ * REQUIRED, not best-effort. Defaults OFF: with the flag unset the
+ * old behaviour holds (captcha enforces only when configured, and
+ * the 5/min/IP server-side rate limit is the backstop). When the
+ * flag is ON and Turnstile is NOT configured, callers must FAIL
+ * CLOSED (503, clear error) — never silently pass. The keys
+ * themselves are owner-gated (F-P1-65); this flag only makes the
+ * requirement explicit and config-driven.
+ */
+export function isCaptchaRequired(): boolean {
+  const raw = process.env.REQUIRE_CAPTCHA?.trim().toLowerCase();
+  return raw === 'true' || raw === '1';
+}
+
+/** The fail-closed error message when captcha is required but unconfigured. */
+export const CAPTCHA_REQUIRED_NOT_CONFIGURED_MESSAGE =
+  'Captcha is required but not configured. The site owner must set TURNSTILE_SECRET_KEY and NEXT_PUBLIC_TURNSTILE_SITE_KEY before sign-in is available.';
 
 export type CaptchaVerifyResult =
   | { verified: true }

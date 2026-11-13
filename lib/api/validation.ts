@@ -4,18 +4,20 @@
  *
  * Sections 21–25, J-P1-4 / G-P2-1 — schema validation for mutation
  * routes. ADOPTION (counted 2026-11-13 by grepping `validateBody`
- * over app/api/v1 — re-count before repeating this number):
- * 16 of 105 mutation route files call `validateBody` (7 before
- * this work: alerts, auth/reset-password, auth/sign-in,
- * auth/sign-up, subscriptions, subscriptions/checkout, and
- * admin/intake). The ADMIN slice is complete: all 10 admin
- * mutation route files call it. The one admin mutation handler
- * without a gate, DELETE /api/v1/admin/products/[id], takes no
- * body, so there is nothing to validate. The other 89 mutation
- * route files still hand-roll `typeof` checks (or none) — other
- * slices wire them; do NOT claim full adoption until a fresh
- * grep says so. (The audit's "7/103" denominator predates two
- * newer mutation files; the live count is 105.)
+ * over app/api — re-count before repeating this number):
+ * 27 of 107 mutation route files call `validateBody` (16 before
+ * this slice; +11 wired in the Final 100% sweep: newsletter
+ * subscribe/unsubscribe/confirm, referrals, referrals/click,
+ * product-views, analytics/events, affiliate/click,
+ * mobile-app/waitlist, wishlists, recommendations/feedback).
+ * The ADMIN slice is complete: all 10 admin mutation route files
+ * call it. The one admin mutation handler without a gate, DELETE
+ * /api/v1/admin/products/[id], takes no body, so there is nothing
+ * to validate. The other 80 mutation route files still hand-roll
+ * `typeof` checks (or none) — a documented deviation, not a claim
+ * of full adoption; POST /api/v1/referrals/attribute stays unwired
+ * on purpose (it soft-ignores an invalid code by contract).
+ * Do NOT claim full adoption until a fresh grep says so.
  * A failed check returns 400 via `invalidBodyResponse` (never a
  * 500, never a silent accept) in every route that is wired.
  *
@@ -219,6 +221,11 @@ export const adminProductPatchSchema = z.object({
   image_url: z.string().max(2048).nullable().optional(),
   gtin: gtinField(),
   status: textField(20).optional(),
+  // FINAL 100% (F-P0-03) — both verification columns, shape gate
+  // only (the service keeps the cross-field rule: 'verified'
+  // requires a check date in the same edit).
+  price_verification_status: textField(20).optional(),
+  price_verified_at: z.string().max(40).nullable().optional(),
 });
 
 /** PATCH /api/v1/admin/products/[id]/specs — shape gate only (services/admin-products.ts `validateSpecCorrection` keeps the template / non-empty / max-50 rules and its 422 messages). Bounds mirror the service: entries ≤ 50, deleteKeys ≤ 50; the service puts no length bound on key/value/unit/source/deleteKeys, so neither does this schema — it only rejects wrong types. The route passes the ORIGINAL body to the service, never the stripped `data`. */

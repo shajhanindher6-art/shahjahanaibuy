@@ -149,6 +149,14 @@ written live.
 - `GET /api/v1/products` — 10 products, all unverified, stale since 2026-11-02.
 - `/tools/catalog-freshness` — stale-price surfacing tool (3-state freshness).
 
+## eBay live checks and price history — deliberate design decision (Final 100%, F-P2-19)
+
+The eBay refresh leg (`services/ebay-refresh.ts`) writes **no `price_history` row** for a live check, by deliberate design: a single snapshot of an ephemeral asking price is not a history. The live check upserts the `merchant_products` row and moves `data_freshness` + the verified stamp — but trend, forecast, and deal validation read `price_history` only, so they never see the live eBay price directly.
+
+Consequence: a live eBay price reaches history-based features **one refresh later**, when `refreshTrackedPrices` re-reads the recorded `merchant_products` row and inserts a history row on change. Until then the live price is visible on the product page ("Live eBay asking price, checked \<timestamp\>") and nowhere else.
+
+**Open owner/design decision (not decided here, and the write behaviour must not change silently):** record each eBay snapshot as a history point (`source: 'ebay-browse-api'`) so history-based features see live checks immediately, or accept the one-refresh delay. The decision is surfaced in code (`EBAY_PRICE_HISTORY_NOTE`, on every `EbayRefreshResult` and therefore every refresh-run response) and here — not hidden.
+
 ## Pending owner approvals
 
 - eBay keys + EPN/Growth Check + `merchants` row `slug='ebay'` + migration 045
