@@ -18,7 +18,7 @@ claimed that the code cannot prove. Counts from the Section 20 audit
 | Merchant / integration | Adapter exists? | Credentials configured? | Ever verified working? |
 |---|---|---|---|
 | **Amazon** | **No.** Zero hits for PA-API / Product Advertising in `app`, `lib`, `services`. Only affiliate-tag stamping (`services/affiliate-geo.ts:66-69`). Tag decoration only — no price/stock fetch exists. | Tag env set live (`smartbuy-20`, US); approved vs placeholder **UNKNOWN** (Associates dashboard only) | **Never** — there is no API call to succeed or fail |
-| **Best Buy** | **No.** No adapter, no env var, no API code — only name mentions. | None — no credential even defined | **Never** |
+| **Best Buy** | **Yes** — `services/providers/bestbuy-provider.ts` (Products API client: keyword search, SKU fetch, UPC + model search, GS1-validated GTIN, 200 ms throttle, 50,000/day budget). **Key pending — no live call yet.** | **No** — `BESTBUY_API_KEY` unset; free key via email signup at developer.bestbuy.com | **Never** — client built, key pending; first live call still to be done |
 | **eBay** | **Yes** — `services/ebay-browse.ts` (Browse API, OAuth client-credentials, in-memory token cache, 10 s timeout, 429 → distinct `rate-limited` reason). Lives **outside** the provider registry. | **No** — `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET` unset; EPN + Growth Check also owner-gated | **Never** — blocked twice over (keys + missing `merchants` row) |
 | **Skimlinks** | **No integration** — only a `buildSkimlinksUrl` helper + env read; format "must be confirmed against the owner's Skimlinks dashboard before enabling". | No — `SKIMLINKS_PUBLISHER_ID` unset | **Never** |
 | **Apify** | Yes — `services/providers/apify-provider.ts`, registered in `services/providers/registry.ts:165` | No by design — `isAvailable()` requires `APIFY_API_TOKEN` + `APIFY_ACTOR_ID`; vars must stay unset | N/A — **scraping is banned by standing rule. Apify is NOT an available path. Do not document it as one, do not set the vars, do not build on it.** |
@@ -52,16 +52,26 @@ layer is schema-only.
   (`services/platform-status.ts:74-80`). It is a known P0 finding (audit §1 #2)
   to relabel it `tag-only` or gate it on a verified call.
 
-## Best Buy — no adapter, no credential
+## Best Buy — client built, key pending (no live call yet)
 
 - What exists: seeded `merchant_products` rows from 2026-11-02 (Best Buy price
   is exactly +2% on every product — synthetic seed values, not observed prices).
-- What does **not** exist: an adapter, an env var, an API key, or any verified
-  call. The `/status` label `status: 'live'` for Best Buy
-  (`services/platform-status.ts:74-80`) means only that seeded rows exist. It
-  is a known P0 finding to relabel it `recorded-prices-only`.
-- To add Best Buy for real: an adapter + a Best Buy API key (owner-gated) +
-  a verified call before any `live` label is shown.
+  Plus, since the Final Real Data Completion build: a real Products API
+  client (`services/providers/bestbuy-provider.ts`) — keyword search, fetch
+  by SKU, search by UPC and by model number; GTIN only from the feed's
+  structured `upc` field via GS1 validation; MAP/ICR-restricted sale prices
+  are never recorded as the sale price (regular price is used instead);
+  200 ms minimum gap between calls (5 calls/second); daily budget
+  50,000/day (`services/provider-budget.ts`); key only from
+  `BESTBUY_API_KEY`, never logged. Without the key the adapter throws
+  NOT_CONFIGURED exactly as before — the client existing does not make
+  Best Buy live.
+- What does **not** exist: the API key, or any verified call. The `/status`
+  label for Best Buy stays `recorded-prices-only` until a live call is
+  verified — a set key alone never flips it to `live`.
+- To finish Best Buy for real: owner signup at developer.bestbuy.com
+  (~10 min, free, no approval) → Vercel env `BESTBUY_API_KEY`
+  (Production) → Redeploy → one live SKU fetch + `/status` label check.
 
 ## eBay — code-built, owner-gated (the only real live source)
 
@@ -161,7 +171,7 @@ not catalog records — they must never be counted as products.
 - eBay keys + EPN/Growth Check + `merchants` row `slug='ebay'` + migration 045.
 - Amazon Associates approval check for `smartbuy-20` (dashboard only).
 - Skimlinks application — explicit go-ahead required (90-day reapply block).
-- Best Buy API key (if a Best Buy adapter is ever built).
+- Best Buy API key (free, developer.bestbuy.com) — client built, key pending; then one live SKU fetch to verify.
 - Image-host / hotlink policy decision (hotlinking is current practice; no
   merchant ToS/licence check exists).
 - cron-job.org: verify the 6 h refresh job exists/fires (owner dashboard check).

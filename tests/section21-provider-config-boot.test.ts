@@ -71,11 +71,9 @@ describe('validateProviderConfig — pure, never throws, never leaks a value', (
     expect(JSON.stringify(issues)).not.toContain('apify-token-789');
   });
 
-  it('a set Best Buy key without a client is a warning, not an error', () => {
+  it('a set Best Buy key is no longer a warning now the client exists', () => {
     const issues = validateProviderConfig({ NODE_ENV: 'test', BESTBUY_API_KEY: 'bb-key-000' });
-    expect(issues).toHaveLength(1);
-    expect(issues[0].providerKey).toBe('bestbuy');
-    expect(issues[0].severity).toBe('warning');
+    expect(issues).toHaveLength(0);
     expect(JSON.stringify(issues)).not.toContain('bb-key-000');
   });
 });

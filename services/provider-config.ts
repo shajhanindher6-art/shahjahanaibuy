@@ -95,16 +95,12 @@ export function validateProviderConfig(
     });
   }
 
-  // Best Buy: same — a set key without a client fetches nothing.
-  if (envNonEmpty(env, 'BESTBUY_API_KEY')) {
-    issues.push({
-      providerKey: 'bestbuy',
-      severity: 'warning',
-      envVar: 'BESTBUY_API_KEY',
-      message:
-        'BESTBUY_API_KEY is set but no Best Buy Products API client exists yet — Best Buy stays NOT_CONFIGURED until the client is built.',
-    });
-  }
+  // Best Buy: the client exists now (services/providers/
+  // bestbuy-provider.ts), so a set key is no longer a warning —
+  // the provider is available and fetches. A missing key is the
+  // normal off-state (same as eBay / Amazon / CSV: no issue);
+  // the missing-key reason still lives in
+  // BestBuyProvider.getNotConfiguredReason().
 
   // CSV: a configured URL must be a usable http(s) URL.
   const csvUrl = envNonEmpty(env, 'CSV_SOURCE_URL');

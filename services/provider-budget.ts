@@ -31,6 +31,21 @@ import { ProviderBudgetExhaustedError } from './providers/errors';
 /** Conservative default: no registry provider may be called more than this per day without an explicit owner override. */
 export const PROVIDER_DEFAULT_DAILY_BUDGET = 100;
 
+/**
+ * Per-provider default daily caps (official API limits, not
+ * guesses): a provider listed here gets its documented limit
+ * instead of the conservative default. An explicit env override
+ * (`PROVIDER_DAILY_BUDGET_<KEY>`) still wins over both.
+ *   - Best Buy Products API terms: 5 calls/second, 50,000/day.
+ *     The 100/day default would throttle the first real Best
+ *     Buy client to a standstill, so the documented limit is
+ *     the default here. The 5/second pace is enforced separately
+ *     by the client's own 200ms throttle.
+ */
+export const PROVIDER_DEFAULT_DAILY_BUDGETS: Record<string, number> = {
+  bestbuy: 50_000,
+};
+
 export interface ProviderBudgetState {
   providerKey: string;
   /** Calls already spent today (UTC date). */
@@ -55,13 +70,17 @@ function envVarName(providerKey: string): string {
   return `PROVIDER_DAILY_BUDGET_${providerKey.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
 }
 
-/** Resolve the daily cap for a provider: env override, else the conservative default. */
+/** Resolve the daily cap for a provider: env override, else the provider's documented default, else the conservative default. */
 export function getProviderDailyBudgetLimit(
   providerKey: string,
   env: NodeJS.ProcessEnv = process.env
 ): { limit: number; fromEnv: boolean } {
   const raw = env[envVarName(providerKey)];
   if (raw === undefined || raw.trim() === '') {
+    const documented = PROVIDER_DEFAULT_DAILY_BUDGETS[providerKey.toLowerCase()];
+    if (typeof documented === 'number') {
+      return { limit: documented, fromEnv: false };
+    }
     return { limit: PROVIDER_DEFAULT_DAILY_BUDGET, fromEnv: false };
   }
   const parsed = Number.parseInt(raw.trim(), 10);

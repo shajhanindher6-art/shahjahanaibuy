@@ -320,7 +320,7 @@ describe('provider registry — CSV / Amazon / Best Buy registration (#57, #58)'
   it('amazon / bestbuy explain honestly why they cannot fetch', () => {
     expect(new AmazonProvider().getNotConfiguredReason()).toMatch(/retired/i);
     expect(new AmazonProvider().getNotConfiguredReason()).toMatch(/Creators API/);
-    expect(new BestBuyProvider().getNotConfiguredReason()).toMatch(/no .* API client exists/i);
+    expect(new BestBuyProvider().getNotConfiguredReason()).toMatch(/no API key is configured/i);
   });
 
   it('amazon / bestbuy search and fetch throw NOT_CONFIGURED, never fake rows', async () => {
@@ -341,18 +341,30 @@ describe('provider registry — CSV / Amazon / Best Buy registration (#57, #58)'
     ).rejects.toThrow(/no live price integration/);
   });
 
-  it('amazon / bestbuy are available-gated on their keys (stub: still no client)', async () => {
+  it('amazon is available-gated on its key (stub: still no client)', async () => {
     process.env.AMAZON_CREATORS_API_KEY = 'test-key';
-    process.env.BESTBUY_API_KEY = 'test-key';
     expect(new AmazonProvider().isAvailable()).toBe(true);
-    expect(new BestBuyProvider().isAvailable()).toBe(true);
     // A set key must never be read as "live": no client exists yet.
     await expect(new AmazonProvider().search({ query: 'laptop' })).rejects.toThrow(
       /no .* client exists yet/
     );
-    await expect(new BestBuyProvider().search({ query: 'laptop' })).rejects.toThrow(
-      /no .* client exists yet/
+  });
+
+  it('bestbuy is available-gated on its key and a set key means a real client', async () => {
+    // Final Real Data Completion — the Best Buy client exists now:
+    // a set key makes the provider available with no
+    // not-configured reason, and search() performs a real call
+    // (mocked here to 403 — a bad key / over-limit answer — so
+    // the test never touches the network).
+    process.env.BESTBUY_API_KEY = 'test-key';
+    const provider = new BestBuyProvider();
+    expect(provider.isAvailable()).toBe(true);
+    expect(provider.getNotConfiguredReason()).toBeNull();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"error":"forbidden"}', { status: 403 }))
     );
+    await expect(provider.search({ query: 'laptop' })).rejects.toThrow(/HTTP 403/);
   });
 });
 

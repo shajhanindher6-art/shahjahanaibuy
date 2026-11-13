@@ -254,15 +254,18 @@ export function getProviderRegistry(): ProviderRegistry {
     new CsvProvider({ csvUrl: env.csvSourceUrl?.trim() || undefined })
   );
 
-  // Section 20, §12 #57 — Amazon / Best Buy adapter scaffolding.
-  // Both are fail-closed stubs (see amazon-provider.ts /
-  // bestbuy-provider.ts): no live price client exists for either,
-  // so they are never available until their keys exist AND a real
-  // client is built — and even with a key, search()/fetch() throw
-  // NOT_CONFIGURED (Sections 21–25, Stage B, B1). The retailer
-  // overrides only matter once a provider IS available; until
-  // then getForRetailer returns undefined for that retailer —
-  // never another merchant's provider (B5).
+  // Section 20, §12 #57 — Amazon adapter scaffolding; Best Buy
+  // now has a real client (services/providers/bestbuy-provider.ts).
+  // Amazon is still a fail-closed stub (see amazon-provider.ts):
+  // no live price client exists for it, so it is never available
+  // until its key exists AND a real client is built — and even
+  // with a key, search()/fetch() throw NOT_CONFIGURED
+  // (Sections 21–25, Stage B, B1). Best Buy is key-gated only:
+  // with BESTBUY_API_KEY set its search()/fetch() call the live
+  // Products API. The retailer overrides only matter once a
+  // provider IS available; until then getForRetailer returns
+  // undefined for that retailer — never another merchant's
+  // provider (B5).
   registrySingleton.register(new AmazonProvider());
   registrySingleton.register(new BestBuyProvider());
   registrySingleton.setRetailerOverride('amazon', 'amazon');
