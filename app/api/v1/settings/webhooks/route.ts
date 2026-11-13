@@ -22,6 +22,7 @@ import { env } from '@/lib/config/env';
 import { rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { logger } from '@/lib/config/logger';
 import { hashGenericWebhookSecret, GENERIC_WEBHOOK_SECRET_MIN_LENGTH } from '@/lib/generic-webhook';
+import { isSafePublicImageUrl } from '@/services/visual-search';
 
 import { logApiError } from '@/lib/api/error-logging';
 const WEBHOOK_COLUMNS = [
@@ -153,6 +154,15 @@ export async function POST(request: NextRequest) {
       const raw = typeof body.genericWebhookUrl === 'string' ? body.genericWebhookUrl.trim() : '';
       if (raw !== '' && !isValidHttpUrl(raw)) {
         return badRequest('genericWebhookUrl must be a valid http(s) URL.');
+      }
+      // Section 20, §12 #96 — registration time is the second
+      // SSRF checkpoint (send time is the first): a URL that does
+      // not resolve to a public address is refused here, so a
+      // private target can never be stored and delivered to later.
+      if (raw !== '' && !(await isSafePublicImageUrl(raw))) {
+        return badRequest(
+          'genericWebhookUrl must resolve to a public address (private/loopback/link-local URLs are rejected).'
+        );
       }
       genericUrl = raw === '' ? null : raw;
     }

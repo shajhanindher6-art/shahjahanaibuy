@@ -77,7 +77,37 @@ async function processProductFetch(
     };
   }
 
-  const results = await provider.search({ query, retailerSlug, limit });
+  // Section 20, §12 #52 — timed provider-health record for the
+  // registry-provider search (best-effort; a missing
+  // provider_health table or RLS denial never fails the fetch).
+  // The client is built lazily and guarded: when no service key
+  // is configured there is no client and health is simply not
+  // recorded.
+  let healthClient: Awaited<ReturnType<typeof getServiceClient>> | null = null;
+  try {
+    healthClient = await getServiceClient();
+  } catch {
+    healthClient = null;
+  }
+  const searchStart = Date.now();
+  let results: Awaited<ReturnType<typeof provider.search>> = [];
+  let searchError: string | null = null;
+  try {
+    results = await provider.search({ query, retailerSlug, limit });
+  } catch (err) {
+    searchError = String(err);
+  }
+  void reportAiProviderHealth(healthClient, provider.key, {
+    success: searchError === null,
+    responseMs: Date.now() - searchStart,
+    ...(searchError ? { error: searchError.slice(0, 200) } : {}),
+  });
+  if (searchError) {
+    // Preserve the old behaviour: a throwing search propagates
+    // to the queue runner (which retries), it is not converted
+    // into a returned failure result.
+    throw new Error(searchError);
+  }
   if (results.length === 0) {
     return { success: true, processed: 0, metadata: { provider: provider.key } };
   }

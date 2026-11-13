@@ -241,8 +241,9 @@ export function CashbackCouponsSection({ productId, price, compareAtPrice }: Cas
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-sm font-bold tracking-wider">{coupon.code}</span>
                       <Badge variant="secondary" className="text-xs">
+                        {/* Section 20, §12 #40 — claimed % vs list price, never a verified saving. */}
                         {coupon.discountType === 'percentage'
-                          ? `${coupon.discountValue}% OFF`
+                          ? `${coupon.discountValue}% OFF vs list price`
                           : `$${coupon.discountValue} OFF`}
                       </Badge>
                     </div>

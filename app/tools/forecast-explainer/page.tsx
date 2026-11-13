@@ -38,6 +38,7 @@ import {
   FORECAST_HORIZONS,
   formatForecastBasis,
 } from '@/lib/forecast';
+import { getFreshnessStatus } from '@/lib/price-freshness';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   accuracySummaryLine,
@@ -300,13 +301,27 @@ export default async function ForecastExplainerPage({ searchParams }: ForecastEx
                     {product.category ? ` · ${product.category}` : ''}
                     {` · ${pointCount} recorded point${pointCount === 1 ? '' : 's'}`}
                     {forecast.currentPrice !== null
-                      ? ` · now $${forecast.currentPrice.toFixed(2)}`
+                      ? (() => {
+                          // Section 20, §12 #84 — "now $X" claimed
+                          // the price was current. It is the last
+                          // RECORDED price; stale ones say so.
+                          const freshness = getFreshnessStatus(
+                            product.dataFreshness
+                          );
+                          if (freshness.status === 'stale') {
+                            return ` · last recorded $${forecast.currentPrice!.toFixed(2)} (${freshness.ageDays} days ago — may be out of date)`;
+                          }
+                          if (freshness.status === 'unknown') {
+                            return ` · last recorded $${forecast.currentPrice!.toFixed(2)} (check date unknown)`;
+                          }
+                          return ` · last recorded $${forecast.currentPrice!.toFixed(2)}`;
+                        })()
                       : ''}
                   </p>
 
                   {forecast.status === 'not-enough-history' && (
                     <p className="mt-3 text-sm text-muted-foreground">
-                      Not enough price history yet — at least 2 recorded
+                      Not enough price history yet — at least 5 recorded
                       prices are needed before any forecast can be made.
                     </p>
                   )}

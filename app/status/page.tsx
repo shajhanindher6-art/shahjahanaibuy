@@ -65,6 +65,9 @@ const PLATFORM_STATUS_LABELS: Record<PlatformStatus, string> = {
   configured: 'Configured',
   'not-configured': 'Not configured',
   'search-links-only': 'Search links only',
+  // Section 20, §12 #51 — same honest labels as the /platforms hub.
+  'recorded-prices-only': 'Recorded prices only',
+  'tag-only': 'Affiliate tag only',
 };
 
 const PLATFORM_STATUS_STYLES: Record<PlatformStatus, string> = {
@@ -72,6 +75,8 @@ const PLATFORM_STATUS_STYLES: Record<PlatformStatus, string> = {
   configured: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100',
   'not-configured': 'bg-muted text-muted-foreground',
   'search-links-only': 'bg-muted text-muted-foreground',
+  'recorded-prices-only': 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100',
+  'tag-only': 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100',
 };
 
 function formatDate(iso: string): string {

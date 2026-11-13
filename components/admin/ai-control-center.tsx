@@ -105,11 +105,27 @@ interface ErrorsPayload {
   }>;
 }
 
+interface DataQualityPayload {
+  productsTotal: number;
+  productsWithImages: number;
+  productsWithGtin: number;
+  productsWithSpecs: number;
+  productsWithReviews: number;
+  productsWithHistory: number;
+  priceHistoryPoints: number;
+  verification: { verified: number; unverified: number; stale: number; unknown: number };
+  freshness: { fresh: number; stale: number; unknown: number };
+  averageDataQualityScore: number | null;
+  columnsMissing: boolean;
+  notes: string[];
+}
+
 interface AiAdminData {
   providers: ProviderStatus[];
   usage: UsageSummary;
   accuracy: AccuracyPayload | null;
   errors: ErrorsPayload | null;
+  dataQuality: DataQualityPayload | null;
   serviceUnavailable: boolean;
 }
 
@@ -289,6 +305,90 @@ export function AiControlCenter() {
             </ul>
           </div>
         ) : null}
+      </section>
+
+      <section aria-label="Catalog data quality">
+        <h2 className="text-xl font-semibold">Catalog data quality</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          What the AI reasons over: verification, freshness, and
+          coverage of the stored catalog. The score below is a data
+          quality score — how complete, verifiable, and fresh each
+          product&apos;s record is — never a judgement of the product
+          itself.
+        </p>
+        {!data.dataQuality ? (
+          <p className="mt-4 rounded-lg border border-dashed p-6 text-muted-foreground">
+            Data quality is unavailable — the service-role key is not
+            configured, so the dashboard cannot read the catalog.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-4">
+            <div className="rounded-lg border p-6">
+              <p className="text-sm text-muted-foreground">Average data quality score</p>
+              {data.dataQuality.averageDataQualityScore !== null ? (
+                <p className="mt-1 text-4xl font-bold">
+                  {data.dataQuality.averageDataQualityScore} / 100
+                </p>
+              ) : (
+                <p className="mt-1 text-2xl font-bold">No products to score yet</p>
+              )}
+              <p className="mt-1 text-sm text-muted-foreground">
+                Across {data.dataQuality.productsTotal} product(s). A
+                score is computed from stored fields only — identity,
+                specs, images, price freshness, merchants, GTIN, and
+                source attribution — with missing fields counted as
+                missing, never guessed.
+              </p>
+            </div>
+            <div className="rounded-lg border p-4">
+              <p className="font-medium">Verification distribution</p>
+              <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                <li>Verified: {data.dataQuality.verification.verified}</li>
+                <li>Unverified: {data.dataQuality.verification.unverified}</li>
+                <li>Stale (verified, then aged past 7 days): {data.dataQuality.verification.stale}</li>
+                {data.dataQuality.verification.unknown > 0 ? (
+                  <li>Unknown (verification columns not applied yet): {data.dataQuality.verification.unknown}</li>
+                ) : null}
+              </ul>
+            </div>
+            <div className="rounded-lg border p-4">
+              <p className="font-medium">Price freshness</p>
+              <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                <li>Fresh (checked within 7 days): {data.dataQuality.freshness.fresh}</li>
+                <li>Stale: {data.dataQuality.freshness.stale}</li>
+                <li>Age unknown: {data.dataQuality.freshness.unknown}</li>
+              </ul>
+            </div>
+            <div className="rounded-lg border p-4">
+              <p className="font-medium">Coverage (of {data.dataQuality.productsTotal} product(s))</p>
+              <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                <li>With an image: {data.dataQuality.productsWithImages}</li>
+                <li>With a GTIN: {data.dataQuality.productsWithGtin}</li>
+                <li>With specs: {data.dataQuality.productsWithSpecs}</li>
+                <li>With reviews: {data.dataQuality.productsWithReviews}</li>
+                <li>
+                  With price history: {data.dataQuality.productsWithHistory} (
+                  {data.dataQuality.priceHistoryPoints} point(s) total)
+                </li>
+              </ul>
+            </div>
+            {data.dataQuality.notes.length > 0 ? (
+              <div className="rounded-lg border border-dashed p-4">
+                <p className="font-medium">Notes</p>
+                <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                  {data.dataQuality.notes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <p className="text-sm">
+              <Link href="/admin/products/review" className="underline">
+                Review the catalog — duplicates, missing specs, images, price history
+              </Link>
+            </p>
+          </div>
+        )}
       </section>
 
       <section aria-label="Prediction accuracy">

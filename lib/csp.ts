@@ -55,11 +55,20 @@ export function buildCsp(nonce: string): string {
   }
   // img-src already allows https: everywhere, which covers the
   // Meta Pixel noscript image and GA4 beacons.
+  // Section 20, §12 #94 — `data:` was removed from img-src: no
+  // data: image exists anywhere in the tree (grep: zero hits in
+  // app/ components/ lib/ services/), and review-time image
+  // validation (lib/image-url.ts) rejects data: URLs before they
+  // can be stored, so dropping it cannot break a surface.
+  // `https:` stays open deliberately: product images are
+  // merchant hotlinks (eBay, Unsplash, Pexels, ...) with no
+  // known host list (Section 18 item 39 still blocked), so a
+  // host allowlist here would break real product images.
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}'${scriptSrcHosts.length ? ` ${scriptSrcHosts.join(' ')}` : ''}`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    'img-src \'self\' blob: data: https:',
+    'img-src \'self\' blob: https:',
     "font-src 'self' https://fonts.gstatic.com",
     `connect-src 'self' https://*.supabase.co https://*.supabase.in https://*.ingest.sentry.io ${posthogHost}${connectSrcHosts.length ? ` ${connectSrcHosts.join(' ')}` : ''}`,
     "frame-ancestors 'self'",

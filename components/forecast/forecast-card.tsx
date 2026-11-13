@@ -11,8 +11,13 @@
  * - loading → skeleton lines (never a fake range while loading).
  * - fetch failure → "Forecast unavailable right now" (page keeps working).
  * - 'not-enough-history' → "Not enough price history yet" (fewer
- *   than 2 recorded prices — same threshold as Buy vs Wait).
+ *   than 5 recorded prices — same threshold as Buy vs Wait,
+ *   Section 20 §12 #46).
  * - backtest with zero trials → "Not enough history to backtest yet".
+ *
+ * Section 20, §12 #84 — the card labels the "current" price with
+ * its real age: the API's lastRecordedAt is rendered as "last
+ * recorded $X (N days ago)" when stale, never as a current price.
  *
  * Wave-2 wiring: render <ForecastCard productIdOrSlug={slug} /> in
  * the product detail page (product-detail-client.tsx is owned by
@@ -53,6 +58,8 @@ interface BacktestSummary {
 interface ForecastResponse {
   product: { id: string; name: string; slug: string; category: string | null } | null;
   currentPrice: number | null;
+  /** ISO timestamp of the latest recorded price point (null when none). */
+  lastRecordedAt: string | null;
   historyPoints: number;
   historyDays: number;
   status: 'ok' | 'not-enough-history';
@@ -145,7 +152,7 @@ export function ForecastCard({ productIdOrSlug, className }: ForecastCardProps) 
         <CardContent>
           <EmptyState
             title="Not enough price history yet"
-            description={`Only ${data.historyPoints} recorded price${data.historyPoints === 1 ? '' : 's'} so far — at least 2 recorded prices are needed before any forecast can be made. Check back as history accrues.`}
+            description={`Only ${data.historyPoints} recorded price${data.historyPoints === 1 ? '' : 's'} so far — at least 5 recorded prices are needed before any forecast can be made. Check back as history accrues.`}
           />
           <p className="mt-4 text-xs text-muted-foreground">{data.method}</p>
         </CardContent>
@@ -163,6 +170,27 @@ export function ForecastCard({ productIdOrSlug, className }: ForecastCardProps) 
           Probabilistic ranges from {data.historyPoints} recorded prices over{' '}
           {data.historyDays} days — not a guarantee of a future price.
         </p>
+        {data.currentPrice !== null && (
+          <p className="text-sm text-muted-foreground">
+            {(() => {
+              // Section 20, §12 #84 — the "current" price is the
+              // last RECORDED price; label it with its real age.
+              const at = data.lastRecordedAt
+                ? new Date(data.lastRecordedAt).getTime()
+                : NaN;
+              if (!Number.isFinite(at)) {
+                return `Last recorded price: ${money(data.currentPrice!)} (check date unknown — may be out of date).`;
+              }
+              const ageDays = Math.max(
+                0,
+                Math.floor((Date.now() - at) / 86_400_000)
+              );
+              return ageDays > 7
+                ? `Last recorded price: ${money(data.currentPrice!)} (${ageDays} days ago — may be out of date).`
+                : `Last recorded price: ${money(data.currentPrice!)}.`;
+            })()}
+          </p>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
         {data.forecasts.map((f) => (

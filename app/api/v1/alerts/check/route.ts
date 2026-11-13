@@ -144,6 +144,7 @@ export async function POST(request: NextRequest) {
       skippedNoPrice: 0,
       failed: 0,
       loadFailed: false,
+      staleFlipped: 0,
     };
     const zeroAlerts: AlertCheckResult = {
       checked: 0,
@@ -151,6 +152,7 @@ export async function POST(request: NextRequest) {
       queued: 0,
       skippedDuplicate: 0,
       skippedOptedOut: 0,
+      skippedStale: 0,
       failed: 0,
       wishlistChecked: 0,
       wishlistTriggered: 0,

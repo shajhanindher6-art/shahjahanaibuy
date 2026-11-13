@@ -403,6 +403,7 @@ import {
   bestCoupon,
   couponValueLabel,
   discountPercent,
+  discountPercentLabel,
   COUPON_CHECKOUT_UNVERIFIED_LABEL,
   type DealCoupon,
 } from '@/lib/deal-math';
@@ -505,7 +506,7 @@ import { getDealUrgency } from '@/services/deal-urgency';
 import { DealUrgencyBadge } from '@/components/products/deal-urgency-badge';
 // Seeded product_attributes rows (EAV specs) — rendered in the Specs
 // tab via the pure helpers in lib/product-attributes.ts.
-import type { ProductAttribute } from '@/types/catalog';
+import type { ProductAttribute, ProductVariant } from '@/types/catalog';
 import {
   groupAttributes,
   formatAttributeValue,
@@ -525,6 +526,15 @@ interface Product {
   imageUrl: string | null;
   gtin: string | null;
   confidenceScore: number;
+  // Section 20, #6: manufacturer model number from GET
+  // /api/v1/products/[slug] (migration 055, unapplied — null
+  // until the column exists or a value is recorded; the Specs
+  // tab hides the row when null).
+  modelNumber?: string | null;
+  // Section 20, #8: product variants from the same endpoint.
+  // Absent or empty when the product has no variants — the
+  // selector renders only when this is non-empty.
+  variants?: ProductVariant[];
   // Seeded product_attributes rows from GET /api/v1/products/[slug].
   // Absent or empty when the product has no seeded specs — the Specs
   // tab then renders exactly the base rows below, nothing invented.
@@ -672,6 +682,14 @@ export default function ProductDetailClient({
   // /merchants API, which the product page previously never called,
   // which is why the audit found no merchant, stock or buy link.
   const [merchants, setMerchants] = useState<MerchantListing[]>([]);
+  // Section 20, #8: product variants, from GET /api/v1/products/[slug]
+  // (which now returns `variants` alongside images + attributes).
+  // [] is the honest state for every live product today (0 variant
+  // rows) — the selector below renders ONLY when this is non-empty.
+  const [variants, setVariants] = useState<ProductVariant[]>([]);
+  // Id of the variant the visitor picked. Null = none picked yet
+  // (defaults to the first variant once variants load).
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   // Phase 3 Prep: true only when the merchants endpoint reports an
   // affiliate path configured (server env). Drives the disclosure
   // note only — no tag values ever reach the client as config.
@@ -1077,6 +1095,19 @@ export default function ProductDetailClient({
       }
       setProduct(productData.data);
       setLoading(false);
+      // Section 20, #8: variants arrive with the product payload.
+      // Non-array (older cached payload) reads as [] — never a crash.
+      if (Array.isArray(productData.data.variants)) {
+        setVariants(productData.data.variants as ProductVariant[]);
+        if (productData.data.variants.length > 0) {
+          setSelectedVariantId(
+            (productData.data.variants[0] as ProductVariant).id
+          );
+        }
+      } else {
+        setVariants([]);
+        setSelectedVariantId(null);
+      }
 
       // Warm the prices server cache in the background now, so the
       // Price History tab does not start its first fetch only when
@@ -1320,7 +1351,7 @@ export default function ProductDetailClient({
     getRegionByCountry(destinationCountryCode)?.name ?? destinationCountryCode;
   // Seeded specs for the Specs tab, grouped by their stored group.
   // [] when the product has no attribute rows — the tab then shows
-  // only the base Brand/Category/GTIN/Confidence rows, exactly as
+  // only the base Brand/Category/GTIN/Data-completeness rows, exactly as
   // before. Ungrouped rows join the main Specifications card; each
   // named group gets its own card below it.
   const attributeGroups = groupAttributes(product.attributes);
@@ -1628,6 +1659,52 @@ export default function ProductDetailClient({
           </div>
         </div>
 
+        {/* Section 20, #8: variant selector — renders ONLY when the
+            product actually has variants (0 rows live today, so this
+            renders nothing on any live product). A variant is a
+            recorded configuration (storage, colour, size); picking
+            one shows its SKU + stock, never a price — variants
+            carry no price column, so none is invented. */}
+        {variants.length > 0 && (
+          <Card className="mt-8">
+            <CardHeader>
+              <CardTitle className="text-base">Options</CardTitle>
+              <CardDescription>
+                {variants.length} option{variants.length !== 1 ? 's' : ''} for this product.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <label htmlFor="product-variant" className="mb-1 block text-sm font-medium">
+                Choose an option
+              </label>
+              <select
+                id="product-variant"
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                value={selectedVariantId ?? ''}
+                onChange={(e) => setSelectedVariantId(e.target.value)}
+              >
+                {variants.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                    {v.inStock ? '' : ' (out of stock)'}
+                  </option>
+                ))}
+              </select>
+              {(() => {
+                const selected = variants.find((v) => v.id === selectedVariantId);
+                if (!selected) return null;
+                return (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {selected.sku ? `SKU: ${selected.sku}` : 'No SKU recorded'}
+                    {' — '}
+                    {selected.inStock ? 'In stock' : 'Out of stock'}
+                  </p>
+                );
+              })()}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Where to Buy — merchant listings with price, stock and a
             retailer link. Previously this section did not exist at
             all, so a shopper could see a price and a Deal Score but
@@ -1697,7 +1774,11 @@ export default function ProductDetailClient({
                             </td>
                             <td className="px-3 py-2">
                               {tableSaving !== null ? (
-                                <span className="font-semibold text-green-600">{tableSaving}% off</span>
+                                <span className="font-semibold text-green-600">
+                                  {/* Section 20, §12 #40 — discountPercentLabel carries the
+                                      "vs list price" basis with the number. */}
+                                  {discountPercentLabel(listing.price, listing.compareAtPrice)}
+                                </span>
                               ) : (
                                 '—'
                               )}
@@ -2476,7 +2557,12 @@ export default function ProductDetailClient({
                   <SpecRow label="Brand" value={product.brand} />
                   <SpecRow label="Category" value={product.category} />
                   <SpecRow label="GTIN" value={product.gtin} />
-                  <SpecRow label="Confidence Score" value={product.confidenceScore != null ? `${product.confidenceScore}%` : null} />
+                  {/* Section 20, #6: model number, hidden by SpecRow
+                      when null — 0/10 live products have one, so this
+                      row renders nothing today and never a guessed value. */}
+                  <SpecRow label="Model number" value={product.modelNumber ?? null} />
+                  {/* Section 20, §12 #67 — was "Confidence Score": the number is a field-presence completeness count, not a measured quality score. Labelled as data completeness so a visitor reads it for what it is. */}
+                  <SpecRow label="Data completeness" value={product.confidenceScore != null ? `${product.confidenceScore}%` : null} />
                   {/* Seeded specs without a stored group. Key, value
                       and unit are verbatim from the database; a row
                       with an empty value is hidden by SpecRow. */}
@@ -2514,7 +2600,7 @@ export default function ProductDetailClient({
             {/* Section 19, §12 #26: products with no attribute rows
                 previously rendered nothing here at all. Honest empty
                 state instead — the base card above still shows the
-                Brand/Category/GTIN/Confidence rows. */}
+                Brand/Category/GTIN/Data-completeness rows. */}
             {namedAttributeGroups.length === 0 &&
               ungroupedAttributes.length === 0 && (
                 <Card className="mt-4">

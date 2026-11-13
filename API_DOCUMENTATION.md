@@ -3,7 +3,7 @@
 **Base URL:** `https://shahjahanaibuy-b1zp.vercel.app`
 **Version:** v1
 **Last updated:** 2026-11-13 (Section 19, Phase 9)
-**Coverage:** 187 route files / 253 handlers under `app/api/`, counted from the route files on 2026-11-13 (Section 19, Phase 9). The route table below is generated, not hand-typed — regenerate it from `app/api/**/route.ts` (`docs/openapi.json` is generated from the same source).
+**Coverage:** 190 route files / 258 handlers under `app/api/`, counted from the route files on 2026-11-13 (Section 20). The route table below is generated, not hand-typed — regenerate it from `app/api/**/route.ts` (`docs/openapi.json` is generated from the same source).
 **Machine-readable spec:** `docs/openapi.json` (OpenAPI 3.0.3 — paths + methods only; request/response schemas are not yet machine-generated).
 
 > Honest scope note: this document lists every route that exists in code. It does **not** mean every route works live today — several depend on owner-gated configuration (see "Fail-closed behaviour" below) or on database migrations that are not yet applied live. Where a route is known to degrade, it is called out.
@@ -79,7 +79,7 @@ All API routes return a consistent JSON envelope:
 
 ## Rate limiting
 
-All 187 route files call `rateLimitResponse` (enforced by `tests/rate-limit-coverage.test.ts`). Upstash Redis first when `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set; otherwise a per-instance in-memory bucket (fail-open by design). Exceeding the limit returns `429 RATE_LIMITED`. Per-route limits vary — see `docs/rate-limits.md` for the per-route table.
+All 190 route files call `rateLimitResponse` (enforced by `tests/rate-limit-coverage.test.ts`). Upstash Redis first when `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set; otherwise a per-instance in-memory bucket (fail-open by design). Exceeding the limit returns `429 RATE_LIMITED`. Per-route limits vary — see `docs/rate-limits.md` for the per-route table.
 
 ---
 
@@ -175,9 +175,9 @@ Natural-language product search. Body: `{ "query": "string", "pageSize": 10 }`.
 
 ---
 
-## Complete route table (187 routes, 253 handlers)
+## Complete route table (190 routes, 258 handlers)
 
-Generated from `app/api/**/route.ts` on 2026-11-13 (Section 19, Phase 9). Methods are the exported handlers in each file, in file order. Paths sort with `{param}` segments before literals, and a longer path before the shorter path it extends.
+Generated from `app/api/**/route.ts` on 2026-11-13 (Section 20). Methods are the exported handlers in each file, in file order. Paths sort with `{param}` segments before literals, and a longer path before the shorter path it extends.
 
 ### `search`
 
@@ -202,7 +202,9 @@ Generated from `app/api/**/route.ts` on 2026-11-13 (Section 19, Phase 9). Method
 | GET | `/api/v1/admin/analytics` |
 | GET | `/api/v1/admin/audit-logs` |
 | GET | `/api/v1/admin/community-deals` |
+| GET | `/api/v1/admin/data-quality` |
 | POST | `/api/v1/admin/intake` |
+| GET | `/api/v1/admin/products` |
 | POST | `/api/v1/admin/sentry-test` |
 | GET | `/api/v1/admin/users` |
 | POST | `/api/v1/admin/visual-search-backfill` |
@@ -241,6 +243,13 @@ Generated from `app/api/**/route.ts` on 2026-11-13 (Section 19, Phase 9). Method
 | Method(s) | Path |
 |---|---|
 | POST | `/api/v1/admin/newsletter/send` |
+
+
+### `v1/admin/products`
+
+| Method(s) | Path |
+|---|---|
+| GET, PATCH, DELETE | `/api/v1/admin/products/{id}` |
 
 
 ### `v1/affiliate`
@@ -957,5 +966,5 @@ Generated from `app/api/**/route.ts` on 2026-11-13 (Section 19, Phase 9). Method
 
 - **Page routes (122 `page.tsx` files)** — see `project-summary.md` and the in-app `/docs` page.
 - **The 36 AI tools** — see `app/tools/page.tsx` and `project-summary.md`.
-- **`/api-docs` page** — covers 7 of 187 routes; this document supersedes it for API reference.
+- **`/api-docs` page** — covers 7 of 190 routes; this document supersedes it for API reference.
 - **Request/response schemas** — not yet machine-generated. `docs/openapi.json` lists paths and methods only.

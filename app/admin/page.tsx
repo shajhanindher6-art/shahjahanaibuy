@@ -139,6 +139,21 @@ export default function AdminPage() {
               </Link>
             </Button>
             <Button asChild variant="outline">
+              <Link href="/admin/products">
+                <Package className="mr-2 h-4 w-4" /> Products — list, edit &amp; delete
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/admin/products/review">
+                <Package className="mr-2 h-4 w-4" /> Catalog review — duplicates, specs, images, history
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/admin/ingestion-failures">
+                <Activity className="mr-2 h-4 w-4" /> Ingestion failures — error log &amp; failed runs
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
               <Link href="/admin/refresh-runs">
                 <Activity className="mr-2 h-4 w-4" /> Price refresh runs — last refresh &amp; failed steps
               </Link>

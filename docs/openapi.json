@@ -3,7 +3,7 @@
  "info": {
   "title": "SmartBuy AI API",
   "version": "1.0.0",
-  "description": "SmartBuy AI public + authenticated API (v1). Generated from the route files under app/api/ on 2026-11-13 (Section 19, Phase 9). Auth: Supabase session cookie for user endpoints; x-api-key header for /api/v1/public/* (tiers: anon 100/IP/day, Free 1,000, Premium/Family 10,000, Team 100,000 per day); Bearer <redacted> for the 6 cron endpoints; Stripe webhook signature for /api/webhooks/stripe. All 187 routes enforce rate limiting (Upstash Redis when configured, in-memory fallback). This spec lists paths and methods only \u2014 request/response schemas are not yet machine-generated; see API_DOCUMENTATION.md for the curated guide."
+  "description": "SmartBuy AI public + authenticated API (v1). Generated from the route files under app/api/ on 2026-11-13 (Section 20). Auth: Supabase session cookie for user endpoints; x-api-key header for /api/v1/public/* (tiers: anon 100/IP/day, Free 1,000, Premium/Family 10,000, Team 100,000 per day); Bearer <redacted> for the 6 cron endpoints; Stripe webhook signature for /api/webhooks/stripe. All 190 routes enforce rate limiting (Upstash Redis when configured, in-memory fallback). This spec lists paths and methods only \u2014 request/response schemas are not yet machine-generated; see API_DOCUMENTATION.md for the curated guide."
  },
  "servers": [
   {
@@ -228,6 +228,37 @@
     }
    }
   },
+  "/api/v1/admin/data-quality": {
+   "get": {
+    "summary": "GET /api/v1/admin/data-quality",
+    "responses": {
+     "200": {
+      "description": "OK"
+     },
+     "400": {
+      "description": "Bad request"
+     },
+     "401": {
+      "description": "Unauthorized"
+     },
+     "403": {
+      "description": "Forbidden"
+     },
+     "404": {
+      "description": "Not found"
+     },
+     "429": {
+      "description": "Rate limited"
+     },
+     "500": {
+      "description": "Internal error"
+     },
+     "503": {
+      "description": "Service not configured (fail-closed)"
+     }
+    }
+   }
+  },
   "/api/v1/admin/community-deals": {
    "get": {
     "summary": "GET /api/v1/admin/community-deals",
@@ -386,6 +417,126 @@
   "/api/v1/admin/newsletter/send": {
    "post": {
     "summary": "POST /api/v1/admin/newsletter/send",
+    "responses": {
+     "200": {
+      "description": "OK"
+     },
+     "400": {
+      "description": "Bad request"
+     },
+     "401": {
+      "description": "Unauthorized"
+     },
+     "403": {
+      "description": "Forbidden"
+     },
+     "404": {
+      "description": "Not found"
+     },
+     "429": {
+      "description": "Rate limited"
+     },
+     "500": {
+      "description": "Internal error"
+     },
+     "503": {
+      "description": "Service not configured (fail-closed)"
+     }
+    }
+   }
+  },
+  "/api/v1/admin/products": {
+   "get": {
+    "summary": "GET /api/v1/admin/products",
+    "responses": {
+     "200": {
+      "description": "OK"
+     },
+     "400": {
+      "description": "Bad request"
+     },
+     "401": {
+      "description": "Unauthorized"
+     },
+     "403": {
+      "description": "Forbidden"
+     },
+     "404": {
+      "description": "Not found"
+     },
+     "429": {
+      "description": "Rate limited"
+     },
+     "500": {
+      "description": "Internal error"
+     },
+     "503": {
+      "description": "Service not configured (fail-closed)"
+     }
+    }
+   }
+  },
+  "/api/v1/admin/products/{id}": {
+   "get": {
+    "summary": "GET /api/v1/admin/products/{id}",
+    "responses": {
+     "200": {
+      "description": "OK"
+     },
+     "400": {
+      "description": "Bad request"
+     },
+     "401": {
+      "description": "Unauthorized"
+     },
+     "403": {
+      "description": "Forbidden"
+     },
+     "404": {
+      "description": "Not found"
+     },
+     "429": {
+      "description": "Rate limited"
+     },
+     "500": {
+      "description": "Internal error"
+     },
+     "503": {
+      "description": "Service not configured (fail-closed)"
+     }
+    }
+   },
+   "patch": {
+    "summary": "PATCH /api/v1/admin/products/{id}",
+    "responses": {
+     "200": {
+      "description": "OK"
+     },
+     "400": {
+      "description": "Bad request"
+     },
+     "401": {
+      "description": "Unauthorized"
+     },
+     "403": {
+      "description": "Forbidden"
+     },
+     "404": {
+      "description": "Not found"
+     },
+     "429": {
+      "description": "Rate limited"
+     },
+     "500": {
+      "description": "Internal error"
+     },
+     "503": {
+      "description": "Service not configured (fail-closed)"
+     }
+    }
+   },
+   "delete": {
+    "summary": "DELETE /api/v1/admin/products/{id}",
     "responses": {
      "200": {
       "description": "OK"

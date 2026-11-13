@@ -70,12 +70,14 @@ import {
   planIntakeInsert,
   intakeNameBrandKey,
   normalizeIntakeKey,
+  normalizeGtin,
   type IntakeCatalogContext,
   type IntakeRowInput,
   type IntakeReviewedRow,
 } from '@/services/catalog-intake';
 import { EBAY_INTAKE_SOURCE } from '@/services/ebay-intake';
 import { priceVerificationForIntakeSource } from '@/services/price-verification';
+import { recordAdminAction } from '@/services/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -115,21 +117,29 @@ export async function loadCatalogContext(
   service: SupabaseClient,
 ): Promise<IntakeCatalogContext> {
   const [productsRes, merchantsRes, currenciesRes] = await Promise.all([
-    service.from('products').select('slug, name, brand').limit(5000),
+    service.from('products').select('slug, name, brand, gtin').limit(5000),
     service.from('merchants').select('id, slug, name'),
     service.from('currencies').select('id, code'),
   ]);
 
   const existingSlugs = new Set<string>();
   const existingNameBrands = new Map<string, string>();
+  // Section 20, #9: normalized GTIN -> slug, for the same-GTIN /
+  // different-slug leg in reviewIntakeRows.
+  const existingGtins = new Map<string, string>();
   for (const p of (productsRes.data ?? []) as Array<{
     slug: string;
     name: string | null;
     brand: string | null;
+    gtin: string | null;
   }>) {
     existingSlugs.add(p.slug.toLowerCase());
     if (p.name && p.brand) {
       existingNameBrands.set(intakeNameBrandKey(p.name, p.brand), p.slug);
+    }
+    if (p.gtin) {
+      const key = normalizeGtin(p.gtin);
+      if (key && !existingGtins.has(key)) existingGtins.set(key, p.slug);
     }
   }
 
@@ -148,7 +158,7 @@ export async function loadCatalogContext(
     knownCurrencies.set(c.code.trim().toUpperCase(), c.id);
   }
 
-  return { existingSlugs, existingNameBrands, knownMerchants, knownCurrencies };
+  return { existingSlugs, existingNameBrands, existingGtins, knownMerchants, knownCurrencies };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -339,6 +349,11 @@ export async function POST(request: NextRequest) {
     // — recorded in the audit log and the response so the admin
     // can see the batch went in legacy mode.
     let legacyMode = false;
+    // Section 20, #6: true when any row in this batch carried a
+    // model number that could not be stored because migration
+    // 055 is unapplied — surfaced in the response so the admin
+    // knows to re-enter it after applying 055.
+    let modelNumberUnsupported = false;
     // Section 15, P3-2: the approve-time check timestamp for eBay
     // rows — the "Live eBay asking price, checked <timestamp>"
     // label reads data_freshness, so it is stamped here, once per
@@ -369,12 +384,28 @@ export async function POST(request: NextRequest) {
           : {}),
         ...(plan.product.image_url ? { image_url: plan.product.image_url } : {}),
         ...(plan.product.gtin ? { gtin: plan.product.gtin } : {}),
+        // Section 20, #6: model number, stored only when
+        // migration 055 is applied (see the staged 42703
+        // fallback below — the batch never fails over it).
+        ...(plan.product.model_number
+          ? { model_number: plan.product.model_number }
+          : {}),
         ...(source === EBAY_INTAKE_SOURCE
           ? { data_freshness: approvedAt }
           : {}),
       };
+      // Same row without the model number — the middle fallback
+      // step (055 unapplied, 045 applied).
+      const { model_number: _droppedModelNumber, ...productBaseNoModel } = productBase;
+      void _droppedModelNumber;
       const productWithStatus = {
         ...productBase,
+        status: 'pending',
+        price_verification_status: verification.priceVerificationStatus,
+        price_verified_at: verification.priceVerifiedAt,
+      };
+      const productWithStatusNoModel = {
+        ...productBaseNoModel,
         status: 'pending',
         price_verification_status: verification.priceVerificationStatus,
         price_verified_at: verification.priceVerifiedAt,
@@ -385,12 +416,30 @@ export async function POST(request: NextRequest) {
         .select('id')
         .single();
       let legacyColumns = false;
+      // Section 20, #6 — staged 42703 fallback. The first insert
+      // can fail for TWO missing columns (045's status columns
+      // or 055's model_number), and a single retry cannot tell
+      // which: (1) retry without model_number — succeeds when
+      // only 055 is unapplied, and the batch records
+      // modelNumberUnsupported so the admin knows the value was
+      // not stored; (2) retry with neither — succeeds when 045
+      // is unapplied too (legacy mode, as before). The batch
+      // never fails over an unapplied migration.
+      if (productRes.error && isUndefinedColumnError(productRes.error) && plan.product.model_number) {
+        modelNumberUnsupported = true;
+        productRes = await service
+          .from('products')
+          .insert(productWithStatusNoModel)
+          .select('id')
+          .single();
+      }
       if (productRes.error && isUndefinedColumnError(productRes.error)) {
         legacyColumns = true;
         legacyMode = true;
+        if (plan.product.model_number) modelNumberUnsupported = true;
         productRes = await service
           .from('products')
-          .insert(productBase)
+          .insert(productBaseNoModel)
           .select('id')
           .single();
       }
@@ -485,12 +534,18 @@ export async function POST(request: NextRequest) {
     // Provenance for the batch: products/merchant_products have no
     // `source` column, so the origin is recorded here — 'manual-intake'
     // for CSV batches, 'ebay-browse-api' for eBay preview batches.
-    const { error: auditError } = await service.from('admin_audit_logs').insert({
-      admin_id: auth.userId,
-      action: 'catalog_intake_approve',
-      target_type: 'products',
-      target_id: null,
-      details: {
+    // Section 20, §12 #98 — audited via recordAdminAction (uniform
+    // schema + IP capture) instead of the old direct insert. The
+    // helper never throws and logs an insert failure via
+    // logger.warn, so audit loss stays visible without failing
+    // the batch that was already approved.
+    await recordAdminAction(
+      service,
+      auth.userId,
+      'catalog_intake_approve',
+      'products',
+      null,
+      {
         source,
         inserted,
         skipped,
@@ -500,20 +555,8 @@ export async function POST(request: NextRequest) {
         // 045 is unapplied and the status column does not exist.
         publication: legacyMode ? 'legacy-no-status-column' : 'pending-then-published',
       },
-    });
-    if (auditError) {
-      // Best-effort: the inserts already happened; do not fail the
-      // request over the audit row, but do not hide the failure
-      // either. Section 18, item 14: audit loss must be visible in
-      // the structured logger (with the batch context), not buried
-      // in a bare console.error.
-      logger.error('catalog intake: audit log insert failed', {
-        error: auditError.message,
-        source,
-        insertedCount: inserted.length,
-        skippedCount: skipped.length,
-      });
-    }
+      getClientIp(request)
+    );
 
     return apiSuccess({
       source,
@@ -521,6 +564,9 @@ export async function POST(request: NextRequest) {
       skipped,
       summary: review.summary,
       publication: legacyMode ? 'legacy-no-status-column' : 'pending-then-published',
+      // Section 20, #6: only present when a model number was
+      // dropped — the admin re-enters it after applying 055.
+      ...(modelNumberUnsupported ? { modelNumberUnsupported: true } : {}),
       ...(source === EBAY_INTAKE_SOURCE
         ? {
             priceNote:

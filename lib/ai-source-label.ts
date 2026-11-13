@@ -40,6 +40,32 @@ export function formatLabelDate(iso: string | null | undefined): string | null {
 }
 
 /**
+ * Recorded-data label (Section 20, §12 #82). The default label for
+ * assistant answers: the answer was computed from rows in the
+ * SmartBuy database, but the prices behind it are RECORDED prices
+ * — they were not checked live at a merchant, and (unless the
+ * caller proves otherwise) they carry no verified stamp. Use
+ * verifiedDataLabel ONLY when the caller has checked that the
+ * product(s) behind the answer are price_verification_status =
+ * 'verified' AND fresh; everything else gets this label, so an
+ * unverified or stale price is never presented as "verified".
+ */
+export function recordedDataLabel(asOf: string | null): string {
+  const date = formatLabelDate(asOf);
+  if (date) {
+    return (
+      `Source: based on recorded catalog data from the SmartBuy catalog ` +
+      `(prices last checked ${date} — recorded prices, not checked live at the merchant).`
+    );
+  }
+  return (
+    `Source: based on recorded catalog data from the SmartBuy catalog ` +
+    `(recorded prices, price history, coupons and deals as listed in our database — ` +
+    `not live merchant prices, and no freshness timestamp is recorded for this data).`
+  );
+}
+
+/**
  * Verified-data label, with the data's timestamp when known.
  * `asOf` is the product's real `data_freshness` (or latest recorded
  * price point) — never a fabricated stamp; null means the age is
@@ -92,6 +118,6 @@ export function generalGuidanceLabel(): string {
 export function appendSourceLabel(content: string, label: string): string {
   const trimmed = content.trimEnd();
   if (trimmed.endsWith(label)) return content;
-  if (/Source: (based on verified recorded data|general guidance)/.test(trimmed)) return content;
+  if (/Source: (based on verified recorded data|based on recorded catalog data|general guidance)/.test(trimmed)) return content;
   return `${trimmed}\n\n${label}`;
 }

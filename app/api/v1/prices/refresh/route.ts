@@ -47,13 +47,18 @@
  * fails the whole refresh, and never blocks steps 1–3.
  *
  * Section 15, P1-9 — eBay AS STEP 0 (services/ebay-refresh.ts):
- * the first LIVE fetch leg. Before any recorded-price step runs,
- * due products are searched on eBay Browse, keyword-matched, and
- * upserted into merchant_products with data_freshness stamped —
- * so the steps below finally have fresh input. The step never
- * throws and never fails the run: on any eBay failure the route
- * degrades to "eBay unavailable, continued on recorded prices"
- * (steps.ebay.status stays 'ok' with a degraded result).
+ * the first LIVE fetch leg in code — but NOT live today: eBay is
+ * owner-gated (EBAY_CLIENT_ID / EBAY_CLIENT_SECRET unset and the
+ * `merchants` row slug='ebay' missing), so step 0 reports
+ * 'not-configured' / 'merchant-missing' and the chain below
+ * re-reads recorded prices (Section 20, §12 #38). When the owner
+ * unblocks eBay, due products are searched on eBay Browse,
+ * keyword-matched, and upserted into merchant_products with
+ * data_freshness stamped — so the steps below finally have fresh
+ * input. The step never throws and never fails the run: on any
+ * eBay failure the route degrades to "eBay unavailable, continued
+ * on recorded prices" (steps.ebay.status stays 'ok' with a
+ * degraded result).
  *
  * Section 17, Stage D — pipeline re-fetch leg, after the eBay
  * step: due products are re-fetched through the provider
@@ -103,7 +108,10 @@
  * dashboard, and the caller must send `Authorization: Bearer
  * <CRON_SECRET>`. When CRON_SECRET is unset the endpoint refuses to
  * run (fail closed) instead of accepting unauthenticated trigger
- * calls. Uses the service-role client because the refresh and
+ * calls. Section 20, §12 #56: a signed-in admin session is also
+ * accepted (same fallback as predictions/outcomes + uptime/check),
+ * so an admin can trigger a manual refresh from
+ * /admin/refresh-runs; cron callers are unaffected. Uses the service-role client because the refresh and
  * checker must read alerts and wishlist items belonging to every
  * user. Requires SUPABASE_SERVICE_ROLE_KEY in the hosting dashboard;
  * without it the endpoint fails fast instead of silently checking
@@ -112,7 +120,7 @@
 
 import type { NextRequest } from 'next/server';
 import { apiSuccess, unauthorized, internalError } from '@/lib/api/responses';
-import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiRequest, rateLimitResponse, getClientIp, requireAdmin } from '@/lib/api/middleware';
 import { logApiError } from '@/lib/api/error-logging';
 import { isCronAuthorized } from '@/lib/api/cron-auth';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
@@ -897,13 +905,24 @@ export async function POST(request: NextRequest) {
 
   // Section 17, Stage G (§4 #11): timing-safe compare via
   // lib/api/cron-auth.ts — fails closed when CRON_SECRET is unset.
-  if (!process.env.CRON_SECRET) {
-    return internalError(
-      'CRON_SECRET is not configured; set it in the hosting dashboard before scheduling this endpoint'
-    );
-  }
+  // Section 20, §12 #56 — admin-session fallback, the same pattern
+  // /api/v1/predictions/outcomes and /api/v1/monitoring/uptime/check
+  // already use: a signed-in admin may trigger a manual refresh
+  // from /admin/refresh-runs without the cron secret. Cron
+  // (Bearer <redacted> is still checked first and unchanged; the
+  // scheduled cron-job.org call is unaffected. When CRON_SECRET is
+  // unset AND there is no admin session, the original
+  // "not configured" error is preserved.
   if (!isCronAuthorized(request)) {
-    return unauthorized('Invalid cron secret');
+    const admin = await requireAdmin(request);
+    if ('error' in admin) {
+      if (!process.env.CRON_SECRET) {
+        return internalError(
+          'CRON_SECRET is not configured; set it in the hosting dashboard before scheduling this endpoint'
+        );
+      }
+      return admin.error;
+    }
   }
 
   const supabase = createSupabaseServiceClient();
@@ -966,6 +985,7 @@ export async function POST(request: NextRequest) {
     skippedNoPrice: 0,
     failed: 0,
     loadFailed: false,
+    staleFlipped: 0,
   };
   // Section 15, P1-9 — step 0: the first live fetch leg. The
   // step never throws and gets NO isFailed predicate, so an eBay
@@ -1001,6 +1021,7 @@ export async function POST(request: NextRequest) {
     queued: 0,
     skippedDuplicate: 0,
     skippedOptedOut: 0,
+    skippedStale: 0,
     failed: 0,
     wishlistChecked: 0,
     wishlistTriggered: 0,

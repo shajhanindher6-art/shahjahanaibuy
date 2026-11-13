@@ -23,6 +23,9 @@
 import type { NextRequest } from 'next/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { getClientIp, logApiRequest, rateLimitResponse, requireAdmin } from '@/lib/api/middleware';
+import { createSupabaseServiceClient } from '@/lib/supabase/service';
+import { recordAdminAction } from '@/services/admin';
+import { ensureCsvDataSource } from '@/services/data-sources';
 import { enqueueJob, getJobResult } from '@/lib/workers/queue';
 import type { ProductFetchJobData } from '@/lib/workers/types';
 import { z } from 'zod';
@@ -76,6 +79,33 @@ export async function POST(request: NextRequest) {
       attempts: 3,
       backoffMs: 5000,
     });
+
+    // Section 20, §12 #97 — audit the admin trigger (the route
+    // previously wrote with no audit row). Section 20, §12 #58 —
+    // record the configured CSV source in data_sources when one
+    // is configured. Both are best-effort: the helper never
+    // throws, and when no service client is configured both are
+    // skipped rather than failing the enqueue.
+    const auditService = createSupabaseServiceClient();
+    if (auditService) {
+      await recordAdminAction(
+        auditService,
+        auth.userId,
+        'data_refresh_trigger',
+        'job',
+        jobId,
+        {
+          query: parsed.data.query,
+          retailerSlug: parsed.data.retailerSlug ?? null,
+          limit: parsed.data.limit ?? null,
+        },
+        getClientIp(request)
+      );
+      const csvSourceUrl = process.env.CSV_SOURCE_URL?.trim();
+      if (csvSourceUrl) {
+        await ensureCsvDataSource(auditService, { sourceUrl: csvSourceUrl });
+      }
+    }
 
     // Section 18, item 41 — the job ran inline on the synchronous
     // queue, so report its real outcome instead of "queued". When

@@ -1695,7 +1695,8 @@ function SearchPageContent() {
                       return (
                         <p className="mt-1 text-xs font-medium text-green-600">
                           On deal
-                          {deal.discountPercentage > 0 && `: ${deal.discountPercentage}% off`}
+                          {/* Section 20, §12 #40 — claimed % vs list price, never a verified saving. */}
+                          {deal.discountPercentage > 0 && `: ${deal.discountPercentage}% off vs list price`}
                           {deal.savingsAmount > 0 && (
                             <>
                               {' '}— save <Price usd={deal.savingsAmount} showOriginal={false} />

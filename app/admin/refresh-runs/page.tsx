@@ -50,6 +50,7 @@ import {
 } from '@/services/refresh-runs-admin';
 import { listRefreshFailures } from '@/services/error-log-admin';
 import type { RefreshRunRow } from '@/services/refresh-run';
+import { ManualRefreshButton } from '@/components/admin/manual-refresh-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -125,6 +126,12 @@ export default async function AdminRefreshRunsPage() {
         status code — monitors must read the body (or this page), not the status
         alone, or a failed step will look like a success.
       </p>
+
+      {/* Section 20, §12 #56 — manual refresh trigger: the same
+          chain the 6-hour cron runs, started with the admin's own
+          session (the route accepts an admin session as well as the
+          cron secret). */}
+      <ManualRefreshButton />
 
       {error ? (
         <p className="mt-6 rounded-lg border border-red-300 bg-red-50 p-4 text-sm dark:border-red-800 dark:bg-red-950">

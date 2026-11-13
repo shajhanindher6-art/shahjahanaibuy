@@ -11,9 +11,9 @@
  * else is a 400. Without the parameter the defaults apply
  * ([7, 30, 90] + a 30-day backtest).
  *
- * A product with fewer than 2 recorded prices returns
+ * A product with fewer than 5 recorded prices returns
  * status 'not-enough-history' (200, honest empty) — never a
- * fabricated range. A database failure returns the same honest
+ * fabricated range. (Section 20, §12 #46: minimum unified at 5.) A database failure returns the same honest
  * empty forecast, never a 500 and never an invented number.
  * The forecast is a RANGE, never an exact future price or date.
  */
@@ -79,6 +79,9 @@ export async function GET(
         ? { id: product.id, name: product.name, slug: product.slug, category: product.category }
         : null,
       currentPrice: null,
+      // Section 20, §12 #84 — the last recorded check date, so
+      // callers can label the "current" price with its real age.
+      lastRecordedAt: null,
       historyPoints: 0,
       historyDays: 0,
       status: 'not-enough-history',
@@ -135,6 +138,7 @@ export async function GET(
     return apiSuccess({
       product,
       currentPrice: forecast.currentPrice,
+      lastRecordedAt: points.length > 0 ? points[points.length - 1].recordedAt : null,
       historyPoints: forecast.pointsUsed,
       historyDays: forecast.historyDays,
       status: forecast.status,

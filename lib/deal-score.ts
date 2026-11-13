@@ -14,6 +14,28 @@
  *         + confidenceScore × 0.3
  *   rounded to the nearest integer, clamped to 0–100.
  *
+ * WHAT confidenceScore IS HERE (Section 20, §12 #67): the
+ * PREDICTION confidence — the fit confidence computed from the
+ * product's own recorded price history (services/ai-predictions.ts
+ * calculateConfidence: point count + price spread). It is NEVER
+ * the product row's confidence_score column, which is a
+ * field-presence completeness count. No production caller passes
+ * product.confidenceScore into this formula (verified 2026-11-13:
+ * every caller passes the ai_predictions confidence_score); the
+ * completeness column is therefore already decoupled from the Deal
+ * Score — this note pins that, so a future caller does not
+ * re-couple them.
+ *
+ * SECTION 20, §12 #45 — REBASE DEFERRED (do not change the
+ * formula): the 100/100-on-every-product problem is a DATA
+ * problem, not a formula problem, and re-basing now would
+ * manufacture spread from 4 flat price points. The formula stays
+ * exactly as written until real varied price history exists (a
+ * live feed growing each product past 5 points with real rises
+ * and drops); until then the score stays WITHHELD below 5 points
+ * via dealScoreForDisplay. Never invent spread to make the
+ * numbers look differentiated.
+ *
  * What it means (product page copy): the score rewards buying NOW —
  * a price at/near its recorded low scores highest — while a high
  * chance of a FUTURE price drop LOWERS it, because waiting may pay

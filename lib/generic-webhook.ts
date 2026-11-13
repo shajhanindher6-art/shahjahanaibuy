@@ -19,6 +19,7 @@
 
 import { createHash, createHmac } from 'node:crypto';
 import type { PriceDropMessage } from '@/services/alert-webhooks';
+import { isSafePublicImageUrl } from '@/services/visual-search';
 
 /** Header carrying the HMAC-SHA256 hex signature of the body. */
 export const GENERIC_WEBHOOK_SIGNATURE_HEADER = 'x-smartbuy-signature';
@@ -72,6 +73,16 @@ export async function sendGenericWebhook(
     }
   } catch {
     return { status: 'not_configured', detail: 'Registered generic webhook URL is not a valid http(s) URL.' };
+  }
+  // Section 20, §12 #96 — the URL is POSTed to server-side, so a
+  // protocol check is not enough: it must resolve to a public
+  // address (Section 18 SSRF guard). A private target is a failed
+  // delivery, never 'sent', and no request is made to it.
+  if (!(await isSafePublicImageUrl(parsed.toString()))) {
+    return {
+      status: 'failed',
+      detail: 'Registered generic webhook URL did not resolve to a public address.',
+    };
   }
   const body = JSON.stringify({ type: 'price_drop', ...message });
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };

@@ -41,12 +41,48 @@ export interface DealCoupon {
  * Returns null when there is no real saving (no compare-at price, or
  * compare-at <= price) — callers render no badge, never 0% or a
  * synthesized discount.
+ *
+ * BASIS (Section 20, §12 #40): this is a discount "vs list price"
+ * ONLY. `compare_at_price` is a merchant-stated list price that was
+ * never observed in recorded price history — no code path has ever
+ * seen the product sell (or be listed) at that price before the
+ * current price. A discount computed here must therefore ALWAYS be
+ * labelled with DISCOUNT_BASIS_LABEL ("vs list price") wherever it
+ * is shown, and ranking must never present it as a verified saving.
+ * Use discountPercentLabel() for the display string so the basis
+ * travels with the number.
  */
 export function discountPercent(price: number, compareAtPrice: number | null | undefined): number | null {
   if (compareAtPrice === null || compareAtPrice === undefined) return null;
   if (!Number.isFinite(price) || !Number.isFinite(compareAtPrice)) return null;
   if (compareAtPrice <= 0 || compareAtPrice <= price) return null;
   return Math.round(((compareAtPrice - price) / compareAtPrice) * 1000) / 10;
+}
+
+/**
+ * The basis label for every discount computed by discountPercent
+ * (Section 20, §12 #40). "vs list price" — the saving is measured
+ * against the merchant's stated list (compare-at) price, not
+ * against a price observed in recorded history. Render this
+ * wherever a discount % is shown until an observed pre-rise price
+ * exists for the product.
+ */
+export const DISCOUNT_BASIS_LABEL = 'vs list price';
+
+/**
+ * Display string for a merchant-basis discount, basis included:
+ * "20% off vs list price", or null when there is no discount.
+ * Callers that render a discount % must use this (or append
+ * DISCOUNT_BASIS_LABEL themselves) — a bare "20% off" is a
+ * claimed saving presented as verified, which §12 #40 forbids.
+ */
+export function discountPercentLabel(
+  price: number,
+  compareAtPrice: number | null | undefined
+): string | null {
+  const pct = discountPercent(price, compareAtPrice);
+  if (pct === null) return null;
+  return `${pct}% off ${DISCOUNT_BASIS_LABEL}`;
 }
 
 /**

@@ -11,7 +11,7 @@
  * - central(h) = line value at (last point + h days).
  * - Range = central ± 1.96 × sigma_eff × sqrt(1 + h / 90), where
  *   sigma_eff is the residual standard deviation, floored at 2% of
- *   the mean recorded price so a 2-point exact fit (residual 0)
+ *   the mean recorded price so a short-history exact fit (residual 0)
  *   never produces a dishonest zero-width range. The floor also
  *   widens ranges for very short histories.
  * - Direction: the fitted 30-day drift vs the current price;
@@ -29,13 +29,23 @@
  *       — the same cap the Buy vs Wait engine applies to ≤ 4
  *       points — before the horizon penalty is subtracted, so a
  *       longer horizon still scores lower than a shorter one.
- *   A flat 4-point series therefore scores 21% (7d) / 16% (30d) /
- *   9% (90d) — low band, not the 76/71/64% the old formula gave.
+ *   A flat 5-point series therefore scores 15% (7d) / 10% (30d) /
+ *   5% (90d) — low band, not the 76/71/64% the old formula gave
+ *   for 4 points. (Section 20, §12 #46: below 5 points there is
+ *   no forecast at all, so the old 21/16/9% 4-point figures no
+ *   longer occur.)
  *
- * THRESHOLDS (same as Buy vs Wait): fewer than 2 usable points →
+ * THRESHOLDS (same as Buy vs Wait): fewer than 5 usable points →
  * status 'not-enough-history'. A backtest trial needs a recorded
  * point at/after the horizon date; with ~30 days of history a
  * 30-day backtest has zero trials, and says so honestly.
+ *
+ * Section 20, §12 #46 — the minimum is unified at 5 with Buy vs
+ * Wait (FORECAST_MIN_POINTS was 2; the badge, discount probability,
+ * expected-lowest-price and expected-sale-date already gated at
+ * ≥ 5/≥ 10, so a 2–4-point forecast was the odd one out, issuing
+ * ranges/verdicts from seed-thin history). Below 5 points there is
+ * no forecast — only the honest "not enough history" state.
  *
  * Every number here is labelled by callers as a probabilistic
  * range — "Simulated — not a forecast or a guarantee" in spirit:
@@ -82,8 +92,8 @@ export const FORECAST_THIN_HISTORY_MAX_POINTS = 4;
  */
 export const FORECAST_THIN_HISTORY_CONFIDENCE_CAP = 25;
 
-/** Smallest history that can support any forecast (Buy vs Wait rule). */
-export const FORECAST_MIN_POINTS = 2;
+/** Smallest history that can support any forecast (Buy vs Wait rule, Section 20 §12 #46: unified at 5). */
+export const FORECAST_MIN_POINTS = 5;
 
 /** Confidence is capped here — a fit to recorded history is never 100%. */
 export const FORECAST_MAX_CONFIDENCE_PCT = 90;
@@ -150,7 +160,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * never a formula change: the confidence % itself is computed in
  * forecastForHorizon from fit quality (R²), point count and
  * horizon. Bands: < 40% low, 40–69% medium, ≥ 70% high. The live
- * catalog's 4-point forecasts land in "low", which is exactly what
+ * catalog's 5-point forecasts land in "low", which is exactly what
  * the UI must now say instead of showing a bare percentage.
  */
 export type ForecastConfidenceLabel = 'low' | 'medium' | 'high';
@@ -165,13 +175,13 @@ export function forecastConfidenceLabel(
 
 /**
  * One-line basis label for a forecast, from its existing inputs:
- * "Based on 4 recorded price points · 21% confidence (low)".
+ * "Based on 5 recorded price points · 15% confidence (low)".
  * Callers render this wherever a forecast range is shown (product
  * page forecast card, /tools/forecast-explainer) so the visitor can
  * see how thin the history behind the range is. The example number
- * is real, not illustrative: a flat 4-point series scores 21% at
+ * is real, not illustrative: a flat 5-point series scores 15% at
  * 7 days — the flat fit carries no directional evidence (R²
- * counted as 0) and thin history caps confidence at 25%.
+ * counted as 0).
  */
 export function formatForecastBasis(
   pointsUsed: number,
@@ -293,7 +303,7 @@ function forecastForHorizon(
   const centralRaw = fit.intercept + fit.slopePerDay * (lastX + horizonDays);
   const central = Math.max(0.01, round2(centralRaw));
   // Residual spread, floored at 2% of the mean recorded price so a
-  // 2-point exact fit never yields a zero-width range.
+  // short-history exact fit never yields a zero-width range.
   const sigmaEff = Math.max(fit.sigma ?? 0, 0.02 * fit.meanPrice);
   const halfWidth = 1.96 * sigmaEff * Math.sqrt(1 + horizonDays / 90);
   const low = Math.max(0.01, round2(central - halfWidth));
@@ -312,12 +322,17 @@ function forecastForHorizon(
   // (a) a flat series has no variance to explain, so its R² = 1
   //     counts as ZERO fit evidence — the old formula rewarded
   //     perfect flatness with 55 points, so a flat 4-point series
-  //     scored 76% (7d) / 71% (30d) / 64% (90d);
+  //     scored 76% (7d) / 71% (30d) / 64% (90d) — before Section 20
+  //     §12 #46 raised the minimum to 5 points, so 4-point
+  //     forecasts no longer exist;
   // (b) thin history (<= 4 points) caps the score at 25% — the
   //     same cap the Buy vs Wait engine applies — BEFORE the
   //     horizon penalty is subtracted, so a longer horizon still
-  //     scores lower than a shorter one.
-  // Flat 4 points now: 21% (7d) / 16% (30d) / 9% (90d) — low band.
+  //     scores lower than a shorter one. Section 20, §12 #46: the
+  //     cap is now subsumed by the 5-point minimum (computeForecast
+  //     never calls this with fewer than 5 points), but it stays as
+  //     a defence-in-depth floor for any direct caller.
+  // Flat 5 points now: 15% (7d) / 10% (30d) / 5% (90d) — low band.
   const fitEvidence = fit.isFlat ? 0 : fit.rSquared;
   let confidenceBase =
     15 +
@@ -357,8 +372,9 @@ function forecastForHorizon(
 
 /**
  * Probabilistic forecast for the requested horizons from recorded
- * price history only. Fewer than 2 usable points → 'not-enough-history'
- * with empty forecasts (same threshold as Buy vs Wait).
+ * price history only. Fewer than 5 usable points → 'not-enough-history'
+ * with empty forecasts (same threshold as Buy vs Wait, Section 20
+ * §12 #46).
  *
  * Section 19, Phase 3 (§12 #35): `horizons` is a configurable
  * period parameter — any subset of FORECAST_ALLOWED_HORIZONS
@@ -389,7 +405,7 @@ export function computeForecast(
       pointsUsed: usable.length,
       historyDays: 0,
       method,
-      note: 'Not enough price history yet — at least 2 recorded prices are needed before any forecast can be made.',
+      note: 'Not enough price history yet — at least 5 recorded prices are needed before any forecast can be made.',
     };
   }
   const fit = fitLine(usable);
@@ -412,7 +428,7 @@ export function computeForecast(
  * Walk-forward backtest for one horizon, computed ONLY from the
  * product's own recorded history — never fabricated.
  *
- * For each split point i (≥ 2 points to fit, and a later recorded
+ * For each split point i (≥ 5 points to fit, and a later recorded
  * point at/after i + horizon), fit the line on points[0..i],
  * forecast the horizon range, and check the first recorded price
  * at/after the horizon date (within a 14-day tolerance) against

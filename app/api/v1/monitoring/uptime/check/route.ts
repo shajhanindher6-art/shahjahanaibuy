@@ -24,6 +24,11 @@ import { DEFAULT_UPTIME_TARGET, runUptimeCheck } from '@/lib/uptime';
 import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
+// Section 20, §12 #55 — `maxDuration` 60 (matching the other five
+// cron routes): Vercel Hobby caps serverless execution at 60s —
+// DO NOT raise without a paid plan.
+export const maxDuration = 60;
+
 function isHttpUrl(value: string): boolean {
   try {
     const url = new URL(value);

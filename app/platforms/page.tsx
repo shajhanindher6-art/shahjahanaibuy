@@ -45,6 +45,9 @@ const STATUS_LABELS: Record<PlatformStatus, string> = {
   configured: 'Configured',
   'not-configured': 'Not configured',
   'search-links-only': 'Search links only',
+  // Section 20, §12 #51 — honest statuses, never green "live".
+  'recorded-prices-only': 'Recorded prices only',
+  'tag-only': 'Affiliate tag only',
 };
 
 const STATUS_STYLES: Record<PlatformStatus, string> = {
@@ -54,6 +57,10 @@ const STATUS_STYLES: Record<PlatformStatus, string> = {
     'bg-muted text-foreground dark:bg-muted dark:text-foreground',
   'search-links-only':
     'bg-muted text-foreground dark:bg-muted dark:text-foreground',
+  'recorded-prices-only':
+    'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+  'tag-only':
+    'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
 };
 
 export default function PlatformsPage() {

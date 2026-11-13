@@ -488,22 +488,28 @@ export default function DealsPage() {
               was computed from, and what it does NOT check. The
               formula is the one in services/ai-deals.ts (scoreDeal):
               base 50 + claimed discount % × 0.5, plus flash / large-
-              discount / confidence bonuses and the recorded-price
-              value term; Featured additionally needs a validated
+              discount bonuses and the recorded-price
+              value term (Section 20, §12 #67: no confidence bonus —
+              catalog completeness is not deal quality); Featured
+              additionally needs a validated
               discount. */}
           <div className="mx-auto mt-4 max-w-2xl">
             <TransparencyBlock
               title="How these deals are ranked"
               dataUsed={[
                 'Ranked deals from the site’s deals table: each deal’s claimed discount, deal type and dates.',
-                'AI Score: base 50 + claimed discount % × 0.5, plus bonuses for flash deals (ending within 24 hours), discounts of $30 or more, high search confidence, and a current recorded price at or near the lowest recorded price.',
+                'AI Score: base 50 + claimed discount % × 0.5, plus bonuses for flash deals (ending within 24 hours), discounts of $30 or more, and a current recorded price at or near the lowest recorded price. No bonus for catalog completeness — how many fields a product row has does not make its deal better.',
                 'Featured deals additionally need a validated discount — a high score alone never features a deal.',
               ]}
               dataTimestamp={latestRankedAt}
               dataTimestampLabel="Rankings generated at"
               confidence="The AI Score (0–100) is a ranking score, not a verified discount and not a measured match rate — it orders deals, it does not prove any deal is good value."
               assumptions={[
-                'The claimed discount on each deal card is the merchant’s stated figure from the deals table.',
+                // Section 20, §12 #40 — the claimed discount is a
+                // "vs list price" figure (merchant compare-at price),
+                // never a verified saving: no recorded price history
+                // proves the product was ever sold at the list price.
+                'The claimed discount on each deal card is the merchant’s stated figure from the deals table, measured vs the list (compare-at) price — not vs a price observed in recorded history.',
                 'A fixed-amount discount is converted to a percentage from the current recorded price; when no recorded price exists, no percentage is shown instead of an invented one.',
               ]}
               missingInfo={[
@@ -899,8 +905,10 @@ function CouponCard({ coupon, merchantName }: { coupon: Coupon; merchantName?: s
     window.setTimeout(() => setCopied(false), 2000);
   };
 
+  // Section 20, §12 #40 — a percentage coupon is a claimed discount
+  // "vs list price", never a verified saving.
   const discountLabel =
-    coupon.discountType === 'percentage' ? `${coupon.discountValue}% OFF` : `$${coupon.discountValue} OFF`;
+    coupon.discountType === 'percentage' ? `${coupon.discountValue}% OFF vs list price` : `$${coupon.discountValue} OFF`;
 
   return (
     <Card>
@@ -1022,7 +1030,13 @@ function DealCard({ deal, featured, onClick }: { deal: RankedDeal; featured?: bo
           )}
           {hasDiscount && (
             <span className="text-lg font-bold text-green-600">
-              {isPercent ? `${discount}%` : `$${discount}`} OFF
+              {/* Section 20, §12 #40 — a percentage deal is a claimed
+                  discount "vs list price" (merchant compare-at), never
+                  a verified saving: no recorded history proves the
+                  product was ever sold at the list price. A fixed
+                  $ amount stays a plain "$X OFF" — it is a dollar
+                  amount, not a % claim against a list price. */}
+              {isPercent ? `${discount}% OFF vs list price` : `$${discount} OFF`}
             </span>
           )}
           {deal.savingsAmount > 0 && (

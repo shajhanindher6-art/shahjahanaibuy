@@ -13,6 +13,12 @@
  *   while migration 032 is unapplied.
  * - errors: `getAiErrorBreakdown()` from error_log — fail-safe when
  *   migration 048 is unapplied ("error logging not yet active").
+ * - dataQuality: `getAdminDataQualitySummary()` (Section 20, §12
+ *   #85) — verification distribution, price freshness, spec /
+ *   image / GTIN / review coverage, and the average DATA-quality
+ *   score for the catalog the AI reasons over. Fail-safe: a missing
+ *   migration 045 or an unreadable table is reported in `notes`,
+ *   never as a measured zero.
  *
  * The service-role client is required for the accuracy + error reads;
  * when it is unavailable those sections report unavailable instead of
@@ -32,6 +38,7 @@ import { getAiEngine } from '@/services/ai-engine/providers';
 import { getAiUsageSummary } from '@/services/ai-engine/usage';
 import { getAiAccuracySummary } from '@/services/ai-accuracy';
 import { getAiErrorBreakdown } from '@/services/error-log-admin';
+import { getAdminDataQualitySummary } from '@/services/admin-data-quality';
 
 import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
@@ -46,12 +53,14 @@ export async function GET(request: NextRequest) {
 
   try {
     const service = createSupabaseServiceClient();
-    const [accuracy, errors] = service
+    const [accuracy, errors, dataQuality] = service
       ? await Promise.all([
           getAiAccuracySummary(service),
           getAiErrorBreakdown(service),
+          getAdminDataQualitySummary(service),
         ])
       : [
+          null,
           null,
           null,
         ];
@@ -61,6 +70,7 @@ export async function GET(request: NextRequest) {
       usage: getAiUsageSummary(),
       accuracy,
       errors,
+      dataQuality,
       serviceUnavailable: service === null,
     });
   } catch (err) {

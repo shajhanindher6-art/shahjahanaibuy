@@ -24,6 +24,8 @@ import { logApiError } from '@/lib/api/error-logging';
 import { getCachedAISearch } from '@/services/ai-search';
 import {
   decideScanMode,
+  isPublicImageUrl,
+  isSafePublicImageUrl,
   isVisualSearchConfigured,
   type VisualMatch,
 } from '@/services/visual-search';
@@ -68,6 +70,33 @@ export async function POST(request: NextRequest) {
     }
 
     if (mode === 'visual') {
+      // Section 20, §12 #95 — the Lens leg hands a user-supplied
+      // URL to SerpAPI, so the URL is validated BEFORE the call:
+      // a syntactic http(s) check, then the Section 18 DNS SSRF
+      // guard (isSafePublicImageUrl — rejects private/loopback/
+      // link-local/metadata targets). A rejected URL never reaches
+      // SerpAPI: with keywords the route falls back to
+      // keyword-assisted catalog matches; without them it is a
+      // 400, never a guessed result.
+      const lensBlockedNote = !isPublicImageUrl(imageUrl)
+        ? 'That image URL is not a public http(s) URL, so visual search was skipped — showing keyword-assisted catalog matches for your photo.'
+        : !(await isSafePublicImageUrl(imageUrl))
+          ? 'That image URL could not be verified as a public URL, so visual search was skipped — showing keyword-assisted catalog matches for your photo.'
+          : null;
+      if (lensBlockedNote) {
+        if (!keywords) {
+          return badRequest(
+            'Only public image URLs can be used for visual search. Enter keywords to search the catalog instead.'
+          );
+        }
+        const supabase = await createSupabaseServerClient();
+        const result = await getCachedAISearch(supabase, { query: keywords, pageSize: 10 });
+        return apiSuccess(result.results, 200, {
+          mode: 'keyword-assisted',
+          visualDisabled: false,
+          note: lensBlockedNote,
+        });
+      }
       // Section 19, Phase 1 (§12 #7) — when the daily SerpAPI
       // budget is exhausted, Lens is skipped entirely and the
       // note says so honestly ("unavailable today"), instead of

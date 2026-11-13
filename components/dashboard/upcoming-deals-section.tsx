@@ -101,7 +101,8 @@ export function UpcomingDealsSection() {
                   <p className="mt-0.5 text-xs text-muted-foreground">{deal.title}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <Badge>{Math.round(deal.discountValue)}% off</Badge>
+                  {/* Section 20, §12 #40 — claimed % vs list price, never a verified saving. */}
+                  <Badge>{Math.round(deal.discountValue)}% off vs list price</Badge>
                   <Badge variant="secondary">{formatDealStartsIn(deal.startAt)}</Badge>
                 </div>
               </>

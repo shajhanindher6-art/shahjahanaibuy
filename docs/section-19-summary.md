@@ -189,7 +189,7 @@ Six Section 19 docs: `ai-engine-architecture.md`, `ai-product-analysis.md`
 | Check | Result |
 |---|---|
 | `npx tsc --noEmit` | 0 errors |
-| Full `npx vitest run` | **286 files / 3,425 tests passed, 4 skipped (3,429 total), 0 failed** (baseline 216/2,685 → +70 files, +740 tests; 31 Section 19 test files) |
+| Full `npx vitest run` | **286 files / 3,425 tests passed, 4 skipped (3,429 total), 0 failed** (baseline 254/3,066 → +32 files, +359 tests; 31 Section 19 test files) |
 | `npm run test:a11y` | **31 tests / 5 files, all pass** (Section 18's "19/19" is superseded — the a11y config now runs 31 tests) |
 | `npm run lint` | **0 errors, 0 warnings** (Section 18 had 16 warnings — the exhaustive-deps and no-img-element warnings are fixed/documented) |
 | `npm run check:press-counts` | OK — committed JSON `lib/generated/press-counts.json` = 3,425 tests / 286 files, date 2026-11-12 |

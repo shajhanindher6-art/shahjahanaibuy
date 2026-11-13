@@ -131,8 +131,9 @@ export function ActiveDealsSection() {
                 className="glass-card group block p-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl"
               >
                 <div className="flex flex-wrap gap-2">
+                  {/* Section 20, §12 #40 — claimed % vs list price, never a verified saving. */}
                   {deal.discountPercentage > 0 && (
-                    <Badge>{Math.round(deal.discountPercentage)}% off</Badge>
+                    <Badge>{Math.round(deal.discountPercentage)}% off vs list price</Badge>
                   )}
                   {endAt && (
                     <Badge variant="secondary" className="gap-1">

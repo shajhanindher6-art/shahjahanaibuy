@@ -24,8 +24,8 @@ import { cn } from '@/lib/utils';
 import type { IntakeReviewedRow, IntakeRowInput } from '@/services/catalog-intake';
 
 const TEMPLATE_CSV = [
-  'name,slug,brand,category,price,currency,merchant,description,gtin,sku',
-  'Example Headphones,example-headphones,ExampleBrand,Audio,49.99,USD,amazon,Noise-cancelling over-ear headphones,,EX-001',
+  'name,slug,brand,category,price,currency,merchant,description,gtin,sku,model_number',
+  'Example Headphones,example-headphones,ExampleBrand,Audio,49.99,USD,amazon,Noise-cancelling over-ear headphones,,EX-001,EX-MDL-001',
 ].join('\n');
 
 interface IntakeReviewPayload {
@@ -170,6 +170,8 @@ export default function CatalogIntakePage() {
               <strong>Manual prices:</strong> prices in the CSV are entered by hand by an
               admin. They are <strong>not live prices</strong> and are recorded as
               manual-intake prices — never present them as live merchant prices.
+              CSV rows are always <strong>unverified — they do not count toward the 50 verified products</strong>.
+              Manual CSV can add unlimited unverified rows only (max 1,000 per batch).
             </span>
           </p>
           <p className="mt-3 text-sm text-muted-foreground">
@@ -188,9 +190,9 @@ export default function CatalogIntakePage() {
             <CardTitle className="text-base">1. Upload CSV</CardTitle>
             <CardDescription>
               Required columns: name, slug, brand, category, price, currency, merchant.
-              Optional: description, image_url, gtin, sku. The merchant must already exist
+              Optional: description, image_url, gtin, sku, model_number. The merchant must already exist
               (merchants are never auto-created) and the currency code must already exist.
-              Max 1,000 rows / 2 MB.
+              Max 1,000 rows / 2 MB. Every row approved here is unverified — it does not count toward the 50 verified products.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -233,7 +235,7 @@ export default function CatalogIntakePage() {
                 Only valid rows are inserted on approve. Duplicates are never inserted.
                 Near-duplicates (same name + brand as an existing product) are held for
                 review — tick “Include anyway” only if you have checked it is a genuinely
-                different product.
+                different product. Approved rows are unverified — they do not count toward the 50 verified products.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -313,7 +315,12 @@ export default function CatalogIntakePage() {
                                   className="mt-0.5"
                                 />
                                 <span>
-                                  Same name + brand as “{r.nearDuplicateOf}”. Include anyway
+                                  {r.duplicateDetail ? (
+                                    <>{r.duplicateDetail} </>
+                                  ) : (
+                                    <>Same name + brand as “{r.nearDuplicateOf}”. </>
+                                  )}
+                                  Include anyway
                                   (I checked it is a different product).
                                 </span>
                               </label>
@@ -354,7 +361,8 @@ export default function CatalogIntakePage() {
               <p className="text-sm">
                 Inserted {result.inserted.length} product{result.inserted.length === 1 ? '' : 's'}
                 {result.inserted.length > 0 ? `: ${result.inserted.join(', ')}` : '.'} Prices
-                recorded as manual-intake prices (source: manual-intake).
+                recorded as manual-intake prices (source: manual-intake) — unverified, and
+                they do not count toward the 50 verified products.
               </p>
               {result.skipped.length > 0 && (
                 <ul className="mt-2 space-y-1 text-sm text-amber-800 dark:text-amber-200">

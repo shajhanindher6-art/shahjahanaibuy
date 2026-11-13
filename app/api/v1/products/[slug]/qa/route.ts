@@ -13,6 +13,8 @@
 
 import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseServiceClient } from '@/lib/supabase/service';
+import { recordAdminAction } from '@/services/admin';
 import {
   apiSuccess,
   badRequest,
@@ -168,6 +170,28 @@ export async function PATCH(
 
     if (!updated) {
       return internalError('Failed to update the question');
+    }
+
+    // Section 20, §12 #97 — audit the admin answer/hide (the
+    // route previously wrote with no audit row). Best-effort: the
+    // helper never throws, and when no service client is
+    // configured the audit is skipped rather than failing the
+    // answer the admin just gave.
+    const auditService = createSupabaseServiceClient();
+    if (auditService) {
+      await recordAdminAction(
+        auditService,
+        admin.userId,
+        'product_qa_answer',
+        'product_qa',
+        questionId,
+        {
+          slug: params.slug,
+          status: status ?? null,
+          answered: typeof answer === 'string',
+        },
+        getClientIp(request)
+      );
     }
 
     return apiSuccess(updated);

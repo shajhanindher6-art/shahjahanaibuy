@@ -11,6 +11,7 @@ import {
   getCachedProductBySlug,
   getProductImages,
   getProductAttributes,
+  getProductVariants,
 } from '@/services/products';
 import { getProductRepairability } from '@/services/repairability';
 import { getProductEndurance } from '@/services/hardware-endurance';
@@ -59,11 +60,17 @@ export async function GET(
     // Option 20: global readiness is the same pattern (nulls until
     // migration 023 runs). Section 6: dimensions / model URL /
     // authenticity / supply chain are the same pattern (nulls until
-    // migration 033 runs).
-    const [images, attributes, repairability, endurance, physical, recorded, globalReadiness, dimensions, modelUrl, authenticity, supplyChain] =
+    // migration 033 runs). Section 20, #8: variants ride the same
+    // pattern — getProductVariants is fail-safe (returns [] on any
+    // failure) and the detail page renders a variant selector ONLY
+    // when the array is non-empty. 0 variant rows live today, so
+    // the field is [] and nothing new renders — the wiring is the
+    // fix, not the data.
+    const [images, attributes, variants, repairability, endurance, physical, recorded, globalReadiness, dimensions, modelUrl, authenticity, supplyChain] =
       await Promise.all([
         getProductImages(supabase, product.id),
         getProductAttributes(supabase, product.id),
+        getProductVariants(supabase, product.id),
         getProductRepairability(supabase, product.id),
         getProductEndurance(supabase, product.id),
         getProductPhysical(supabase, product.id),
@@ -82,7 +89,7 @@ export async function GET(
         ? null
         : dimensions;
 
-    return apiSuccess({ ...product, images, attributes, repairability, endurance, physical, recorded, globalReadiness, dimensions: dimensionsOut, modelUrl, authenticity, supplyChain });
+    return apiSuccess({ ...product, images, attributes, variants, repairability, endurance, physical, recorded, globalReadiness, dimensions: dimensionsOut, modelUrl, authenticity, supplyChain });
   } catch (err) {
     logApiError(err, { request, route: 'products', status: 500 });
     return internalError('Failed to fetch product');

@@ -188,8 +188,9 @@ export function SmartDealWidget({ title = 'Smart Deals For You', limit = 6, clas
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {/* Section 20, §12 #40 — claimed % vs list price, never a verified saving. */}
                   {deal.discountPercentage > 0 && (
-                    <Badge variant="default">{Math.round(deal.discountPercentage)}% off</Badge>
+                    <Badge variant="default">{Math.round(deal.discountPercentage)}% off vs list price</Badge>
                   )}
                   {deal.isFeatured && <Badge variant="secondary">Featured</Badge>}
                   {deal.couponCode && <Badge variant="outline">Code: {deal.couponCode}</Badge>}
