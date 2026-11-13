@@ -27,20 +27,22 @@ const macbook: ProductSeoData = {
   inStock: true,
   averageRating: 0,
   reviewCount: 0,
-  // No recorded freshness here on purpose (Section 16, item 12):
-  // buildProductJsonLd suppresses the offers block when the
-  // recorded price is stale (>7 days, lib/price-freshness.ts), and
-  // the real recorded date 2026-11-02 is now past that window, so
-  // a fixture carrying it would render no offers at all. A missing
-  // freshness timestamp is NOT stale (isPriceStale(null) is false)
-  // and derives no priceValidUntil, so these tests exercise the
-  // offer structure itself rather than the freshness policy.
-  dataFreshness: null,
+  // Final 100% — F-P2-16: the fixture carries a FRESH recorded
+  // check (2026-11-12, judged against the fixed `now` 2026-11-13
+  // in productNode below), so the offers block renders and these
+  // tests exercise the offer structure. An unknown or stale age
+  // suppresses the offers block entirely — unknown age is never
+  // read as fresh — so a fixture with no freshness timestamp
+  // would render no offers at all (see the dedicated test below).
+  dataFreshness: '2026-11-12T08:00:00.000Z',
 };
 
 /** The Product node inside the @graph document buildProductJsonLd emits. */
 function productNode(seo: ProductSeoData) {
-  const doc = JSON.parse(buildProductJsonLd(seo, SITE));
+  // Fixed `now` (2026-11-13): the fixture's 2026-11-12 check is
+  // 1 day old — fresh — so offers render deterministically no
+  // matter when the suite runs.
+  const doc = JSON.parse(buildProductJsonLd(seo, SITE, new Date('2026-11-13T08:00:00.000Z')));
   expect(doc['@context']).toBe('https://schema.org');
   const product = doc['@graph'].find(
     (node: { '@type'?: string }) => node['@type'] === 'Product'
@@ -114,9 +116,24 @@ describe('buildProductJsonLd', () => {
     expect(product.offers.url).toBe(`${SITE}/products/macbook-air-13`);
   });
 
-  it('omits priceValidUntil when no validity date is recorded', () => {
+  it('derives priceValidUntil from a fresh check date when none is recorded', () => {
+    // Fresh check 2026-11-12 + 7-day stale threshold = valid
+    // until 2026-11-19 (derived, never invented).
     const { product } = productNode(macbook);
-    expect(product.offers.priceValidUntil).toBeUndefined();
+    expect(product.offers.priceValidUntil).toBe('2026-11-19');
+  });
+
+  it('omits the offers block entirely when no freshness is recorded (F-P2-16)', () => {
+    // Unknown age is never fresh: no offer, so no validity date
+    // can be read at all — the old "offers without priceValidUntil"
+    // state no longer exists.
+    const { product } = productNode({ ...macbook, dataFreshness: null });
+    expect(product.offers).toBeUndefined();
+  });
+
+  it('omits the offers block entirely when the recorded price is stale', () => {
+    const { product } = productNode({ ...macbook, dataFreshness: '2026-11-02T07:13:52.000Z' });
+    expect(product.offers).toBeUndefined();
   });
 
   it('includes priceValidUntil when a real validity date is recorded', () => {

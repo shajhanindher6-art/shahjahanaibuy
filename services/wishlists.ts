@@ -105,7 +105,9 @@ export async function getWishlists(
       .select('id, user_id, name, description, is_public, sort_order, created_at, updated_at')
       .eq('user_id', userId)
       .order('sort_order', { ascending: true })
-      .order('name', { ascending: true });
+      .order('name', { ascending: true })
+      // Final 100%, F-P2-60 — hard cap 100 (was unbounded).
+      .limit(100);
 
     if (error || !data) {
       if (error) logger.warn('getWishlists: query failed', { error: error.message });

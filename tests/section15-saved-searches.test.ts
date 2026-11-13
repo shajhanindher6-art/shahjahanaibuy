@@ -91,6 +91,10 @@ function makeFakeClient() {
           return chain;
         },
         order: () => chain,
+        // Final 100%, F-P2-60 — listSavedSearches caps at .limit(100);
+        // the fake query builder must model it (was missing, so the
+        // capped query threw and the service failed open to []).
+        limit: () => chain,
         insert: (row: Record<string, unknown>) => {
           state.op = 'insert';
           state.insertRow = row;

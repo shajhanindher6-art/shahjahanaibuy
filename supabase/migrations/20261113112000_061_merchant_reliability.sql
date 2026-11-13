@@ -36,9 +36,16 @@
 --     without recomputing. `explanation` is the scorer's
 --     plain-language sentence, stored verbatim.
 --   * NO BACKFILL: no score is computed or written here. Both
---     scorers have zero production callers today (audit §1A A-7),
---     so there is no computed score to persist — the first real
---     scorer run after apply writes the rows.
+--     scorers DO have production callers (the "zero callers"
+--     claim in the original comment was stale since Sections
+--     21–25 Stage E: the policy scorer is live in
+--     services/ai-comparison.ts + services/provider-status.ts,
+--     the sync scorer in services/ai-deals.ts — see
+--     services/canonical-merchant-reliability.ts, FINAL 100%
+--     F-P1-50), so the first snapshot writer run after apply
+--     writes the rows via writeMerchantReliabilitySnapshot.
+--     (Comment corrected FINAL 100%, 2026-11-13; the table
+--     definition below is unchanged.)
 --   * RLS is enabled. Writes are service-role-only: there is NO
 --     anon/authenticated INSERT, UPDATE or DELETE policy, so rows
 --     are written only through the service-role client (the same

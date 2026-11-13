@@ -111,6 +111,26 @@ export function failedStepsOf(run: RefreshRunRow): FailedRefreshStep[] {
 }
 
 /**
+ * Final 100% — F-P2-15 (notification path): suspicious price
+ * changes flagged across ALL steps of one run (the refresh step
+ * reports `counts.suspiciousPriceChanges`). A run with no flag
+ * returns 0 — never a missing value. The admin refresh-runs page
+ * renders this as the notification that flags await review in
+ * the data-quality panel (/admin/ai), even when the run itself
+ * succeeded (failed-steps-only rendering would hide it).
+ */
+export function suspiciousPriceChangesOf(run: RefreshRunRow): number {
+  const steps: Record<string, RefreshStepSummary> = (run.steps ?? {}) as Record<
+    string,
+    RefreshStepSummary
+  >;
+  return Object.values(steps).reduce(
+    (n, summary) => n + (summary?.counts?.suspiciousPriceChanges ?? 0),
+    0
+  );
+}
+
+/**
  * Human labels for the ten steps of the refresh chain, in chain
  * order (see POST /api/v1/prices/refresh). Unknown step names fall
  * back to the raw name — a new step must never render blank.

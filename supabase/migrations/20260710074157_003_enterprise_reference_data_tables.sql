@@ -311,11 +311,20 @@ INSERT INTO languages (code, name, native_name) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 -- Providers
+-- FINAL 100% (F-P2-05) — SEED-ONLY FIX (file only, never re-run
+-- the seed): the legacy env var names below are the names live
+-- code actually reads. EBAY_CLIENT_ID / EBAY_CLIENT_SECRET are
+-- read by services/ebay-browse.ts; AMAZON_ASSOC_TAG by
+-- services/affiliate-geo.ts (the legacy Amazon PA-API is retired
+-- — no code reads an Amazon API key at all). The previous values
+-- (EBAY_API_KEY / AMAZON_API_KEY) were var names no code ever
+-- read, so the rows misdescribed the configuration. Both rows
+-- stay active=false (legacy reference rows, not live config).
 INSERT INTO providers (key, name, type, base_url, api_key_env, active, rate_limit_per_minute, priority) VALUES
   ('mock', 'Mock Provider', 'mock', NULL, NULL, true, 9999, 99),
   ('apify', 'Apify', 'scraping', 'https://api.apify.com/v2', 'APIFY_API_TOKEN', false, 30, 20),
-  ('amazon_api', 'Amazon Product API', 'official_api', 'https://webservices.amazon.com', 'AMAZON_API_KEY', false, 60, 5),
-  ('ebay_api', 'eBay Browse API', 'official_api', 'https://api.ebay.com', 'EBAY_API_KEY', false, 60, 6),
+  ('amazon_api', 'Amazon Product API', 'official_api', 'https://webservices.amazon.com', 'AMAZON_ASSOC_TAG', false, 60, 5),
+  ('ebay_api', 'eBay Browse API', 'official_api', 'https://api.ebay.com', 'EBAY_CLIENT_ID', false, 60, 6),
   ('affiliate_feed', 'Affiliate Feed', 'affiliate_feed', NULL, 'AFFILIATE_FEED_KEY', false, 100, 10),
   ('merchant_upload', 'Merchant Upload', 'merchant_upload', NULL, NULL, false, 9999, 15),
   ('csv_import', 'CSV Import', 'csv_import', NULL, NULL, false, 9999, 50)

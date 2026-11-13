@@ -23,7 +23,12 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { requireAdmin } from '@/lib/api/middleware';
 
-type ProfileRow = { roles?: { name?: string | null } | Array<{ name?: string | null }> | null } | null;
+// Final 100%, F-P1-61 — the profile mock now carries the seeded
+// permissions array too (admin = ['*']); see the fail-closed test
+// at the end of this file.
+type ProfileRow = {
+  roles?: { name?: string | null; permissions?: unknown } | Array<{ name?: string | null; permissions?: unknown }> | null;
+} | null;
 
 const state = vi.hoisted(() => ({
   user: null as { id: string } | null,
@@ -113,7 +118,7 @@ describe('requireAdmin — deny path (real middleware, mocked Supabase boundary)
 
   it('service client unavailable → 500, never a pass (fail closed)', async () => {
     state.user = { id: 'user-admin-1' };
-    state.profile = { roles: { name: 'admin' } };
+    state.profile = { roles: { name: 'admin', permissions: ['*'] } };
     state.serviceAvailable = false;
     const result = await requireAdmin(adminRequest());
     expect('error' in result).toBe(true);
@@ -124,14 +129,36 @@ describe('requireAdmin — deny path (real middleware, mocked Supabase boundary)
 
   it('admin user passes (positive control) → { userId }', async () => {
     state.user = { id: 'user-admin-1' };
-    state.profile = { roles: { name: 'admin' } };
+    state.profile = { roles: { name: 'admin', permissions: ['*'] } };
     const result = await requireAdmin(adminRequest());
     expect(result).toEqual({ userId: 'user-admin-1' });
   });
 
+  it('admin name WITHOUT permissions → 403 (fail closed, Final 100% F-P1-61)', async () => {
+    state.user = { id: 'user-admin-1' };
+    // The seeded admin role carries permissions ['*']; a role row
+    // with the name but no permissions value must NOT pass.
+    state.profile = { roles: { name: 'admin' } };
+    const result = await requireAdmin(adminRequest());
+    expect('error' in result).toBe(true);
+    if ('error' in result) {
+      expect(result.error.status).toBe(403);
+    }
+  });
+
+  it('admin name with an EMPTY permissions array → 403 (fail closed)', async () => {
+    state.user = { id: 'user-admin-1' };
+    state.profile = { roles: { name: 'admin', permissions: [] } };
+    const result = await requireAdmin(adminRequest());
+    expect('error' in result).toBe(true);
+    if ('error' in result) {
+      expect(result.error.status).toBe(403);
+    }
+  });
+
   it('admin role via the array embed shape also passes', async () => {
     state.user = { id: 'user-admin-1' };
-    state.profile = { roles: [{ name: 'admin' }] };
+    state.profile = { roles: [{ name: 'admin', permissions: ['*'] }] };
     const result = await requireAdmin(adminRequest());
     expect(result).toEqual({ userId: 'user-admin-1' });
   });

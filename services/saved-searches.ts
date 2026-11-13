@@ -188,7 +188,9 @@ export async function listSavedSearches(
       .from('saved_searches')
       .select('id, user_id, name, query, notify_on_match, last_notified_at, created_at, updated_at')
       .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      // Final 100%, F-P2-60 — hard cap 100 (was unbounded).
+      .limit(100);
     if (error || !data) {
       if (error && !isMissingTableError(error)) {
         logger.warn('listSavedSearches: query failed', { error: error.message });

@@ -23,50 +23,92 @@ const product = {
 };
 
 describe('buildProductHistorySummary', () => {
-  it('computes stats from the 4 recorded points only — never smoothed', () => {
-    const summary = buildProductHistorySummary(product, [
-      { price: 999, recordedAt: day(0) },
-      { price: 949, recordedAt: day(10) },
-      { price: 888, recordedAt: day(20) },
-      { price: 888, recordedAt: day(30) },
-    ]);
-    expect(summary.pointCount).toBe(4);
+  // FINAL 100% (W3, F-P1-36) — summaries are gated on the unified
+  // 5-point + freshness rule, so fixtures need 5 points with a
+  // fresh latest point. `now` is passed explicitly: the fixtures'
+  // December dates must not depend on the run date.
+  const NOW = new Date(day(31));
+
+  it('computes stats from the 5 recorded points only — never smoothed', () => {
+    const summary = buildProductHistorySummary(
+      product,
+      [
+        { price: 999, recordedAt: day(0) },
+        { price: 949, recordedAt: day(10) },
+        { price: 888, recordedAt: day(20) },
+        { price: 888, recordedAt: day(30) },
+        { price: 888, recordedAt: day(32) },
+      ],
+      NOW
+    );
+    expect(summary.pointCount).toBe(5);
     expect(summary.stats).not.toBeNull();
     expect(summary.stats?.current).toBe(888);
     expect(summary.stats?.lowest).toBe(888);
     expect(summary.stats?.highest).toBe(999);
-    expect(summary.stats?.average).toBeCloseTo(931, 2);
+    expect(summary.stats?.average).toBeCloseTo(922.4, 2);
     // The last two points are identical: no drop between them.
     expect(summary.drops).toHaveLength(2);
     expect(summary.biggestDrop?.dropPercent).toBeCloseTo(6.43, 2);
     expect(summary.biggestDrop?.oldPrice).toBe(949);
     expect(summary.biggestDrop?.newPrice).toBe(888);
+    expect(summary.gateReason).toBeNull();
   });
 
   it('empty history → null stats, null biggest drop', () => {
-    const summary = buildProductHistorySummary(product, []);
+    const summary = buildProductHistorySummary(product, [], NOW);
     expect(summary.pointCount).toBe(0);
     expect(summary.stats).toBeNull();
     expect(summary.drops).toEqual([]);
     expect(summary.biggestDrop).toBeNull();
+    expect(summary.gateReason).toMatch(/0 of 5 recorded points/);
+  });
+
+  it('a 4-point series is gated — the live seed shape draws no verdict', () => {
+    const summary = buildProductHistorySummary(
+      product,
+      [
+        { price: 999, recordedAt: day(0) },
+        { price: 949, recordedAt: day(10) },
+        { price: 888, recordedAt: day(20) },
+        { price: 888, recordedAt: day(30) },
+      ],
+      NOW
+    );
+    expect(summary.pointCount).toBe(4);
+    expect(summary.stats).toBeNull();
+    expect(summary.biggestDrop).toBeNull();
+    expect(summary.gateReason).toMatch(/4 of 5 recorded points/);
+    // The recorded points themselves are still returned.
+    expect(summary.points).toHaveLength(4);
   });
 
   it('flat series → no drops at all', () => {
-    const summary = buildProductHistorySummary(product, [
-      { price: 100, recordedAt: day(0) },
-      { price: 100, recordedAt: day(15) },
-      { price: 100, recordedAt: day(30) },
-    ]);
+    const summary = buildProductHistorySummary(
+      product,
+      [
+        { price: 100, recordedAt: day(0) },
+        { price: 100, recordedAt: day(10) },
+        { price: 100, recordedAt: day(20) },
+        { price: 100, recordedAt: day(25) },
+        { price: 100, recordedAt: day(30) },
+      ],
+      NOW
+    );
     expect(summary.drops).toEqual([]);
     expect(summary.biggestDrop).toBeNull();
     expect(summary.stats?.changePercent).toBe(0);
   });
 
   it('sorts points oldest-first regardless of input order', () => {
-    const summary = buildProductHistorySummary(product, [
-      { price: 888, recordedAt: day(30) },
-      { price: 999, recordedAt: day(0) },
-    ]);
+    const summary = buildProductHistorySummary(
+      product,
+      [
+        { price: 888, recordedAt: day(30) },
+        { price: 999, recordedAt: day(0) },
+      ],
+      NOW
+    );
     expect(summary.points[0].price).toBe(999);
     expect(summary.points[1].price).toBe(888);
   });
@@ -78,17 +120,29 @@ describe('sortHistorySummaries', () => {
       { ...product, id: 'a', name: 'Alpha', slug: 'alpha' },
       [
         { price: 100, recordedAt: day(0) },
-        { price: 90, recordedAt: day(10) },
-      ]
+        { price: 100, recordedAt: day(10) },
+        { price: 100, recordedAt: day(20) },
+        { price: 100, recordedAt: day(25) },
+        { price: 90, recordedAt: day(30) },
+      ],
+      new Date(day(31))
     ),
     buildProductHistorySummary(
       { ...product, id: 'b', name: 'Beta', slug: 'beta' },
       [
         { price: 200, recordedAt: day(0) },
-        { price: 150, recordedAt: day(10) },
-      ]
+        { price: 200, recordedAt: day(10) },
+        { price: 200, recordedAt: day(20) },
+        { price: 200, recordedAt: day(25) },
+        { price: 150, recordedAt: day(30) },
+      ],
+      new Date(day(31))
     ),
-    buildProductHistorySummary({ ...product, id: 'c', name: 'Gamma', slug: 'gamma' }, []),
+    buildProductHistorySummary(
+      { ...product, id: 'c', name: 'Gamma', slug: 'gamma' },
+      [],
+      new Date(day(31))
+    ),
   ];
 
   it('biggest-drop first, no-history last', () => {

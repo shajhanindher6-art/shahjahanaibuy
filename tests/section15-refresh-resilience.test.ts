@@ -633,7 +633,10 @@ describe('P1-5 price_refresh_runs record', () => {
     const rows = fakeDb.tables.price_refresh_runs!.rows;
     expect(rows).toHaveLength(1);
     expect(rows[0].source).toBe('prices-refresh');
-    expect(rows[0].status).toBe('completed');
+    // FINAL 100% (F-P1-28, K10b): this harness fetches no live
+    // provider prices (Mock provider, no products table), so the
+    // run is recorded as completed_no_live_source, never 'completed'.
+    expect(rows[0].status).toBe('completed_no_live_source');
     expect(rows[0].started_at).toBeTruthy();
     expect(rows[0].finished_at).toBeTruthy();
     const steps = rows[0].steps as Record<string, { status: string }>;
@@ -691,7 +694,7 @@ describe('P1-5 price_refresh_runs record', () => {
     expect(sql).toContain('DO NOT APPLY YET');
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS public.price_refresh_runs');
     expect(sql).toContain("CHECK (source IN ('prices-refresh', 'alerts-check'))");
-    expect(sql).toContain("CHECK (status IN ('running', 'completed', 'completed_with_failures', 'failed'))");
+    expect(sql).toContain("CHECK (status IN ('running', 'completed', 'completed_with_failures', 'completed_no_live_source', 'failed'))");
     expect(sql).toContain('finished_at timestamptz NULL DEFAULT NULL');
     expect(sql).toContain('ENABLE ROW LEVEL SECURITY');
     expect(sql).toContain('FOR SELECT TO anon');
@@ -866,10 +869,13 @@ describe('Stage D pipeline step (refresh route)', () => {
     expect(data.pipeline.available).toBe(false);
     expect(data.pipeline.reason).toBe('due-products-unreadable');
     expect(data.steps.pipeline.status).toBe('ok');
-    // The run is NOT completed_with_failures because of it.
+    // The run is NOT completed_with_failures because of it — but
+    // it is NOT 'completed' either: no live provider prices were
+    // fetched in this harness (FINAL 100%, F-P1-28, K10b), so the
+    // honest status is completed_no_live_source.
     const rows = fakeDb.tables.price_refresh_runs!.rows;
     expect(rows).toHaveLength(1);
-    expect(rows[0].status).toBe('completed');
+    expect(rows[0].status).toBe('completed_no_live_source');
   });
 
   it('the eBay leg is still intact: it runs first and degrades to merchant-missing', async () => {

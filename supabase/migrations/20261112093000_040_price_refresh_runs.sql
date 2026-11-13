@@ -49,7 +49,13 @@ CREATE TABLE IF NOT EXISTS public.price_refresh_runs (
   started_at timestamptz NOT NULL DEFAULT now(),
   finished_at timestamptz NULL DEFAULT NULL,
   status text NOT NULL DEFAULT 'running'
-    CHECK (status IN ('running', 'completed', 'completed_with_failures', 'failed')),
+    -- FINAL 100% (F-P1-28, K10b) — 'completed_no_live_source'
+    -- added 2026-11-13: a run that finished with no failed step
+    -- but fetched zero live prices. It is neither a success nor
+    -- a failure, and the run row cannot be stored without this
+    -- value in the CHECK. The file is still unapplied, so this
+    -- edit takes effect when the owner applies the migration.
+    CHECK (status IN ('running', 'completed', 'completed_with_failures', 'completed_no_live_source', 'failed')),
   steps jsonb NOT NULL DEFAULT '{}'::jsonb,
   error text NULL DEFAULT NULL,
   CONSTRAINT price_refresh_runs_finished_after_start
