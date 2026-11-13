@@ -52,7 +52,7 @@ export interface ChatHistoryTurn {
 // with no product context, passes through unchanged and the engine
 // answers (or honestly asks for clarification) as before.
 
-type FollowUpKind = 'cheaper' | 'lighter' | 'best' | 'compare';
+type FollowUpKind = 'cheaper' | 'lighter' | 'best' | 'compare' | 'pros_cons' | 'competitive';
 
 const FOLLOW_UP_PATTERNS: Array<{ kind: FollowUpKind; re: RegExp }> = [
   // Cheaper / lowest price.
@@ -66,6 +66,12 @@ const FOLLOW_UP_PATTERNS: Array<{ kind: FollowUpKind; re: RegExp }> = [
   { kind: 'best', re: /\b(that one|is ka|is ko|yeh wala|ye wala|us ka)\b/i },
   // Compare them.
   { kind: 'compare', re: /\b(compare them|compare karo|in ka compare|in ko compare|compare these|in mein farq|in me farq)\b/i },
+  // Pros / cons (Section 19, Phase 5, §12 #54/#56): "and its pros
+  // and cons?" after a product turn is a follow-up on that product.
+  { kind: 'pros_cons', re: /\b(pros and cons|pros & cons|pros cons|advantages and disadvantages|strengths and weaknesses|good and bad)\b/i },
+  // Competitiveness (Section 19, Phase 5, §12 #53/#56): "is it
+  // competitive?" after a product turn is a follow-up on it.
+  { kind: 'competitive', re: /\b(competitive|is the price good|is it a good price|fair price|overpriced|worth the price|worth it)\b/i },
 ];
 
 function detectFollowUpKind(message: string): FollowUpKind | null {
@@ -97,13 +103,17 @@ export function resolveFollowUpQuery(message: string, contextProductNames: strin
     const joined = names.join(', ');
     switch (kind) {
       case 'cheaper':
-        return `Compare ${joined} — which is the cheapest and the best value?`;
+        return `Compare ${joined} — which has the lowest price?`;
       case 'lighter':
         return `Compare ${joined} — which is the lightest?`;
       case 'best':
         return `Compare ${joined} and recommend the best one for most buyers.`;
       case 'compare':
         return `Compare ${joined} — full comparison.`;
+      case 'pros_cons':
+        return `What are the pros and cons of ${joined}?`;
+      case 'competitive':
+        return `Compare ${joined} — which price is more competitive?`;
     }
   }
 
@@ -118,6 +128,10 @@ export function resolveFollowUpQuery(message: string, contextProductNames: strin
       return `Tell me more about ${name} — is it the best choice?`;
     case 'compare':
       return `Compare ${name} with similar products.`;
+    case 'pros_cons':
+      return `What are the pros and cons of ${name}?`;
+    case 'competitive':
+      return `Is the price of ${name} competitive?`;
   }
 }
 

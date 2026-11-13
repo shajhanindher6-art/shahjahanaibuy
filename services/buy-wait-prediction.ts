@@ -13,14 +13,70 @@
  *   must say "not enough history for seasonal analysis".
  * - This engine NEVER outputs an exact future price or an exact future
  *   date. Older prediction displays that did so are retired, not reused.
+ * - Section 19, Phase 3 (§12 #32): the verdict set also includes
+ *   'track_price' (near the recorded low on thin history — no strong
+ *   buy or wait signal yet, so track the price) and
+ *   'compare_alternatives' (a cheaper alternative exists — compare
+ *   before buying). Both need their stated inputs; without them the
+ *   engine behaves exactly as before.
+ * - Section 19, Phase 3 (§12 #33): an optional budget input. When
+ *   the current price is above the budget the verdict NEVER says
+ *   buy_now — it says wait (or track) and states the gap
+ *   ("above your budget by $X"). No budget supplied → unchanged.
+ * - Section 19, Phase 3 (§12 #20 note): when the latest recorded
+ *   price is stale (> 7 days, the STALE_PRICE_DAYS rule), the
+ *   verdict is QUALIFIED with the staleness — the reason says the
+ *   price is N days old — instead of presenting it as current.
+ *   `priceStale` / `daysSinceLastPrice` expose it to callers.
  */
+
+import { STALE_PRICE_DAYS } from '@/lib/price-freshness';
 
 export interface BuyWaitPoint {
   price: number;
   recordedAt: string;
 }
 
-export type BuyWaitRecommendation = 'buy_now' | 'wait' | 'not_enough_data';
+export type BuyWaitRecommendation =
+  | 'buy_now'
+  | 'wait'
+  | 'track_price'
+  | 'compare_alternatives'
+  | 'not_enough_data';
+
+/**
+ * Optional engine inputs (Section 19, Phase 3, §12 #32/#33). All
+ * optional — with none supplied the engine behaves exactly as
+ * before (buy_now / wait / not_enough_data only).
+ */
+export interface BuyWaitOptions {
+  /**
+   * The visitor's stated max budget in USD (§12 #33). When the
+   * current price exceeds it, the verdict never says buy_now — it
+   * says wait (or track) and states the gap.
+   */
+  budgetUsd?: number | null;
+  /**
+   * Price of a cheaper alternative product in USD (§12 #32).
+   * When the current price is at least 5% above it, the verdict
+   * is compare_alternatives. Pass null when no alternative is
+   * known — the engine never invents one.
+   */
+  cheaperAlternativePrice?: number | null;
+}
+
+/**
+ * TRACK PRICE when the price is near — but not at — its recorded
+ * low: within 5% above the lowest recorded price. (At the low is
+ * buy_now; further above it is wait territory.)
+ */
+export const TRACK_PRICE_NEAR_LOW_FACTOR = 1.05;
+/**
+ * COMPARE ALTERNATIVES when the alternative is at least 5%
+ * cheaper than the current price — a smaller gap is noise, not a
+ * reason to switch products.
+ */
+export const COMPARE_ALTERNATIVE_MIN_FACTOR = 1.05;
 
 export interface BuyWaitPrediction {
   recommendation: BuyWaitRecommendation;
@@ -40,6 +96,21 @@ export interface BuyWaitPrediction {
   daysSinceLastDrop: number | null;
   /** True when history is thin (<= 4 points): the UI must show the low-confidence label. */
   lowConfidence: boolean;
+  /**
+   * True when the latest recorded price is older than
+   * STALE_PRICE_DAYS (7) — the verdict is then qualified with the
+   * staleness in `reason` instead of presented as current
+   * (Section 19, Phase 3, §12 #20 note).
+   */
+  priceStale: boolean;
+  /** Whole days since the latest recorded price (null when < 2 points). */
+  daysSinceLastPrice: number | null;
+  /**
+   * Current price minus budget in USD, when a budget was supplied
+   * and the current price exceeds it (null otherwise). The reason
+   * always states this gap — never a buy above budget.
+   */
+  budgetGapUsd: number | null;
 }
 
 /** Seasonality needs a real seasonal signal: 12+ points over 90+ days. */
@@ -56,7 +127,10 @@ function toMs(iso: string): number {
   return Number.isFinite(t) ? t : NaN;
 }
 
-export function predictBuyVsWait(points: BuyWaitPoint[]): BuyWaitPrediction {
+export function predictBuyVsWait(
+  points: BuyWaitPoint[],
+  options: BuyWaitOptions = {}
+): BuyWaitPrediction {
   const valid = points
     .filter((p) => Number.isFinite(p.price) && p.price > 0 && Number.isFinite(toMs(p.recordedAt)))
     .map((p) => ({ price: p.price, ms: toMs(p.recordedAt) }))
@@ -73,6 +147,9 @@ export function predictBuyVsWait(points: BuyWaitPoint[]): BuyWaitPrediction {
     dropCount: 0,
     daysSinceLastDrop: null as number | null,
     lowConfidence: true,
+    priceStale: false,
+    daysSinceLastPrice: null as number | null,
+    budgetGapUsd: null as number | null,
   };
 
   if (valid.length < 2) {
@@ -137,21 +214,75 @@ export function predictBuyVsWait(points: BuyWaitPoint[]): BuyWaitPrediction {
   }
   const lowConfidence = valid.length <= THIN_HISTORY_MAX_POINTS;
 
-  // Recommendation (binary, per spec): Buy Now when the price is at/near
-  // its recorded low or below its average; otherwise Wait — the price
-  // has room to fall back toward its history and has dropped before.
+  // Recommendation (Section 19, Phase 3, §12 #32/#33 — precedence
+  // is deliberate and stated):
+  //   1. OVER BUDGET → wait, with the gap stated (never buy_now
+  //      above budget).   2. CHEAPER ALTERNATIVE (≥ 5% cheaper)
+  //      → compare_alternatives.   3. AT/NEAR LOW or BELOW AVERAGE
+  //      → buy_now.   4. THIN HISTORY + NEAR LOW (within 5% above
+  //      the low, not at it) → track_price: no strong signal yet.
+  //   5. Otherwise wait — the price has room to fall back toward
+  //      its history and has dropped before.
+  // With no budget and no alternative supplied, rules 1–2 never
+  // fire and the engine behaves exactly as before.
   const atLowest = current <= lowest * 1.02;
   const belowAverage = current < average * 0.95;
   const aboveAverage = current > average * 1.05;
 
+  // Optional inputs, validated: only finite positive numbers
+  // count. An invalid budget/alternative is ignored, never
+  // invented or guessed.
+  const budget =
+    typeof options.budgetUsd === 'number' &&
+    Number.isFinite(options.budgetUsd) &&
+    options.budgetUsd > 0
+      ? options.budgetUsd
+      : null;
+  const cheaperAlternative =
+    typeof options.cheaperAlternativePrice === 'number' &&
+    Number.isFinite(options.cheaperAlternativePrice) &&
+    options.cheaperAlternativePrice > 0
+      ? options.cheaperAlternativePrice
+      : null;
+  const budgetGapUsd =
+    budget !== null && current > budget
+      ? Math.round((current - budget) * 100) / 100
+      : null;
+
+  // Freshness (§12 #20 note): the verdict is only as current as
+  // the latest recorded price. Older than STALE_PRICE_DAYS (7) →
+  // the reason carries the staleness instead of presenting the
+  // verdict as if the price were checked today.
+  const daysSinceLastPrice = Math.max(
+    0,
+    Math.floor((Date.now() - valid[valid.length - 1].ms) / 86_400_000)
+  );
+  const priceStale = daysSinceLastPrice > STALE_PRICE_DAYS;
+
   let recommendation: BuyWaitRecommendation;
   let reason: string;
-  if (atLowest) {
+  if (budgetGapUsd !== null && budget !== null) {
+    recommendation = 'wait';
+    reason = `Wait — the current price ($${current.toFixed(2)}) is above your budget by $${budgetGapUsd.toFixed(2)} (your budget: $${budget.toFixed(2)}). Buying now would exceed your budget${atLowest ? ', even though the price is at its recorded low' : ''} — wait for a drop or compare cheaper alternatives, based on ${valid.length} recorded points.`;
+  } else if (
+    cheaperAlternative !== null &&
+    current > cheaperAlternative * COMPARE_ALTERNATIVE_MIN_FACTOR
+  ) {
+    recommendation = 'compare_alternatives';
+    const saving = Math.round((current - cheaperAlternative) * 100) / 100;
+    reason = `Compare alternatives — a cheaper alternative is available at $${cheaperAlternative.toFixed(2)}, $${saving.toFixed(2)} (${Math.round((saving / current) * 100)}%) less than the current price ($${current.toFixed(2)}). Check it before buying, based on ${valid.length} recorded points.`;
+  } else if (atLowest) {
     recommendation = 'buy_now';
     reason = `Buy Now — the current price ($${current.toFixed(2)}) is at or near the lowest recorded price ($${lowest.toFixed(2)}), based on ${valid.length} recorded points.`;
   } else if (belowAverage) {
     recommendation = 'buy_now';
     reason = `Buy Now — the current price ($${current.toFixed(2)}) is below the recorded average ($${average.toFixed(2)}), based on ${valid.length} recorded points.`;
+  } else if (
+    lowConfidence &&
+    current <= lowest * TRACK_PRICE_NEAR_LOW_FACTOR
+  ) {
+    recommendation = 'track_price';
+    reason = `Track the price — the current price ($${current.toFixed(2)}) is near the lowest recorded price ($${lowest.toFixed(2)}) but the history is thin (${valid.length} recorded points, low confidence), so there is no strong buy or wait signal yet. Set a price alert and decide once more prices are recorded.`;
   } else if (aboveAverage && drops > 0) {
     recommendation = 'wait';
     reason = `Wait — the current price ($${current.toFixed(2)}) is above the recorded average ($${average.toFixed(2)}) and this product has dropped ${drops} time${drops === 1 ? '' : 's'} before, based on ${valid.length} recorded points.`;
@@ -161,6 +292,10 @@ export function predictBuyVsWait(points: BuyWaitPoint[]): BuyWaitPrediction {
   } else {
     recommendation = 'wait';
     reason = `Wait — the current price ($${current.toFixed(2)}) shows no strong buy signal against its recorded average ($${average.toFixed(2)}), based on ${valid.length} recorded points.`;
+  }
+
+  if (priceStale) {
+    reason += ` Note: the latest recorded price is ${daysSinceLastPrice} day${daysSinceLastPrice === 1 ? '' : 's'} old, so this verdict is based on stale data — treat it as a rough guide, not a current price.`;
   }
 
   return {
@@ -177,5 +312,8 @@ export function predictBuyVsWait(points: BuyWaitPoint[]): BuyWaitPrediction {
     dropCount: drops,
     daysSinceLastDrop,
     lowConfidence,
+    priceStale,
+    daysSinceLastPrice,
+    budgetGapUsd,
   };
 }

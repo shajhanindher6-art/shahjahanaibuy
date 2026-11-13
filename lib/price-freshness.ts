@@ -80,6 +80,12 @@ export function getPriceAgeDays(
  * True when a last-checked value is older than STALE_PRICE_DAYS.
  * Missing, empty, or unparseable values are NOT stale — there is
  * nothing to label, so the caller renders no badge at all.
+ * (Section 19, Phase 2 §12 #21: "not stale" is NOT "fresh" — an
+ * unknown age must never be read as a fresh price. Callers that
+ * render a freshness state must use getFreshnessStatus below, which
+ * distinguishes the three states; isPriceStale stays a pure
+ * stale/not-stale predicate so SEO/catalog callers that treat
+ * "unknown" as "no stale offer" keep their existing behaviour.)
  */
 export function isPriceStale(
   value: string | Date | null | undefined,
@@ -87,4 +93,56 @@ export function isPriceStale(
 ): boolean {
   const age = getPriceAgeDays(value, now);
   return age !== null && age > STALE_PRICE_DAYS;
+}
+
+/**
+ * Three-state freshness (Section 19, Phase 2 §12 #21) — the
+ * fail-open fix. `isPriceStale` returns false for an unknown age,
+ * which callers used to read as "fresh". This helper never does:
+ * - 'fresh' — a parseable check within STALE_PRICE_DAYS.
+ * - 'stale' — a parseable check older than STALE_PRICE_DAYS.
+ * - 'unknown' — no recorded check at all (missing/empty/unparseable).
+ * Render 'unknown' as "age unknown" text, never as nothing.
+ */
+export type FreshnessStatus = 'fresh' | 'stale' | 'unknown';
+
+export function getFreshnessStatus(
+  value: string | Date | null | undefined,
+  now: Date = new Date(),
+): { status: FreshnessStatus; ageDays: number | null } {
+  const age = getPriceAgeDays(value, now);
+  if (age === null) return { status: 'unknown', ageDays: null };
+  return { status: age > STALE_PRICE_DAYS ? 'stale' : 'fresh', ageDays: age };
+}
+
+/**
+ * Freshness gate for INTERPRETIVE verdicts (Section 19, Phase 2
+ * §12 #20). A "good time to buy" / "near its lowest" verdict that
+ * reasons about a stale price must be suppressed or qualified —
+ * a visitor otherwise sees "Stale price · 10 days old" in one
+ * place and "good time to buy" in another, unreconciled.
+ * Returns null when the price is fresh (no qualification needed),
+ * otherwise the honest qualifier to render alongside the verdict
+ * (or to substitute for it — see services/ai-summary.ts, which
+ * rewrites the verdict sentence itself for fresh generations and
+ * attaches this note to cached rows whose stored text predates
+ * the staleness).
+ */
+export function formatVerdictFreshnessNote(
+  value: string | Date | null | undefined,
+  now: Date = new Date(),
+): string | null {
+  const { status, ageDays } = getFreshnessStatus(value, now);
+  if (status === 'fresh') return null;
+  if (status === 'stale') {
+    const age = ageDays ?? 0;
+    return (
+      `Based on a price last checked ${age} day${age === 1 ? '' : 's'} ago ` +
+      `— it may be out of date.`
+    );
+  }
+  return (
+    'Price age unknown — this verdict is based on a price whose ' +
+    'last check date is not recorded, so it may be out of date.'
+  );
 }

@@ -4,6 +4,7 @@
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
+import { logger } from '@/lib/config/logger';
 
 export interface AuditLogInput {
   action: string;
@@ -29,6 +30,6 @@ export async function createAuditLog(
 
   if (error) {
     // Audit log failures should not crash the request, but should be logged
-    console.error('Failed to create audit log:', error.message);
+    logger.error('Failed to create audit log', { error: error.message });
   }
 }

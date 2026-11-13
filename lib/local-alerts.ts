@@ -316,7 +316,20 @@ export interface GuestAlertTriggerState {
 
 export interface GuestAlertCurrentState {
   price: number | null;
+  /** The product is in stock right now (informational only). */
   backInStock: boolean;
+  /**
+   * Section 19, Phase 6 (§12 #67) — a REAL recorded out→in
+   * transition happened for this product in this run. This is
+   * the ONLY thing that fires a back_in_stock alert. The
+   * refresh step passes the transition set computed by
+   * recordAvailabilitySnapshots (isBackInStockTransition on
+   * availability_history), never raw in-stock membership — so a
+   * product that was already in stock on every run never
+   * refires. When the caller cannot prove a transition (field
+   * absent / false) the alert does NOT fire.
+   */
+  backInStockTransition?: boolean;
   hasActiveDeal: boolean;
   now?: Date;
 }
@@ -341,7 +354,11 @@ export function shouldTriggerGuestAlert(
     return alert.lastTriggeredPrice !== current.price;
   }
   if (alert.alertType === 'back_in_stock') {
-    return current.backInStock;
+    // §12 #67: only a recorded out→in transition fires. Being
+    // in stock right now (current.backInStock) is NOT a trigger —
+    // a product that never left stock would otherwise refire on
+    // every refresh run.
+    return current.backInStockTransition === true;
   }
   if (alert.alertType === 'deal') {
     if (!current.hasActiveDeal) return false;

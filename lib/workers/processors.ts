@@ -13,8 +13,24 @@
 import { getProviderRegistry } from '@/services/providers';
 import { ingestBatch } from '@/services/pipeline';
 import { invalidateCache, cacheKey } from '@/lib/cache';
+import { invalidateAiForProduct } from '@/lib/cache/ai-invalidation';
+// Section 19, Phase 8 (§12 #12) — the `ai.analyze` processor runs
+// the expensive visual analysis (BLIP caption + HF embedding +
+// catalog vector match). Imported from the service, not the engine
+// barrel: the engine's HF providers delegate to these same
+// functions, and the processor must not pull the engine in.
+import {
+  captionPublicImageUrl,
+  embedText,
+  embedTextClip,
+  type HfResult,
+} from '@/services/visual-search';
 import { logger } from '@/lib/config/logger';
-import type { JobDefinition, JobResult } from './types';
+import type { AiAnalyzeJobData, JobDefinition, JobResult } from './types';
+// Section 19, Phase 1 (§12 #8) — recordProviderHealth had zero
+// live callers; the price.refresh processor reports each provider
+// fetch here (best-effort, never throws).
+import { reportAiProviderHealth } from '@/services/ai-engine/health-report';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -143,6 +159,16 @@ async function processPriceUpdate(
     };
   }
 
+  // Section 19, Phase 8 (§12 #14) — a new price point changes
+  // the inputs the AI summary / prediction were computed from, so
+  // their cached entries for this product are invalidated
+  // (in-memory + stored rows). Best-effort: never fails the job.
+  try {
+    await invalidateAiForProduct(supabase, data.productId as string);
+  } catch {
+    // Invalidation is best-effort; the price point was recorded.
+  }
+
   return { success: true, processed: 1 };
 }
 
@@ -201,10 +227,34 @@ async function processPriceRefresh(
       continue;
     }
 
-    const fresh = await provider.fetch({
-      externalId: source.external_id,
-      retailerSlug: retailer.slug,
+    const fetchStart = Date.now();
+    let fresh: Awaited<ReturnType<typeof provider.fetch>> | null = null;
+    let fetchError: string | null = null;
+    try {
+      fresh = await provider.fetch({
+        externalId: source.external_id,
+        retailerSlug: retailer.slug,
+      });
+    } catch (err) {
+      fetchError = String(err);
+    }
+    // Section 19, Phase 1 (§12 #8, #9) — timed provider-health
+    // record for the refresh call site (best-effort; a missing
+    // provider_health table or RLS denial never fails the refresh).
+    void reportAiProviderHealth(supabase, provider.key, {
+      success: fetchError === null && fresh !== null,
+      responseMs: Date.now() - fetchStart,
+      ...(fetchError
+        ? { error: fetchError.slice(0, 200) }
+        : fresh === null
+          ? { error: 'Provider returned no data' }
+          : {}),
     });
+
+    if (fetchError) {
+      errors.push(`Provider fetch failed for source ${source.id}: ${fetchError}`);
+      continue;
+    }
 
     if (!fresh) {
       errors.push(`Provider returned no data for source ${source.id}`);
@@ -226,6 +276,15 @@ async function processPriceRefresh(
       errors.push(insertError.message);
     } else {
       processed++;
+      // Section 19, Phase 8 (§12 #14) — a new price point was
+      // recorded, so the AI cache entries for this product are
+      // invalidated (in-memory + stored ai_summaries /
+      // ai_predictions rows). Best-effort: never fails the refresh.
+      try {
+        await invalidateAiForProduct(supabase, productId);
+      } catch {
+        // Invalidation is best-effort; the price point was recorded.
+      }
     }
 
     // Update the source's last_fetched_at.
@@ -425,6 +484,279 @@ async function processImageProcess(
 }
 
 // ---------------------------------------------------------------------------
+// ai.analyze — expensive AI visual analysis (Section 19, Phase 8, §12 #12)
+// ---------------------------------------------------------------------------
+
+interface AiAnalyzeMatch {
+  productId: string;
+  slug: string;
+  name: string;
+  brand: string | null;
+  similarity: number;
+}
+
+function isMissingTableError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === '42P01' || error.code === 'PGRST205';
+}
+
+/**
+ * Run one embedding-space RPC (`match_clip_products` or
+ * `match_products`) and normalise the result, mirroring the
+ * visual-search route's contract: a missing table is a setup
+ * problem the caller can recognise (never thrown), any other
+ * failure is reported as an error.
+ */
+async function matchEmbeddingRpcForJob(
+  supabase: Awaited<ReturnType<typeof getServiceClient>>,
+  rpcName: string,
+  vector: number[],
+  limit: number
+): Promise<
+  | { ok: true; matches: Array<{ product_id: string; similarity: number }> }
+  | { ok: false; missingTable: boolean; error: string }
+> {
+  const { data, error } = await supabase.rpc(rpcName, {
+    query_embedding: vector,
+    match_count: limit,
+  });
+  if (error) {
+    return {
+      ok: false,
+      missingTable: isMissingTableError(error),
+      error: error.message ?? 'Vector match failed.',
+    };
+  }
+  const matches = (Array.isArray(data) ? data : []) as Array<{
+    product_id: string;
+    similarity: number;
+  }>;
+  return { ok: true, matches };
+}
+
+/**
+ * The `ai.analyze` processor — the single most expensive AI
+ * analysis (visual caption + embedding + catalog vector match),
+ * run as a job on the existing queue instead of inline in a
+ * request. It mirrors the visual-search route's CLIP → MiniLM
+ * fallback exactly (CLIP first when the CLIP table has rows, then
+ * MiniLM on any CLIP-side failure or zero matches).
+ *
+ * RETRY CONTRACT — honours the `retryable` flag (§12 #6, #55):
+ * the queue only retries a job when the processor THROWS, so a
+ * retryable HF failure (503 model loading, 429, network/timeout)
+ * is thrown, and the queue retries it with exponential backoff
+ * (up to `attempts`, then DLQ). A non-retryable failure (401/403
+ * bad token, bad input, missing embeddings table) is RETURNED as
+ * `{ success: false }` — never retried, never DLQ'd. 401/403 are
+ * never retried, by construction: `hfErrorMessage` marks them
+ * `retryable: false`, so they take the return path.
+ *
+ * RESULT STORAGE — no new table and no new migration: the outcome
+ * (caption, embedding space, matched products) is returned in
+ * `JobResult.metadata` and read back via `getJobResult(jobId)`
+ * (last 100 jobs, this instance), exactly like the other
+ * synchronous jobs. As a side effect the caption + embedding land
+ * in the §12 #11 visual-search cache, so the next live
+ * visual-search request for the same image is a cache hit and
+ * spends no HF budget.
+ */
+async function processAiAnalyze(job: JobDefinition): Promise<JobResult> {
+  const data = job.data as AiAnalyzeJobData;
+  const imageUrl = typeof data.imageUrl === 'string' ? data.imageUrl.trim() : '';
+  const captionInput = typeof data.caption === 'string' ? data.caption.trim() : '';
+  const limit = Math.min(Math.max(Math.floor(data.limit ?? 5) || 5, 1), 10);
+
+  if (!imageUrl && !captionInput) {
+    return {
+      success: false,
+      processed: 0,
+      errors: ['ai.analyze needs an imageUrl or a caption.'],
+    };
+  }
+
+  // 1. Caption the image (BLIP via HF) — or use the supplied caption.
+  let caption = captionInput;
+  let captionCached = false;
+  if (imageUrl) {
+    const captioned: HfResult<string> = await captionPublicImageUrl(imageUrl);
+    if (!captioned.ok) {
+      if (captioned.retryable) throw new Error(captioned.error);
+      return { success: false, processed: 0, errors: [captioned.error] };
+    }
+    caption = captioned.value;
+    captionCached = captioned.cached === true;
+  }
+
+  const supabase = await getServiceClient();
+
+  // 2. CLIP table check (mirror the visual-search route): the CLIP
+  // space is preferred only when the table actually has rows.
+  const { count: clipCount, error: clipCountError } = await supabase
+    .from('product_clip_embeddings')
+    .select('product_id', { count: 'exact', head: true });
+  const preferClip = data.preferClip !== false && !clipCountError && !!clipCount && clipCount > 0;
+
+  // 3. Embed + match, CLIP first, MiniLM fallback. Each embed
+  // failure follows the same retry contract as the caption: a
+  // retryable HF error throws (queue retries), a non-retryable one
+  // returns a failed result.
+  const embedOrThrow = async (
+    useClip: boolean
+  ): Promise<{ vector: number[]; space: 'clip' | 'minilm'; cached: boolean }> => {
+    const embedded: HfResult<number[]> = useClip
+      ? await embedTextClip(caption)
+      : await embedText(caption);
+    if (!embedded.ok) {
+      if (embedded.retryable) throw new Error(embedded.error);
+      const error = new Error(embedded.error) as Error & { retryable?: boolean };
+      error.retryable = false;
+      throw error;
+    }
+    return {
+      vector: embedded.value,
+      space: useClip ? 'clip' : 'minilm',
+      cached: embedded.cached === true,
+    };
+  };
+
+  let embedded: { vector: number[]; space: 'clip' | 'minilm'; cached: boolean };
+  let fallbackUsed = false;
+  try {
+    embedded = await embedOrThrow(preferClip);
+  } catch (err) {
+    // A non-retryable embed failure carries retryable: false —
+    // return it as a failed result instead of letting the queue
+    // retry it. A retryable failure (no flag, or retryable true)
+    // re-throws so the queue retries with backoff.
+    if ((err as { retryable?: unknown })?.retryable === false) {
+      return {
+        success: false,
+        processed: 0,
+        errors: [err instanceof Error ? err.message : 'Embedding failed.'],
+      };
+    }
+    throw err;
+  }
+
+  let matched = await matchEmbeddingRpcForJob(
+    supabase,
+    embedded.space === 'clip' ? 'match_clip_products' : 'match_products',
+    embedded.vector,
+    limit
+  );
+  if (!matched.ok) {
+    if (matched.missingTable) {
+      return {
+        success: false,
+        processed: 0,
+        errors: [
+          'Product embeddings are not set up yet. An admin needs to run supabase/add-visual-embeddings.sql and the backfill once (see docs/visual-search.md).',
+        ],
+      };
+    }
+    return { success: false, processed: 0, errors: [matched.error] };
+  }
+
+  // CLIP matched nothing (or the CLIP RPC failed non-fatally) —
+  // fall through to MiniLM, exactly like the route.
+  if (embedded.space === 'clip' && matched.matches.length === 0) {
+    try {
+      embedded = await embedOrThrow(false);
+    } catch (err) {
+      if ((err as { retryable?: unknown })?.retryable === false) {
+        return {
+          success: false,
+          processed: 0,
+          errors: [err instanceof Error ? err.message : 'Embedding failed.'],
+        };
+      }
+      throw err;
+    }
+    fallbackUsed = true;
+    matched = await matchEmbeddingRpcForJob(
+      supabase,
+      'match_products',
+      embedded.vector,
+      limit
+    );
+    if (!matched.ok) {
+      if (matched.missingTable) {
+        return {
+          success: false,
+          processed: 0,
+          errors: [
+            'Product embeddings are not set up yet. An admin needs to run supabase/add-visual-embeddings.sql and the backfill once (see docs/visual-search.md).',
+          ],
+        };
+      }
+      return { success: false, processed: 0, errors: [matched.error] };
+    }
+  }
+
+  if (matched.matches.length === 0) {
+    return {
+      success: true,
+      processed: 0,
+      metadata: {
+        caption,
+        mode: embedded.space === 'clip' ? 'vector-clip' : 'vector',
+        fallbackUsed,
+        captionCached,
+        embedCached: embedded.cached,
+        matches: [],
+        note: 'No matches yet — the catalog has no product embeddings. An admin needs to run the backfill once (see docs/visual-search.md).',
+      },
+    };
+  }
+
+  // Enrich the RPC matches with product rows (deleted products are
+  // skipped, never invented). Prices are deliberately NOT loaded
+  // here — the job result is the match list; the live route loads
+  // the lowest recorded price at request time.
+  const ids = matched.matches.map((m) => m.product_id);
+  const { data: products, error: productsError } = await supabase
+    .from('products')
+    .select('id, slug, name, brand')
+    .in('id', ids)
+    .neq('slug', 'sample-laptop')
+    .is('deleted_at', null);
+  if (productsError) {
+    return { success: false, processed: 0, errors: [productsError.message] };
+  }
+  const byId = new Map(
+    ((products ?? []) as Array<{ id: string; slug: string; name: string; brand: string | null }>).map(
+      (p) => [p.id, p]
+    )
+  );
+  const results: AiAnalyzeMatch[] = [];
+  for (const match of matched.matches) {
+    const product = byId.get(match.product_id);
+    if (!product) continue;
+    results.push({
+      productId: product.id,
+      slug: product.slug,
+      name: product.name,
+      brand: product.brand,
+      similarity: Math.round(match.similarity * 1000) / 1000,
+    });
+  }
+
+  return {
+    success: true,
+    processed: results.length,
+    metadata: {
+      caption,
+      mode: embedded.space === 'clip' ? 'vector-clip' : 'vector',
+      fallbackUsed,
+      captionCached,
+      embedCached: embedded.cached,
+      matches: results,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Processor registry
 // ---------------------------------------------------------------------------
 
@@ -440,4 +772,5 @@ export const processors: Record<
   'cache.invalidate': processCacheInvalidate,
   'data.sync': processDataSync,
   'image.process': processImageProcess,
+  'ai.analyze': processAiAnalyze,
 };

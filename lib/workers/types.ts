@@ -18,7 +18,8 @@ export type JobType =
   | 'product.validate'
   | 'cache.invalidate'
   | 'data.sync'
-  | 'image.process';
+  | 'image.process'
+  | 'ai.analyze';
 
 export type JobPriority = 'low' | 'normal' | 'high' | 'critical';
 
@@ -127,6 +128,44 @@ export interface ImageProcessJobData {
   imageUrls?: string[];
 }
 
+/**
+ * `ai.analyze` — expensive AI visual analysis for one image/caption
+ * (Section 19, Phase 8, §12 #12).
+ *
+ * This is the ONE analysis expensive enough to run as a job: a
+ * visual scan is up to two Hugging Face Inference calls (BLIP
+ * captioning of the fetched image, then a CLIP/MiniLM embedding)
+ * plus two catalog RPCs, each HF call with a 30s timeout — the
+ * only AI work that can approach the 60s serverless cap. Every
+ * other AI analysis is a deterministic in-memory computation over
+ * already-recorded DB rows (summary, deals, prediction,
+ * comparison, recommendations) or a single cached HTTP call
+ * (SerpAPI web search, 24h/7d cache) and stays inline — see
+ * `docs/ai-background-jobs.md` for the full cost table.
+ *
+ * At least one of `imageUrl` / `caption` is required. The job
+ * result's `metadata` carries the outcome (caption, embedding
+ * space, matched products); there is no durable results table —
+ * no migration is created by this phase — so the result is read
+ * back via `getJobResult(jobId)` (last 100 jobs, this instance)
+ * and the caption/embedding are left in the §12 #11 visual-search
+ * cache, warming the next live request for the same image.
+ */
+export interface AiAnalyzeJobData {
+  /** Public image URL to caption, then embed and match. */
+  imageUrl?: string;
+  /** Plain-text caption to embed and match directly (no captioning call). */
+  caption?: string;
+  /** Max catalog matches to return (1–10, default 5). */
+  limit?: number;
+  /**
+   * Prefer the CLIP embedding space when the CLIP table has rows.
+   * Defaults to true; the processor falls back to MiniLM when the
+   * CLIP table is empty/missing or the CLIP match returns nothing.
+   */
+  preferClip?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Job data payload union (for typed processors)
 // ---------------------------------------------------------------------------
@@ -140,4 +179,5 @@ export type JobDataMap = {
   'cache.invalidate': CacheInvalidateJobData;
   'data.sync': DataSyncJobData;
   'image.process': ImageProcessJobData;
+  'ai.analyze': AiAnalyzeJobData;
 };

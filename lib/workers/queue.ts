@@ -36,6 +36,7 @@ export type {
   CacheInvalidateJobData,
   DataSyncJobData,
   ImageProcessJobData,
+  AiAnalyzeJobData,
 } from './types';
 
 interface QueueAdapter {

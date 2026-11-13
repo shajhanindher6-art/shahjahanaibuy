@@ -133,10 +133,59 @@ export function invalidateCache(prefix: string): void {
 }
 
 /**
+ * Invalidate the AI-cache entries for one product (Section 19,
+ * Phase 8, §12 #14 — the audit found `invalidateProductCaches`
+ * cleared product/merchant/price-history/review-summary only, so
+ * stale AI results could persist after the underlying data
+ * changed).
+ *
+ * STRATEGY (documented, not silent):
+ * - `ai-summary:<productId>` and `prediction:<productId>` are
+ *   per-product keys — invalidated here, on the nose.
+ * - `comparison:<sorted ids>` keys are multi-product: only the
+ *   comparisons that actually contain this product are cleared
+ *   (their key segments are scanned); other comparisons stay warm.
+ * - `ai-search:<query...>` and `deals-ranked:<...>` are NOT
+ *   product-keyed, so a per-product invalidation cannot target
+ *   them. They are TTL-bounded instead (ai-search 30s fresh /
+ *   120s stale; deals-ranked 60s / 300s), so the worst case is a
+ *   ≤2 min / ≤5 min stale read. Wiping the whole query cache on
+ *   every product refresh would thrash the cache the refresh just
+ *   warmed — the short TTL is the chosen trade-off.
+ * - This clears the IN-MEMORY entries only. The durable rows
+ *   behind ai-summary/prediction (`ai_summaries` /
+ *   `ai_predictions`, up to 7-day expiry) are cleared by
+ *   `invalidateStoredAiResults` in
+ *   `lib/cache/ai-invalidation.ts`, called from the refresh paths
+ *   — clearing only the memory key would re-read the same stale
+ *   row on the next request. Per-instance caveat (see the file
+ *   header): other Vercel instances keep their copies until TTL
+ *   expiry; a shared cache needs Upstash (owner-gated).
+ */
+export function invalidateAiCachesForProduct(productId: string): void {
+  invalidateCache(cacheKey('ai-summary', productId));
+  invalidateCache(cacheKey('prediction', productId));
+  const comparisonPrefix = `${cacheKey('comparison')}:`;
+  for (const key of Array.from(memoryStore.keys())) {
+    if (!key.startsWith(comparisonPrefix)) continue;
+    // Comparison keys are `smartbuy:comparison:<id>:<id>...`
+    // (sorted ids joined with ':'); product ids are UUIDs, so a
+    // segment match is exact, never a substring accident.
+    const segments = key.slice(comparisonPrefix.length).split(':');
+    if (segments.includes(productId)) memoryStore.delete(key);
+  }
+}
+
+/**
  * Invalidate the cached entries for one product (Section 18,
  * item 33 — called on intake approve so a newly approved product
  * is visible immediately on THIS instance): the product row, its
  * merchant listings, its price history and its review summary.
+ *
+ * Section 19, Phase 8 (§12 #14): the AI entries for the product
+ * (ai-summary, prediction, comparisons containing it) are
+ * invalidated too — a product update that changes the price must
+ * not leave a stale "good time to buy" summary behind.
  *
  * STALENESS WINDOW (by design, until a shared cache exists): the
  * cache is per-instance (see the file header), so this clears only
@@ -149,6 +198,7 @@ export function invalidateProductCaches(productId: string, slug: string): void {
   invalidateCache(cacheKey('merchant-products', productId));
   invalidateCache(cacheKey('price-history', productId));
   invalidateCache(cacheKey('review-summary-numbers', productId));
+  invalidateAiCachesForProduct(productId);
 }
 
 // In-memory only — see the file header. There is no Redis mode:

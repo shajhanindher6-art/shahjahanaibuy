@@ -1,6 +1,6 @@
 # SmartBuy AI — Deployment Documentation
 
-**Last updated:** 2026-11-12 (Section 17, Stage I — full rewrite)
+**Last updated:** 2026-11-13 (Section 19 — gate baseline + migration count update)
 **Live site:** https://shahjahanaibuy-b1zp.vercel.app/
 **Repo:** https://github.com/shajhanindher6-art/shahjahanaibuy (branch `main`)
 
@@ -11,7 +11,7 @@
 - **Hosting: Vercel. Deploy = git push to `main`.** There is no `vercel.json` (no Vercel Cron, no custom headers, no build overrides).
 - **Verification gate before every push:** `npx tsc --noEmit` = 0 errors · full `npx vitest run` = 100% pass · clean `next build` · headless smoke · live recheck after push. **Push only on the user's live approval** (standing rule).
 - **GitHub workflow files** (`.github/workflows/*`) cannot be pushed by the GitHub App (403) — workflow changes go via the GitHub website.
-- **Baseline (12 Nov 2026, Section 17 gate):** tsc 0 · vitest 216 files / 2,685 tests, 100% PASS · clean build exit 0, 799 pages, `/products/[slug]` First Load 330 kB (budget ≤350 kB).
+- **Baseline (13 Nov 2026, Section 19 gate):** tsc 0 · vitest 286 files / 3,425 tests, 100% PASS · clean build exit 0, 802 pages, `/products/[slug]` First Load 338 kB (budget ≤350 kB).
 
 ## Deployment checklist
 
@@ -171,15 +171,15 @@ Without the client ID + secret, every eBay call returns a fail-closed error and 
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis for distributed rate limiting. Unset → per-instance in-memory buckets (partial protection on serverless). |
 | `AMAZON_ASSOC_TAG` (+ `AMAZON_ASSOC_TAG_<CC>` per locale, e.g. GB, DE, JP) | Amazon Associates tags. US visitors use the base tag; other countries need their own override. `AMAZON_ASSOC_TAG_US` is never read (silently ignored). Tag `smartbuy-20` is live via Vercel env; approved vs placeholder is unknown — only the Associates dashboard can confirm. |
 | `SKIMLINKS_PUBLISHER_ID` | Skimlinks publisher ID. Not configured; do NOT apply for Skimlinks without the owner's explicit go-ahead (rejection blocks reapplying for 90 days). |
-| `OPENAI_API_KEY`, `REDIS_URL`, `APIFY_API_TOKEN` / `APIFY_ACTOR_ID` | Present in `.env.example` for reference only. **Apify must stay unset** — scraping is a hard rule; the provider is fail-closed by design. |
+| `OPENAI_API_KEY`, `REDIS_URL`, `APIFY_API_TOKEN` / `APIFY_ACTOR_ID` | Present in `.env.example` for reference only. **Apify must stay unset** — scraping is a hard rule; the provider is fail-closed by design. `OPENAI_API_KEY` currently enables nothing — no OpenAI client exists in the repo (Section 19, §12 #2); the LLM-provider decision + key are owner-gated. |
 
 Dead/phantom references (mentioned in old docs, never read by code): `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, bare `VAPID_PUBLIC_KEY`, `AFFILIATE_BEACON_SECRET` (proposed, never implemented).
 
 ---
 
-## Migrations (51 files — not 12)
+## Migrations (52 files — not 12)
 
-`supabase/migrations/` holds **51 files** (001–053, gaps 024/025/046 — 023 exists — plus the unnumbered `20260718060823_fix_anonymous_access_policies.sql`). 123 `CREATE TABLE` statements, 122 distinct tables, every table RLS-enabled.
+`supabase/migrations/` holds **52 files** (001–054, gaps 024/025/046 — 023 exists — plus the unnumbered `20260718060823_fix_anonymous_access_policies.sql`). 123 `CREATE TABLE` statements, 122 distinct tables, every table RLS-enabled.
 
 **Applied status of every migration is UNKNOWN from the repo** — only the owner can check `supabase_migrations.schema_migrations` in Supabase. Two are proven NOT applied live: **033** (`live_shopping_sessions` table missing — proven by a PGRST205) and **044** (`creator_slugs` view — applying it activates `/creators` 404s with no redeploy).
 
@@ -287,7 +287,7 @@ Exactly **one** scheduler is expected: **cron-job.org**. There is no `vercel.jso
 
 ### Infrastructure
 - [ ] Supabase project provisioned
-- [ ] All 51 migrations verified (see migration section — do not blindly apply; 035–043, 045 and 047–053 are DO NOT APPLY YET)
+- [ ] All 52 migrations verified (see migration section — do not blindly apply; 035–043, 045 and 047–054 are DO NOT APPLY YET)
 - [ ] RLS policies verified (note: migration 010's 66 wide-open write policies are fixed by 017 in code, but 017's live application is unverified — check `pg_policies` live)
 - [ ] Hosting platform configured (Vercel)
 - [ ] Custom domain pointing to hosting

@@ -34,7 +34,7 @@
 
 | Tier | Limit/min | Where it applies |
 | --- | --- | --- |
-| AI / heavy compute | 10–20 | `deal-finder` 20, `ai-search` 20, `scan` 10, `visual-search` 10 |
+| AI / heavy compute | 5–20 | `deal-finder` 20, `ai-search` 10, `scan` 5, `visual-search` 5 |
 | Payments & sensitive writes | 10 | `subscriptions/checkout`, `subscriptions/portal`, `subscriptions` POST, `public/keys` create/revoke, `sentry-test`, `visual-search-backfill`, `monitoring/uptime/check` |
 | Authenticated writes (default) | 30 | alerts, chat, community-deals, pools, reviews, wishlists, vault, tech-budget, preferences, settings/webhooks, push/subscribe, etc. |
 | Unauthenticated writes | 60 | `affiliate/click`, `analytics/events`, `product-views` (click/event inflation protection) |
@@ -45,6 +45,24 @@
 | Admin GETs | 60 | `/api/v1/admin/*` reads |
 | Health | 300 | `GET /api/v1/health` (uptime monitors poll frequently) |
 | Public API (keyed) | 120 keyed / 30 anon | `GET /api/v1/public/*` — an API key gets 120/min, anonymous IP 30/min |
+
+### AI quotas — per-user daily budget + global provider budgets (Section 19, Phase 1)
+
+- **Per-user AI quota:** signed-in users get **300 AI calls/day across all AI
+  routes** (`AI_USER_DAILY_QUOTA`, in-memory per instance — see
+  `services/ai-engine/usage.ts`). Enforced on the routes where a user identity
+  is available (ai-search, recommendations, chat messages/conversations,
+  smart-deals); anonymous users keep the per-IP per-minute limits above as
+  their floor. Over-quota answers 429 with `resetAt` (next UTC midnight).
+- **Global daily provider budgets (in-memory, per instance):** SerpAPI **5 live
+  calls/day**, Hugging Face **50 live calls/day**. Cached hits spend nothing.
+  When a budget is exhausted the route serves the deterministic/catalog
+  fallback with an honest label (`webBudgetExhausted` in ai-search meta;
+  "unavailable today" notes in scan) instead of spending more quota.
+- **Anon caps tightened 12 Nov 2026** (audit §1 #9): ai-search 20→10/min,
+  visual-search 10→5/min, scan 10→5/min — these routes spend real SerpAPI/HF
+  free quota, and the per-query cache does not stop distinct queries from
+  burning a month's free quota in minutes.
 
 ## Per-route table
 
@@ -69,7 +87,7 @@
 | `/v1/agent/rules/route.ts` | GET | `agent-rules:<ip|user|key>` | 30 |
 | `/v1/agent/rules/route.ts` | POST | `agent-rules:<ip|user|key>` | 30 |
 | `/v1/agent/summary/route.ts` | GET | `agent-summary:<ip|user|key>` | 30 |
-| `/v1/ai-search/route.ts` | POST | `ai-search:<ip|user|key>` | 20 |
+| `/v1/ai-search/route.ts` | POST | `ai-search:<ip|user|key>` | 10 |
 | `/v1/ai-summary/[productId]/route.ts` | GET | `ai-summary.productId:<ip|user|key>` | 120 |
 | `/v1/alerts/[id]/route.ts` | PATCH | `alerts.id:<ip|user|key>` | 30 |
 | `/v1/alerts/[id]/route.ts` | DELETE | `alerts.id:<ip|user|key>` | 30 |
@@ -179,7 +197,7 @@
 | `/v1/referrals/route.ts` | POST | `referrals-create:<ip|user|key>` | 30 |
 | `/v1/referrals/route.ts` | GET | `referrals-stats:<ip|user|key>` | 60 |
 | `/v1/retailers/route.ts` | GET | `retailers:<ip|user|key>` | 120 |
-| `/v1/scan/route.ts` | POST | `scan:<ip|user|key>` | 10 |
+| `/v1/scan/route.ts` | POST | `scan:<ip|user|key>` | 5 |
 | `/v1/search-history/route.ts` | GET | `search-history:<ip|user|key>` | 120 |
 | `/v1/settings/webhooks/route.ts` | GET | `settings.webhooks:<ip|user|key>` | 120 |
 | `/v1/settings/webhooks/route.ts` | POST | `settings.webhooks:<ip|user|key>` | 30 |
@@ -198,7 +216,7 @@
 | `/v1/vault/[id]/route.ts` | DELETE | `vault.id:<ip|user|key>` | 30 |
 | `/v1/vault/route.ts` | GET | `vault:<ip|user|key>` | 120 |
 | `/v1/vault/route.ts` | POST | `vault:<ip|user|key>` | 30 |
-| `/v1/visual-search/route.ts` | POST | `visual-search:<ip|user|key>` | 10 |
+| `/v1/visual-search/route.ts` | POST | `visual-search:<ip|user|key>` | 5 |
 | `/v1/wishlists/[id]/items/[itemId]/route.ts` | DELETE | `wishlists.id.items.itemId:<ip|user|key>` | 30 |
 | `/v1/wishlists/[id]/items/external/route.ts` | GET | `wishlists.id.items.external:<ip|user|key>` | 120 |
 | `/v1/wishlists/[id]/items/external/route.ts` | POST | `wishlists.id.items.external:<ip|user|key>` | 30 |

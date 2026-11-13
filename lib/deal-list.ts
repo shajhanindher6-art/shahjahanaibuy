@@ -52,17 +52,23 @@ export function sortCoupons<T extends CouponLike>(coupons: T[], sort: DealSortKe
 }
 
 export interface DealLike {
-  discountPercentage: number;
+  // Section 19, Phase 0 (§12 #24): null when no percentage can
+  // honestly be derived (fixed deal, no recorded price).
+  discountPercentage: number | null;
 }
 
 /**
  * Keep only deals at or above a minimum discount %. Null/0 means
- * no minimum — the list passes through unchanged.
+ * no minimum — the list passes through unchanged. A deal with a
+ * null percentage never satisfies a minimum (it has no percentage
+ * to compare), so it is excluded when a minimum is set.
  */
 export function filterDealsByMinDiscount<T extends DealLike>(
   deals: T[],
   minDiscount: number | null
 ): T[] {
   if (minDiscount === null || minDiscount <= 0) return deals;
-  return deals.filter((d) => d.discountPercentage >= minDiscount);
+  return deals.filter(
+    (d) => d.discountPercentage !== null && d.discountPercentage >= minDiscount
+  );
 }

@@ -111,3 +111,26 @@ export function couponValueLabel(coupon: DealCoupon): string {
   if (coupon.discountType === 'percentage') return `${coupon.discountValue}% off`;
   return `$${coupon.discountValue} off`;
 }
+
+// ---------------------------------------------------------------------------
+// Checkout verification (Section 19, Phase 2 §12 #22). Coupon
+// "validity" in this repo is an expiry-date check only
+// (isCouponCurrentlyValid) — nothing verifies the code works at
+// the merchant. Merchant-feed liveness is owner-gated, so no code
+// path here may ever claim a code works at checkout. The label
+// below is shown wherever coupon validity is displayed (Auto
+// Coupon Hub, product-page coupon rows). "Valid" means only that
+// the code passed OUR OWN check (active flag, dates, usage limit)
+// against the codes stored in our database — the retailer decides
+// whether a code works at checkout, and we have not verified it
+// with them. The history cross-check for the claimed discount
+// lives in services/deal-validation.ts
+// (checkCouponDiscountAgainstHistory), next to the detectors it
+// reuses — lib/ must not import services/.
+// ---------------------------------------------------------------------------
+
+/**
+ * The label shown wherever coupon validity is displayed.
+ */
+export const COUPON_CHECKOUT_UNVERIFIED_LABEL =
+  'Checkout unverified — this code has not been confirmed to work at the merchant checkout';

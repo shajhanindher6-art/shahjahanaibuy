@@ -8,6 +8,8 @@ import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
 import type { Product } from '@/types';
 import type { Recommendation, RecommendationContext } from '@/types/ai';
+import { getDismissedProductIds } from '@/services/recommendation-feedback';
+import { getPersonalizationOptOut } from '@/services/personalization-consent';
 
 export async function getRecommendations(
   supabase: AnySupabaseClient,
@@ -17,16 +19,40 @@ export async function getRecommendations(
   const maxLimit = Math.min(50, Math.max(1, limit));
 
   try {
-    const [searchHistory, wishlistItems, productViews, preferences] = await Promise.all([
-      getSearchHistoryForRecs(supabase, userId),
-      getWishlistForRecs(supabase, userId),
-      getProductViewsForRecs(supabase, userId),
-      getPreferencesForRecs(supabase, userId),
-    ]);
+    // Section 19, Phase 4 (§12 #43) — personalization opt-out is
+    // checked FIRST, and when it is on, NO personal signal is read
+    // at all: no search history, no wishlist, no product views, no
+    // preferences, no dismissals. The user gets trending-only
+    // results with an honest label, and the opt-out is real.
+    if (await getPersonalizationOptOut(supabase, userId)) {
+      const trending = await getTrendingRecommendations(supabase, maxLimit);
+      return {
+        recommendations: trending.map((r) => ({
+          ...r,
+          reason: 'Trending product — personalisation is off for your account',
+        })),
+        context: { userId, basedOn: 'trending', personalizationOptOut: true },
+      };
+    }
+
+    const [searchHistory, wishlistItems, productViews, preferences, dismissedIds] =
+      await Promise.all([
+        getSearchHistoryForRecs(supabase, userId),
+        getWishlistForRecs(supabase, userId),
+        getProductViewsForRecs(supabase, userId),
+        getPreferencesForRecs(supabase, userId),
+        // Section 19, Phase 4 (§12 #42) — the feedback loop: ids the
+        // user dismissed are excluded below, even if they would
+        // otherwise score highest. (Dismissed products are also
+        // wishlist items, so the wishlist exclusion below would
+        // catch them — this explicit read is what makes the loop
+        // testable and robust if that ever changes.)
+        getDismissedProductIds(supabase, userId),
+      ]);
 
     const seedCategories = new Set<string>();
     const seedBrands = new Set<string>();
-    const excludeProductIds = new Set<string>();
+    const excludeProductIds = new Set<string>(dismissedIds);
 
     for (const entry of searchHistory) {
       const words = entry.query.toLowerCase().split(/\s+/);
@@ -39,19 +65,19 @@ export async function getRecommendations(
 
     for (const item of wishlistItems) {
       if (item.brand) seedBrands.add(item.brand);
-      if (item.category) seedCategories.add(item.category);
+      if (item.category) seedCategories.add(item.category.toLowerCase());
       excludeProductIds.add(item.id);
     }
 
     for (const view of productViews) {
       if (view.brand) seedBrands.add(view.brand);
-      if (view.category) seedCategories.add(view.category);
+      if (view.category) seedCategories.add(view.category.toLowerCase());
       excludeProductIds.add(view.id);
     }
 
     if (preferences) {
       for (const brand of preferences.favoriteBrands) seedBrands.add(brand);
-      for (const cat of preferences.favoriteCategories) seedCategories.add(cat);
+      for (const cat of preferences.favoriteCategories) seedCategories.add(cat.toLowerCase());
     }
 
     let basedOn: RecommendationContext['basedOn'] = 'trending';
@@ -59,6 +85,15 @@ export async function getRecommendations(
     else if (wishlistItems.length > 0) basedOn = 'wishlist';
     else if (productViews.length > 0) basedOn = 'views';
     else if (preferences) basedOn = 'preferences';
+
+    // Section 19, Phase 4 (§12 #40) — the user's budget
+    // (user_preferences.budget_min/budget_max) is a signal at last.
+    // Prices come from merchant_products (lowest in-stock recorded
+    // price per candidate); without a recorded price a product
+    // carries no budget claim either way — it is never assumed to
+    // be in or over budget.
+    const budgetMax = preferences?.budgetMax ?? null;
+    const budgetMin = preferences?.budgetMin ?? null;
 
     let query = supabase
       .from('products')
@@ -89,70 +124,186 @@ export async function getRecommendations(
       query = query.or(orConditions.join(','));
     }
 
+    // With a budget set, fetch a wider candidate pool (bounded at
+    // 50) so in-budget products beyond the top-confidence few still
+    // get a chance — the budget filter below runs after the query,
+    // and a narrow pool could leave nothing in budget.
     query = query
       .order('confidence_score', { ascending: false })
       .order('view_count', { ascending: false })
-      .limit(maxLimit);
+      .limit(budgetMax !== null ? 50 : maxLimit);
 
     const { data, error } = await query;
 
     if (error || !data || data.length === 0) {
       if (error) logger.warn('getRecommendations: query failed', { error: error.message });
 
-      const { data: trending } = await supabase
-        .from('products')
-        .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at')
-        .is('deleted_at', null)
-        .neq('slug', 'sample-laptop')
-        .order('view_count', { ascending: false })
-        .limit(maxLimit);
-
-      const trendingProducts = (trending ?? []) as unknown as Array<Record<string, unknown>>;
+      const trending = await getTrendingRecommendations(supabase, maxLimit);
       return {
-        recommendations: trendingProducts.map((row) => ({
-          productId: row.id as string,
-          product: mapProductRow(row),
-          score: 50,
-          reason: 'Trending product popular with other shoppers',
-        })),
+        recommendations: trending.filter((r) => !excludeProductIds.has(r.productId)),
         context: { userId, basedOn: 'trending' },
       };
     }
 
     const products = data as unknown as Array<Record<string, unknown>>;
-    const recommendations: Recommendation[] = products.map((row) => {
+    const prices = await getLowestPricesForRecs(
+      supabase,
+      products.map((row) => row.id as string)
+    );
+
+    const recommendations: Recommendation[] = [];
+    for (const row of products) {
       const product = mapProductRow(row);
-      let score = 50;
-      const reasons: string[] = [];
+      const priceUsd = prices.get(product.id) ?? null;
+      // Budget rule (§12 #40): an over-budget product is never
+      // recommended silently. When at least one in-budget candidate
+      // exists, over-budget products are dropped; when NOTHING fits
+      // the budget, they stay — but each carries the over-budget
+      // difference in its reason, so the user sees exactly how far
+      // over their budget it is.
+      const overBudgetByUsd =
+        budgetMax !== null && priceUsd !== null && priceUsd > budgetMax
+          ? Math.round((priceUsd - budgetMax) * 100) / 100
+          : null;
+      recommendations.push(
+        buildRecommendation(product, {
+          seedBrands,
+          seedCategories,
+          priceUsd,
+          budgetMin,
+          budgetMax,
+          overBudgetByUsd,
+        })
+      );
+    }
 
-      if (product.brand && seedBrands.has(product.brand)) {
-        score += 20;
-        reasons.push(`matches your favorite brand ${product.brand}`);
+    let kept = recommendations;
+    if (budgetMax !== null) {
+      const inBudget = recommendations.filter((r) => r.overBudgetByUsd === null);
+      // Products with no recorded price have overBudgetByUsd null
+      // (unknown, not over) — they stay in the in-budget set.
+      if (inBudget.length > 0) {
+        kept = inBudget;
       }
-      if (product.category && seedCategories.has(product.category.toLowerCase())) {
-        score += 15;
-        reasons.push(`in ${product.category} which you've shown interest in`);
-      }
-      if (reasons.length === 0) reasons.push('recommended based on your activity');
+    }
 
-      return {
-        productId: product.id,
-        product,
-        score: Math.min(100, score),
-        reason: reasons.join(', '),
-      };
-    });
-
-    recommendations.sort((a, b) => b.score - a.score);
+    kept.sort((a, b) => b.score - a.score);
 
     return {
-      recommendations,
+      recommendations: kept.slice(0, maxLimit),
       context: { userId, basedOn },
     };
   } catch (err) {
     logger.error('getRecommendations: unexpected error', { error: String(err) });
     return { recommendations: [], context: { userId, basedOn: 'trending' } };
   }
+}
+
+/** Score + reason one candidate. Budget adds a bonus in-band and an explicit over-budget note out of band. */
+function buildRecommendation(
+  product: Product,
+  input: {
+    seedBrands: Set<string>;
+    seedCategories: Set<string>;
+    priceUsd: number | null;
+    budgetMin: number | null;
+    budgetMax: number | null;
+    overBudgetByUsd: number | null;
+  }
+): Recommendation {
+  let score = 50;
+  const reasons: string[] = [];
+
+  if (product.brand && input.seedBrands.has(product.brand)) {
+    score += 20;
+    reasons.push(`matches your favorite brand ${product.brand}`);
+  }
+  // Section 19, Phase 4 (§12 #48) — the category signal could never
+  // fire before this: seeds hold singular keywords ('laptop') or
+  // raw categories ('Laptops'), while the old comparison tested
+  // `seedCategories.has(category.toLowerCase())` ('laptops') — an
+  // exact match that neither form satisfies. Compare case-insensitively
+  // with plural tolerance instead ('laptops' contains 'laptop').
+  const categoryLower = product.category ? product.category.toLowerCase() : '';
+  const categoryMatch =
+    categoryLower !== '' &&
+    [...input.seedCategories].some(
+      (seed) => categoryLower.includes(seed) || seed.includes(categoryLower)
+    );
+  if (product.category && categoryMatch) {
+    score += 15;
+    reasons.push(`in ${product.category} which you've shown interest in`);
+  }
+  if (input.priceUsd !== null && input.budgetMax !== null) {
+    if (input.overBudgetByUsd !== null) {
+      reasons.push(
+        `$${input.overBudgetByUsd.toFixed(2)} over your $${input.budgetMax.toFixed(2)} budget`
+      );
+    } else if (input.budgetMin === null || input.priceUsd >= input.budgetMin) {
+      score += 15;
+      reasons.push(`within your $${input.budgetMax.toFixed(2)} budget`);
+    }
+  }
+  if (reasons.length === 0) reasons.push('recommended based on your activity');
+
+  return {
+    productId: product.id,
+    product,
+    score: Math.min(100, score),
+    reason: reasons.join(', '),
+    priceUsd: input.priceUsd,
+    overBudgetByUsd: input.overBudgetByUsd,
+  };
+}
+
+/** Trending fallback, shared by the opt-out path and the query-failure path. */
+async function getTrendingRecommendations(
+  supabase: AnySupabaseClient,
+  maxLimit: number
+): Promise<Recommendation[]> {
+  const { data: trending } = await supabase
+    .from('products')
+    .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at')
+    .is('deleted_at', null)
+    .neq('slug', 'sample-laptop')
+    .order('view_count', { ascending: false })
+    .limit(maxLimit);
+
+  const trendingProducts = (trending ?? []) as unknown as Array<Record<string, unknown>>;
+  return trendingProducts.map((row) => ({
+    productId: row.id as string,
+    product: mapProductRow(row),
+    score: 50,
+    reason: 'Trending product popular with other shoppers',
+  }));
+}
+
+/** Lowest recorded in-stock merchant price per product id (one batched query). */
+async function getLowestPricesForRecs(
+  supabase: AnySupabaseClient,
+  productIds: string[]
+): Promise<Map<string, number>> {
+  const prices = new Map<string, number>();
+  const ids = Array.from(new Set(productIds.filter(Boolean)));
+  if (ids.length === 0) return prices;
+  try {
+    const { data, error } = await supabase
+      .from('merchant_products')
+      .select('product_id, price')
+      .in('product_id', ids)
+      .eq('in_stock', true)
+      .order('price', { ascending: true });
+    if (error || !data) return prices;
+    for (const row of data as Array<Record<string, unknown>>) {
+      const pid = row.product_id as string;
+      const price = parseFloat(String(row.price));
+      if (!pid || !Number.isFinite(price) || price <= 0) continue;
+      if (!prices.has(pid)) prices.set(pid, price);
+    }
+  } catch {
+    return prices;
+  }
+  return prices;
 }
 
 function mapProductRow(row: Record<string, unknown>): Product {
@@ -240,17 +391,29 @@ async function getProductViewsForRecs(
 async function getPreferencesForRecs(
   supabase: AnySupabaseClient,
   userId: string
-): Promise<{ favoriteBrands: string[]; favoriteCategories: string[] } | null> {
+): Promise<{
+  favoriteBrands: string[];
+  favoriteCategories: string[];
+  /** Section 19, Phase 4 (§12 #40) — the budget signal. */
+  budgetMin: number | null;
+  budgetMax: number | null;
+} | null> {
   const { data } = await supabase
     .from('user_preferences')
-    .select('favorite_brands, favorite_categories')
+    .select('favorite_brands, favorite_categories, budget_min, budget_max')
     .eq('user_id', userId)
     .maybeSingle();
 
   if (!data) return null;
   const row = data as Record<string, unknown>;
+  const toBudget = (value: unknown): number | null => {
+    const n = typeof value === 'string' ? parseFloat(value) : (value as number);
+    return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null;
+  };
   return {
     favoriteBrands: (row.favorite_brands as string[]) ?? [],
     favoriteCategories: (row.favorite_categories as string[]) ?? [],
+    budgetMin: toBudget(row.budget_min),
+    budgetMax: toBudget(row.budget_max),
   };
 }

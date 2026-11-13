@@ -15,6 +15,46 @@ import { getProductRecordedOverrides } from '@/services/recorded-overrides';
 import { getProductGlobalReadiness } from '@/services/global-readiness';
 import { predictPriceDrop } from '@/services/ai-predictions';
 import { dealScoreForDisplay } from '@/lib/deal-score';
+// Section 19, Phase 5 — warranty (#49) + merchant reliability
+// (#50) from recorded merchant policy data; suitability prose
+// (#51); source labelling (#55).
+import { getMerchantPolicy } from '@/lib/merchant-trust';
+import {
+  formatWarranty,
+  getMerchantReliability,
+  type MerchantReliability,
+} from '@/services/merchant-reliability';
+import { buildSuitabilityExplanations } from '@/services/comparison-suitability';
+import {
+  appendSourceLabel,
+  GENERAL_GUIDANCE_LABEL,
+  verifiedDataRangeLabel,
+} from '@/lib/ai-source-label';
+
+/**
+ * Format a recorded shipping offer into display text, or null when
+ * nothing is recorded (Section 19, Phase 5, §12 #57). Reads ONLY
+ * `merchant_products.shipping_cost` / `shipping_days` — a missing
+ * value is never filled in with a guessed cost or delivery time.
+ * "Free shipping" is the recorded $0 cost, not an assumption.
+ */
+export function formatShipping(
+  shippingCost: number | string | null | undefined,
+  shippingDays: number | string | null | undefined
+): string | null {
+  const cost =
+    shippingCost === null || shippingCost === undefined ? null : Number(shippingCost);
+  const days =
+    shippingDays === null || shippingDays === undefined ? null : Number(shippingDays);
+  const hasCost = cost !== null && Number.isFinite(cost);
+  const hasDays = days !== null && Number.isFinite(days);
+  if (!hasCost && !hasDays) return null;
+  if (!hasCost) {
+    return `${days} day${days === 1 ? '' : 's'} delivery (shipping cost not recorded)`;
+  }
+  const costText = cost === 0 ? 'Free shipping' : `$${cost.toFixed(2)} shipping`;
+  return hasDays ? `${costText} · ${days} day${days === 1 ? '' : 's'}` : costText;
+}
 
 export async function compareProducts(
   supabase: AnySupabaseClient,
@@ -44,14 +84,58 @@ export async function compareProducts(
     // the merchants API route for the reference behavior.
     const { data: merchantsData } = await supabase
       .from('merchants')
-      .select('id, name')
+      .select('id, name, website_url, active')
       .eq('active', true)
       .is('deleted_at', null);
 
     const merchantNameMap = new Map<string, string>();
+    // Section 19, Phase 5 (§12 #50): directory facts for the
+    // reliability scorer — website + active status, recorded only.
+    const merchantInfoMap = new Map<
+      string,
+      { name: string; websiteUrl: string | null; active: boolean }
+    >();
     for (const m of merchantsData ?? []) {
       const mRow = m as Record<string, unknown>;
       merchantNameMap.set(mRow.id as string, mRow.name as string);
+      merchantInfoMap.set(mRow.id as string, {
+        name: mRow.name as string,
+        websiteUrl: (mRow.website_url as string | null) ?? null,
+        active: mRow.active !== false,
+      });
+    }
+
+    // Section 19, Phase 5 (§12 #49/#50): per-merchant recorded
+    // policy (warranty) + reliability, fetched ONCE per merchant
+    // across all compared products — never per row, never invented.
+    // A merchant with no recorded policy gets a null warranty and a
+    // not-enough-data reliability (the UI renders honest empty
+    // states for both).
+    const warrantyByMerchant = new Map<string, string | null>();
+    const reliabilityByMerchant = new Map<string, MerchantReliability | null>();
+    async function merchantFacts(merchantId: string): Promise<{
+      warranty: string | null;
+      reliability: MerchantReliability | null;
+    }> {
+      if (!warrantyByMerchant.has(merchantId) || !reliabilityByMerchant.has(merchantId)) {
+        const info = merchantInfoMap.get(merchantId);
+        const policy = await getMerchantPolicy(supabase, merchantId);
+        warrantyByMerchant.set(merchantId, formatWarranty(policy.warrantyMonths));
+        reliabilityByMerchant.set(
+          merchantId,
+          info
+            ? await getMerchantReliability(
+                supabase,
+                { id: merchantId, name: info.name, websiteUrl: info.websiteUrl, active: info.active },
+                policy
+              )
+            : null
+        );
+      }
+      return {
+        warranty: warrantyByMerchant.get(merchantId) ?? null,
+        reliability: reliabilityByMerchant.get(merchantId) ?? null,
+      };
     }
 
     const products: ComparisonProduct[] = [];
@@ -75,7 +159,7 @@ export async function compareProducts(
       // the compare count match Where to Buy.
       const { data: listingsData } = await supabase
         .from('merchant_products')
-        .select('merchant_id, price, compare_at_price, availability, url, in_stock')
+        .select('merchant_id, price, compare_at_price, availability, url, in_stock, shipping_cost, shipping_days')
         .eq('product_id', productId)
         .is('deleted_at', null)
         .order('price', { ascending: true });
@@ -97,9 +181,19 @@ export async function compareProducts(
         // Mirror the product page's in-stock rule: the boolean wins,
         // otherwise the availability string decides.
         const inStock = mpRow.in_stock === true || mpRow.availability === 'in_stock';
+        const merchantName = merchantNameMap.get(merchantId) ?? 'Retailer';
+        // Section 19, Phase 5 (§12 #49/#57): shipping from the
+        // recorded shipping_cost/shipping_days (null → honest empty
+        // state in the UI, never a guessed cost); the seller of
+        // record for a merchant_products listing IS the merchant —
+        // no separate marketplace seller name is recorded in the
+        // schema, so the merchant name is the seller, not an
+        // invention. Warranty + reliability come from the recorded
+        // merchant policy (028 columns, all null live → empty state).
+        const facts = await merchantFacts(merchantId);
 
         retailerEntries.push({
-          retailerName: merchantNameMap.get(merchantId) ?? 'Retailer',
+          retailerName: merchantName,
           price,
           originalPrice: compareAt,
           discount:
@@ -108,11 +202,15 @@ export async function compareProducts(
               : null,
           rating: avgRating,
           reviewCount: ratings.length,
-          shipping: null,
+          shipping: formatShipping(
+            mpRow.shipping_cost as number | null,
+            mpRow.shipping_days as number | null
+          ),
           availability: inStock ? 'in_stock' : 'out_of_stock',
-          seller: null,
-          warranty: null,
+          seller: merchantName,
+          warranty: facts.warranty,
           url: mpRow.url as string | null,
+          reliability: facts.reliability,
         });
       }
 
@@ -152,11 +250,19 @@ export async function compareProducts(
             discount: null,
             rating: avgRating,
             reviewCount: ratings.length,
+            // Section 19, Phase 5 (§12 #57): the price_history
+            // fallback carries no shipping columns — the honest cell
+            // is the empty state, never a guessed cost. The seller
+            // of record is the retailer itself (same rule as the
+            // merchant_products path). Warranty + reliability need a
+            // merchant id, which price_history rows don't carry, so
+            // both stay null (empty state) on this path.
             shipping: null,
             availability: phRow.availability as string,
-            seller: null,
+            seller: retailerMap.get(retailerId) ?? 'Unknown',
             warranty: null,
             url: phRow.url as string | null,
+            reliability: null,
           });
         }
       }
@@ -210,12 +316,25 @@ export async function compareProducts(
 
     const aiSummary = generateComparisonSummary(products);
     const bestChoice = determineBestChoice(products);
+    // Section 19, Phase 5 (§12 #51/#55): per-requirement suitability
+    // prose grounded in the real rows, and the source label for the
+    // verdict — verified recorded data with the products' freshness
+    // range, plus the note that the summary's closing
+    // "consider your priorities" line is general guidance, not
+    // verified data. The label is appended to aiSummary too, so API
+    // consumers who only read the summary still see it.
+    const suitability = buildSuitabilityExplanations(products);
+    const sourceLabel =
+      `${verifiedDataRangeLabel(products.map((p) => p.dataFreshness ?? null))} ` +
+      `The closing recommendation in this summary is ${GENERAL_GUIDANCE_LABEL}.`;
 
     return {
       id: '',
       products,
-      aiSummary,
+      aiSummary: appendSourceLabel(aiSummary, sourceLabel),
       bestChoice,
+      suitability,
+      sourceLabel,
       createdAt: new Date().toISOString(),
     };
   } catch (err) {

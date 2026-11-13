@@ -6,7 +6,19 @@
  * live in their respective service modules — this registry is the single source
  * of truth for which providers are active.
  *
- * Phase 1: only the architecture is defined. No provider clients are wired up.
+ * Section 19, Phase 0 (§12 #2) — DETERMINISTIC-ONLY SCOPE, stated
+ * explicitly: NO LLM provider is configured. There is no OpenAI
+ * (or Anthropic / Gemini) client anywhere in the codebase — grep
+ * `api.openai.com|openai|anthropic|claude|gemini` outside this
+ * file finds only a Hugging Face model NAME
+ * (`openai/clip-vit-base-patch32`, services/visual-search.ts),
+ * never a client. Setting OPENAI_API_KEY used to flip the
+ * registry's `openai.enabled` to true while changing nothing at
+ * all — the flag lied. It is now always false until a real client
+ * is wired, which needs the owner's provider decision + key
+ * (owner-gated, Section 19 audit §1 #5). Until then, every AI
+ * answer in this codebase is a deterministic template over
+ * recorded data — never presented as LLM reasoning.
  */
 
 export interface ProviderConfig {
@@ -22,8 +34,18 @@ export const PROVIDERS: ProviderConfig[] = [
     key: 'openai',
     name: 'OpenAI',
     category: 'ai',
-    enabled: Boolean(process.env.OPENAI_API_KEY),
-    description: 'GPT models for recommendations, analysis, and search',
+    // Section 19, Phase 0 (§12 #2) — corrected 12 Nov 2026:
+    // `enabled: Boolean(process.env.OPENAI_API_KEY)` was the
+    // misleading signal the audit flagged. No OpenAI client exists
+    // anywhere in the repo, so setting the key changed nothing
+    // while the registry claimed an AI provider was active. It is
+    // always off until a real client is wired — the provider
+    // decision + key are owner-gated (Section 19 audit §1 #5).
+    // Until then the platform is deterministic-only: AI answers
+    // are templates over recorded data, never LLM output.
+    enabled: false,
+    description:
+      'No LLM provider configured — deterministic-only scope; setting OPENAI_API_KEY enables nothing until a real client is wired (owner decision)',
   },
   {
     key: 'supabase-auth',

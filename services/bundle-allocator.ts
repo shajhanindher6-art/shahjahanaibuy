@@ -54,6 +54,34 @@ export interface BundleUncovered {
   reason: BundleUncoveredReason;
 }
 
+/**
+ * Section 19, Phase 4 (§12 #38) — per-category budget split.
+ *
+ * The allocator used to re-score by category only: the caller saw
+ * a total and a covered list, but never how the budget was divided.
+ * Each requested category now gets an explicit share of the budget
+ * — an equal split (budget / requested categories), with the
+ * rounding remainder going to the first requested category — plus
+ * what it actually spent and what is left of its share. A category
+ * whose pick costs more than its share reports remaining 0 (the
+ * overage is covered by unspent shares of other categories; the
+ * TOTAL still never exceeds the budget — the greedy below
+ * guarantees that). An uncovered category keeps its whole share
+ * unspent. The split is a plan, not a per-category hard cap: a
+ * category is never dropped for exceeding its share alone.
+ */
+export interface CategoryAllocation {
+  category: string;
+  /** This category's share of the budget (equal split, cents). */
+  allocatedUsd: number;
+  /** What the category's pick actually cost (0 when uncovered). */
+  spentUsd: number;
+  /** Share minus spend, floored at 0 (see header). */
+  remainingUsd: number;
+  /** Slug of the picked product, or null when uncovered. */
+  productSlug: string | null;
+}
+
 export interface BundleResult {
   picks: BundlePick[];
   /** Total spend in USD, rounded to cents. */
@@ -65,6 +93,8 @@ export interface BundleResult {
   uncovered: BundleUncovered[];
   /** Always true when picks exist (total never exceeds budget). */
   withinBudget: boolean;
+  /** Per-category split of the budget, in requested order. */
+  categoryAllocations: CategoryAllocation[];
 }
 
 function isEligible(p: BundleCandidate): p is BundleCandidate & {
@@ -116,8 +146,21 @@ export function allocateBundle(args: {
       coveredCategories: [],
       uncovered: [],
       withinBudget: true,
+      categoryAllocations: [],
     };
   }
+
+  // Section 19, Phase 4 (§12 #38) — equal per-category split of
+  // the budget. The rounding remainder (at most a few cents) goes
+  // to the first requested category so the shares sum to the budget.
+  const shareBase = Math.floor((budgetUsd * 100) / requested.length) / 100;
+  const shareRemainder = roundCents(budgetUsd - shareBase * requested.length);
+  const shareByCategory = new Map<string, number>(
+    requested.map((category, i) => [
+      category,
+      roundCents(shareBase + (i === 0 ? shareRemainder : 0)),
+    ])
+  );
 
   // Cheapest eligible product per requested category.
   const cheapestByCategory = new Map<string, BundleCandidate & { lowestPriceUsd: number }>();
@@ -182,5 +225,17 @@ export function allocateBundle(args: {
     coveredCategories: requested.filter((c) => covered.has(c)),
     uncovered,
     withinBudget: true,
+    categoryAllocations: requested.map((category) => {
+      const pick = picksByCategory.get(category);
+      const allocatedUsd = shareByCategory.get(category) ?? 0;
+      const spentUsd = pick ? pick.priceUsd : 0;
+      return {
+        category,
+        allocatedUsd,
+        spentUsd,
+        remainingUsd: Math.max(0, roundCents(allocatedUsd - spentUsd)),
+        productSlug: pick ? pick.slug : null,
+      };
+    }),
   };
 }

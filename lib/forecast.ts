@@ -20,6 +20,17 @@
  *   quality (R²), point count, and horizon: longer horizons and
  *   thinner histories score lower. It is a statement about the fit
  *   to recorded history, not a promise about the future.
+ *   Two honesty rules (Section 19, Phase 3):
+ *   (a) a FLAT series carries no directional evidence — its R² is
+ *       1 by construction (zero variance to explain), so the fit
+ *       term counts as R² = 0, never 55 points for "perfect
+ *       flatness";
+ *   (b) THIN history (fewer than 5 points) caps confidence at 25%
+ *       — the same cap the Buy vs Wait engine applies to ≤ 4
+ *       points — before the horizon penalty is subtracted, so a
+ *       longer horizon still scores lower than a shorter one.
+ *   A flat 4-point series therefore scores 21% (7d) / 16% (30d) /
+ *   9% (90d) — low band, not the 76/71/64% the old formula gave.
  *
  * THRESHOLDS (same as Buy vs Wait): fewer than 2 usable points →
  * status 'not-enough-history'. A backtest trial needs a recorded
@@ -39,9 +50,37 @@ export interface ForecastPoint {
 
 export type ForecastDirection = 'down' | 'up' | 'flat';
 
-/** Horizons offered, in days. */
+/** Horizons offered by default, in days. */
 export const FORECAST_HORIZONS = [7, 30, 90] as const;
 export type ForecastHorizonDays = (typeof FORECAST_HORIZONS)[number];
+
+/**
+ * Horizons a caller may request (Section 19, Phase 3, §12 #35) —
+ * the defaults above plus 14 and 60 days. Anything else is rejected
+ * by the forecast API with a 400; computeForecast throws a
+ * RangeError. The set is deliberately small: a horizon is only
+ * meaningful when the product has recorded history spanning it.
+ */
+export const FORECAST_ALLOWED_HORIZONS = [7, 14, 30, 60, 90] as const;
+export type AllowedForecastHorizon = (typeof FORECAST_ALLOWED_HORIZONS)[number];
+
+export function isAllowedForecastHorizon(value: number): value is AllowedForecastHorizon {
+  return (
+    Number.isInteger(value) &&
+    (FORECAST_ALLOWED_HORIZONS as readonly number[]).includes(value)
+  );
+}
+
+/** Thin history (fewer than this many points) caps confidence — see below. */
+export const FORECAST_THIN_HISTORY_MAX_POINTS = 4;
+/**
+ * Thin-history confidence cap, in percent (Section 19, Phase 3).
+ * Deliberately the SAME number as the Buy vs Wait engine's
+ * THIN_HISTORY_CONFIDENCE_CAP (25) — one rule for both engines:
+ * with ≤ 4 recorded points no forecast may claim more than 25%
+ * confidence, however good the fit looks. Not a new number.
+ */
+export const FORECAST_THIN_HISTORY_CONFIDENCE_CAP = 25;
 
 /** Smallest history that can support any forecast (Buy vs Wait rule). */
 export const FORECAST_MIN_POINTS = 2;
@@ -129,7 +168,10 @@ export function forecastConfidenceLabel(
  * "Based on 4 recorded price points · 21% confidence (low)".
  * Callers render this wherever a forecast range is shown (product
  * page forecast card, /tools/forecast-explainer) so the visitor can
- * see how thin the history behind the range is.
+ * see how thin the history behind the range is. The example number
+ * is real, not illustrative: a flat 4-point series scores 21% at
+ * 7 days — the flat fit carries no directional evidence (R²
+ * counted as 0) and thin history caps confidence at 25%.
  */
 export function formatForecastBasis(
   pointsUsed: number,
@@ -180,6 +222,13 @@ interface LineFit {
   sigma: number | null;
   /** R² of the fit; 1 for a perfectly flat series, 0 when undefined. */
   rSquared: number;
+  /**
+   * True when the series has zero variance (all recorded prices
+   * equal). Section 19, Phase 3: a flat series is WEAK evidence,
+   * not strong — its R² = 1 is an artefact of "nothing to
+   * explain", so confidence counts its fit term as R² = 0.
+   */
+  isFlat: boolean;
   meanPrice: number;
   firstMs: number;
   lastMs: number;
@@ -211,7 +260,9 @@ function fitLine(usable: UsablePoint[]): LineFit {
   }
   // Flat series: no variance to explain and no residual — the fit is
   // exact, so R² = 1. Otherwise a zero-variance edge cannot occur
-  // (ssTot > 0 whenever prices differ).
+  // (ssTot > 0 whenever prices differ). isFlat marks the series so
+  // confidence can treat the fit as NO evidence (Section 19,
+  // Phase 3) instead of rewarding perfect flatness with 55 points.
   const rSquared = ssTot === 0 ? (ssRes === 0 ? 1 : 0) : clamp(1 - ssRes / ssTot, 0, 1);
   const sigma = n > 2 ? Math.sqrt(ssRes / (n - 2)) : null;
   return {
@@ -219,6 +270,7 @@ function fitLine(usable: UsablePoint[]): LineFit {
     intercept,
     sigma,
     rSquared,
+    isFlat: ssTot === 0,
     meanPrice: meanY,
     firstMs,
     lastMs: usable[usable.length - 1].ms,
@@ -255,12 +307,31 @@ function forecastForHorizon(
         ? 'down'
         : 'up';
   const n = pointsUsed;
+  // Section 19, Phase 3 — confidence honesty (the OLS range math
+  // above is untouched; only this number changes):
+  // (a) a flat series has no variance to explain, so its R² = 1
+  //     counts as ZERO fit evidence — the old formula rewarded
+  //     perfect flatness with 55 points, so a flat 4-point series
+  //     scored 76% (7d) / 71% (30d) / 64% (90d);
+  // (b) thin history (<= 4 points) caps the score at 25% — the
+  //     same cap the Buy vs Wait engine applies — BEFORE the
+  //     horizon penalty is subtracted, so a longer horizon still
+  //     scores lower than a shorter one.
+  // Flat 4 points now: 21% (7d) / 16% (30d) / 9% (90d) — low band.
+  const fitEvidence = fit.isFlat ? 0 : fit.rSquared;
+  let confidenceBase =
+    15 +
+    55 * fitEvidence +
+    Math.min(15, Math.max(0, n - FORECAST_MIN_POINTS) * 3);
+  if (n <= FORECAST_THIN_HISTORY_MAX_POINTS) {
+    confidenceBase = Math.min(
+      confidenceBase,
+      FORECAST_THIN_HISTORY_CONFIDENCE_CAP
+    );
+  }
   const confidencePct = Math.round(
     clamp(
-      15 +
-        55 * fit.rSquared +
-        Math.min(15, Math.max(0, n - FORECAST_MIN_POINTS) * 3) -
-        horizonPenalty(horizonDays),
+      confidenceBase - horizonPenalty(horizonDays),
       FORECAST_MIN_CONFIDENCE_PCT,
       FORECAST_MAX_CONFIDENCE_PCT
     )
@@ -285,17 +356,31 @@ function forecastForHorizon(
 // its inputs.
 
 /**
- * Probabilistic forecast for 7 / 30 / 90 days from recorded price
- * history only. Fewer than 2 usable points → 'not-enough-history'
+ * Probabilistic forecast for the requested horizons from recorded
+ * price history only. Fewer than 2 usable points → 'not-enough-history'
  * with empty forecasts (same threshold as Buy vs Wait).
+ *
+ * Section 19, Phase 3 (§12 #35): `horizons` is a configurable
+ * period parameter — any subset of FORECAST_ALLOWED_HORIZONS
+ * (7 / 14 / 30 / 60 / 90 days); the default is FORECAST_HORIZONS
+ * ([7, 30, 90]). Anything outside the allowed set throws a
+ * RangeError so the API can answer 400 instead of guessing.
  */
 export function computeForecast(
   points: ForecastPoint[],
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  horizons: readonly number[] = FORECAST_HORIZONS
 ): ProductForecast {
   const usable = usablePoints(points).filter((p) => p.ms <= nowMs);
   const method =
     'Least-squares trend fitted to recorded price history only; range = fitted value ± 1.96 × residual spread.';
+  for (const h of horizons) {
+    if (!isAllowedForecastHorizon(h)) {
+      throw new RangeError(
+        `horizon must be one of ${FORECAST_ALLOWED_HORIZONS.join(', ')} days`
+      );
+    }
+  }
   if (usable.length < FORECAST_MIN_POINTS) {
     return {
       status: 'not-enough-history',
@@ -313,7 +398,7 @@ export function computeForecast(
   return {
     status: 'ok',
     currentPrice,
-    forecasts: FORECAST_HORIZONS.map((h) =>
+    forecasts: horizons.map((h) =>
       forecastForHorizon(fit, h, currentPrice, usable.length)
     ),
     pointsUsed: usable.length,
@@ -340,6 +425,13 @@ export function backtestForecast(
   horizonDays: number,
   nowMs: number = Date.now()
 ): BacktestReport {
+  // Section 19, Phase 3 (§12 #35): the backtest accepts the same
+  // configurable horizons as the forecast (7 / 14 / 30 / 60 / 90).
+  if (!isAllowedForecastHorizon(horizonDays)) {
+    throw new RangeError(
+      `horizon must be one of ${FORECAST_ALLOWED_HORIZONS.join(', ')} days`
+    );
+  }
   const usable = usablePoints(points).filter((p) => p.ms <= nowMs);
   const baseNote =
     'Walk-forward backtest on this product’s own recorded price history: each past forecast is checked against the price actually recorded at the horizon date.';

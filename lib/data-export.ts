@@ -30,6 +30,17 @@ export interface UserDataExport {
     savings: ExportSection<Record<string, unknown>>;
     searchHistory: ExportSection<Record<string, unknown>>;
     referralLinks: ExportSection<Record<string, unknown>>;
+    /**
+     * Section 19, Phase 4 (§12 #44) — the two recommendation
+     * signals the export used to miss: every product the user
+     * viewed (product_views, migration 008) and their preference
+     * row (user_preferences, migration 008 — budgets, favourite
+     * brands/categories/retailers, notification flags). No secrets
+     * in either section: views carry no content, preferences carry
+     * no credentials.
+     */
+    productViews: ExportSection<Record<string, unknown>>;
+    userPreferences: ExportSection<Record<string, unknown>>;
   };
 }
 

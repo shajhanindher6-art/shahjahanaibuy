@@ -6,6 +6,7 @@
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
 import { swrGet, cacheKey } from '@/lib/cache';
+import { recordPredictionOutcome } from '@/services/prediction-outcomes';
 import type { PricePrediction } from '@/types/ai';
 
 export interface PricePredictionResult {
@@ -82,7 +83,11 @@ export async function predictPriceDrop(
 
     const discountProbability = calculateDiscountProbability(prices, currentPrice, averagePrice, lowestPrice);
     const expectedSaleDate = predictSaleDate(prices);
-    const expectedLowestPrice = predictLowestPrice(currentPrice, lowestPrice, averagePrice);
+    // Section 19, Phase 3 (§12 #28): the point-price prediction is
+    // guarded like the discount probability (< 5 points → none).
+    // With fewer than 5 points there is no expected lowest price
+    // and the explanation says so instead of stating a price.
+    const expectedLowestPrice = predictLowestPrice(currentPrice, lowestPrice, averagePrice, prices.length);
     const confidenceScore = calculateConfidence(prices.length, priceValues);
 
     const explanation = buildPredictionExplanation({
@@ -94,6 +99,7 @@ export async function predictPriceDrop(
       expectedSaleDate,
       expectedLowestPrice,
       confidenceScore,
+      dataPoints: prices.length,
     });
 
     const result: PricePredictionResult = {
@@ -117,6 +123,20 @@ export async function predictPriceDrop(
     };
 
     void storePrediction(supabase, productId, result);
+
+    // Section 19, Phase 3 (§12 #34): close the prediction loop —
+    // record this prediction as a 'pending' outcome so the refresh
+    // run can resolve it once its horizon passes. Fire-and-forget
+    // and fail-safe: the recorder never throws, and storage only
+    // activates after the owner applies migration 032 (until then
+    // it logs once and reports 'missing-table').
+    void recordPredictionOutcome({
+      productId,
+      discountProbability: result.discountProbability,
+      priceAtPrediction: result.currentPrice,
+      predictedLowestPrice: result.expectedLowestPrice,
+      horizonDays: 30,
+    });
 
     return result;
   } catch (err) {
@@ -173,12 +193,21 @@ function predictSaleDate(prices: Array<{ price: number; date: string }>): string
   return nextSale.toISOString().split('T')[0];
 }
 
+/**
+ * Section 19, Phase 3 (§12 #28): a point-price prediction needs
+ * at least 5 recorded points — the same threshold as
+ * calculateDiscountProbability (< 5 → 0). Below 5 points there is
+ * no "expected lowest price ≈ $X": the caller gets null and the
+ * explanation states the history is too thin instead.
+ */
 function predictLowestPrice(
   currentPrice: number | null,
   historicalLowest: number,
-  averagePrice: number
+  averagePrice: number,
+  dataPoints: number
 ): number | null {
   if (!currentPrice) return null;
+  if (!Number.isFinite(dataPoints) || dataPoints < 5) return null;
   const halfwayPoint = (historicalLowest + averagePrice) / 2;
   return Math.round((historicalLowest + halfwayPoint) / 2);
 }
@@ -208,6 +237,8 @@ function buildPredictionExplanation(data: {
   expectedSaleDate: string | null;
   expectedLowestPrice: number | null;
   confidenceScore: number;
+  /** Recorded points behind the prediction (Section 19, §12 #28). */
+  dataPoints: number;
 }): string {
   const parts: string[] = [];
 
@@ -226,7 +257,17 @@ function buildPredictionExplanation(data: {
     }
   }
 
-  parts.push(`There is a ${data.discountProbability.toFixed(0)}% probability of a price drop in the near future.`);
+  // Section 19, Phase 3 (§12 #28): below 5 points the discount
+  // probability is the guarded 0 and there is no expected price —
+  // so say the history is too thin instead of stating "0%
+  // probability of a price drop" as if it were a measured fact.
+  if (data.dataPoints < 5) {
+    parts.push(
+      `Not enough price history to predict a discount — only ${data.dataPoints} recorded price${data.dataPoints === 1 ? '' : 's'} so far; at least 5 are needed before a discount prediction can be made.`
+    );
+  } else {
+    parts.push(`There is a ${data.discountProbability.toFixed(0)}% probability of a price drop in the near future.`);
+  }
 
   if (data.expectedSaleDate) {
     parts.push(`The next significant sale is predicted around ${data.expectedSaleDate}.`);
@@ -276,11 +317,20 @@ async function getCachedPrediction(
           ? (range.dataPoints as number)
           : null;
       if (dataPoints === null) return null;
+      // Section 19, Phase 3 (§12 #28): a cached row written before
+      // the 5-point guard could still carry an expected lowest
+      // price — and the old "0% probability of a price drop"
+      // wording — from thin history. Never serve it: return null
+      // (a cache miss) so the prediction is recomputed fresh with
+      // the guard, same self-heal pattern as the pre-B1 rows above.
+      if (dataPoints < 5) return null;
       return {
         productId: row.product_id as string,
         discountProbability: parseFloat(String(row.discount_probability)),
         expectedSaleDate: row.expected_sale_date as string | null,
-        expectedLowestPrice: row.expected_lowest_price ? parseFloat(String(row.expected_lowest_price)) : null,
+        expectedLowestPrice: row.expected_lowest_price
+          ? parseFloat(String(row.expected_lowest_price))
+          : null,
         confidenceScore: parseFloat(String(row.confidence_score)),
         explanation: row.explanation as string,
         currentPrice: null,

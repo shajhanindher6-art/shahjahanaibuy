@@ -6,6 +6,10 @@
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
 import { swrGet, cacheKey } from '@/lib/cache';
+import {
+  formatVerdictFreshnessNote,
+  getFreshnessStatus,
+} from '@/lib/price-freshness';
 import type { AISummary } from '@/types/ai';
 import type { Product } from '@/types';
 
@@ -14,8 +18,16 @@ export async function getAISummary(
   product: Product
 ): Promise<AISummary | null> {
   try {
+    // Section 19, Phase 2 (§12 #16/#20) — the freshness stamp is
+    // attached at READ time from the product's real dataFreshness,
+    // never fabricated: a cached row generated a week ago is
+    // stamped with the product's actual last-check date, and the
+    // freshness note qualifies its stored verdict text (which was
+    // written when the price may still have been fresh).
+    const priceAsOf = product.dataFreshness ?? null;
+    const freshnessNote = formatVerdictFreshnessNote(priceAsOf);
     const cached = await getCachedSummary(supabase, product.id);
-    if (cached) return cached;
+    if (cached) return { ...cached, priceAsOf, freshnessNote };
 
     const [reviews, attributes, variants, priceHistory] = await Promise.all([
       getReviewsData(supabase, product.id),
@@ -38,6 +50,11 @@ export async function getAISummary(
       alternatives: alternatives.map((p) => p.slug),
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      // Section 19, Phase 2 (§12 #16): generated-at is createdAt
+      // (the real generation time, above); price-as-of is the
+      // product's real dataFreshness — never a fabricated stamp.
+      priceAsOf,
+      freshnessNote,
     };
 
     void storeSummary(supabase, result);
@@ -58,7 +75,14 @@ function generateSummary(
 ): string {
   const parts: string[] = [];
 
-  parts.push(`The ${product.name} is a ${product.category ?? 'product'} from ${product.brand ?? 'a reputable brand'}.`);
+  // Section 19, Phase 0 (§12 #15): the old fallback claimed the
+  // product was "from a reputable brand" when no brand was
+  // recorded — an assertion with zero evidence (0 reviews + 0
+  // specs live). A missing brand is now simply omitted, never
+  // filled in with a reputation claim.
+  parts.push(
+    `The ${product.name} is a ${product.category ?? 'product'}${product.brand ? ` from ${product.brand}` : ''}.`
+  );
 
   if (reviews.count > 0) {
     parts.push(`It has an average rating of ${reviews.avgRating.toFixed(1)} stars from ${reviews.count} reviews, indicating ${reviews.avgRating >= 4 ? 'strong customer satisfaction' : 'mixed customer feedback'}.`);
@@ -73,11 +97,30 @@ function generateSummary(
     parts.push(`Available in ${variants} variants.`);
   }
 
+  // Section 19, Phase 2 (§12 #20) — freshness gate on the
+  // interpretive verdicts. "Good time to buy" / "near its
+  // historical high" reason about the CURRENT price, so on a stale
+  // (or age-unknown) price the verdict is rewritten in the past
+  // tense and qualified with the staleness instead of being
+  // stated as if it were current. A visitor must never see
+  // "Stale price · 10 days old" in one place and an unqualified
+  // "good time to buy" in another. Cached rows generated before
+  // the price went stale are qualified at read time instead
+  // (freshnessNote on the returned AISummary — see getAISummary).
+  const verdictNote = formatVerdictFreshnessNote(product.dataFreshness);
   if (priceStats.current && priceStats.lowest) {
     if (priceStats.current <= priceStats.lowest * 1.05) {
-      parts.push('The current price is near its historical low, making it a good time to buy.');
+      parts.push(
+        verdictNote
+          ? `The current price was near its historical low at the last recorded check. ${verdictNote}`
+          : 'The current price is near its historical low, making it a good time to buy.'
+      );
     } else if (priceStats.highest && priceStats.current >= priceStats.highest * 0.9) {
-      parts.push('The current price is near its historical high — you may want to wait for a discount.');
+      parts.push(
+        verdictNote
+          ? `The current price was near its historical high at the last recorded check. ${verdictNote}`
+          : 'The current price is near its historical high — you may want to wait for a discount.'
+      );
     }
   }
 
@@ -101,10 +144,26 @@ function generatePros(
   }
 
   if (priceStats.current && priceStats.lowest && priceStats.current <= priceStats.lowest * 1.05) {
-    pros.push('Currently near its lowest recorded price');
+    // Section 19, Phase 2 (§12 #20): the near-low pro is an
+    // interpretive verdict too — on a stale price it carries the
+    // staleness with it instead of reading as a current signal.
+    const { status, ageDays } = getFreshnessStatus(product.dataFreshness);
+    pros.push(
+      status === 'fresh'
+        ? 'Currently near its lowest recorded price'
+        : status === 'stale'
+          ? `Currently near its lowest recorded price (price last checked ${ageDays} day${ageDays === 1 ? '' : 's'} ago — may be out of date)`
+          : 'Currently near its lowest recorded price (price age unknown — may be out of date)'
+    );
   }
 
-  if (pros.length === 0) pros.push('Product meets quality standards');
+  // Section 19, Phase 0 (§12 #15): the old fallback asserted
+  // "Product meets quality standards" when nothing at all was
+  // known — a quality claim with zero evidence. With no reviews,
+  // no specs and no price signal, the honest answer is that there
+  // is not enough data to assess quality.
+  if (pros.length === 0)
+    pros.push('Not enough data to assess quality — no reviews or specifications recorded for this product');
 
   return pros.slice(0, 6);
 }
@@ -134,7 +193,18 @@ function generateCons(
   }
   if (!product.description) cons.push('Limited product description available');
 
-  if (cons.length === 0) cons.push('No significant drawbacks identified from available data');
+  // Section 19, Phase 0 (§12 #15): the old fallback asserted
+  // "No significant drawbacks identified from available data"
+  // even when the available data was literally nothing — that
+  // reads as a clean bill of health. The honest copy says what
+  // was actually checked, and names the gap when no reviews exist.
+  if (cons.length === 0) {
+    cons.push(
+      reviews.count === 0
+        ? 'No drawbacks identified in the available data — no reviews recorded for this product'
+        : 'No drawbacks identified in the available data'
+    );
+  }
 
   return cons.slice(0, 4);
 }
@@ -212,6 +282,12 @@ async function getCachedSummary(
         alternatives: (row.alternatives as string[]) ?? [],
         createdAt: row.created_at as string,
         expiresAt: row.expires_at as string,
+        // Stamped by getAISummary at read time from the product's
+        // real dataFreshness (§12 #16) — the ai_summaries table
+        // carries no freshness columns, and a cached row must never
+        // be re-stamped with a date it did not earn.
+        priceAsOf: null,
+        freshnessNote: null,
       };
     },
     300_000,

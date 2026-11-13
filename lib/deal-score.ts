@@ -37,6 +37,30 @@
  * The price term falls back to +20 exactly as the original inline
  * formula did when current/lowest price is absent — that +20 is
  * part of the formula, not a default score.
+ *
+ * FORMULA-vs-DATA DECISION (Section 19, Phase 2 — read before
+ * "fixing" this formula): the 100/100-on-every-product problem is
+ * a DATA problem as much as a formula problem. With the live
+ * catalog's 4 recorded points per product, discount probability
+ * is 0 and confidence is 20, so the formula computes
+ * 100 − 0 + 30 + 6 = 136 and clamps to 100 — for EVERY product.
+ * No re-weighting fixes that: any formula fed 4 points of a flat
+ * series will either still clamp to 100 or invent a spread the
+ * data does not support. So the formula is deliberately NOT
+ * rebased here. Instead the score is WITHHELD below 5 data
+ * points — dealScoreForDisplay returns null, and no product
+ * surface may obtain a numeric score from fewer points (see the
+ * caller-enforcement test, tests/section19-deal-score-gate.test.ts,
+ * which greps every production caller). The ONLY production
+ * caller of the raw formula is the Deal Score Breakdown tool
+ * (lib/deal-score-breakdown.ts), a diagnostic that shows the raw
+ * terms WITH the withheld warning, so the 100/100 is explained
+ * instead of hidden. WHAT THE OWNER MUST SUPPLY for a real
+ * score: more recorded price points over time — a live price
+ * feed (eBay keys + applied refresh migrations, owner-gated)
+ * growing each product past 5 points, with real rises and drops
+ * so discount probability and confidence stop being 0 and 20.
+ * Until then, "withheld" is the honest answer, not a new formula.
  */
 
 export interface DealScoreInput {
@@ -140,6 +164,16 @@ export function dealScoreForDisplay(
 /**
  * The canonical Deal Score (0–100), or null when it cannot be
  * computed honestly from the inputs.
+ *
+ * RAW FORMULA — do NOT call this from a product surface. It has
+ * NO data-points gate: on the live catalog's 4-point histories it
+ * returns a meaningless 100/100 (see the header comment). Product
+ * surfaces must call dealScoreForDisplay, which withholds the
+ * score below DEAL_SCORE_MIN_DATA_POINTS. The only legitimate
+ * production caller of this function is the Deal Score Breakdown
+ * tool (lib/deal-score-breakdown.ts), which shows the raw terms
+ * alongside the withheld warning. Tests may call it directly to
+ * pin the formula itself.
  */
 export function computeDealScore(input: DealScoreInput | null | undefined): number | null {
   if (!input) return null;
@@ -158,7 +192,9 @@ export function computeDealScore(input: DealScoreInput | null | undefined): numb
   return Math.max(0, Math.min(100, Math.round(raw)));
 }
 
-/** Convenience wrapper for a prediction object (or null) from the predictions API. */
+/** Convenience wrapper for a prediction object (or null) from the predictions API.
+ * Same rule as computeDealScore: raw formula, no data-points gate —
+ * product surfaces must use dealScoreForDisplay instead. */
 export function computeDealScoreFromPrediction(
   prediction: DealScorePrediction | null | undefined
 ): number | null {

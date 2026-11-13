@@ -47,6 +47,13 @@ export const USER_DATA_TABLES: readonly string[] = [
   'referral_links',
   'api_keys',
   'price_protection_watches',
+  // Section 19, Phase 4 (§12 #45) — a deleted user's view history
+  // and preference row must not survive deletion. Both tables are
+  // migration 008, keyed by user_id, so the route's generic
+  // `.delete().eq('user_id', userId)` loop covers them; both also
+  // have ON DELETE CASCADE from auth.users as a backstop.
+  'product_views',
+  'user_preferences',
 ];
 
 /** Human-readable list of what is deleted, for the confirm UI. */
@@ -58,6 +65,8 @@ export function describeDeletionScope(): string[] {
     'Your savings ledger and price-protection watches',
     'Your search history and API keys',
     'Your referral link',
+    // Section 19, Phase 4 (§12 #45).
+    'Your viewed products and your shopping preferences',
     'Your SmartBuy account (sign-in) itself',
   ];
 }

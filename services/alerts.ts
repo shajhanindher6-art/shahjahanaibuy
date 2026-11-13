@@ -20,15 +20,23 @@ import type { Alert } from '@/types/catalog';
 // Types
 // ---------------------------------------------------------------------------
 
+export type AlertType =
+  | 'price_drop'
+  | 'back_in_stock'
+  | 'deal'
+  | 'significant_drop'
+  | 'trend'
+  | 'opportunity';
+
 export interface CreateAlertInput {
   productId: string;
-  alertType: 'price_drop' | 'back_in_stock' | 'deal';
+  alertType: AlertType;
   conditionValue?: number;
   channel?: 'email' | 'push' | 'both';
 }
 
 export interface UpdateAlertInput {
-  alertType?: 'price_drop' | 'back_in_stock' | 'deal';
+  alertType?: AlertType;
   conditionValue?: number | null;
   channel?: 'email' | 'push' | 'both';
   active?: boolean;
@@ -163,14 +171,73 @@ export async function checkAlertCap(
 }
 
 /**
+ * Section 19, Phase 6 (§12 #68) — duplicate alert check.
+ *
+ * Two stored alerts are duplicates when they share user + product
+ * + type + trigger (condition_value: same number, or both null)
+ * and the existing one is still active. An inactive (deleted /
+ * switched-off) twin does NOT block a fresh create — the user
+ * deliberately removed it. A different condition_value is a
+ * different trigger (e.g. two price_drop alerts at $100 and $80)
+ * and is never deduped away.
+ *
+ * @returns The existing active duplicate, or `null` when none exists.
+ */
+export async function findDuplicateAlert(
+  supabase: AnySupabaseClient,
+  userId: string,
+  data: CreateAlertInput
+): Promise<Alert | null> {
+  try {
+    const { data: rows, error } = await supabase
+      .from('alerts')
+      .select('id, user_id, product_id, alert_type, condition_value, channel, active, last_triggered_at, trigger_count, created_at, updated_at')
+      .eq('user_id', userId)
+      .eq('product_id', data.productId)
+      .eq('alert_type', data.alertType)
+      .eq('active', true);
+
+    if (error || !rows) {
+      if (error) logger.warn('findDuplicateAlert: query failed', { error: error.message });
+      return null;
+    }
+
+    const wanted =
+      data.conditionValue !== undefined && data.conditionValue !== null
+        ? data.conditionValue
+        : null;
+    for (const row of rows as AlertRow[]) {
+      const existing =
+        row.condition_value !== null && row.condition_value !== undefined
+          ? parseFloat(String(row.condition_value))
+          : null;
+      if (wanted === null && existing === null) return mapAlert(row);
+      if (wanted !== null && existing !== null && wanted === existing) {
+        return mapAlert(row);
+      }
+    }
+    return null;
+  } catch (err) {
+    logger.error('findDuplicateAlert: unexpected error', { error: String(err) });
+    return null;
+  }
+}
+
+/**
  * Create a new alert for a user.
- * @returns The created alert, or `null` on failure.
+ * Idempotent on duplicates (§12 #68): when an identical active
+ * alert already exists it is returned as-is and NO second row is
+ * inserted, so the same trigger can never fire twice.
+ * @returns The created (or already-existing) alert, or `null` on failure.
  */
 export async function createAlert(
   supabase: AnySupabaseClient,
   userId: string,
   data: CreateAlertInput
 ): Promise<Alert | null> {
+  const duplicate = await findDuplicateAlert(supabase, userId, data);
+  if (duplicate) return duplicate;
+
   try {
     const { data: inserted, error } = await supabase
       .from('alerts')
