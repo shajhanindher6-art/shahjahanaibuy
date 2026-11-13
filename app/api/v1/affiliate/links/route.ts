@@ -20,6 +20,9 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl;
     const productId = searchParams.get('productId');
+    // Final 100%, F-P2-60 — ?limit=, default 50, hard cap 100
+    // (was unbounded: every active link for the product).
+    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') ?? 50)));
 
     if (!productId || productId.trim() === '') {
       return badRequest('productId is required');
@@ -34,7 +37,8 @@ export async function GET(request: NextRequest) {
       .select('id, product_id, retailer_id, merchant_id, retailer_name, original_url, affiliate_url, affiliate_id, commission_rate, clicks_count, conversions_count, revenue_generated, active, created_at, updated_at')
       .eq('product_id', productId)
       .eq('active', true)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
     if (error) {
       return internalError('Failed to fetch affiliate links');

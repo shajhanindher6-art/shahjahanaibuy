@@ -25,6 +25,7 @@ import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { getDeadLetterQueue, getQueueMetrics } from '@/lib/workers/queue';
 import { listRecentErrors, listRefreshFailures } from '@/services/error-log-admin';
 import { listIngestionRejections } from '@/services/ingestion-rejections';
+import { requireAdminPage } from '@/lib/admin-page-guard';
 import {
   failedStepsOf,
   listRefreshRuns,
@@ -54,6 +55,9 @@ function formatDateTime(iso: string | null): string {
 }
 
 export default async function AdminIngestionFailuresPage() {
+  // Final 100%, F-P1-62 — per-page server-side admin re-check
+  // (the layout guard alone is not the only check anymore).
+  await requireAdminPage();
   const service = createSupabaseServiceClient();
 
   if (!service) {
@@ -266,6 +270,16 @@ export default async function AdminIngestionFailuresPage() {
               </p>
               <p className="mt-1 text-muted-foreground">
                 {entry.error} · {formatDateTime(entry.failedAt)}
+                {/* Final 100%, F-P2-46 — whether this entry was
+                    durably stored in error_log (migration 048) or
+                    lives only in this instance's memory. */}
+                {entry.persisted === 'inserted'
+                  ? ' · Stored durably in the error log'
+                  : entry.persisted === 'missing-table'
+                    ? ' · Not stored durably — error_log table not applied (migration 048)'
+                    : entry.persisted === 'failed'
+                      ? ' · Durable store failed — in-memory only, lost on redeploy'
+                      : ' · Durability unknown — persistence pending'}
               </p>
             </li>
           ))}

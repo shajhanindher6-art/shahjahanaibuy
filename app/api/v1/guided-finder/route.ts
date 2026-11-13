@@ -11,8 +11,10 @@
  *   (same as the Budget Finder page) — budget is a hard filter,
  *   unpriced products and the 'sample-laptop' demo row are never
  *   picks, and an empty result is returned honestly as [].
- * - Prices are verified merchant prices only (see the loader);
- *   nothing here is scraped, seeded, or invented.
+ * - Prices are recorded merchant prices only (see the loader);
+ *   nothing here is scraped, seeded, or invented — and no live
+ *   check stands behind them, so nothing here calls a price
+ *   verified (Final 100%, F-P0-06).
  */
 
 import type { NextRequest } from 'next/server';

@@ -24,12 +24,15 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
+import { requireAdminPage } from '@/lib/admin-page-guard';
 import {
   getAdminProductPriceHistory,
+  listCategoriesMissingSpecTemplates,
   listDuplicateCandidates,
   listProductImageStatus,
   listProductsMissingSpecs,
   listProductsPriceHistorySummary,
+  listSpecCompleteness,
 } from '@/services/admin-products';
 
 export const dynamic = 'force-dynamic';
@@ -66,8 +69,11 @@ function formatDateTime(iso: string | null): string {
 export default async function AdminReviewPage({
   searchParams,
 }: {
-  searchParams: { view?: string; product?: string };
+  searchParams: { view?: string; product?: string; check?: string };
 }) {
+  // Final 100%, F-P1-62 — per-page server-side admin re-check
+  // (the layout guard alone is not the only check anymore).
+  await requireAdminPage();
   const view: ReviewView =
     searchParams.view === 'specs' ||
     searchParams.view === 'images' ||
@@ -93,8 +99,22 @@ export default async function AdminReviewPage({
     view === 'duplicates' ? await listDuplicateCandidates(service, 50) : null;
   const missingSpecs =
     view === 'specs' ? await listProductsMissingSpecs(service, 50) : null;
+  // FINAL 100%, F-P1-09 / F-P2-32 — per-product spec completeness
+  // (which required keys are missing) and the list of categories
+  // with no spec template at all.
+  const specCompleteness =
+    view === 'specs' ? await listSpecCompleteness(service, 50) : null;
+  const missingTemplates =
+    view === 'specs' ? await listCategoriesMissingSpecTemplates(service) : null;
+  // FINAL 100%, F-P2-29 — reachability HEAD checks run only when
+  // the admin explicitly asks (?check=live); the default review
+  // never blocks on a slow merchant CDN.
   const imageStatus =
-    view === 'images' ? await listProductImageStatus(service, 50) : null;
+    view === 'images'
+      ? await listProductImageStatus(service, 50, {
+          checkReachability: searchParams.check === 'live',
+        })
+      : null;
   const historySummary =
     view === 'history' ? await listProductsPriceHistorySummary(service, 50) : null;
   const historyDetail =
@@ -217,6 +237,54 @@ export default async function AdminReviewPage({
               ))}
             </ul>
           )}
+          {/* FINAL 100%, F-P1-09 — spec completeness per product:
+              which required template keys are missing. A product
+              with some specs but not all is listed here too — the
+              queue above only catches products with zero specs. */}
+          {specCompleteness && !specCompleteness.error ? (
+            <div className="mt-6">
+              <h3 className="font-medium">Spec completeness</h3>
+              <ul className="mt-2 space-y-2">
+                {specCompleteness.rows.map((row) => (
+                  <li key={row.productId} className="rounded-lg border p-4 text-sm">
+                    <Link href={`/admin/products/${row.productId}`} className="font-medium underline">
+                      {row.name}
+                    </Link>{' '}
+                    <span className="text-muted-foreground">
+                      {row.hasTemplate
+                        ? row.complete
+                          ? '— all required specs recorded'
+                          : `— missing: ${row.missingKeys.join(', ')}`
+                        : '— no spec template for this category, so completeness cannot be checked'}
+                      {row.unknownKeys.length > 0
+                        ? ` · unknown keys (reported, not dropped): ${row.unknownKeys.join(', ')}`
+                        : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {/* FINAL 100%, F-P2-32 — categories with no spec template.
+              Specs for these categories cannot be validated by
+              design; this is the list, so an admin can see which
+              categories are affected instead of discovering it one
+              failed validation at a time. */}
+          {missingTemplates && !missingTemplates.error ? (
+            <div className="mt-6">
+              <h3 className="font-medium">Categories without a spec template</h3>
+              {missingTemplates.categories.length === 0 ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Every category in the catalog has a spec template.
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {missingTemplates.categories.join(', ')} — specs for these categories cannot be
+                  validated until a template is added.
+                </p>
+              )}
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -228,6 +296,16 @@ export default async function AdminReviewPage({
             can be corrected from the product edit page; a missing
             image needs a real image URL from a licensed or merchant
             source — never a guessed one.
+            {imageStatus.reachabilityChecked
+              ? ' Reachability was HEAD-checked on this view.'
+              : ''}{' '}
+            <Link
+              href="/admin/products/review?view=images&check=live"
+              className="underline"
+            >
+              Check reachability now
+            </Link>
+            {' '}(HEAD-checks every image URL; may take a few seconds.)
           </p>
           {imageStatus.error ? (
             <p className="mt-4 rounded-lg border border-red-300 bg-red-50 p-4 text-sm dark:border-red-800 dark:bg-red-950">
@@ -246,10 +324,13 @@ export default async function AdminReviewPage({
                       ? `image ok (${row.imageCount} gallery image(s))`
                       : row.status === 'missing-image'
                         ? 'no image URL stored'
-                        : `invalid image URL: ${row.imageUrl ?? ''}`}
+                        : row.status === 'broken-image'
+                          ? `image URL does not load (HEAD check failed): ${row.imageUrl ?? ''}`
+                          : `invalid image URL: ${row.imageUrl ?? ''}`}
                     {row.status === 'ok' && row.imageCount === 0
                       ? ' · no gallery rows'
                       : ''}
+                    {row.reachable === true ? ' · reachable' : ''}
                   </span>
                 </li>
               ))}

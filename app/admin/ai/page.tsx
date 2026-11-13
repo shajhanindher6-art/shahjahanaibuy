@@ -11,6 +11,7 @@ import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { AiControlCenter } from '@/components/admin/ai-control-center';
+import { requireAdminPage } from '@/lib/admin-page-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,10 @@ export const metadata: Metadata = {
   },
 };
 
-export default function AdminAiPage() {
+export default async function AdminAiPage() {
+  // Final 100%, F-P1-62 — per-page server-side admin re-check
+  // (the layout guard alone is not the only check anymore).
+  await requireAdminPage();
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />

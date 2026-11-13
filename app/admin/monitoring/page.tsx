@@ -26,6 +26,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
+import { requireAdminPage } from '@/lib/admin-page-guard';
 import {
   getBackgroundJobStatus,
   listAlertDeliveries,
@@ -60,6 +61,9 @@ export default async function AdminMonitoringPage({
 }: {
   searchParams?: { status?: string; channel?: string };
 }) {
+  // Final 100%, F-P1-62 — per-page server-side admin re-check
+  // (the layout guard alone is not the only check anymore).
+  await requireAdminPage();
   const sessionClient = await createSupabaseServerClient();
   const {
     data: { user },

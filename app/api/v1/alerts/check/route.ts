@@ -146,6 +146,7 @@ export async function POST(request: NextRequest) {
       failed: 0,
       loadFailed: false,
       staleFlipped: 0,
+      suspiciousPriceChanges: 0,
       currencyAssumedUsd: 0,
       nonUsdCurrencies: [],
     };

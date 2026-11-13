@@ -43,6 +43,11 @@ interface CommunityDealRow {
 type Action = 'verify' | 'unverify' | 'reject' | 'approve';
 
 export default function AdminCommunityDealsPage() {
+  // NOTE (Final 100%, F-P1-62): this page is a client component
+  // ('use client'), so it cannot call the server-side
+  // requireAdminPage() guard — the /admin layout guard plus the
+  // client-side session check are its guards, exactly as
+  // documented in lib/admin-page-guard.ts.
   const { user } = useAuth();
   const [deals, setDeals] = useState<CommunityDealRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);

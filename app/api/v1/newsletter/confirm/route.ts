@@ -40,6 +40,7 @@ import {
 import { sendWelcomeEmail } from '@/services/email';
 import { logApiError } from '@/lib/api/error-logging';
 import { isMissingTableError } from '@/lib/newsletter';
+import { validateBody, tokenBodySchema } from '@/lib/api/validation';
 
 export const dynamic = 'force-dynamic';
 
@@ -80,7 +81,17 @@ export async function POST(request: NextRequest) {
   );
   if (limited) return limited;
   const body = await request.json().catch(() => null);
-  return confirm(request, body);
+  // Final 100%, F-P1-60 — schema validation on the POST body only
+  // (GET passes null and is unaffected).
+  const validation = validateBody(tokenBodySchema, body ?? {});
+  // Narrowing check (not invalidBodyResponse — it does not narrow
+  // the union, so validation.data would not type-check). Same 400
+  // as invalidBodyResponse: the first error, same message.
+  if (!validation.success) {
+    const firstError = Object.values(validation.errors).flat()[0];
+    return badRequest(firstError ?? 'Invalid request body');
+  }
+  return confirm(request, validation.data);
 }
 
 async function confirm(request: NextRequest, body: unknown) {

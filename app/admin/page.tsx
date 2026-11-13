@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/features/auth';
 import { cn } from '@/lib/utils';
@@ -72,26 +73,51 @@ export default function AdminPage() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
+  // Final 100%, F-P2-54 — audit-log viewer: filter/search state +
+  // an honest error state. The viewer used to swallow a failed
+  // fetch into an empty list (and had no filter/search at all);
+  // a failure is now shown, never rendered as "no logs yet".
+  const [logActionFilter, setLogActionFilter] = useState('');
+  const [logSearch, setLogSearch] = useState('');
+  const [logsError, setLogsError] = useState<string | null>(null);
 
   const fetchAdminData = useCallback(async () => {
     setLoading(true);
     try {
+      const logParams = new URLSearchParams({ limit: '20' });
+      if (logActionFilter.trim()) logParams.set('action', logActionFilter.trim());
+      if (logSearch.trim()) logParams.set('q', logSearch.trim());
       const [analyticsRes, logsRes] = await Promise.all([
         fetch('/api/v1/admin/analytics'),
-        fetch('/api/v1/admin/audit-logs?limit=20'),
+        fetch(`/api/v1/admin/audit-logs?${logParams.toString()}`),
       ]);
 
       const analyticsData = await analyticsRes.json();
       if (analyticsData.success) setAnalytics(analyticsData.data);
 
       const logsData = await logsRes.json();
-      if (logsData.success) setLogs(logsData.data ?? []);
+      if (logsData.success) {
+        setLogs(logsData.data ?? []);
+        setLogsError(null);
+      } else {
+        // Surface the failure honestly: the API returns 503 with
+        // the real reason (e.g. the audit-log table is unapplied)
+        // instead of a silent empty list.
+        setLogs([]);
+        setLogsError(
+          typeof logsData.error?.message === 'string'
+            ? logsData.error.message
+            : 'Audit logs could not be loaded.'
+        );
+      }
     } catch {
-      // Admin endpoints require auth
+      // Admin endpoints require auth — but say so instead of
+      // rendering an empty list as if there were no logs.
+      setLogsError('Audit logs could not be loaded (request failed).');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [logActionFilter, logSearch]);
 
   useEffect(() => {
     fetchAdminData();
@@ -241,10 +267,46 @@ export default function AdminPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Admin Audit Logs</CardTitle>
-                <CardDescription>Recent admin actions</CardDescription>
+                <CardDescription>
+                  Recent admin actions — filter by action, or search across action / target type / target id.
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                {logs.length > 0 ? (
+                <div className="mb-4 flex flex-wrap gap-2">
+                  <Input
+                    value={logActionFilter}
+                    onChange={(e) => setLogActionFilter(e.target.value)}
+                    placeholder="Filter by action (e.g. product_update)"
+                    aria-label="Filter audit logs by action"
+                    className="max-w-xs"
+                  />
+                  <Input
+                    value={logSearch}
+                    onChange={(e) => setLogSearch(e.target.value)}
+                    placeholder="Search action / target"
+                    aria-label="Search audit logs"
+                    className="max-w-xs"
+                  />
+                  <Button variant="outline" onClick={() => fetchAdminData()}>
+                    Apply filters
+                  </Button>
+                  {(logActionFilter || logSearch) && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setLogActionFilter('');
+                        setLogSearch('');
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+                {logsError ? (
+                  <p role="alert" className="text-sm text-red-600">
+                    {logsError}
+                  </p>
+                ) : logs.length > 0 ? (
                   <div className="space-y-2">
                     {logs.map((log) => (
                       <div key={log.id} className="flex items-center justify-between border-b border-slate-100 pb-2 text-sm dark:border-slate-800">

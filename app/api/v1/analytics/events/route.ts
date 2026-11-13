@@ -9,6 +9,7 @@ import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 
 import { logApiError } from '@/lib/api/error-logging';
+import { validateBody, analyticsEventSchema } from '@/lib/api/validation';
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'analytics.events.track' });
   // Rate limit: 60 requests/min per IP (see docs/rate-limits.md).
@@ -17,7 +18,18 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { eventType, productId, value, metadata } = body ?? {};
+    // Final 100%, F-P1-60 — schema validation (was hand-rolled).
+    // A non-number `value` now 400s instead of being silently
+    // stored as null (the Sections 21-25 tightening precedent).
+    const validation = validateBody(analyticsEventSchema, body ?? {});
+    // Narrowing check (not invalidBodyResponse — it does not narrow
+    // the union, so validation.data would not type-check). Same 400
+    // as invalidBodyResponse: the first error, same message.
+    if (!validation.success) {
+      const firstError = Object.values(validation.errors).flat()[0];
+      return badRequest(firstError ?? 'Invalid request body');
+    }
+    const { eventType, productId, value, metadata } = validation.data;
 
     if (typeof eventType !== 'string' || eventType.trim() === '') {
       return badRequest('eventType is required');

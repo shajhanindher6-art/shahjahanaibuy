@@ -30,6 +30,7 @@ import type { ProductFetchJobData } from '@/lib/workers/types';
 import { z } from 'zod';
 
 import { logApiError } from '@/lib/api/error-logging';
+import { env } from '@/lib/config/env';
 /**
  * Section 18, item 36 — `maxDuration` (see
  * app/api/v1/notifications/process/route.ts for the plan
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest) {
         },
         getClientIp(request)
       );
-      const csvSourceUrl = process.env.CSV_SOURCE_URL?.trim();
+      const csvSourceUrl = env.csvSourceUrl?.trim();
       if (csvSourceUrl) {
         await ensureCsvDataSource(auditService, { sourceUrl: csvSourceUrl });
       }

@@ -29,6 +29,7 @@ import {
 } from '@/services/product-quality-score';
 import { priceVerificationLabel } from '@/services/price-verification';
 import { formatLastChecked } from '@/lib/price-freshness';
+import { requireAdminPage } from '@/lib/admin-page-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,8 +56,24 @@ function formatDateTime(iso: string | null): string {
 export default async function AdminProductsPage({
   searchParams,
 }: {
-  searchParams: { q?: string; status?: string; verification?: string; page?: string };
+  searchParams: {
+    q?: string;
+    status?: string;
+    verification?: string;
+    page?: string;
+    quality?: string;
+    missing?: string;
+    stale?: string;
+    noImage?: string;
+    noGtin?: string;
+  };
 }) {
+  // Final 100%, F-P1-62 — per-page server-side admin re-check
+  // (the layout guard alone is not the only check anymore).
+  // NOTE (W6): the F-P1-62 edit placed this call inside the
+  // parameter destructuring, which does not parse; moved here
+  // into the body — same call, same intent.
+  await requireAdminPage();
   const service = createSupabaseServiceClient();
 
   if (!service) {
@@ -76,6 +93,13 @@ export default async function AdminProductsPage({
     search: searchParams.q,
     status: searchParams.status,
     verification: searchParams.verification,
+    // Final 100%, F-P2-44 — quality filters (same names as the
+    // data-quality dashboard, so the two pages link to each other).
+    quality: searchParams.quality,
+    missing: searchParams.missing,
+    stale: searchParams.stale === '1',
+    noImage: searchParams.noImage === '1',
+    noGtin: searchParams.noGtin === '1',
     page,
     pageSize: 20,
   });
@@ -162,10 +186,58 @@ export default async function AdminProductsPage({
           <option value="unverified">unverified</option>
           <option value="stale">stale</option>
         </select>
+        {/* Final 100%, F-P2-44 — quality filters: 5-state taxonomy,
+            missing field, stale, no-image, no-GTIN. Computed from
+            stored fields, so they work while migration 045 is
+            unapplied (unlike the status / verification filters). */}
+        <label className="sr-only" htmlFor="admin-products-quality">Filter by data quality state</label>
+        <select
+          id="admin-products-quality"
+          name="quality"
+          defaultValue={searchParams.quality ?? ''}
+          className="rounded-lg border px-3 py-2 text-sm"
+        >
+          <option value="">All quality states</option>
+          <option value="verified">Verified</option>
+          <option value="partial">Partially verified</option>
+          <option value="unverified">Unverified</option>
+          <option value="stale">Stale</option>
+          <option value="missing">Missing information</option>
+        </select>
+        <label className="sr-only" htmlFor="admin-products-missing">Filter by missing field</label>
+        <select
+          id="admin-products-missing"
+          name="missing"
+          defaultValue={searchParams.missing ?? ''}
+          className="rounded-lg border px-3 py-2 text-sm"
+        >
+          <option value="">Any missing field</option>
+          <option value="specs">No specs</option>
+          <option value="image">No image</option>
+          <option value="gtin">No GTIN</option>
+          <option value="history">No price history</option>
+        </select>
+        <label className="flex items-center gap-1 rounded-lg border px-3 py-2 text-sm">
+          <input type="checkbox" name="stale" value="1" defaultChecked={searchParams.stale === '1'} />
+          Stale only
+        </label>
+        <label className="flex items-center gap-1 rounded-lg border px-3 py-2 text-sm">
+          <input type="checkbox" name="noImage" value="1" defaultChecked={searchParams.noImage === '1'} />
+          No image
+        </label>
+        <label className="flex items-center gap-1 rounded-lg border px-3 py-2 text-sm">
+          <input type="checkbox" name="noGtin" value="1" defaultChecked={searchParams.noGtin === '1'} />
+          No GTIN
+        </label>
         <button type="submit" className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white">
           Filter
         </button>
       </form>
+      <p className="mt-2 text-sm">
+        <Link href="/admin/data-quality" className="underline">
+          Data-quality dashboard — totals, coverage, reliability, refresh monitoring
+        </Link>
+      </p>
 
       {result.products.length === 0 ? (
         <div className="mt-6 rounded-lg border p-6">
@@ -240,6 +312,8 @@ export default async function AdminProductsPage({
                   {score.missingFields.length > 0
                     ? ` — missing: ${score.missingFields.join(', ')}`
                     : ' — nothing missing'}
+                  {' · '}Price state: <strong>{score.priceState.label}</strong>
+                  {' · '}Fully verified: <strong>{score.fullyVerified.fullyVerified ? 'Yes' : 'No'}</strong>
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Last updated {formatDateTime(product.updatedAt)}
@@ -257,7 +331,7 @@ export default async function AdminProductsPage({
         <nav aria-label="Product pages" className="mt-6 flex flex-wrap gap-2">
           {page > 1 ? (
             <Link
-              href={`/admin/products?page=${page - 1}${searchParams.q ? `&q=${encodeURIComponent(searchParams.q)}` : ''}${searchParams.status ? `&status=${searchParams.status}` : ''}${searchParams.verification ? `&verification=${searchParams.verification}` : ''}`}
+              href={`/admin/products?page=${page - 1}${searchParams.q ? `&q=${encodeURIComponent(searchParams.q)}` : ''}${searchParams.status ? `&status=${searchParams.status}` : ''}${searchParams.verification ? `&verification=${searchParams.verification}` : ''}${searchParams.quality ? `&quality=${searchParams.quality}` : ''}${searchParams.missing ? `&missing=${searchParams.missing}` : ''}${searchParams.stale === '1' ? '&stale=1' : ''}${searchParams.noImage === '1' ? '&noImage=1' : ''}${searchParams.noGtin === '1' ? '&noGtin=1' : ''}`}
               className="rounded-lg border px-4 py-2 text-sm font-medium"
             >
               Previous page
@@ -268,7 +342,7 @@ export default async function AdminProductsPage({
           </span>
           {page < result.totalPages ? (
             <Link
-              href={`/admin/products?page=${page + 1}${searchParams.q ? `&q=${encodeURIComponent(searchParams.q)}` : ''}${searchParams.status ? `&status=${searchParams.status}` : ''}${searchParams.verification ? `&verification=${searchParams.verification}` : ''}`}
+              href={`/admin/products?page=${page + 1}${searchParams.q ? `&q=${encodeURIComponent(searchParams.q)}` : ''}${searchParams.status ? `&status=${searchParams.status}` : ''}${searchParams.verification ? `&verification=${searchParams.verification}` : ''}${searchParams.quality ? `&quality=${searchParams.quality}` : ''}${searchParams.missing ? `&missing=${searchParams.missing}` : ''}${searchParams.stale === '1' ? '&stale=1' : ''}${searchParams.noImage === '1' ? '&noImage=1' : ''}${searchParams.noGtin === '1' ? '&noGtin=1' : ''}`}
               className="rounded-lg border px-4 py-2 text-sm font-medium"
             >
               Next page

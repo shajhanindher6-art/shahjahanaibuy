@@ -19,6 +19,7 @@ import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middlew
 import { joinAppWaitlist, validateWaitlistInput } from '@/lib/app-waitlist';
 
 import { logApiError } from '@/lib/api/error-logging';
+import { validateBody, invalidBodyResponse, mobileWaitlistSchema } from '@/lib/api/validation';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -29,6 +30,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json().catch(() => null);
+    // Final 100%, F-P1-60 — schema validation before the route's
+    // own validateWaitlistInput (which keeps its messages).
+    const schemaValidation = validateBody(mobileWaitlistSchema, body ?? {});
+    const schemaInvalid = invalidBodyResponse(schemaValidation);
+    if (schemaInvalid) return schemaInvalid;
     const validated = validateWaitlistInput({
       email: typeof body?.email === 'string' ? body.email : '',
       platform: typeof body?.platform === 'string' ? body.platform : '',

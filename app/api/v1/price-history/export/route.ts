@@ -65,6 +65,14 @@ export async function GET(request: NextRequest) {
         currency: h.currency,
         availability: h.availability,
         recordedAt: h.recordedAt,
+        // Final 100% (F-P1-15 / F-P1-30) — the per-row flags ride
+        // the export verbatim; null when the row predates the
+        // columns (unknown, rendered empty in CSV, never guessed).
+        source: h.source ?? null,
+        observedAt: h.observedAt ?? null,
+        suspicious: h.suspicious ?? null,
+        verified: h.verified ?? null,
+        currencyAssumed: h.currencyAssumed ?? null,
       }));
 
     const fileName = priceHistoryExportFileName(product.slug, format);

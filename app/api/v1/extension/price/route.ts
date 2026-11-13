@@ -36,6 +36,24 @@ import {
 } from '@/lib/public-products';
 
 import { logApiError } from '@/lib/api/error-logging';
+import { getFreshnessStatus } from '@/lib/price-freshness';
+
+/**
+ * Final 100% — F-P2-21: the basis label for a `compareAtPrice`
+ * in this response. A compare-at price is a merchant-stated list
+ * price that was NEVER observed in recorded history — a machine
+ * consumer must never read it as a verified saving or a former
+ * selling price. Labelled on every offer that carries one.
+ *
+ * Module-local on purpose (not exported): Next.js route modules
+ * may only export handlers/config — an exported const breaks the
+ * generated `.next/types` route-type check (TS2344).
+ */
+const EXTENSION_COMPARE_AT_PRICE_BASIS =
+  'merchant-stated list price — never observed in recorded history';
+
+/** Basis label for a `price` in this response: a recorded merchant price, not a live check. */
+const EXTENSION_PRICE_BASIS = 'recorded merchant price';
 interface MerchantProductRow {
   price: number;
   compare_at_price: number | null;
@@ -73,6 +91,10 @@ export async function GET(request: NextRequest) {
     let productId: string | null = null;
     let productName: string | null = null;
     let productSlug: string | null = null;
+    // Final 100% — F-P2-21: the product's recorded freshness
+    // rides into meta so machine consumers can judge staleness
+    // (null = no check date recorded, never "fresh").
+    let productDataFreshness: string | null = null;
     const resolved = slug
       ? await findPublicProductBySlug(supabase, slug)
       : await findPublicProductByName(supabase, q);
@@ -80,6 +102,7 @@ export async function GET(request: NextRequest) {
       productId = resolved.id;
       productName = resolved.name;
       productSlug = resolved.slug;
+      productDataFreshness = resolved.dataFreshness ?? null;
     }
     if (!productId) return apiSuccess([], 200, { product: null, note: 'No catalog product matches.', storeLinks: [] });
 
@@ -91,7 +114,7 @@ export async function GET(request: NextRequest) {
       .limit(20);
     if (error || !data) {
       return apiSuccess([], 200, {
-        product: { name: productName, slug: productSlug },
+        product: { name: productName, slug: productSlug, priceFreshness: { status: getFreshnessStatus(productDataFreshness).status, lastCheckedAt: productDataFreshness } },
         // Store links do not depend on merchant rows, so they are
         // still useful when the offers query fails.
         storeLinks: productName ? buildExtensionStoreLinks(productName, country) : [],
@@ -100,13 +123,24 @@ export async function GET(request: NextRequest) {
 
     // Same in-stock rule as the product page: in_stock true OR
     // availability 'in_stock'. Cheapest first, capped at 5.
+    // Final 100% — F-P2-21: every offer labels its numbers.
+    // `price` is a recorded merchant price (basis + staleness in
+    // meta.product.priceFreshness); `compareAtPrice` is a
+    // merchant-stated list price, never observed in recorded
+    // history — it travels with its basis + the "vs list price"
+    // label, never raw, so a machine consumer cannot mistake it
+    // for a verified former price.
+    const priceFreshness = getFreshnessStatus(productDataFreshness);
     const offers = (data as unknown as MerchantProductRow[])
       .filter((r) => r.in_stock === true || r.availability === 'in_stock')
       .slice(0, 5)
       .map((r) => ({
         merchant: r.merchants?.name ?? null,
         price: Number(r.price),
+        priceBasis: EXTENSION_PRICE_BASIS,
         compareAtPrice: r.compare_at_price !== null ? Number(r.compare_at_price) : null,
+        compareAtPriceLabel: r.compare_at_price !== null ? 'vs list price' : null,
+        compareAtPriceBasis: r.compare_at_price !== null ? EXTENSION_COMPARE_AT_PRICE_BASIS : null,
         url: r.url,
         inStock: true,
       }));
@@ -122,7 +156,7 @@ export async function GET(request: NextRequest) {
         )
       : [];
 
-    return apiSuccess(offers, 200, { product: { name: productName, slug: productSlug }, storeLinks });
+    return apiSuccess(offers, 200, { product: { name: productName, slug: productSlug, priceFreshness: { status: priceFreshness.status, lastCheckedAt: productDataFreshness } }, storeLinks });
   } catch (err) {
     logApiError(err, { request, route: 'extension.price', status: 500 });
     return internalError('Failed to fetch extension price');

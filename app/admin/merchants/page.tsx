@@ -68,6 +68,11 @@ const EMPTY_FORM: FormState = {
 };
 
 export default function AdminMerchantsPage() {
+  // NOTE (Final 100%, F-P1-62): this page is a client component
+  // ('use client'), so it cannot call the server-side
+  // requireAdminPage() guard — the /admin layout guard plus the
+  // client-side role check below are its guards, exactly as
+  // documented in lib/admin-page-guard.ts.
   const { role } = useAuth();
   const [merchants, setMerchants] = useState<MerchantRow[]>([]);
   const [loading, setLoading] = useState(true);

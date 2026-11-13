@@ -49,10 +49,12 @@ import {
   listRefreshRuns,
   failedStepsOf,
   refreshStepLabel,
+  suspiciousPriceChangesOf,
 } from '@/services/refresh-runs-admin';
 import { listRefreshFailures } from '@/services/error-log-admin';
 import type { RefreshRunRow } from '@/services/refresh-run';
 import { ManualRefreshButton } from '@/components/admin/manual-refresh-button';
+import { requireAdminPage } from '@/lib/admin-page-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,6 +87,9 @@ function formatDateTime(iso: string | null): string {
 }
 
 export default async function AdminRefreshRunsPage() {
+  // Final 100%, F-P1-62 — per-page server-side admin re-check
+  // (the layout guard alone is not the only check anymore).
+  await requireAdminPage();
   // Sections 21–25, Stage G, G-P1-4 — the admin data services
   // re-check the admin role themselves (defense in depth, beyond
   // the layout guard), so the page passes the session user id.
@@ -185,6 +190,12 @@ export default async function AdminRefreshRunsPage() {
           <div className="mt-6 space-y-4">
             {runs.map((run) => {
               const failed = failedStepsOf(run);
+              // Final 100% — F-P2-15: the suspicious-flag
+              // notification for this run. Rendered even when the
+              // run succeeded — the flag count lives in the stored
+              // step counts, and the review queue is the
+              // data-quality panel (/admin/ai).
+              const suspicious = suspiciousPriceChangesOf(run);
               return (
                 <section key={run.id} className="rounded-lg border p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -199,6 +210,15 @@ export default async function AdminRefreshRunsPage() {
                   <p className="mt-1 text-sm text-muted-foreground">
                     Source: {run.source}
                     {run.error ? ` · Run error: ${run.error}` : ''}
+                    {suspicious > 0 ? (
+                      <>
+                        {' · '}
+                        <span className="font-medium text-amber-700 dark:text-amber-300">
+                          {suspicious} suspicious price change{suspicious === 1 ? '' : 's'} need{suspicious === 1 ? 's' : ''} review
+                        </span>
+                        {' — see the data-quality panel (/admin/ai)'}
+                      </>
+                    ) : null}
                   </p>
                   {failed.length === 0 ? (
                     <p className="mt-2 text-sm text-muted-foreground">All steps ok.</p>
@@ -214,6 +234,7 @@ export default async function AdminRefreshRunsPage() {
                             <span className="block text-muted-foreground">
                               Processed {step.counts.processed} · succeeded {step.counts.succeeded} · failed {step.counts.failed}
                               {step.counts.skipped !== undefined ? ` · skipped ${step.counts.skipped}` : ''}
+                              {step.counts.suspiciousPriceChanges ? ` · ${step.counts.suspiciousPriceChanges} suspicious price change${step.counts.suspiciousPriceChanges === 1 ? '' : 's'} flagged` : ''}
                             </span>
                           ) : null}
                         </li>
@@ -302,6 +323,16 @@ export default async function AdminRefreshRunsPage() {
               </p>
               <p className="mt-1 text-muted-foreground">
                 {entry.error} · {formatDateTime(entry.failedAt)}
+                {/* Final 100%, F-P2-46 — whether this entry was
+                    durably stored in error_log (migration 048) or
+                    lives only in this instance's memory. */}
+                {entry.persisted === 'inserted'
+                  ? ' · Stored durably in the error log'
+                  : entry.persisted === 'missing-table'
+                    ? ' · Not stored durably — error_log table not applied (migration 048)'
+                    : entry.persisted === 'failed'
+                      ? ' · Durable store failed — in-memory only, lost on redeploy'
+                      : ' · Durability unknown — persistence pending'}
               </p>
             </li>
           ))}

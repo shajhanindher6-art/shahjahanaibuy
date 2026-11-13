@@ -82,8 +82,23 @@ import {
   type IntakeReviewedRow,
 } from '@/services/catalog-intake';
 import { EBAY_INTAKE_SOURCE } from '@/services/ebay-intake';
+import {
+  buildRejectionRecords,
+  recordIngestionRejection,
+} from '@/services/ingestion-rejections';
+import { normalizeBrand, normalizeModel } from '@/lib/model-normalization';
 import { priceVerificationForIntakeSource } from '@/services/price-verification';
+import { isFullyVerified } from '@/lib/verification/fully-verified';
 import { recordAdminAction } from '@/services/admin';
+import {
+  resolveIntakeAvailability,
+  resolveIntakeDataFreshness,
+} from '@/services/intake-evidence';
+import { recordIntakePriceHistory } from '@/services/intake-price-history';
+import { writeProductSpecs } from '@/services/product-attributes';
+import { insertProductImagesWithVerification } from '@/services/product-images';
+import { processImagesDetailed } from '@/services/pipeline/image-processing';
+import { upsertProductVariants } from '@/services/pipeline/variants';
 
 export const dynamic = 'force-dynamic';
 
@@ -127,10 +142,23 @@ const intakeJsonBodySchema = z.object({
 export async function loadCatalogContext(
   service: SupabaseClient,
 ): Promise<IntakeCatalogContext> {
-  const [productsRes, merchantsRes, currenciesRes] = await Promise.all([
+  const [productsRes, merchantsRes, currenciesRes, modelsRes] = await Promise.all([
     service.from('products').select('slug, name, brand, gtin').limit(5000),
     service.from('merchants').select('id, slug, name'),
     service.from('currencies').select('id, code'),
+    // FINAL 100% (F-P1-45/F-P1-46): the model leg's catalog data.
+    // A separate best-effort read: the model_number column exists
+    // only after migration 055 is applied, and a 42703 here must
+    // never fail the whole context load — the model maps simply
+    // stay empty and the model leg is skipped honestly.
+    service
+      .from('products')
+      .select('slug, brand, model_number')
+      .limit(5000)
+      .then(
+        (res) => res,
+        () => ({ data: null, error: { message: 'model-number read failed' } })
+      ),
   ]);
 
   const existingSlugs = new Set<string>();
@@ -154,6 +182,25 @@ export async function loadCatalogContext(
     }
   }
 
+  // FINAL 100% (F-P1-45/F-P1-46): normalized model + brand ->
+  // slug, and slug -> normalized model. Built from the
+  // best-effort models read above; empty when 055 is unapplied.
+  const existingModels = new Map<string, string>();
+  const existingModelsBySlug = new Map<string, string | null>();
+  for (const p of (((modelsRes as { data?: unknown } | undefined)?.data) ?? []) as Array<{
+    slug: string;
+    brand: string | null;
+    model_number: string | null;
+  }>) {
+    const normalizedModel = normalizeModel(p.model_number ?? null);
+    existingModelsBySlug.set(p.slug.toLowerCase(), normalizedModel);
+    const brandKey = normalizeBrand(p.brand ?? null);
+    if (normalizedModel && brandKey) {
+      const key = `${normalizedModel}|${brandKey}`;
+      if (!existingModels.has(key)) existingModels.set(key, p.slug);
+    }
+  }
+
   const knownMerchants = new Map<string, string>();
   for (const m of (merchantsRes.data ?? []) as Array<{
     id: string;
@@ -169,7 +216,7 @@ export async function loadCatalogContext(
     knownCurrencies.set(c.code.trim().toUpperCase(), c.id);
   }
 
-  return { existingSlugs, existingNameBrands, existingGtins, knownMerchants, knownCurrencies };
+  return { existingSlugs, existingNameBrands, existingGtins, existingModels, existingModelsBySlug, knownMerchants, knownCurrencies };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -348,6 +395,23 @@ export async function POST(request: NextRequest) {
 
     // Never trust the client's review: re-validate raw rows server-side.
     const review = reviewIntakeRows(rows, context);
+    // Final 100%, F-P2-45 — persist the rows this approve
+    // rejects, so /admin/ingestion-failures can list them. The
+    // preview branch does NOT persist: a preview is not a commit,
+    // and recording rejections for a file the admin never submits
+    // would invent a rejection trail. The approve re-validates
+    // server-side, so these are the rows actually rejected at the
+    // commit point. Best-effort: a store failure (migration 048
+    // unapplied) never fails the batch; the response says so.
+    const rejectionSource = source === EBAY_INTAKE_SOURCE ? 'ebay-intake' : 'csv-intake';
+    const rejectionRecords = buildRejectionRecords(review, rows, rejectionSource);
+    let rejectionsRecorded = 0;
+    let rejectionsStore: string | null = null;
+    for (const record of rejectionRecords) {
+      const outcome = await recordIngestionRejection(service, record);
+      rejectionsStore = outcome;
+      if (outcome === 'inserted') rejectionsRecorded += 1;
+    }
     const includeSet = new Set(includeRowNumbers);
     const toInsert = review.rows.map((r) => ({
       ...r,
@@ -361,6 +425,10 @@ export async function POST(request: NextRequest) {
     // price-history / merchant-listing cache keys).
     const insertedIds: string[] = [];
     const skipped: Array<{ row: number; reason: string }> = [];
+    // FINAL 100% — per-row warnings when a product inserted but
+    // its specs / gallery / variants did not land (never fail the
+    // batch over them; the admin sees them in the response).
+    const warnings: Array<{ row: number; reason: string }> = [];
     // Section 17, Stage C items 14–15: true when any row in this
     // batch fell back to the pre-045 columns (migration unapplied)
     // — recorded in the audit log and the response so the admin
@@ -381,13 +449,36 @@ export async function POST(request: NextRequest) {
     // at approve time, when the check happened at preview.
     // Manual-intake rows never stamp: their prices were typed in,
     // never checked.
-    const checkedAt =
-      source === EBAY_INTAKE_SOURCE && typeof fetchedAt === 'string'
-        ? (() => {
-            const time = new Date(fetchedAt).getTime();
-            return Number.isFinite(time) ? new Date(time).toISOString() : null;
-          })()
-        : null;
+    // FINAL 100% (W3, F-P1-14): resolved through
+    // resolveIntakeDataFreshness (services/intake-evidence.ts) —
+    // explicit freshness from intake evidence only. A null return
+    // means "no check date exists": the column is omitted and the
+    // DB default (now(), migration 002) still stamps on create.
+    // Only a migration can remove that default; the response and
+    // audit log below record the stamp as unattributed for manual
+    // rows instead of letting the default pass as a validation
+    // date.
+    const checkedAt = resolveIntakeDataFreshness(
+      source as typeof INTAKE_SOURCE | typeof EBAY_INTAKE_SOURCE,
+      fetchedAt
+    );
+    // FINAL 100% (W3, F-P1-35): currency code per id, for the
+    // price-history row the approve now records. Best-effort: a
+    // failed lookup falls back to 'USD' for the history row only.
+    const currencyCodeById = new Map<string, string>();
+    try {
+      const { data: currencyRows } = await service.from('currencies').select('id, code');
+      for (const c of (currencyRows ?? []) as Array<{ id: string; code: string }>) {
+        currencyCodeById.set(c.id, c.code.trim().toUpperCase());
+      }
+    } catch {
+      // Currencies unreadable — history rows fall back to USD.
+    }
+    // FINAL 100% (W3, F-P1-35): history points recorded per
+    // approved row (best-effort, never fails the approve) and
+    // rows skipped with their reason, for the response/audit log.
+    let priceHistoryRecorded = 0;
+    const priceHistorySkipped: Array<{ row: number; reason: string }> = [];
 
     for (const plan of plans) {
       // Section 17, Stage C items 14–15: the product is born
@@ -486,12 +577,21 @@ export async function POST(request: NextRequest) {
       }
 
       const productId = (product as { id: string }).id;
+      // FINAL 100% (W3, F-P1-13): availability is recorded only
+      // when the source supplied it. Neither the CSV nor the eBay
+      // preview carries availability, so intake listings are
+      // 'unknown' — the old hardcoded 'in_stock' asserted stock
+      // nobody observed. `in_stock` stays true: the boolean is
+      // NOT NULL (it cannot express "unknown") and the price
+      // lookup filters on it, so false would hide the listing;
+      // `availability` is the source of truth (see
+      // services/intake-evidence.ts).
       const mpBase = {
         product_id: productId,
         merchant_id: plan.merchantProduct.merchantId,
         price: plan.merchantProduct.price,
         currency_id: plan.merchantProduct.currencyId,
-        availability: 'in_stock',
+        availability: resolveIntakeAvailability(),
         in_stock: true,
         ...(plan.merchantProduct.merchantSku
           ? { merchant_sku: plan.merchantProduct.merchantSku }
@@ -540,8 +640,81 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // FINAL 100%, F-P1-22 / F-P2-34 / F-P2-09 — the approve
+      // step now writes what the CSV carried beyond the product
+      // row: validated specs (writeProductSpecs, attributed to
+      // this batch's source), gallery rows for every gallery URL
+      // (the product_images path was unreachable from intake
+      // before — image_url alone never created a gallery row),
+      // and variants. Each is best-effort: a failure is a
+      // warning in the response, never a failed batch — the
+      // product and its merchant listing are already in.
+      if (plan.specs && plan.specs.length > 0) {
+        const specWrite = await writeProductSpecs(service, {
+          productId,
+          category: plan.product.category,
+          entries: plan.specs,
+          attribution: { source, verifiedBy: auth.userId },
+        });
+        if (specWrite.errors.length > 0) {
+          warnings.push({
+            row: plan.rowNumber,
+            reason: `Specs were not stored for "${plan.product.slug}": ${specWrite.errors.join('; ')}`,
+          });
+        }
+      }
+      if (plan.galleryUrls && plan.galleryUrls.length > 0) {
+        const detailed = await processImagesDetailed(plan.galleryUrls);
+        const gallery = await insertProductImagesWithVerification(service, productId, {
+          images: detailed,
+          productName: plan.product.name,
+        });
+        if (gallery.error) {
+          warnings.push({
+            row: plan.rowNumber,
+            reason: `Gallery images were not stored for "${plan.product.slug}": ${gallery.error}`,
+          });
+        }
+      }
+      if (plan.variants && plan.variants.length > 0) {
+        const variantWrite = await upsertProductVariants(service, productId, plan.variants);
+        if (variantWrite.errors.length > 0) {
+          warnings.push({
+            row: plan.rowNumber,
+            reason: `Variants were not stored for "${plan.product.slug}": ${variantWrite.errors.join('; ')}`,
+          });
+        }
+      }
+
       inserted.push(plan.product.slug);
       insertedIds.push(productId);
+
+      // FINAL 100% (W3, F-P1-35): the approved price becomes a
+      // price_history observation with source attribution
+      // ('manual-intake' or 'ebay-browse-api'). Best-effort: a
+      // skipped/failed history write never fails the approve —
+      // it is counted here and in the audit log instead.
+      try {
+        const historyResult = await recordIntakePriceHistory(service, {
+          productId,
+          merchantId: plan.merchantProduct.merchantId,
+          price: plan.merchantProduct.price,
+          currencyCode:
+            currencyCodeById.get(plan.merchantProduct.currencyId) ?? 'USD',
+          source: source as typeof INTAKE_SOURCE | typeof EBAY_INTAKE_SOURCE,
+          observedAt: checkedAt,
+        });
+        if (historyResult.recorded) {
+          priceHistoryRecorded += 1;
+        } else {
+          priceHistorySkipped.push({
+            row: plan.rowNumber,
+            reason: historyResult.reason ?? 'insert-failed',
+          });
+        }
+      } catch {
+        priceHistorySkipped.push({ row: plan.rowNumber, reason: 'insert-failed' });
+      }
     }
 
     // Section 18, item 33 — invalidate the product/price cache
@@ -559,6 +732,45 @@ export async function POST(request: NextRequest) {
         // A cache failure must never fail an approved batch.
       }
     }
+
+    // FINAL 100% (W1, F-P1-06) — the publishing gate's VERDICT.
+    // Publishing today requires almost nothing (a listing
+    // existing is the bar), and this does not change that: every
+    // inserted row is published below exactly as before. What the
+    // gate adds is the verdict, per product, in the response and
+    // the audit log — so an admin approving a batch sees which
+    // products are fully verified and what each one is missing,
+    // instead of publishing blind. The stamp is recomputed here
+    // (same source + checkedAt as the loop above, so it matches
+    // the row that was written); specs and gallery rows are 0 —
+    // intake writes neither — and the merchant criterion uses the
+    // recorded SKU when the row carried one.
+    const planBySlug = new Map(plans.map((p) => [p.product.slug, p]));
+    const approveStamp = priceVerificationForIntakeSource(
+      source as typeof INTAKE_SOURCE | typeof EBAY_INTAKE_SOURCE,
+      checkedAt
+    );
+    const verification = inserted.map((slug) => {
+      const plan = planBySlug.get(slug);
+      const verdict = isFullyVerified({
+        name: plan?.product.name ?? null,
+        brand: plan?.product.brand ?? null,
+        category: plan?.product.category ?? null,
+        description: plan?.product.description ?? null,
+        modelNumber: plan?.product.model_number ?? null,
+        gtin: plan?.product.gtin ?? null,
+        imageUrl: plan?.product.image_url ?? null,
+        priceVerificationStatus: approveStamp.priceVerificationStatus,
+        priceVerifiedAt: approveStamp.priceVerifiedAt,
+        specCount: 0,
+        imageCount: 0,
+        merchantCount: 1,
+        hasRealMerchantListing: plan?.merchantProduct.merchantSku ? true : null,
+        hasPriceSource: true,
+      });
+      return { slug, fullyVerified: verdict.fullyVerified, missing: verdict.missing };
+    });
+    const fullyVerifiedCount = verification.filter((v) => v.fullyVerified).length;
 
     // Provenance for the batch: products/merchant_products have no
     // `source` column, so the origin is recorded here — 'manual-intake'
@@ -583,6 +795,23 @@ export async function POST(request: NextRequest) {
         // pending → published — unless legacyMode, where migration
         // 045 is unapplied and the status column does not exist.
         publication: legacyMode ? 'legacy-no-status-column' : 'pending-then-published',
+        // FINAL 100% (W3, F-P1-14/F-P1-35): the freshness stamp
+        // is a real check date only for eBay batches that carried
+        // a preview time; manual rows carry no check date (the DB
+        // default still stamps on create — see
+        // services/intake-evidence.ts). History points recorded
+        // per approved row, with skip reasons.
+        dataFreshnessEvidence:
+          source === EBAY_INTAKE_SOURCE && checkedAt
+            ? 'preview-check'
+            : 'none-no-check-date',
+        priceHistoryRecorded,
+        priceHistorySkipped,
+        // FINAL 100% (W1, F-P1-06) — the publish-gate verdict:
+        // how many of this batch's products are fully verified.
+        // (Publishing itself is unchanged — the gate reports, it
+        // does not block.)
+        fullyVerifiedCount,
       },
       getClientIp(request)
     );
@@ -591,8 +820,37 @@ export async function POST(request: NextRequest) {
       source,
       inserted,
       skipped,
+      ...(warnings.length > 0 ? { warnings } : {}),
+      // FINAL 100% (W1, F-P1-06) — per-product fully-verified
+      // verdict for this batch (see the gate comment above).
+      verification,
       summary: review.summary,
       publication: legacyMode ? 'legacy-no-status-column' : 'pending-then-published',
+      // Final 100%, F-P2-45 — how many rejected rows were durably
+      // stored for /admin/ingestion-failures. `rejectionsStore`
+      // appears only when the store did not take them (migration
+      // 048 unapplied → 'missing-table'), so the admin knows the
+      // trail is unavailable rather than empty.
+      ...(rejectionRecords.length > 0
+        ? {
+            rejections: rejectionRecords.length,
+            rejectionsRecorded,
+            ...(rejectionsStore !== 'inserted' ? { rejectionsStore } : {}),
+          }
+        : {}),
+      // FINAL 100% (W3, F-P1-14): only a real check date for eBay
+      // batches; manual batches carry no check date — the
+      // products' data_freshness column still gets the DB default
+      // on create (migration-gated fix), and must not be read as a
+      // validation date.
+      dataFreshnessEvidence:
+        source === EBAY_INTAKE_SOURCE && checkedAt
+          ? 'preview-check'
+          : 'none-no-check-date',
+      priceHistory: {
+        recorded: priceHistoryRecorded,
+        skipped: priceHistorySkipped,
+      },
       // Section 20, #6: only present when a model number was
       // dropped — the admin re-enters it after applying 055.
       ...(modelNumberUnsupported ? { modelNumberUnsupported: true } : {}),
@@ -604,8 +862,8 @@ export async function POST(request: NextRequest) {
             // claiming an approve-time check.
             checkedAt,
             priceNote: checkedAt
-              ? `Live eBay asking prices, checked ${checkedAt}. No price history, no Deal Score and no alerts were created from these listings.`
-              : 'Live eBay asking prices, checked at preview time (the exact check time was not recorded with this batch). No price history, no Deal Score and no alerts were created from these listings.',
+              ? `Live eBay asking prices, checked ${checkedAt}. Each approved price was also recorded as a price-history observation (source: ebay-browse-api)${priceHistoryRecorded > 0 ? ` — ${priceHistoryRecorded} recorded` : ''}. No Deal Score and no alerts were created from these listings.`
+              : 'Live eBay asking prices, checked at preview time (the exact check time was not recorded with this batch). Each approved price was also recorded as a price-history observation (source: ebay-browse-api) where a retailer row existed. No Deal Score and no alerts were created from these listings.',
           }
         : {}),
     });

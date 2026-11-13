@@ -26,10 +26,16 @@
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { apiSuccess, badRequest } from '@/lib/api/responses';
+import { apiSuccess, badRequest, serviceUnavailable } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import { validateBody } from '@/lib/api/validation';
-import { verifyCaptchaToken, isCaptchaConfigured } from '@/lib/auth/captcha';
+import {
+  verifyCaptchaToken,
+  isCaptchaConfigured,
+  isCaptchaRequired,
+  CAPTCHA_REQUIRED_NOT_CONFIGURED_MESSAGE,
+} from '@/lib/auth/captcha';
 
 const signUpSchema = z.object({
   email: z.string().email('A valid email address is required'),
@@ -53,6 +59,14 @@ export async function POST(request: NextRequest) {
   }
   const { email, password, fullName, captchaToken } = validation.data;
 
+  // Final 100%, F-P1-63 — fail CLOSED when captcha is required but
+  // Turnstile is unconfigured: never silently pass. (REQUIRE_CAPTCHA
+  // defaults OFF, so this branch is inert until the owner sets both
+  // the flag and the Turnstile keys.)
+  if (isCaptchaRequired() && !isCaptchaConfigured()) {
+    return serviceUnavailable(CAPTCHA_REQUIRED_NOT_CONFIGURED_MESSAGE);
+  }
+
   if (isCaptchaConfigured()) {
     const captcha = await verifyCaptchaToken(captchaToken, getClientIp(request));
     if (!captcha.verified) {
@@ -71,6 +85,9 @@ export async function POST(request: NextRequest) {
   });
 
   if (error) {
+    // Final 100%, F-P2-55 — log the failure server-side (message
+    // only). The response stays anti-enumeration (see header).
+    logApiError(error, { request, route: 'auth.sign-up', status: 400 });
     // Anti-enumeration: an already-registered email gets the
     // same success shape as a fresh sign-up (see header).
     if (/already registered|already exists/i.test(error.message)) {

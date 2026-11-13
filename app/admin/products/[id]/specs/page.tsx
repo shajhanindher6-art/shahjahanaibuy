@@ -18,6 +18,7 @@ import { notFound } from 'next/navigation';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { getAdminProductById, listProductSpecsForAdmin } from '@/services/admin-products';
 import { ProductSpecForm } from '@/components/admin/product-spec-form';
+import { requireAdminPage } from '@/lib/admin-page-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,6 +36,9 @@ export default async function AdminProductSpecsPage({
 }: {
   params: { id: string };
 }) {
+  // Final 100%, F-P1-62 — per-page server-side admin re-check
+  // (the layout guard alone is not the only check anymore).
+  await requireAdminPage();
   const service = createSupabaseServiceClient();
 
   if (!service) {

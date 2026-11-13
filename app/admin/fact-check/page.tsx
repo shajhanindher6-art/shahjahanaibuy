@@ -55,6 +55,11 @@ const OVERALL_BADGE: Record<string, { label: string; className: string }> = {
 };
 
 export default function FactCheckAdminPage() {
+  // NOTE (Final 100%, F-P1-62): this page is a client component
+  // ('use client'), so it cannot call the server-side
+  // requireAdminPage() guard — the /admin layout guard plus the
+  // client-side role check below are its guards, exactly as
+  // documented in lib/admin-page-guard.ts.
   const { role } = useAuth();
   const [queue, setQueue] = useState<QueueEntry[]>([]);
   const [loading, setLoading] = useState(true);
