@@ -37,6 +37,21 @@ export interface TrustInput {
   categoryAverageUsd: number | null;
   /** Product image URL, or null for the placeholder state. */
   imageUrl: string | null;
+  /**
+   * Section 19, Phase 2 (§12 #19) — recorded price history for
+   * time-series anomaly detection (spike/drop + flatline).
+   * Optional: when absent the time-series checks simply do not
+   * run (no signal is invented). Points are { price, recordedAt }
+   * from price_history, any order.
+   */
+  priceHistory?: Array<{ price: number; recordedAt: string }>;
+  /**
+   * Section 19, Phase 2 (§12 #19) — latest recorded price per
+   * priced merchant, for the cross-merchant outlier check.
+   * Optional: with fewer than 2 merchants the check cannot run
+   * and adds no signal.
+   */
+  merchantPrices?: Array<{ merchant: string; price: number }>;
 }
 
 export interface TrustResult {
@@ -51,6 +66,39 @@ export interface TrustResult {
 const PRICE_ANOMALY_THRESHOLD = 0.5; // 50% below category average
 const REVIEW_SKEW_MIN_REVIEWS = 10;
 const REVIEW_SKEW_FIVE_STAR_SHARE = 0.9; // ≥90% five-star with ≥10 reviews
+
+/**
+ * Section 19, Phase 2 (§12 #19) — time-series anomaly
+ * thresholds (stated, change them here and the UI text follows).
+ * - A single consecutive move of ≥25% up or down is a spike/drop:
+ *   real prices move, but a quarter of the price in one recorded
+ *   step deserves a caution, never a silent priceChange.
+ * - A run of ≥3 consecutive recordings at the SAME price is a
+ *   flatline: identical points otherwise render as a $0 change
+ *   with no comment, which reads as a stable market when it may
+ *   be a stale feed. A run of exactly 2 identical points is too
+ *   little to call a flatline — it is reported as unknown
+ *   (cannot tell a flat market from a stale feed), not as a
+ *   caution.
+ * - A merchant price ≥50% below the cross-merchant median (same
+ *   50% bar as the category-average check) is an outlier.
+ * Every flag names the anomaly type + the evidence (prices,
+ * dates, counts) and never invents a cause.
+ */
+export const TIME_SERIES_SPIKE_THRESHOLD = 0.25; // 25% single-step move
+export const FLATLINE_MIN_RUN = 3; // consecutive identical recordings
+export const CROSS_MERCHANT_OUTLIER_THRESHOLD = 0.5; // 50% below median
+
+function money(n: number): string {
+  return `$${n.toFixed(2)}`;
+}
+
+function shortDate(iso: string): string {
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime())
+    ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : iso;
+}
 
 export function analyzeTrust(input: TrustInput): TrustResult {
   const signals: TrustSignal[] = [];
@@ -147,6 +195,109 @@ export function analyzeTrust(input: TrustInput): TrustResult {
     });
   }
 
+  // (e) Time-series anomalies — spike/drop + flatline (Section 19,
+  // Phase 2 §12 #19). Only runs when recorded history is supplied;
+  // with no history there is simply no signal, never a guess.
+  // The flags name the anomaly type + the evidence, never a cause
+  // (a spike may be a real sale; a flatline may be a stable
+  // market — the pattern is reported, the cause is not invented).
+  const history = (input.priceHistory ?? [])
+    .map((p) => ({ price: p.price, time: new Date(p.recordedAt).getTime(), at: p.recordedAt }))
+    .filter((p) => Number.isFinite(p.price) && p.price > 0 && Number.isFinite(p.time))
+    .sort((a, b) => a.time - b.time);
+  if (history.length >= 2) {
+    // Spike / drop: largest single consecutive move.
+    let worst: { from: number; to: number; at: string; change: number } | null = null;
+    for (let i = 1; i < history.length; i++) {
+      const from = history[i - 1].price;
+      const to = history[i].price;
+      const change = (to - from) / from;
+      if (Math.abs(change) >= TIME_SERIES_SPIKE_THRESHOLD) {
+        if (!worst || Math.abs(change) > Math.abs(worst.change)) {
+          worst = { from, to, at: history[i].at, change };
+        }
+      }
+    }
+    if (worst) {
+      const dir = worst.change > 0 ? 'spike' : 'drop';
+      const pct = Math.round(Math.abs(worst.change) * 100);
+      signals.push({
+        kind: 'price',
+        ok: false,
+        detail:
+          `Caution: price ${dir} of ${pct}% in one recorded step ` +
+          `(${money(worst.from)} → ${money(worst.to)} on ${shortDate(worst.at)}) — ` +
+          `an unusually large move. Verify the listing before buying.`,
+      });
+    }
+
+    // Flatline: longest run of consecutive identical prices.
+    let longest = 1;
+    let run = 1;
+    let longestEnd = history[0];
+    for (let i = 1; i < history.length; i++) {
+      if (history[i].price === history[i - 1].price) {
+        run++;
+        if (run > longest) {
+          longest = run;
+          longestEnd = history[i];
+        }
+      } else {
+        run = 1;
+      }
+    }
+    if (longest >= FLATLINE_MIN_RUN) {
+      signals.push({
+        kind: 'price',
+        ok: false,
+        detail:
+          `Caution: price flatline — ${longest} consecutive recordings at the same price ` +
+          `(${money(longestEnd.price)}, latest ${shortDate(longestEnd.at)}). Identical points ` +
+          `otherwise show as a $0 price change with no comment; a flat series may be a ` +
+          `stable market or a stale feed, and the data cannot tell which.`,
+      });
+    } else if (longest === 2) {
+      signals.push({
+        kind: 'price',
+        ok: false,
+        detail:
+          'Only 2 consecutive recordings at the same price — too few to tell a flat market from a stale feed; the $0 price change is not evidence either way.',
+        unknown: true,
+      });
+    }
+  }
+
+  // (f) Cross-merchant outlier — one merchant far below the rest
+  // (Section 19, Phase 2 §12 #19). Needs ≥2 merchant prices;
+  // with one merchant the check cannot run and adds no signal.
+  const merchantPrices = (input.merchantPrices ?? []).filter(
+    (m) => Number.isFinite(m.price) && m.price > 0
+  );
+  if (merchantPrices.length >= 2) {
+    const sorted = [...merchantPrices].sort((a, b) => a.price - b.price);
+    const mid = Math.floor(sorted.length / 2);
+    const median =
+      sorted.length % 2 === 1
+        ? sorted[mid].price
+        : (sorted[mid - 1].price + sorted[mid].price) / 2;
+    const outliers = merchantPrices.filter(
+      (m) => (median - m.price) / median >= CROSS_MERCHANT_OUTLIER_THRESHOLD
+    );
+    if (outliers.length > 0) {
+      for (const o of outliers) {
+        const pct = Math.round(((median - o.price) / median) * 100);
+        signals.push({
+          kind: 'price',
+          ok: false,
+          detail:
+            `Caution: ${o.merchant} lists this at ${money(o.price)}, ${pct}% below the ` +
+            `median across ${merchantPrices.length} merchants (${money(median)}) — unusually low. ` +
+            `Verify the seller and listing before buying.`,
+        });
+      }
+    }
+  }
+
   const judged = signals.filter((s) => !s.unknown);
   const failed = signals.filter((s) => !s.ok && !s.unknown);
   // Strict rule: "clean" requires ALL FOUR signals judged clean. Any
@@ -170,6 +321,6 @@ export function analyzeTrust(input: TrustInput): TrustResult {
     signals,
     trustScore,
     trustScoreFormula:
-      'Trust score = (clean signals ÷ judged signals) × 100, over seller, review-pattern, price, and image signals that could actually be judged. Unknown signals are excluded, never counted as clean.',
+      'Trust score = (clean signals ÷ judged signals) × 100, over seller, review-pattern, price, and image signals that could actually be judged. Unknown signals are excluded, never counted as clean. When recorded price history is supplied, time-series anomaly signals (spike/drop, flatline, cross-merchant outlier) are judged alongside the price check.',
   };
 }

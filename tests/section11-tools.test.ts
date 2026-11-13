@@ -119,6 +119,9 @@ describe('Section 11 — guided quiz + budget finder share one ranker', () => {
       budgetOriginal: 1000,
       budgetCurrency: 'USD',
       budgetError: null,
+      needBy: null,
+      needByError: null,
+      specInputs: {},
     });
     expect(parseBudgetFinderParams({})).toEqual({
       category: null,
@@ -126,6 +129,9 @@ describe('Section 11 — guided quiz + budget finder share one ranker', () => {
       budgetOriginal: null,
       budgetCurrency: null,
       budgetError: null,
+      needBy: null,
+      needByError: null,
+      specInputs: {},
     });
     const bad = parseBudgetFinderParams({ category: 'laptop', budget: 'free' });
     expect(bad.budgetUsd).toBeNull();

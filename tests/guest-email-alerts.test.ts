@@ -175,9 +175,33 @@ describe('shouldTriggerGuestAlert', () => {
       lastTriggeredPrice: null,
       lastTriggeredAt: null,
     };
+    // Recorded out→in transition → fires.
     expect(
-      shouldTriggerGuestAlert(alert, { price: 999, backInStock: true, hasActiveDeal: false })
+      shouldTriggerGuestAlert(alert, {
+        price: 999,
+        backInStock: true,
+        backInStockTransition: true,
+        hasActiveDeal: false,
+      })
     ).toBe(true);
+    // In stock right now but NO recorded transition → never fires
+    // (§12 #67 — a product that never left stock must not refire
+    // on every refresh run).
+    expect(
+      shouldTriggerGuestAlert(alert, {
+        price: 999,
+        backInStock: true,
+        backInStockTransition: false,
+        hasActiveDeal: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldTriggerGuestAlert(alert, {
+        price: 999,
+        backInStock: true,
+        hasActiveDeal: false,
+      })
+    ).toBe(false);
     expect(
       shouldTriggerGuestAlert(alert, { price: 999, backInStock: false, hasActiveDeal: false })
     ).toBe(false);

@@ -63,14 +63,16 @@ export async function getRetailers(
 
     if (error || !data) {
       if (error) {
-        logger.warn('getRetailers: query failed', { error: error.message });
         // Server-side only: a swallowed error here used to surface as a
         // silent empty list (2026-11-05: /api/v1/retailers returned []
         // for hours while the table was missing a column). Log the
         // exact PostgREST code so Vercel Runtime Logs show the cause.
-        console.error('[retailers] fetch error', {
+        // (Section 19: the duplicate console.error that used to sit
+        // here was removed — its code now rides in this single
+        // logger.warn record instead of a second log line.)
+        logger.warn('getRetailers: query failed', {
+          error: error.message,
           code: (error as { code?: unknown }).code ?? null,
-          message: error.message,
         });
       }
       return [];

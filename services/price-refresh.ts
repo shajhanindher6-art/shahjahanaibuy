@@ -37,6 +37,7 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import { invalidateAiForProduct } from '@/lib/cache/ai-invalidation';
 import {
   markProductRefreshed,
   markProductRefreshFailed,
@@ -426,6 +427,20 @@ export async function refreshTrackedPrices(
         }
       } else {
         result.inserted++;
+        // Section 19, Phase 8 (§12 #14) — a new price point
+        // changes the inputs the AI summary / prediction / comparison
+        // were computed from, so their cached entries (in-memory
+        // AND the stored ai_summaries / ai_predictions rows) are
+        // invalidated for this product. The next AI read recomputes
+        // from the fresh price. Bookkeeping must never fail the
+        // product, so a failure here is swallowed (it is logged
+        // inside invalidateAiForProduct); the short SWR TTLs bound
+        // the staleness if the delete itself failed.
+        try {
+          await invalidateAiForProduct(supabase, productId);
+        } catch {
+          // Invalidation is best-effort; the refresh already succeeded.
+        }
         // P1-10: a changed price was recorded, so the freshness
         // stamp moves to this run as well (same "recorded price
         // re-checked" meaning as the unchanged branch above).

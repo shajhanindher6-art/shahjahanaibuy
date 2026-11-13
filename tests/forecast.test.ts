@@ -54,8 +54,14 @@ describe('computeForecast', () => {
       expect(f.confidencePct).toBeGreaterThanOrEqual(FORECAST_MIN_CONFIDENCE_PCT);
       expect(f.confidencePct).toBeLessThanOrEqual(FORECAST_MAX_CONFIDENCE_PCT);
     }
-    // 7d confidence: 15 + 55×1 (perfect fit) + 6 (4 points) − 0 = 76.
-    expect(result.forecasts[0].confidencePct).toBe(76);
+    // 7d confidence (Section 19, Phase 3): a flat series carries no
+    // directional evidence (R² counted as 0) and thin history caps
+    // confidence at 25% — 15 + 0 + 6 (4 points) − 0 = 21. The old
+    // formula rewarded perfect flatness (R² = 1) and scored 76.
+    expect(result.forecasts[0].confidencePct).toBe(21);
+    // 30d: 21 − 5 = 16; 90d: 21 − 12 = 9 — all low band.
+    expect(result.forecasts[1].confidencePct).toBe(16);
+    expect(result.forecasts[2].confidencePct).toBe(9);
     // 7d half-width: 1.96 × (2% of 100) × sqrt(1 + 7/90) ≈ 4.07.
     expect(result.forecasts[0].low).toBeCloseTo(95.93, 2);
     expect(result.forecasts[0].high).toBeCloseTo(104.07, 2);

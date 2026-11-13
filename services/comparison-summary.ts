@@ -14,11 +14,13 @@
  *   - "Best for Multitasking": the unique product with the highest
  *     parseable RAM value (key RAM or Memory, unit GB or MB), same
  *     ≥2-products / unique-max / single-unit rules.
- *   - "Best Value for Money": the unique product with the lowest
+ *   - "Lowest Price": the unique product with the lowest
  *     lowest-price (real retailer prices already on the page). Only
  *     when at least two products have a real price and the minimum
  *     is unique. A tie, or fewer than two priced products, earns
- *     no badge.
+ *     no badge. The label says exactly what the badge is — the
+ *     lowest price, not quality per dollar — and the banner renders
+ *     the price that earned it.
  *
  * Numeric parsing takes the leading number of a value ("16 GB" → 16,
  * "2.5 GHz" → 2.5, "1,000 mAh" → 1000). A value with no leading
@@ -50,7 +52,7 @@ export type ComparisonBadge =
       kind: 'value';
       productId: string;
       productName: string;
-      label: 'Best Value for Money';
+      label: 'Lowest Price';
       /** Lowest recorded price in USD (rendered region-aware). */
       priceUsd: number;
     }
@@ -190,7 +192,7 @@ export function buildComparisonBadges(
       kind: 'value',
       productId: product.productId,
       productName: product.name,
-      label: 'Best Value for Money',
+      label: 'Lowest Price',
       priceUsd: value.price,
     });
   }

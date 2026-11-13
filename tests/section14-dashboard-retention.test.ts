@@ -153,6 +153,8 @@ describe('data export serializer', () => {
       savings: buildExportSection([]),
       searchHistory: buildExportSection([]),
       referralLinks: buildExportSection([]),
+      productViews: buildExportSection([]),
+      userPreferences: buildExportSection([]),
     });
     expect(doc.format).toBe('smartbuy-user-data-export');
     expect(doc.version).toBe(1);

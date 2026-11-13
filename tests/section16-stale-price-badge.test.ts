@@ -5,7 +5,9 @@
  * label next to every listed price: amber "Stale price · N days
  * old" once the recorded check is older than STALE_PRICE_DAYS (7),
  * otherwise the quiet "Price checked … · N days old" line. Unknown
- * freshness renders nothing — never a guessed age.
+ * freshness renders "Price age unknown" (Section 19, Phase 2 §12
+ * #21 — never a guessed age, and never silence: the old "renders
+ * nothing" read as fresh).
  *
  * Rendered via react-dom/server (the repo's node vitest env has no
  * DOM; same pattern as tests/section14-chunk5-products.test.ts).
@@ -95,12 +97,19 @@ describe('StalePriceBadge — fresh prices', () => {
 });
 
 describe('StalePriceBadge — unknown freshness', () => {
-  it('null freshness renders nothing (never a guessed age)', () => {
-    expect(renderBadge(null)).toBe('');
+  // Section 19, Phase 2 (§12 #21): unknown freshness used to
+  // render nothing — a row with no freshness timestamp showed no
+  // warning at all and read as fresh. It now renders honest
+  // "Price age unknown" text instead — still never a guessed age.
+  it('null freshness renders "Price age unknown" (never a guessed age, never silence)', () => {
+    const html = renderBadge(null);
+    expect(html).toContain('Price age unknown');
+    expect(html).not.toContain('Stale price');
+    expect(html).not.toContain('days old');
   });
 
-  it('undefined freshness renders nothing', () => {
-    expect(renderBadge(undefined)).toBe('');
+  it('undefined freshness renders "Price age unknown"', () => {
+    expect(renderBadge(undefined)).toContain('Price age unknown');
   });
 });
 

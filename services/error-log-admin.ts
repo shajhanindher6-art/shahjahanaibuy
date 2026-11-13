@@ -202,3 +202,129 @@ export async function listRefreshFailures(
     };
   }
 }
+
+/** One AI error group: how many recorded errors share a route / level. */
+export interface AiErrorGroup {
+  label: string;
+  count: number;
+}
+
+export interface AiErrorBreakdown {
+  /** True when the error_log table does not exist yet (migration 048 unapplied). */
+  tableMissing: boolean;
+  /** Non-missing-table read error message, when the read failed for another reason. */
+  error?: string;
+  /** Total AI-related rows found in the scanned window (0 is a real count only when tableMissing is false). */
+  total: number;
+  /** How many rows were scanned to build the breakdown (the read window). */
+  scanned: number;
+  /** AI-related errors grouped by route label, most frequent first. */
+  byRoute: AiErrorGroup[];
+  /** AI-related errors grouped by level, most frequent first. */
+  byLevel: AiErrorGroup[];
+  /** The most recent AI-related rows (newest first). */
+  recent: ErrorLogRow[];
+}
+
+/**
+ * True when an error_log row belongs to the AI surface: its route
+ * label names an AI route/capability, or its meta names an AI
+ * provider. Rows from logApiError carry route labels such as
+ * 'ai-search'; refresh rows ('prices.refresh') are NOT AI errors
+ * and are excluded.
+ */
+export function isAiErrorRow(row: {
+  route?: string | null;
+  meta?: Record<string, unknown> | null;
+}): boolean {
+  const route = (row.route ?? '').toLowerCase();
+  if (
+    route.includes('ai') ||
+    route.includes('predict') ||
+    route.includes('forecast') ||
+    route.includes('visual-search') ||
+    route.includes('visual_search') ||
+    route.includes('chat') ||
+    route.includes('recommend')
+  ) {
+    return true;
+  }
+  const meta = row.meta ?? {};
+  return (
+    typeof meta.provider === 'string' ||
+    typeof meta.providerKey === 'string' ||
+    typeof meta.capability === 'string'
+  );
+}
+
+/**
+ * AI error breakdown (Section 19, Phase 7, §12 #73) — errors by
+ * route and by level, from `error_log` plus nothing else: the
+ * engine's in-memory failure counts live in the usage summary and
+ * are composed by the /admin/ai API route, not duplicated here.
+ *
+ * Honesty contract (same as listRecentErrors): migration 048
+ * unapplied → `{ tableMissing: true }` and the control center
+ * renders "error logging not yet active" — never an empty chart
+ * pretending to be zero errors. Table applied but no AI rows →
+ * total 0 IS a real count (the table exists and writers log into
+ * it), but the page still says no AI error has been recorded
+ * since the table was applied, not "the AI surface is error-free"
+ * — most AI routes do not call logApiError yet (audit §1 #28),
+ * so an empty log is a missing-writer gap, not proof of health.
+ * The read window is the most recent 200 rows; `scanned` says so.
+ */
+export async function getAiErrorBreakdown(
+  supabase: AnySupabaseClient,
+  limit = 200
+): Promise<AiErrorBreakdown> {
+  const empty: AiErrorBreakdown = {
+    tableMissing: false,
+    total: 0,
+    scanned: 0,
+    byRoute: [],
+    byLevel: [],
+    recent: [],
+  };
+  try {
+    const { data, error } = await supabase
+      .from(ERROR_LOG_TABLE)
+      .select('id, created_at, level, message, request_id, route, user_id, meta')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) {
+      if (isMissingTableError(error)) {
+        return { ...empty, tableMissing: true };
+      }
+      return {
+        ...empty,
+        error: error.message ?? 'AI error breakdown could not be read.',
+      };
+    }
+    const rows = ((data ?? []) as unknown as ErrorLogRow[]).filter(isAiErrorRow);
+    const byRouteMap = new Map<string, number>();
+    const byLevelMap = new Map<string, number>();
+    for (const row of rows) {
+      const route = row.route ?? 'unknown route';
+      byRouteMap.set(route, (byRouteMap.get(route) ?? 0) + 1);
+      byLevelMap.set(row.level, (byLevelMap.get(row.level) ?? 0) + 1);
+    }
+    const groups = (map: Map<string, number>): AiErrorGroup[] =>
+      [...map.entries()]
+        .map(([label, count]) => ({ label, count }))
+        .sort((a, b) => b.count - a.count);
+    return {
+      tableMissing: false,
+      total: rows.length,
+      scanned: (data ?? []).length,
+      byRoute: groups(byRouteMap),
+      byLevel: groups(byLevelMap),
+      recent: rows.slice(0, 20),
+    };
+  } catch (err) {
+    return {
+      ...empty,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}

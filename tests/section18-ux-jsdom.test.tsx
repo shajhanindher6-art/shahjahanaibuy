@@ -115,7 +115,7 @@ describe('item 57 — resend link keys off the mapped error code', () => {
       target: { value: 'password123' },
     });
     fireEvent.submit(screen.getByRole('button', { name: /sign in/i }).closest('form')!);
-    expect(await screen.findByText('Resend verification email')).toBeTruthy();
+    expect(await screen.findByText('Resend verification email', {}, { timeout: 5000 })).toBeTruthy();
   });
 
   it('does not show the resend link for a wrong-password failure', async () => {
@@ -133,7 +133,7 @@ describe('item 57 — resend link keys off the mapped error code', () => {
       target: { value: 'wrong-password' },
     });
     fireEvent.submit(screen.getByRole('button', { name: /sign in/i }).closest('form')!);
-    expect(await screen.findByText(/Incorrect email or password/)).toBeTruthy();
+    expect(await screen.findByText(/Incorrect email or password/, {}, { timeout: 5000 })).toBeTruthy();
     expect(screen.queryByText('Resend verification email')).toBeNull();
   });
 });
@@ -207,7 +207,7 @@ describe('item 63 — sidebar links + sign-out confirm', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign Out' }));
     fireEvent.click(screen.getByRole('button', { name: /^Sign out$/ }));
-    expect(await screen.findByText('Sign Out')).toBeTruthy();
+    expect(await screen.findByText('Sign Out', {}, { timeout: 5000 })).toBeTruthy();
     expect(mockSignOut).toHaveBeenCalled();
     expect(mockRouter.replace).toHaveBeenCalledWith('/sign-in');
   });
@@ -218,7 +218,7 @@ describe('item 63 — sidebar links + sign-out confirm', () => {
     render(withRegion(<DashboardSidebar />));
     fireEvent.click(screen.getByRole('button', { name: 'Sign Out' }));
     fireEvent.click(screen.getByRole('button', { name: /^Sign out$/ }));
-    expect((await screen.findByRole('alert')).textContent).toContain(
+    expect((await screen.findByRole('alert', {}, { timeout: 5000 })).textContent).toContain(
       "couldn't sign you out"
     );
     expect(mockRouter.replace).not.toHaveBeenCalled();

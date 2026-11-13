@@ -45,7 +45,12 @@ describe('GlobalError reports to Sentry like app/error.tsx', () => {
     process.env.NEXT_PUBLIC_SENTRY_DSN = 'https://public@o0.ingest.sentry.io/0';
     const error = new Error('root layout exploded');
     render(createElement(GlobalError, { error, reset: () => {} }));
-    await waitFor(() => expect(captureException).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(captureException).toHaveBeenCalledTimes(1), {
+      // Section 19, Phase 0 (§12 #90): explicit 5s timeout — the
+      // 1s default is too tight under parallel load (the audit's
+      // flaky-test episode: 2 tests failed once, green on re-run).
+      timeout: 5000,
+    });
     expect(captureException).toHaveBeenCalledWith(error);
     expect(errorSpy).toHaveBeenCalled();
   });
@@ -54,8 +59,11 @@ describe('GlobalError reports to Sentry like app/error.tsx', () => {
     delete process.env.NEXT_PUBLIC_SENTRY_DSN;
     const error = new Error('root layout exploded');
     render(createElement(GlobalError, { error, reset: () => {} }));
-    // Let the effect + the (skipped) dynamic import settle.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Let the effect + the (skipped) dynamic import settle. 200ms
+    // (was 50ms): under parallel load the effect may not have run
+    // yet at 50ms, which would make this negative assertion pass
+    // vacuously instead of proving the skip.
+    await new Promise((resolve) => setTimeout(resolve, 200));
     expect(captureException).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalled();
   });

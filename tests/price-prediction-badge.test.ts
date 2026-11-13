@@ -26,7 +26,10 @@ function input(overrides: Partial<PredictionBadgeInput>): PredictionBadgeInput {
     currentPrice: 999,
     ma30: 1000,
     lowest30: 950,
-    pointCount: 4,
+    // Section 19, Phase 3 (§12 #30): the verdict minimum is 5
+    // points (unified with the Deal Score gate) — the default
+    // fixture uses 6 so the verdict tests exercise verdicts.
+    pointCount: 6,
     ...overrides,
   };
 }
@@ -103,6 +106,21 @@ describe('getPredictionBadge', () => {
   it('not_enough_data with 1 point', () => {
     const result = getPredictionBadge(input({ pointCount: 1 }));
     expect(result.label).toBe('not_enough_data');
+  });
+
+  it('not_enough_data with 2–4 points — thin history is not a verdict (Section 19, §12 #30)', () => {
+    // The minimum is 5, unified with the Deal Score gate: a 2–4
+    // point series used to earn a verdict; now it withholds one.
+    for (const pointCount of [2, 3, 4]) {
+      const result = getPredictionBadge(input({ pointCount }));
+      expect(result.label).toBe('not_enough_data');
+      expect(result.reason).toBe('Not enough price history to predict.');
+    }
+  });
+
+  it('verdict returns at exactly 5 points (the unified minimum)', () => {
+    const result = getPredictionBadge(input({ pointCount: 5 }));
+    expect(result.label).toBe('buy_now');
   });
 
   it('not_enough_data for invalid / missing inputs', () => {

@@ -8,7 +8,17 @@ import { logger } from '@/lib/config/logger';
 import { FALLBACK_REGION, type Region } from '@/lib/region';
 import { parseSearchIntent } from './ai-search';
 import { stripBudgetFromQuery } from './currency';
-import { compareAssistant, couponsAssistant, dealsAssistant, recommendAssistant } from './personal-assistant';
+import {
+  buyWaitAssistant,
+  compareAssistant,
+  competitivenessAssistant,
+  couponsAssistant,
+  dealsAssistant,
+  prosConsAssistant,
+  recommendAssistant,
+} from './personal-assistant';
+import { resolveFollowUpQuery } from '@/lib/deal-finder-stream';
+import { appendSourceLabel, verifiedDataLabel } from '@/lib/ai-source-label';
 
 export interface ChatMessage {
   id: string;
@@ -179,15 +189,145 @@ export interface ChatResponseOptions {
   region?: Region;
 }
 
+// ---------------------------------------------------------------------------
+// Conversational follow-ups (Section 19, Phase 5, §12 #56)
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal conversation context carried across turns WITHIN a
+ * session: the products the last assistant turn listed + the last
+ * intent. No personal data beyond the session, no LLM: the context
+ * is derived from the history the caller passes in (the dashboard
+ * chat reads it from the DB conversation; the deal-finder route
+ * passes the widget's turn history) and lives in the chat session,
+ * not in the analysis services — the engine stays deterministic
+ * and stateless at the service layer.
+ */
+export interface SessionContext {
+  /** Product names from the last assistant turn (at most 3). */
+  productNames: string[];
+  /** Intent of the last assistant turn, when recorded. */
+  lastIntent: string | null;
+}
+
+/**
+ * Extract the session context from conversation history. Primary
+ * source: the last assistant message's metadata.products (the
+ * dashboard chat persists them). Fallback: parse the product names
+ * out of the last assistant answer's own lines ("Best pick for you:
+ * X", "• X (Brand) — ...") — the deal-finder route passes history
+ * with metadata null, so its follow-ups resolve from the text the
+ * engine itself wrote, never from a guess.
+ */
+export function extractSessionContext(history: ChatMessage[]): SessionContext {
+  const productNames: string[] = [];
+  let lastIntent: string | null = null;
+
+  for (const m of history) {
+    if (m.role !== 'assistant' || !m.metadata) continue;
+    const names = (m.metadata.products ?? [])
+      .map((p) => p.name)
+      .filter((n): n is string => typeof n === 'string' && n.trim() !== '');
+    if (names.length > 0) {
+      productNames.length = 0;
+      productNames.push(...names.slice(0, 3));
+    }
+    if (typeof m.metadata.intent === 'string' && m.metadata.intent !== '') {
+      lastIntent = m.metadata.intent;
+    }
+  }
+
+  if (productNames.length === 0) {
+    const lastAssistant = [...history].reverse().find((m) => m.role === 'assistant');
+    if (lastAssistant) {
+      const pick = /Best pick for you: ([^\n(]+)/.exec(lastAssistant.content);
+      if (pick) productNames.push(pick[1].trim());
+      const bulletWithBrand = /^• ([^(—\n]+?) \(/gm;
+      const bulletPlain = /^• ([^—\n]+?) — /gm;
+      for (const re of [bulletWithBrand, bulletPlain]) {
+        let match: RegExpExecArray | null;
+        while ((match = re.exec(lastAssistant.content)) !== null) {
+          const name = match[1].trim();
+          if (name !== '' && !productNames.includes(name)) productNames.push(name);
+          if (productNames.length >= 3) break;
+        }
+        if (productNames.length >= 3) break;
+      }
+    }
+  }
+
+  return { productNames: productNames.slice(0, 3), lastIntent };
+}
+
+/**
+ * Is this message a follow-up on the previous turn (rather than a
+ * fresh, self-contained question)? A follow-up refers back ("and
+ * the cheaper one?", "is it competitive?", "pros and cons?") — a
+ * question that names its own budget or category ("cheapest laptop
+ * under $1000?") is self-contained and must NOT be rewritten
+ * against the previous products. Guard: an explicit back-reference,
+ * or a short message with no budget expression in it.
+ */
+function isSessionFollowUp(message: string): boolean {
+  const text = message.trim();
+  if (text.length === 0 || text.length > 120) return false;
+  if (/\b(and the|and its|and their|that one|this one|them|those|is se|aur|sasta dikhao|in mein|in me|us ka|is ka|yeh wala|ye wala)\b/i.test(text)) {
+    return true;
+  }
+  // Bare follow-up phrases with no product, category or budget of
+  // their own. "cheapest headphones" is NOT one (it names a
+  // category and is a fresh question); "cheapest?" is.
+  const bare = text
+    .toLowerCase()
+    .replace(/[?!.]+$/, '')
+    .trim();
+  return /^(cheapest|cheaper|best one|which one|which is the (cheapest|best)|pros and cons|is it (competitive|worth it)|is this price competitive|is the price competitive|compare them|compare these)$/.test(
+    bare
+  );
+}
+
+/**
+ * Append the source label to a successful assistant answer
+ * (Section 19, Phase 5, §12 #55). Every answer is computed from
+ * verified recorded data, so the label reads as verified-data —
+ * with the product's real freshness timestamp when the answer is
+ * about a single product. Error/apology answers carry no label:
+ * there is no answer to source.
+ */
+async function withSourceLabel(
+  supabase: AnySupabaseClient,
+  answer: { content: string; metadata: ChatMetadata | null }
+): Promise<{ content: string; metadata: ChatMetadata | null }> {
+  if (answer.content.startsWith('Sorry,')) return answer;
+  let asOf: string | null = null;
+  const products = answer.metadata?.products;
+  if (products && products.length === 1) {
+    try {
+      const { data } = await supabase
+        .from('products')
+        .select('data_freshness')
+        .eq('id', products[0].id)
+        .maybeSingle();
+      asOf = ((data as Record<string, unknown> | null)?.data_freshness as string | null) ?? null;
+    } catch {
+      asOf = null;
+    }
+  }
+  return { ...answer, content: appendSourceLabel(answer.content, verifiedDataLabel(asOf)) };
+}
+
 /**
  * Route one message to an intent handler. The handlers live in
  * services/personal-assistant.ts, which enforces the assistant's
  * hard rules: no demo/unpriced recommendations, budget as a hard
  * filter, region-aware prices, real price history, and real
- * coupons/cashback only. `conversationHistory` is accepted for
- * API compatibility (the dashboard chat passes it) but the
- * engine is stateless by design — follow-ups work because the
- * widget re-sends the question WITH product names included.
+ * coupons/cashback only. `conversationHistory` is the session
+ * context (Section 19, Phase 5, §12 #56): the engine itself stays
+ * stateless — follow-ups are resolved against the last turn's
+ * products BEFORE routing, using only the history the caller
+ * passed in. The widget used to be the only surface that could do
+ * this (its chips re-sent product names); the dashboard chat can
+ * now do it too, from its saved conversation.
  */
 export async function generateChatResponse(
   supabase: AnySupabaseClient,
@@ -195,10 +335,23 @@ export async function generateChatResponse(
   conversationHistory: ChatMessage[],
   options: ChatResponseOptions = {}
 ): Promise<{ content: string; metadata: ChatMetadata | null }> {
-  void conversationHistory;
   const region = options.region ?? FALLBACK_REGION;
-  const intent = parseSearchIntent(userMessage);
-  const lower = userMessage.toLowerCase();
+
+  // Conversational follow-up: rewrite "and the cheaper one?" /
+  // "is it competitive?" / "pros and cons?" against the products
+  // the previous turn discussed, so the intent handlers see a
+  // self-contained question. A fresh question passes through
+  // unchanged.
+  let effectiveMessage = userMessage;
+  if (isSessionFollowUp(userMessage)) {
+    const context = extractSessionContext(conversationHistory);
+    if (context.productNames.length > 0) {
+      effectiveMessage = resolveFollowUpQuery(userMessage, context.productNames);
+    }
+  }
+
+  const intent = parseSearchIntent(effectiveMessage);
+  const lower = effectiveMessage.toLowerCase();
 
   // Coupon / cashback intent first: "any coupon for MacBook?" and
   // "discount code" must reach couponsAssistant, not the compare
@@ -211,15 +364,74 @@ export async function generateChatResponse(
     lower.includes('discount code') ||
     lower.includes('voucher')
   ) {
-    return couponsAssistant(supabase, userMessage, intent, region);
+    return withSourceLabel(supabase, await couponsAssistant(supabase, effectiveMessage, intent, region));
+  }
+
+  // Buy-now-or-wait intent (Section 19, Phase 0, §12 #52): "should
+  // I buy now or wait?" must reach the buy-vs-wait verdict engine,
+  // not the deals route ("discount" below) or the generic product
+  // search at the bottom. Checked before compare/deals so a
+  // question that IS a verdict question is answered as one.
+  const buyWaitPatterns = [
+    'buy now or wait',
+    'buy or wait',
+    'should i buy',
+    'should i wait',
+    'good time to buy',
+    'is now a good time',
+    'wait to buy',
+    'wait for a price drop',
+    'will the price drop',
+    'will it drop',
+    'buy now or hold',
+  ];
+  if (buyWaitPatterns.some((p) => lower.includes(p))) {
+    return withSourceLabel(supabase, await buyWaitAssistant(supabase, effectiveMessage, region));
+  }
+
+  // Pros / cons intent (Section 19, Phase 5, §12 #54): "what are
+  // the pros and cons of MacBook?" must reach prosConsAssistant,
+  // not the generic product search. Checked before compare so a
+  // "pros and cons of X vs Y" question is answered as pros/cons
+  // for the first named product, not as a comparison.
+  const prosConsPatterns = [
+    'pros and cons',
+    'pros & cons',
+    'pros cons',
+    'advantages and disadvantages',
+    'strengths and weaknesses',
+    'good and bad',
+    'positives and negatives',
+  ];
+  if (prosConsPatterns.some((p) => lower.includes(p))) {
+    return withSourceLabel(supabase, await prosConsAssistant(supabase, effectiveMessage, region));
+  }
+
+  // Competitiveness intent (Section 19, Phase 5, §12 #53): "is
+  // this price competitive?" must reach competitivenessAssistant,
+  // not the deals route ("deal" below) or the generic product
+  // search. Checked before compare/deals so a verdict question is
+  // answered as one.
+  const competitivenessPatterns = [
+    'competitive',
+    'is the price good',
+    'is it a good price',
+    'good price',
+    'fair price',
+    'overpriced',
+    'worth the price',
+    'worth it',
+  ];
+  if (competitivenessPatterns.some((p) => lower.includes(p))) {
+    return withSourceLabel(supabase, await competitivenessAssistant(supabase, effectiveMessage, region));
   }
 
   if (lower.includes('compare') || lower.includes('vs') || lower.includes('versus')) {
-    return compareAssistant(supabase, userMessage, intent, region);
+    return withSourceLabel(supabase, await compareAssistant(supabase, effectiveMessage, intent, region));
   }
 
   if (lower.includes('deal') || lower.includes('discount') || lower.includes('sale')) {
-    return dealsAssistant(supabase, region);
+    return withSourceLabel(supabase, await dealsAssistant(supabase, region));
   }
 
   // Budget and general product search share one handler: the old
@@ -227,10 +439,13 @@ export async function generateChatResponse(
   // anyway, and both need the same priced-only + hard-budget
   // filtering. The search terms still strip the whole budget
   // expression so "K PKR" never leaks into product matching.
-  const searchTerms = stripBudgetFromQuery(userMessage)
+  const searchTerms = stripBudgetFromQuery(effectiveMessage)
     .replace(/best\s+/gi, '')
     .replace(/top\s+/gi, '')
     .trim();
-  return recommendAssistant(supabase, intent, searchTerms, region);
+  return withSourceLabel(
+    supabase,
+    await recommendAssistant(supabase, intent, searchTerms, region)
+  );
 }
 

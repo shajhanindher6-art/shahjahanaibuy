@@ -16,13 +16,13 @@ const ONE = ['MacBook Air 13'];
 describe('resolveFollowUpQuery — compare turns (2–3 products)', () => {
   it('rewrites "which is the cheapest?" into a compare query', () => {
     expect(resolveFollowUpQuery('which is the cheapest?', TWO)).toBe(
-      'Compare MacBook Air 13, Dell XPS 13 — which is the cheapest and the best value?'
+      'Compare MacBook Air 13, Dell XPS 13 — which has the lowest price?'
     );
   });
 
   it('rewrites Roman Urdu "aur sasta dikhao" into a cheaper query', () => {
     expect(resolveFollowUpQuery('aur sasta dikhao', TWO)).toBe(
-      'Compare MacBook Air 13, Dell XPS 13 — which is the cheapest and the best value?'
+      'Compare MacBook Air 13, Dell XPS 13 — which has the lowest price?'
     );
   });
 

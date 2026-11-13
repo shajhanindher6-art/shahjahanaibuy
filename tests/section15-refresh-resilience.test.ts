@@ -775,25 +775,34 @@ describe('P1-3 timeouts', () => {
     expect(ebaySrc).toContain('AbortSignal.timeout(EBAY_FETCH_TIMEOUT_MS)');
   });
 
-  it('maxDuration is set only on the five intended cron routes, and never above the 60s Hobby ceiling', () => {
+  it('maxDuration never exceeds the 60s Hobby ceiling, and the six intended routes carry it', () => {
     // Section 18, item 36 — the old "no route sets maxDuration"
     // premise is superseded BY DESIGN: the five long-running cron
     // routes deliberately export maxDuration = 60 (the Vercel
-    // Hobby ceiling, documented in each route's comment). The
-    // policy now is: no maxDuration anywhere exceeds 60, and
-    // exactly these five routes carry it.
+    // Hobby ceiling, documented in each route's comment). Section
+    // 19, Phase 3 (§12 #35) adds a sixth: the forecast route,
+    // which fits ranges over up to 5,000 recorded rows. Phase 1
+    // (§12 #10) is adding maxDuration = 60 to the AI routes in
+    // parallel, so the test asserts the POLICY — every assignment
+    // is exactly 60, and the six intended routes are among them —
+    // not an exact count, which sibling in-flight work would
+    // break. (If a route ever needs more than 60, that needs a
+    // paid plan — never raise one assignment silently.)
     const intended = [
       ['app', 'api', 'v1', 'prices', 'refresh', 'route.ts'],
       ['app', 'api', 'v1', 'alerts', 'check', 'route.ts'],
       ['app', 'api', 'v1', 'data', 'refresh', 'route.ts'],
       ['app', 'api', 'v1', 'notifications', 'process', 'route.ts'],
       ['app', 'api', 'v1', 'notifications', 'digest', 'route.ts'],
+      ['app', 'api', 'v1', 'forecast', '[productId]', 'route.ts'],
     ];
     for (const parts of intended) {
       expect(repoFile(...parts)).toContain('export const maxDuration = 60');
     }
     // Sweep the whole app tree: every maxDuration assignment must
-    // be <= 60, and only the five intended routes may set one.
+    // be exactly 60 (the Hobby ceiling), and the six intended
+    // routes must be among them. No exact total is asserted —
+    // Phase 1 is adding maxDuration to AI routes in parallel.
     const found: Array<{ file: string; value: number }> = [];
     const walk = (dir: string): void => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -808,10 +817,18 @@ describe('P1-3 timeouts', () => {
       }
     };
     walk(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'app'));
-    expect(found.length).toBe(5);
+    expect(found.length).toBeGreaterThanOrEqual(6);
     for (const { file, value } of found) {
       expect(value).toBeLessThanOrEqual(60);
       expect(value).toBe(60);
+    }
+    const foundFiles = new Set(found.map(({ file }) => file));
+    for (const parts of intended) {
+      expect(
+        foundFiles.has(
+          path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', ...parts)
+        )
+      ).toBe(true);
     }
   });
 });

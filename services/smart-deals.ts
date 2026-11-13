@@ -114,11 +114,15 @@ export async function getSmartDealRecommendations(
           (product.brand ? personalBrands.has(product.brand.toLowerCase()) : false) ||
           (product.category ? personalCategories.has(product.category.toLowerCase()) : false);
         const personalBoost = isPersonal ? 15 : 0;
-        const score = d.aiScore + d.discountPercentage * 0.25 + trendingBoost + personalBoost;
+        // Section 19, Phase 0 (§12 #24): a null percentage (fixed
+        // deal, no recorded price) contributes 0 to the score and
+        // shows no "% off" reason — never a fabricated number.
+        const discountPct = d.discountPercentage ?? 0;
+        const score = d.aiScore + discountPct * 0.25 + trendingBoost + personalBoost;
 
         const reasons: string[] = [];
         if (isPersonal) reasons.push('Matches your recent activity');
-        if (d.discountPercentage > 0) reasons.push(`${Math.round(d.discountPercentage)}% off`);
+        if (discountPct > 0) reasons.push(`${Math.round(discountPct)}% off`);
         if (d.savingsAmount > 0) reasons.push(`Save $${d.savingsAmount.toFixed(2)}`);
         if (views >= maxViews * 0.5 && views > 0) reasons.push('Trending now');
         if (d.dealType === 'flash') reasons.push('Flash deal — ends soon');
@@ -136,7 +140,7 @@ export async function getSmartDealRecommendations(
             imageUrl: product.imageUrl,
           },
           dealType: d.dealType,
-          discountPercentage: d.discountPercentage,
+          discountPercentage: discountPct,
           savingsAmount: d.savingsAmount,
           currentPrice: d.currentPrice ?? null,
           aiScore: d.aiScore,

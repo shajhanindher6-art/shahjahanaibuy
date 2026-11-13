@@ -38,9 +38,20 @@
  */
 
 import { lookup } from 'node:dns/promises';
+import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { logger } from '@/lib/config/logger';
 import { env } from '@/lib/config/env';
+// Section 19, Phase 1 (§12 #5, #6, #7, #9) — engine leaf modules
+// only (never the `@/services/ai-engine` barrel: the barrel's
+// provider adapters import this module, so importing it here
+// would be a cycle).
+import { withAiRetry, isRetryableStatus } from '@/services/ai-engine/retry';
+import {
+  recordAiCall,
+  spendProviderBudget,
+  isProviderBudgetExhausted,
+} from '@/services/ai-engine/usage';
 
 // Client-safe helpers live in services/visual-search-client.ts (zero
 // imports — the 'use client' scan page imports them from there, because
@@ -60,6 +71,94 @@ export interface VisualMatch {
   source: string | null;
   link: string | null;
   thumbnail: string | null;
+}
+
+// =====================================================================
+// Visual-search result cache (Section 19, Phase 8, §12 #11)
+//
+// The audit found visual search re-spent HF/SerpAPI quota on every
+// request: every scan re-fetched the image, re-ran BLIP captioning
+// and re-ran the embedding. This cache sits INSIDE the service
+// functions (below the Phase 1 budget gate in hfFetch /
+// searchVisualByImageUrl), so a cache hit never reaches the code
+// that spends budget — hits spend no quota — and a miss goes
+// through the existing budget check unchanged.
+//
+// Shape: per-instance in-memory Map, following the SerpAPI 2-tier
+// pattern in services/external-search.ts (memory 24h, then DB 7d)
+// as far as it fits — there is NO second tier here, deliberately:
+// no table exists for visual results, and adding one would need a
+// new migration, which this phase must not create. 24h matches the
+// SerpAPI memory TTL: a caption/embedding for a given image URL or
+// text is stable input, and Lens matches are web results whose
+// 24h staleness is the same window the web-search cache already
+// accepts.
+//
+// Keys are sha256 hashes of the input (image URL or caption text),
+// never the raw URL/text — the key must not leak a user-pasted URL
+// into logs or metrics. Entries are bounded (500, FIFO eviction)
+// so the map cannot grow without limit; embeddings are 384/512
+// floats each, so the bound also bounds memory.
+//
+// Labelling: a cached result is NEVER presented as freshly
+// computed. HfResult successes carry `cached: true` on a hit, and
+// Lens results come back via searchVisualByImageUrlWithMeta with
+// `fromCache` + `fetchedAt` (the time the provider actually
+// produced them). Failures are never cached.
+// =====================================================================
+
+/** How long a visual-search result stays cached (24h — SerpAPI memory TTL). */
+export const VISUAL_SEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+/** Maximum cached visual-search results per instance (FIFO eviction past this). */
+export const VISUAL_SEARCH_CACHE_MAX_ENTRIES = 500;
+
+interface VisualSearchCacheEntry {
+  value: unknown;
+  expiresAt: number;
+  fetchedAt: string;
+}
+
+const visualSearchCache = new Map<string, VisualSearchCacheEntry>();
+
+/** Cache key for one kind of visual analysis over one input (sha256 — the raw input never becomes a key). */
+export function visualSearchCacheKey(
+  kind: 'caption' | 'embed' | 'embed-clip' | 'lens',
+  input: string
+): string {
+  return `${kind}:${createHash('sha256').update(input, 'utf8').digest('hex')}`;
+}
+
+function visualCacheGet<T>(key: string): { value: T; fetchedAt: string } | null {
+  const entry = visualSearchCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    visualSearchCache.delete(key);
+    return null;
+  }
+  return { value: entry.value as T, fetchedAt: entry.fetchedAt };
+}
+
+function visualCacheSet(key: string, value: unknown): void {
+  if (visualSearchCache.size >= VISUAL_SEARCH_CACHE_MAX_ENTRIES) {
+    // FIFO eviction: Map iteration order is insertion order.
+    const oldest = visualSearchCache.keys().next();
+    if (!oldest.done) visualSearchCache.delete(oldest.value);
+  }
+  visualSearchCache.set(key, {
+    value,
+    expiresAt: Date.now() + VISUAL_SEARCH_CACHE_TTL_MS,
+    fetchedAt: new Date().toISOString(),
+  });
+}
+
+/** Test-only reset for the visual-search cache. */
+export function clearVisualSearchCache(): void {
+  visualSearchCache.clear();
+}
+
+/** Number of entries currently held in the visual-search cache. */
+export function getVisualSearchCacheSize(): number {
+  return visualSearchCache.size;
 }
 
 /**
@@ -86,43 +185,103 @@ export function isVisualSearchConfigured(): boolean {
 const LENS_ENDPOINT = 'https://serpapi.com/search.json';
 const LENS_TIMEOUT_MS = 10_000;
 
+export interface VisualLensOutcome {
+  matches: VisualMatch[];
+  /**
+   * True when the matches came from the §12 #11 cache (no SerpAPI
+   * quota spent). Callers must label a cached result as cached,
+   * never as freshly computed — `fetchedAt` is when SerpAPI
+   * actually produced them.
+   */
+  fromCache: boolean;
+  /** When SerpAPI produced these matches (ISO timestamp), null when disabled/failed. */
+  fetchedAt: string | null;
+}
+
 /**
- * SerpAPI google_lens visual search for a PUBLIC image URL.
- * Returns [] (never throws) on any failure so the caller can fall
- * back to keyword-assisted search with an honest note.
+ * SerpAPI google_lens visual search for a PUBLIC image URL, with
+ * the §12 #11 result cache. Returns [] (never throws) on any
+ * failure so the caller can fall back to keyword-assisted search
+ * with an honest note.
+ *
+ * Section 19, Phase 1 (§12 #6, #7): transient Lens failures
+ * (429 / 5xx / network) are retried with backoff (up to 3
+ * attempts); the daily SerpAPI budget gates the call entirely —
+ * when exhausted this returns [] without spending, and the caller
+ * (scan route) says so honestly instead of pretending Lens found
+ * nothing.
+ *
+ * Section 19, Phase 8 (§12 #11): a cache hit returns the stored
+ * matches WITHOUT spending budget (the budget check below only
+ * runs on a miss). Failures are never cached.
  */
-export async function searchVisualByImageUrl(imageUrl: string): Promise<VisualMatch[]> {
+export async function searchVisualByImageUrlWithMeta(imageUrl: string): Promise<VisualLensOutcome> {
   const key = env.serpApiKey;
-  if (!key || !imageUrl) return [];
+  if (!key || !imageUrl) return { matches: [], fromCache: false, fetchedAt: null };
+  const cacheKey = visualSearchCacheKey('lens', imageUrl);
+  const hit = visualCacheGet<VisualMatch[]>(cacheKey);
+  if (hit) {
+    return { matches: hit.value, fromCache: true, fetchedAt: hit.fetchedAt };
+  }
+  if (isProviderBudgetExhausted('serpapi')) {
+    logger.warn('visual-search: daily SerpAPI budget exhausted, skipping Lens call');
+    return { matches: [], fromCache: false, fetchedAt: null };
+  }
+  // A live attempt spends one unit of the daily budget whether it
+  // succeeds or not (SerpAPI bills per request).
+  spendProviderBudget('serpapi');
+  const callStart = Date.now();
   try {
     const url = new URL(LENS_ENDPOINT);
     url.searchParams.set('engine', 'google_lens');
     url.searchParams.set('image_url', imageUrl);
     url.searchParams.set('api_key', key);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), LENS_TIMEOUT_MS);
     let res: Response;
-    try {
-      res = await fetch(url.toString(), { signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
-    }
+    // A fresh AbortController per attempt: a timeout on attempt
+    // 1 must not instantly abort the retry (its signal is spent).
+    res = await withAiRetry(
+      () => {
+        const attemptController = new AbortController();
+        const attemptTimer = setTimeout(() => attemptController.abort(), LENS_TIMEOUT_MS);
+        return fetch(url.toString(), { signal: attemptController.signal }).finally(() =>
+          clearTimeout(attemptTimer)
+        );
+      },
+      { shouldRetryResult: (r) => isRetryableStatus(r.status) }
+    );
     if (!res.ok) {
       logger.warn('visual-search: SerpAPI Lens request failed', { status: res.status });
-      return [];
+      recordAiCall('serpapi', { success: false, latencyMs: Date.now() - callStart });
+      return { matches: [], fromCache: false, fetchedAt: null };
     }
     const data = (await res.json()) as { visual_matches?: Array<Record<string, unknown>> };
     const matches = Array.isArray(data.visual_matches) ? data.visual_matches : [];
-    return matches.slice(0, 10).map((m) => ({
+    recordAiCall('serpapi', { success: true, latencyMs: Date.now() - callStart });
+    const normalized = matches.slice(0, 10).map((m) => ({
       title: typeof m.title === 'string' ? m.title : 'Untitled match',
       source: typeof m.source === 'string' ? m.source : null,
       link: typeof m.link === 'string' ? m.link : null,
       thumbnail: typeof m.thumbnail === 'string' ? m.thumbnail : null,
     }));
+    const fetchedAt = new Date().toISOString();
+    visualCacheSet(cacheKey, normalized);
+    return { matches: normalized, fromCache: false, fetchedAt };
   } catch (err) {
     logger.warn('visual-search: SerpAPI Lens request errored', { error: String(err) });
-    return [];
+    recordAiCall('serpapi', { success: false, latencyMs: Date.now() - callStart });
+    return { matches: [], fromCache: false, fetchedAt: null };
   }
+}
+
+/**
+ * SerpAPI google_lens visual search for a PUBLIC image URL.
+ * Same result shape as before (VisualMatch[]) — use
+ * searchVisualByImageUrlWithMeta when the caller needs to know
+ * whether the result was cached. Kept so the engine's serpapi
+ * provider and every existing caller keep working unchanged.
+ */
+export async function searchVisualByImageUrl(imageUrl: string): Promise<VisualMatch[]> {
+  return (await searchVisualByImageUrlWithMeta(imageUrl)).matches;
 }
 
 // =====================================================================
@@ -143,7 +302,17 @@ export function isVectorSearchConfigured(): boolean {
 }
 
 export type HfResult<T> =
-  | { ok: true; value: T }
+  | {
+      ok: true;
+      value: T;
+      /**
+       * Section 19, Phase 8 (§12 #11) — true when this value came
+       * from the visual-search result cache (no HF quota spent).
+       * Absent/false means freshly computed. Callers must never
+       * present a cached value as freshly computed.
+       */
+      cached?: boolean;
+    }
   | { ok: false; error: string; retryable: boolean };
 
 async function hfFetch(
@@ -155,27 +324,57 @@ async function hfFetch(
   if (!token) {
     return { ok: false, error: 'Hugging Face API token is not configured.', retryable: false };
   }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), HF_TIMEOUT_MS);
+  // Section 19, Phase 1 (§12 #7) — global daily HF budget. When
+  // exhausted, no live call is made; the caller falls back
+  // honestly (keyword-assisted / catalog) instead of burning more.
+  if (isProviderBudgetExhausted('huggingface')) {
+    return {
+      ok: false,
+      error: 'Hugging Face visual features are unavailable today (daily provider budget reached). Please try again tomorrow.',
+      retryable: false,
+    };
+  }
+  // A live attempt spends one unit of the daily budget whether it
+  // succeeds or not.
+  spendProviderBudget('huggingface');
+  const callStart = Date.now();
   try {
-    const res = await fetch(`${HF_INFERENCE_BASE}/${model}`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': contentType,
+    // Section 19, Phase 1 (§12 #6) — honour the `retryable`
+    // flag the audit found no caller honouring: a 503 (model
+    // still loading on the free tier) or 429 is retried with
+    // backoff (up to 3 attempts) instead of making the user retry
+    // manually. 401/403 are not retryable and return immediately.
+    // A fresh AbortController per attempt: a timeout on attempt 1
+    // must not instantly abort the retry (its signal is spent).
+    const res = await withAiRetry(
+      () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), HF_TIMEOUT_MS);
+        return fetch(`${HF_INFERENCE_BASE}/${model}`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': contentType,
+          },
+          body,
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timer));
       },
-      body,
-      signal: controller.signal,
-    });
+      { shouldRetryResult: (r) => isRetryableStatus(r.status) }
+    );
+    // Section 19, Phase 1 (§12 #5, #9) — in-memory usage +
+    // latency for the admin summary. The durable `provider_health`
+    // row is written by the visual-search route via the engine
+    // result (this helper has no Supabase client in scope).
+    recordAiCall('huggingface', { success: res.ok, latencyMs: Date.now() - callStart });
     return { ok: true, value: res };
   } catch (err) {
+    recordAiCall('huggingface', { success: false, latencyMs: Date.now() - callStart });
     return {
       ok: false,
       error: `Hugging Face request failed: ${String(err)}`,
       retryable: true,
     };
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -338,6 +537,15 @@ export async function captionPublicImageUrl(imageUrl: string): Promise<HfResult<
   if (!(await isSafePublicImageUrl(imageUrl))) {
     return { ok: false, error: 'Only public http(s) image URLs can be captioned.', retryable: false };
   }
+  // Section 19, Phase 8 (§12 #11) — cache hit AFTER the SSRF
+  // guard (the guard is cheap DNS, not quota; a cached URL must
+  // still be re-validated in case its DNS changed) and BEFORE the
+  // image fetch + HF call, so a hit spends no quota at all.
+  const captionKey = visualSearchCacheKey('caption', imageUrl);
+  const cachedCaption = visualCacheGet<string>(captionKey);
+  if (cachedCaption) {
+    return { ok: true, value: cachedCaption.value, cached: true };
+  }
   let imageBytes: ArrayBuffer;
   let contentType = 'application/octet-stream';
   try {
@@ -422,7 +630,11 @@ export async function captionPublicImageUrl(imageUrl: string): Promise<HfResult<
     if (typeof caption !== 'string' || caption.trim() === '') {
       return { ok: false, error: 'The image could not be captioned.', retryable: false };
     }
-    return { ok: true, value: caption.trim() };
+    // Section 19, Phase 8 (§12 #11) — cache the fresh caption
+    // (failures are never cached). The key is the image URL hash.
+    const trimmedCaption = caption.trim();
+    visualCacheSet(captionKey, trimmedCaption);
+    return { ok: true, value: trimmedCaption };
   } catch {
     return { ok: false, error: 'The captioning service returned an unexpected response.', retryable: true };
   }
@@ -436,6 +648,15 @@ export async function embedText(text: string): Promise<HfResult<number[]>> {
   const trimmed = text.trim();
   if (!trimmed) {
     return { ok: false, error: 'Nothing to embed: the text is empty.', retryable: false };
+  }
+  // Section 19, Phase 8 (§12 #11) — same caption text embeds to
+  // the same vector; a cache hit skips hfFetch entirely, so no HF
+  // budget is spent. The key includes the model ('embed' vs
+  // 'embed-clip') — the two spaces must never share an entry.
+  const embedKey = visualSearchCacheKey('embed', trimmed);
+  const cachedEmbed = visualCacheGet<number[]>(embedKey);
+  if (cachedEmbed) {
+    return { ok: true, value: cachedEmbed.value, cached: true };
   }
   const fetched = await hfFetch(
     VECTOR_EMBED_MODEL,
@@ -460,6 +681,7 @@ export async function embedText(text: string): Promise<HfResult<number[]>> {
     ) {
       return { ok: false, error: 'The embedding service returned an unexpected response.', retryable: true };
     }
+    visualCacheSet(embedKey, data as number[]);
     return { ok: true, value: data as number[] };
   } catch {
     return { ok: false, error: 'The embedding service returned an unexpected response.', retryable: true };
@@ -567,6 +789,14 @@ export async function embedTextClip(text: string): Promise<HfResult<number[]>> {
   if (!trimmed) {
     return { ok: false, error: 'Nothing to embed: the text is empty.', retryable: false };
   }
+  // Section 19, Phase 8 (§12 #11) — same cache as embedText, but
+  // a separate 'embed-clip' key: the CLIP space (512 dims) must
+  // never serve a MiniLM (384-dim) entry or vice versa.
+  const clipKey = visualSearchCacheKey('embed-clip', trimmed);
+  const cachedClip = visualCacheGet<number[]>(clipKey);
+  if (cachedClip) {
+    return { ok: true, value: cachedClip.value, cached: true };
+  }
   const fetched = await hfFetch(
     CLIP_EMBED_MODEL,
     JSON.stringify({ inputs: trimmed }),
@@ -585,6 +815,7 @@ export async function embedTextClip(text: string): Promise<HfResult<number[]>> {
     if (!vector) {
       return { ok: false, error: 'The CLIP embedding service returned an unexpected response.', retryable: true };
     }
+    visualCacheSet(clipKey, vector);
     return { ok: true, value: vector };
   } catch {
     return { ok: false, error: 'The CLIP embedding service returned an unexpected response.', retryable: true };

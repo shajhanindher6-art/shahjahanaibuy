@@ -11,10 +11,16 @@
  *   - WAIT: above the 30-day average (and above the 30-day lowest).
  *
  * This is a trend snapshot, never a forecast: no exact future price
- * and no exact future date is ever produced. With fewer than 2
+ * and no exact future date is ever produced. With fewer than 5
  * recorded points (or any missing/invalid input) the result is
  * 'not_enough_data' — callers render nothing rather than a fake
  * verdict (the detailed BuyVsWait section already covers that state).
+ *
+ * Section 19, Phase 3 (§12 #30): the minimum is 5, unified with
+ * the Deal Score gate (lib/deal-score.ts) — two verdicts on the
+ * same product page must not disagree about how much history a
+ * verdict needs. It used to be 2; a 2–4 point verdict is thin
+ * history, not a verdict.
  */
 
 import {
@@ -29,8 +35,13 @@ export type PredictionBadgeLabel =
   | 'wait'
   | 'not_enough_data';
 
-/** Minimum recorded points needed before any verdict is offered. */
-export const PREDICTION_BADGE_MIN_POINTS = 2;
+/**
+ * Minimum recorded points needed before any verdict is offered.
+ * 5 — unified with the Deal Score display gate (Section 19,
+ * Phase 3, §12 #30). Do NOT lower it without unifying the Deal
+ * Score gate too: the two verdicts share one product page.
+ */
+export const PREDICTION_BADGE_MIN_POINTS = 5;
 /** GREAT VALUE when the current price is within 2% of the 30-day lowest. */
 export const GREAT_VALUE_LOWEST_TOLERANCE = 1.02;
 /** GREAT VALUE when the current price is 10% or more below the 30-day average. */
@@ -110,7 +121,9 @@ export function getPredictionBadge(
  * Latest 30-day moving-average value from recorded points, reusing
  * lib/price-trend.ts `movingAverage` (never reimplemented here).
  * Returns null when fewer than 2 chart days carry an average — with
- * thin history the badge stays silent instead of guessing.
+ * thin history the badge stays silent instead of guessing. (This is
+ * the moving-average helper's own floor, not the badge verdict
+ * minimum — the verdict gate above is 5 points.)
  */
 export function latestMovingAverage(points: TrendPoint[]): number | null {
   const ma = movingAverage(points);

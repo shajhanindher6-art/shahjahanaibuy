@@ -174,7 +174,7 @@ describe('rankGuidedPicks', () => {
     );
     expect(pick.why).toContain('$800.00 — within your $1000.00 budget');
     expect(pick.why).toContain('From your preferred brand Apple');
-    expect(pick.why).toContain('Save 20% vs $1000.00');
+    expect(pick.why).toContain('Save 20% vs $1000.00 ($200.00)');
     expect(pick.why).toContain('Deal Score 80/100');
     expect(pick.savingPct).toBe(20);
   });

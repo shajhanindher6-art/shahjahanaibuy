@@ -11,6 +11,10 @@ import { sendEmail, sendWeeklyDigestEmail, sendPriceAlertEmail } from '@/service
 import { sendPushNotification } from '@/services/push';
 import { sendTelegramAlert, sendWhatsAppAlert } from '@/services/alert-webhooks';
 import {
+  DEFAULT_ALERT_DELIVERY_SETTINGS,
+  getAlertDeliverySettingsByUser,
+} from '@/services/settings';
+import {
   sendGenericWebhook,
   GENERIC_WEBHOOK_SIGNATURE_HEADER,
   type GenericWebhookStatus,
@@ -206,11 +210,37 @@ async function dispatchNotification(
       .eq('id', notif.user_id)
       .maybeSingle();
 
+    // Section 19, Phase 0 (§12 #65): master switches — defense
+    // in depth for rows queued BEFORE the user opted out (the
+    // checker enforces the same switches before queueing, so a
+    // row normally never reaches here opted-out). price_alerts
+    // off blocks every leg and the row is failed permanently
+    // (it can never deliver while opted out; the checker fires a
+    // fresh alert if the price moves again). The channel
+    // switches below block only their own leg. Other
+    // notification types (e.g. weekly_digest) are unaffected.
+    let alertSettings = DEFAULT_ALERT_DELIVERY_SETTINGS;
+    if (notif.type === 'price_alert') {
+      const byUser = await getAlertDeliverySettingsByUser(supabase, [notif.user_id]);
+      alertSettings = byUser.get(notif.user_id) ?? DEFAULT_ALERT_DELIVERY_SETTINGS;
+      if (!alertSettings.priceAlerts) {
+        logger.info('dispatchNotification: price alerts off for user, skipping delivery', {
+          notifId: notif.id,
+          userId: notif.user_id,
+        });
+        return { delivered: false, permanent: true };
+      }
+    }
+
     // Channel 'both' sends email AND push. It counts as sent when at
     // least one leg succeeds, so a failed push leg does not cause a
     // duplicate email on retry (and vice versa).
-    const wantsEmail = notif.channel === 'email' || notif.channel === 'both';
-    const wantsPush = notif.channel === 'push' || notif.channel === 'both';
+    const wantsEmail =
+      (notif.channel === 'email' || notif.channel === 'both') &&
+      alertSettings.emailNotifications;
+    const wantsPush =
+      (notif.channel === 'push' || notif.channel === 'both') &&
+      alertSettings.pushNotifications;
 
     // Option 7: WhatsApp/Telegram legs are preference-driven, not
     // channel-field-driven, and fire ONLY for price_alert rows where
@@ -232,7 +262,19 @@ async function dispatchNotification(
     const wantsGeneric = Boolean(genericPrefs?.url);
 
     if (!wantsEmail && !wantsPush && !wantsWhatsApp && !wantsTelegram && !wantsGeneric) {
-      logger.warn('Unknown notification channel', { channel: notif.channel });
+      // Section 19, Phase 0 (§12 #65): this is also where a
+      // price_alert lands when the user's channel switches
+      // disabled its only wanted legs — say so instead of
+      // blaming an unknown channel.
+      if (notif.type === 'price_alert') {
+        logger.info('dispatchNotification: no enabled channel for price alert (user switches)', {
+          notifId: notif.id,
+          userId: notif.user_id,
+          channel: notif.channel,
+        });
+      } else {
+        logger.warn('Unknown notification channel', { channel: notif.channel });
+      }
       return { delivered: false, permanent: true };
     }
 

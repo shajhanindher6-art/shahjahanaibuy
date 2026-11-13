@@ -56,14 +56,14 @@ describe('press-counts.json — generated, not hardcoded', () => {
     expect(viaReader.date).toBe(pressCounts.date);
   });
 
-  it('is the current Section 18 baseline (254 files / 3,066 tests, 12 November 2026)', () => {
+  it('is the current Section 19 baseline (286 files / 3,425 tests, 12 November 2026)', () => {
     // Baseline only — the coordinator re-locks this after the final
-    // full Section 18 gate run (other workers add tests after this
+    // full Section 19 gate run (other workers add tests after this
     // change). If this test fails, regenerate the JSON
     // (`npm run generate:press-counts`) and update this baseline in
     // the same change; never edit the JSON by hand.
     expect(pressCounts).toEqual(
-      expect.objectContaining({ tests: 3066, files: 254, date: '2026-11-12' }),
+      expect.objectContaining({ tests: 3425, files: 286, date: '2026-11-12' }),
     );
   });
 });
@@ -113,7 +113,13 @@ describe('methodology + about — honest refresh wording, 167 strings', () => {
     expect(text).not.toContain('refreshed on a six-hour schedule');
     expect(text).toMatch(/A price refresh is\s*scheduled every six hours, but no live refresh happens today/);
     expect(text).toMatch(/fetches no new retailer prices/);
-    expect(text).toMatch(/last recorded 2 November 2026/);
+    // Section 19, Phase 7 (§12 #75): the "last recorded" date is
+    // no longer hardcoded — it is read live from the catalog
+    // (newest products.data_freshness) at request time, and omitted
+    // when the read fails, so no stale date is ever printed.
+    expect(text).not.toMatch(/last recorded 2 November 2026/);
+    expect(text).toMatch(/latestFreshness/);
+    expect(text).toMatch(/data_freshness/);
   });
 
   it('about says 167 strings and no longer claims a six-hour refresh schedule', () => {

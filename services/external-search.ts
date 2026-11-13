@@ -44,6 +44,17 @@ import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
 import { env } from '@/lib/config/env';
 import type { WebSearchResult } from '@/types/ai';
+// Section 19, Phase 1 (§12 #5, #6, #7, #8, #9) — engine leaf
+// modules only (never the `@/services/ai-engine` barrel: the
+// barrel's provider adapters import this module, so importing it
+// here would be a cycle).
+import { withAiRetry, isRetryableStatus } from '@/services/ai-engine/retry';
+import {
+  recordAiCall,
+  spendProviderBudget,
+  isProviderBudgetExhausted,
+} from '@/services/ai-engine/usage';
+import { reportAiProviderHealth } from '@/services/ai-engine/health-report';
 
 export type { WebSearchResult };
 
@@ -53,6 +64,14 @@ export interface WebSearchOutcome {
   fromCache: boolean;
   /** True when SERPAPI_API_KEY is not configured. */
   disabled: boolean;
+  /**
+   * Section 19, Phase 1 (§12 #7) — true when the global daily
+   * SerpAPI budget (5 live calls/day, see services/ai-engine/
+   * usage.ts) was already exhausted, so no live call was made.
+   * Callers serve the catalog fallback with an honest "web
+   * results unavailable today" label when this is true.
+   */
+  budgetExhausted: boolean;
   /**
    * Section 18, item 34 — when the results were fetched from
    * SerpAPI (ISO timestamp). The cache entry's timestamp for
@@ -211,7 +230,7 @@ export async function searchWebProducts(
   // 1. In-memory cache (fastest, no quota, no DB round trip).
   const mem = memoryCache.get(key);
   if (mem && Date.now() < mem.expiresAt) {
-    return { results: mem.results, fromCache: true, disabled: false, fetchedAt: mem.fetchedAt };
+    return { results: mem.results, fromCache: true, disabled: false, fetchedAt: mem.fetchedAt, budgetExhausted: false };
   }
 
   // 2. Persistent DB cache (survives redeploys / new instances).
@@ -229,16 +248,30 @@ export async function searchWebProducts(
       expiresAt: Date.now() + MEMORY_TTL_MS,
       fetchedAt: dbCached.fetchedAt,
     });
-    return { results, fromCache: true, disabled: false, fetchedAt: dbCached.fetchedAt };
+    return { results, fromCache: true, disabled: false, fetchedAt: dbCached.fetchedAt, budgetExhausted: false };
   }
 
   // 3. Live SerpAPI call — only if a key is configured.
   const apiKey = env.serpApiKey;
   if (!apiKey || apiKey.trim() === '') {
     logger.warn('searchWebProducts: SERPAPI_API_KEY not configured, web fallback disabled');
-    return { results: [], fromCache: false, disabled: true, fetchedAt: null };
+    return { results: [], fromCache: false, disabled: true, fetchedAt: null, budgetExhausted: false };
   }
 
+  // Section 19, Phase 1 (§12 #7) — global daily SerpAPI budget.
+  // When exhausted, no live call is made at all: the caller serves
+  // the catalog fallback with an honest label (see
+  // `budgetExhausted`). Cache hits above already returned without
+  // spending, so this only binds genuinely new queries.
+  if (isProviderBudgetExhausted('serpapi')) {
+    logger.warn('searchWebProducts: daily SerpAPI budget exhausted, serving catalog fallback');
+    return { results: [], fromCache: false, disabled: false, fetchedAt: null, budgetExhausted: true };
+  }
+  // A live attempt spends one unit of the daily budget whether it
+  // succeeds or not — SerpAPI bills per request, not per success.
+  spendProviderBudget('serpapi');
+
+  const callStart = Date.now();
   try {
     const url = new URL(SERPAPI_ENDPOINT);
     url.searchParams.set('engine', 'google_shopping');
@@ -248,10 +281,27 @@ export async function searchWebProducts(
     url.searchParams.set('gl', 'us');
     url.searchParams.set('hl', 'en');
 
-    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10000) });
+    // Section 19, Phase 1 (§12 #6) — retry transient SerpAPI
+    // failures (429 / 5xx / network) with backoff, up to 3
+    // attempts. A 401/403 (bad key) is not retryable and returns
+    // immediately; the retry budget is one logical call, not three
+    // budget units (spendProviderBudget above ran once).
+    const res = await withAiRetry(
+      () => fetch(url.toString(), { signal: AbortSignal.timeout(10000) }),
+      { shouldRetryResult: (r) => isRetryableStatus(r.status) }
+    );
+    const latencyMs = Date.now() - callStart;
     if (!res.ok) {
       logger.warn('searchWebProducts: SerpAPI request failed', { status: res.status });
-      return { results: [], fromCache: false, disabled: false, fetchedAt: null };
+      // Section 19, Phase 1 (§12 #8, #9) — durable provider
+      // health + in-memory latency for the admin summary.
+      recordAiCall('serpapi', { success: false, latencyMs });
+      void reportAiProviderHealth(supabase, 'serpapi', {
+        success: false,
+        responseMs: latencyMs,
+        error: `SerpAPI HTTP ${res.status}`,
+      });
+      return { results: [], fromCache: false, disabled: false, fetchedAt: null, budgetExhausted: false };
     }
     const data = (await res.json()) as Record<string, unknown>;
     const rows = Array.isArray(data.shopping_results) ? data.shopping_results : [];
@@ -277,9 +327,21 @@ export async function searchWebProducts(
     if (stamped.length > 0) {
       await writeDbCache(supabase, key, query, stamped);
     }
-    return { results: stamped, fromCache: false, disabled: false, fetchedAt };
+    recordAiCall('serpapi', { success: true, latencyMs: Date.now() - callStart });
+    void reportAiProviderHealth(supabase, 'serpapi', {
+      success: true,
+      responseMs: Date.now() - callStart,
+    });
+    return { results: stamped, fromCache: false, disabled: false, fetchedAt, budgetExhausted: false };
   } catch (err) {
+    const latencyMs = Date.now() - callStart;
     logger.warn('searchWebProducts: SerpAPI request error', { error: String(err) });
-    return { results: [], fromCache: false, disabled: false, fetchedAt: null };
+    recordAiCall('serpapi', { success: false, latencyMs });
+    void reportAiProviderHealth(supabase, 'serpapi', {
+      success: false,
+      responseMs: latencyMs,
+      error: String(err).slice(0, 200),
+    });
+    return { results: [], fromCache: false, disabled: false, fetchedAt: null, budgetExhausted: false };
   }
 }

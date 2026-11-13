@@ -186,12 +186,14 @@ describe('refresh waves run concurrently where independent (item 37)', () => {
       // Barrier: each step signals it started, then waits until
       // BOTH have started. Sequential execution deadlocks (the
       // first step waits forever for the second to start) — the
-      // 2s timeout below fails fast instead of hanging.
+      // 5s timeout below fails fast instead of hanging. (Was 2s:
+      // under parallel load the second step can take longer than
+      // that to start — Section 19, Phase 0, §12 #90.)
       let alertsStarted = false;
       let huntsStarted = false;
       const waitForBoth = () =>
         new Promise<void>((resolve, reject) => {
-          const deadline = setTimeout(() => reject(new Error('wave-C barrier timed out — steps did not overlap')), 2000);
+          const deadline = setTimeout(() => reject(new Error('wave-C barrier timed out — steps did not overlap')), 5000);
           const check = () => {
             if (alertsStarted && huntsStarted) {
               clearTimeout(deadline);
@@ -221,9 +223,11 @@ describe('refresh waves run concurrently where independent (item 37)', () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as { data: { steps: Record<string, { status: string }> } };
       // Every step reported (the always-200-with-per-step-status
-      // contract holds under the parallel waves).
+      // contract holds under the parallel waves). 'outcomes' is the
+      // Section 19, Phase 3 (§12 #34) prediction-outcome step,
+      // which runs in wave C with the other post-refresh steps.
       expect(Object.keys(body.data.steps).sort()).toEqual(
-        ['alerts', 'digest', 'ebay', 'guestAlerts', 'guestEmail', 'hunts', 'notifications', 'pipeline', 'refresh', 'savedSearches', 'stock']
+        ['alerts', 'digest', 'ebay', 'guestAlerts', 'guestEmail', 'hunts', 'notifications', 'outcomes', 'pipeline', 'refresh', 'savedSearches', 'stock']
       );
       expect(routeMocks.checkPriceAlerts).toHaveBeenCalled();
       expect(routeMocks.runHunts).toHaveBeenCalled();

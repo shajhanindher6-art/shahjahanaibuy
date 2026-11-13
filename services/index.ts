@@ -100,15 +100,42 @@ export {
   createAlert,
   updateAlert,
   deleteAlert,
+  findDuplicateAlert,
   type CreateAlertInput,
   type UpdateAlertInput,
+  type AlertType,
 } from './alerts';
 
 // Phase 2: Alert checker (cron)
 export {
   checkPriceAlerts,
+  getActiveDealProductIds,
+  getPriceHistories,
+  getAvailabilityTransitions,
   type AlertCheckResult,
+  type HistoryPoint,
+  type AvailabilityTransition,
 } from './alert-checker';
+
+// Section 19, Phase 6: alert trigger evaluation (significant-drop /
+// trend / wishlist / opportunity) — pure functions over recorded data.
+export {
+  evaluateSignificantDrop,
+  evaluateTrend,
+  evaluateWishlistItemTriggers,
+  evaluateOpportunityAlert,
+  SIGNIFICANT_DROP_THRESHOLD_PCT,
+  TREND_WINDOW_DAYS,
+  TREND_MIN_POINTS,
+  TREND_MIN_CHANGE_PCT,
+  WISHLIST_DROP_THRESHOLD_PCT,
+  type SignificantDropEvaluation,
+  type TrendEvaluation,
+  type WishlistTrigger,
+  type WishlistTriggerKind,
+  type WishlistItemSnapshot,
+  type OpportunityAlertEvaluation,
+} from './alert-triggers';
 
 // Price refresh worker (scheduled: refresh -> check -> Resend email)
 export {

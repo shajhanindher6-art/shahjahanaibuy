@@ -15,6 +15,27 @@ export interface HealthStatus {
     auth: { status: 'up' | 'down' };
     stripe?: { status: 'up' | 'down' | 'not_configured' };
   };
+  /**
+   * Section 19, Phase 1 (§12 #3) — live AI provider-registry
+   * validation, from the engine's `validate()`. Deterministic
+   * providers report 'available'; live providers report
+   * 'available-unverified' on key presence ONLY (no network
+   * probe, so validation burns zero SerpAPI/HF quota) or
+   * 'disabled' with no key. INFORMATIONAL ONLY: AI provider
+   * status never flips the overall health — an unconfigured
+   * optional SerpAPI key is not an outage.
+   */
+  ai?: {
+    providers: Array<{
+      key: string;
+      name: string;
+      kind: 'deterministic' | 'live';
+      capabilities: string[];
+      available: boolean;
+      status: 'available' | 'available-unverified' | 'disabled';
+      detail: string;
+    }>;
+  };
 }
 
 export async function checkHealth(
@@ -87,11 +108,25 @@ export async function checkHealth(
       ? 'degraded'
       : 'healthy';
 
+  // Section 19, Phase 1 (§12 #3) — AI provider validation. Best
+  // effort and informational only: a validation failure must
+  // never break the health endpoint, and AI status never changes
+  // the overall status above. Dynamic import so the health check
+  // does not pull the whole AI service graph into every caller.
+  let ai: HealthStatus['ai'];
+  try {
+    const { getAiEngine } = await import('@/services/ai-engine');
+    ai = { providers: getAiEngine().validate() };
+  } catch {
+    ai = undefined;
+  }
+
   return {
     status,
     service: 'SmartBuy AI API',
     version: 'v1',
     timestamp,
     checks,
+    ...(ai ? { ai } : {}),
   };
 }

@@ -50,7 +50,11 @@ import {
 } from '@/lib/region';
 import { formatOriginalAmount } from './currency';
 import { getLatestPrices, getPriceHistory } from './price-history';
+import { predictBuyVsWait, type BuyWaitPoint } from './buy-wait-prediction';
+import { getAISummary } from './ai-summary';
+import { formatLabelDate } from '@/lib/ai-source-label';
 import type { ParsedSearchIntent } from '@/types/ai';
+import type { Product } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -735,6 +739,448 @@ export async function compareAssistant(
     logger.error('compareAssistant: unexpected error', { error: String(err) });
     return {
       content: 'Sorry, I could not compare products right now. Please try again.',
+      metadata: null,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Buy-now-or-wait intent ("should I buy the MacBook now or wait?")
+// ---------------------------------------------------------------------------
+
+/**
+ * Answer buy/wait questions with a verdict from the existing
+ * deterministic buy-vs-wait engine (services/buy-wait-prediction,
+ * Section 19, Phase 0, §12 #52). Until now the question fell
+ * through to recommendAssistant() and was answered as a generic
+ * product search — not as a verdict.
+ *
+ * The verdict is computed ONLY from the product's real recorded
+ * price_history points (the engine refuses below 2 points and
+ * caps confidence at 25% on thin history), and the answer labels
+ * it an estimate, never a guarantee. No LLM, no invented data:
+ * with no product named, the answer asks which product; with no
+ * price history, it says so honestly instead of guessing.
+ */
+export async function buyWaitAssistant(
+  supabase: AnySupabaseClient,
+  message: string,
+  region: Region = FALLBACK_REGION
+): Promise<AssistantAnswer> {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select('id, name, slug, brand, category, image_url, confidence_score')
+      .is('deleted_at', null)
+      .neq('slug', 'sample-laptop')
+      .order('confidence_score', { ascending: false })
+      .limit(50);
+
+    if (error || !data || data.length === 0) {
+      return {
+        content:
+          'I could not look up any products right now, so I cannot give you a buy-now-or-wait verdict. Please try again.',
+        metadata: null,
+      };
+    }
+
+    const matched = matchProductsByName(message, data as unknown as BasicProductRow[]);
+    if (matched.length === 0) {
+      return {
+        content:
+          'I can tell you whether to buy now or wait from the product\'s recorded price history — which product? ' +
+          'For example, "should I buy the MacBook Air 13 now or wait?"',
+        metadata: null,
+      };
+    }
+
+    const row = matched[0];
+    const { data: historyRows } = await supabase
+      .from('price_history')
+      .select('price, recorded_at')
+      .eq('product_id', row.id)
+      .order('recorded_at', { ascending: true })
+      .limit(365);
+
+    const points: BuyWaitPoint[] = ((historyRows ?? []) as Array<Record<string, unknown>>)
+      .map((r) => ({
+        price: parseFloat(String(r.price)),
+        recordedAt: r.recorded_at as string,
+      }))
+      .filter((p) => Number.isFinite(p.price) && p.price > 0);
+
+    const prediction = predictBuyVsWait(points);
+
+    // The product card (verified merchant price) when the product
+    // has one — enrichProducts drops unpriced rows, and a dropped
+    // row must not lose the verdict, which stands on history alone.
+    const enriched = await enrichProducts(supabase, [row]);
+    const card = enriched.length > 0 ? toCard(enriched[0]) : null;
+
+    const verdict =
+      prediction.recommendation === 'buy_now'
+        ? 'Buy Now'
+        : prediction.recommendation === 'wait'
+          ? 'Wait'
+          : prediction.recommendation === 'track_price'
+            ? 'Track Price'
+            : prediction.recommendation === 'compare_alternatives'
+              ? 'Compare Alternatives'
+              : 'Not enough data';
+    const lines: string[] = [];
+    lines.push(`🛒 Verdict for ${row.name}: ${verdict}`);
+    lines.push(prediction.reason);
+    if (prediction.recommendation === 'not_enough_data') {
+      lines.push(
+        'Set a price alert on the product page and check back once more prices are recorded — I cannot give a verdict from this little history.'
+      );
+    } else {
+      const confidenceLine =
+        `Confidence: ${prediction.confidence}%` +
+        (prediction.lowConfidence
+          ? ` (low — only ${prediction.pointCount} recorded price${prediction.pointCount === 1 ? '' : 's'})`
+          : '');
+      lines.push(`${confidenceLine}. This is an estimate from recorded price history, not a guarantee.`);
+      if (prediction.currentPrice !== null && prediction.lowestPrice !== null && prediction.averagePrice !== null) {
+        lines.push(
+          `Current: ${formatPriceText(prediction.currentPrice, region)} · ` +
+            `Lowest recorded: ${formatPriceText(prediction.lowestPrice, region)} · ` +
+            `Average: ${formatPriceText(prediction.averagePrice, region)}`
+        );
+      }
+    }
+    lines.push('Open the product card below for the full price history and to set a price alert.');
+
+    return {
+      content: lines.join('\n'),
+      metadata: {
+        products: card ? [card] : [],
+        intent: 'buy_wait',
+      },
+    };
+  } catch (err) {
+    logger.error('buyWaitAssistant: unexpected error', { error: String(err) });
+    return {
+      content: 'Sorry, I could not work out a buy-now-or-wait verdict right now. Please try again.',
+      metadata: null,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// "Is this price competitive?" intent
+// ---------------------------------------------------------------------------
+
+/**
+ * Answer competitiveness questions from real data only (Section 19,
+ * Phase 5, §12 #53 — same gap family as the buy/wait handler in
+ * Phase 0, §12 #52). The verdict compares the current recorded
+ * price against the product's own recorded low / average / high
+ * (never a guessed market price) and against the other merchants
+ * listing the same product, and states the freshness of the price.
+ * With no recorded history the answer says there is not enough data
+ * to judge — it never calls a price competitive on zero evidence.
+ */
+export async function competitivenessAssistant(
+  supabase: AnySupabaseClient,
+  message: string,
+  region: Region = FALLBACK_REGION
+): Promise<AssistantAnswer> {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select('id, name, slug, brand, category, image_url, confidence_score, data_freshness')
+      .is('deleted_at', null)
+      .neq('slug', 'sample-laptop')
+      .order('confidence_score', { ascending: false })
+      .limit(50);
+
+    if (error || !data || data.length === 0) {
+      return {
+        content:
+          'I could not look up any products right now, so I cannot judge whether a price is competitive. Please try again.',
+        metadata: null,
+      };
+    }
+
+    const matched = matchProductsByName(message, data as unknown as BasicProductRow[]);
+    if (matched.length === 0) {
+      return {
+        content:
+          'I can tell you whether a price is competitive from the product\'s recorded price history and merchant prices — which product? ' +
+          'For example, "is the price of the MacBook Air 13 competitive?"',
+        metadata: null,
+      };
+    }
+
+    const row = matched[0];
+    const dataFreshness =
+      ((row as unknown as Record<string, unknown>).data_freshness as string | null) ?? null;
+
+    const enriched = await enrichProducts(supabase, [row], { withHistory: true });
+    const product = enriched[0] ?? null;
+    if (!product) {
+      return {
+        content:
+          `I couldn't find a verified price for ${row.name}, so I cannot judge whether its price is competitive — ` +
+          `I only assess products with a verified price. Try naming a product from the catalog.`,
+        metadata: null,
+      };
+    }
+
+    // Merchant comparison: every live listing for this product, so
+    // the cheapest merchant is named from recorded rows, not memory.
+    const { data: listingsData } = await supabase
+      .from('merchant_products')
+      .select('merchant_id, price, in_stock')
+      .eq('product_id', row.id)
+      .is('deleted_at', null)
+      .order('price', { ascending: true });
+    const listingRows = ((listingsData ?? []) as Array<Record<string, unknown>>)
+      .map((r) => ({ merchantId: r.merchant_id as string, price: parseFloat(String(r.price)) }))
+      .filter((l) => Number.isFinite(l.price) && l.price > 0);
+    const merchantIds = [...new Set(listingRows.map((l) => l.merchantId))];
+    const merchantNames = new Map<string, string>();
+    if (merchantIds.length > 0) {
+      const { data: merchantRows } = await supabase
+        .from('merchants')
+        .select('id, name')
+        .in('id', merchantIds);
+      for (const m of (merchantRows ?? []) as Array<Record<string, unknown>>) {
+        merchantNames.set(m.id as string, m.name as string);
+      }
+    }
+
+    const lines: string[] = [];
+    lines.push(`💰 Is the price of ${row.name} competitive?`);
+    lines.push(
+      `Current verified price: ${formatPriceText(product.price, region)} at ${product.bestRetailer.name} ` +
+        `(${retailerDomain(product.bestRetailer, region)}).`
+    );
+
+    if (listingRows.length > 1) {
+      const cheapest = listingRows[0];
+      const dearest = listingRows[listingRows.length - 1];
+      lines.push(
+        `${listingRows.length} merchants list this product. Cheapest: ` +
+          `${merchantNames.get(cheapest.merchantId) ?? 'Retailer'} at ${formatPriceText(cheapest.price, region)}; ` +
+          `most expensive: ${merchantNames.get(dearest.merchantId) ?? 'Retailer'} at ${formatPriceText(dearest.price, region)}.`
+      );
+    } else if (listingRows.length === 1) {
+      lines.push('Only one merchant lists this product, so there is no merchant comparison to make.');
+    }
+
+    const h = product.history;
+    // A verdict needs at least 2 recorded points: with a single
+    // point, lowest = average = highest = current, so "at its
+    // lowest" would be vacuous. Below 2 points the honest answer
+    // is not enough data (same bar as the buy-vs-wait engine).
+    if (!h || h.points < 2) {
+      lines.push(
+        'I don\'t have enough recorded price history to judge whether this price is competitive — ' +
+          'no price history is recorded for this product yet, so there is no low or average to compare against.'
+      );
+    } else {
+      lines.push(
+        `Recorded price history (${h.points} point${h.points === 1 ? '' : 's'}): ` +
+          `lowest ${formatPriceText(h.lowest, region)}, average ${formatPriceText(h.average, region)}, ` +
+          `highest ${formatPriceText(h.highest, region)}.`
+      );
+      const range = h.highest - h.lowest;
+      if (h.current <= h.lowest) {
+        lines.push('Verdict: yes — competitive. It is at its lowest recorded price right now.');
+      } else if (range <= 0) {
+        lines.push(
+          'Verdict: the recorded price has not moved across its history, so there is no recorded basis to call it a bargain or overpriced — it is the only recorded price.'
+        );
+      } else {
+        const position = (h.current - h.lowest) / range;
+        if (position <= 0.25) {
+          lines.push('Verdict: yes — competitive. It is near its lowest recorded price.');
+        } else if (h.current <= h.average) {
+          lines.push('Verdict: fairly competitive — below its recorded average price.');
+        } else if (position <= 0.75) {
+          lines.push('Verdict: mixed — above its recorded average price, but below its recorded high.');
+        } else {
+          lines.push('Verdict: not competitive right now — near its highest recorded price.');
+        }
+      }
+    }
+
+    const freshDate = formatLabelDate(dataFreshness);
+    lines.push(
+      freshDate
+        ? `Price last checked ${freshDate} — a competitiveness verdict is only as fresh as its last recorded check.`
+        : 'Price age unknown — the product records no freshness timestamp, so treat this as a recorded-price comparison, not a live check.'
+    );
+    lines.push('Open the product card below for the full price history and to set a price alert.');
+
+    return {
+      content: lines.join('\n'),
+      metadata: {
+        products: [toCard(product)],
+        intent: 'price_competitiveness',
+      },
+    };
+  } catch (err) {
+    logger.error('competitivenessAssistant: unexpected error', { error: String(err) });
+    return {
+      content: 'Sorry, I could not judge price competitiveness right now. Please try again.',
+      metadata: null,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pros / cons intent
+// ---------------------------------------------------------------------------
+
+/**
+ * Answer "pros and cons?" from the REAL ai-summary output (Section
+ * 19, Phase 5, §12 #54) plus real recorded signals — never invented
+ * pros/cons. The summary service (Phase 0/2) is honest by
+ * construction: with 0 reviews + 0 specs its pros say there is not
+ * enough data to assess quality, and this handler repeats that
+ * instead of filling the gap. Recorded signals (price position,
+ * reviews, discount, specs presence) are listed separately, and
+ * what ISN'T known is named explicitly.
+ */
+export async function prosConsAssistant(
+  supabase: AnySupabaseClient,
+  message: string,
+  region: Region = FALLBACK_REGION
+): Promise<AssistantAnswer> {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select(
+        'id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at'
+      )
+      .is('deleted_at', null)
+      .neq('slug', 'sample-laptop')
+      .order('confidence_score', { ascending: false })
+      .limit(50);
+
+    if (error || !data || data.length === 0) {
+      return {
+        content:
+          'I could not look up any products right now, so I cannot list pros and cons. Please try again.',
+        metadata: null,
+      };
+    }
+
+    const matched = matchProductsByName(message, data as unknown as BasicProductRow[]);
+    if (matched.length === 0) {
+      return {
+        content:
+          'I can list the pros and cons of a product from its recorded data — which product? ' +
+          'For example, "what are the pros and cons of the MacBook Air 13?"',
+        metadata: null,
+      };
+    }
+
+    const row = matched[0];
+    const summary = await getAISummary(supabase, row as unknown as Product);
+    if (!summary) {
+      return {
+        content:
+          `I could not build a pros-and-cons list for ${row.name} right now. Please try again.`,
+        metadata: null,
+      };
+    }
+
+    const enriched = await enrichProducts(supabase, [row], { withHistory: true });
+    const product = enriched[0] ?? null;
+
+    // Specs presence: one probe row — a product with no recorded
+    // specifications cannot be assessed on battery, RAM or similar
+    // qualities, and the answer must say that.
+    let hasSpecs = false;
+    try {
+      const { data: attrRows } = await supabase
+        .from('product_attributes')
+        .select('id')
+        .eq('product_id', row.id)
+        .limit(1);
+      hasSpecs = ((attrRows ?? []) as unknown[]).length > 0;
+    } catch {
+      hasSpecs = false;
+    }
+
+    const lines: string[] = [];
+    lines.push(`⚖️ Pros and cons of ${row.name}:`);
+    lines.push('');
+    lines.push('Pros:');
+    for (const pro of summary.pros) lines.push(`• ${pro}`);
+    lines.push('');
+    lines.push('Cons:');
+    for (const con of summary.cons) lines.push(`• ${con}`);
+
+    // Recorded signals, kept separate from the summary's own
+    // pros/cons so the reader can tell what came from where.
+    const signalLines: string[] = [];
+    if (product) {
+      if (product.history) {
+        if (product.history.current <= product.history.lowest) {
+          signalLines.push(
+            `At its lowest recorded price (${formatPriceText(product.history.current, region)}).`
+          );
+        } else if (
+          product.history.highest > product.history.lowest &&
+          product.history.current >= product.history.highest * 0.95 &&
+          product.history.current > product.history.lowest * 1.05
+        ) {
+          signalLines.push(
+            `Near its highest recorded price (${formatPriceText(product.history.current, region)} vs a recorded high of ${formatPriceText(product.history.highest, region)}).`
+          );
+        }
+      }
+      if (product.reviewCount === 0) {
+        signalLines.push('No reviews are recorded for this product.');
+      } else {
+        signalLines.push(
+          `${product.reviewCount} review${product.reviewCount === 1 ? '' : 's'} recorded` +
+            (product.reviewAvg !== null ? ` (average ${product.reviewAvg}/5)` : '') +
+            '.'
+        );
+      }
+      const savings = savingsText(product);
+      if (savings) signalLines.push(`Comes with ${savings}.`);
+    }
+    if (signalLines.length > 0) {
+      lines.push('');
+      lines.push('From recorded data:');
+      for (const s of signalLines) lines.push(`• ${s}`);
+    }
+
+    const unknown: string[] = [];
+    if ((product?.reviewCount ?? 0) === 0) {
+      unknown.push('real buyer experience (no reviews recorded)');
+    }
+    if (!hasSpecs) {
+      unknown.push('battery life, RAM and similar qualities (no specifications recorded)');
+    }
+    if (unknown.length > 0) {
+      lines.push('');
+      lines.push(`What isn't known: ${unknown.join('; ')} — these cannot be assessed from recorded data, so no claim is made about them.`);
+    }
+    if (summary.freshnessNote) {
+      lines.push('');
+      lines.push(summary.freshnessNote);
+    }
+    lines.push('Open the product card below for the full summary and price history.');
+
+    return {
+      content: lines.join('\n'),
+      metadata: {
+        products: product ? [toCard(product)] : [],
+        intent: 'pros_cons',
+      },
+    };
+  } catch (err) {
+    logger.error('prosConsAssistant: unexpected error', { error: String(err) });
+    return {
+      content: 'Sorry, I could not list pros and cons right now. Please try again.',
       metadata: null,
     };
   }

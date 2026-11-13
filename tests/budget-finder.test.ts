@@ -28,6 +28,9 @@ describe('parseBudgetFinderParams', () => {
       budgetOriginal: 1000,
       budgetCurrency: 'USD',
       budgetError: null,
+      needBy: null,
+      needByError: null,
+      specInputs: {},
     });
   });
 
@@ -38,6 +41,9 @@ describe('parseBudgetFinderParams', () => {
       budgetOriginal: null,
       budgetCurrency: null,
       budgetError: null,
+      needBy: null,
+      needByError: null,
+      specInputs: {},
     });
   });
 
@@ -48,6 +54,9 @@ describe('parseBudgetFinderParams', () => {
       budgetOriginal: null,
       budgetCurrency: null,
       budgetError: null,
+      needBy: null,
+      needByError: null,
+      specInputs: {},
     });
     expect(parseBudgetFinderParams({ budget: '250' })).toEqual({
       category: null,
@@ -55,6 +64,9 @@ describe('parseBudgetFinderParams', () => {
       budgetOriginal: 250,
       budgetCurrency: 'USD',
       budgetError: null,
+      needBy: null,
+      needByError: null,
+      specInputs: {},
     });
   });
 
@@ -78,6 +90,9 @@ describe('parseBudgetFinderParams', () => {
       budgetOriginal: 500,
       budgetCurrency: 'USD',
       budgetError: null,
+      needBy: null,
+      needByError: null,
+      specInputs: {},
     });
   });
 
@@ -90,6 +105,9 @@ describe('parseBudgetFinderParams', () => {
       budgetOriginal: 20000,
       budgetCurrency: 'PKR',
       budgetError: null,
+      needBy: null,
+      needByError: null,
+      specInputs: {},
     });
     expect(parseBudgetFinderParams({ budget: '20000 pkr' }).budgetUsd).toBe(71);
     expect(parseBudgetFinderParams({ budget: 'under $500' })).toEqual({
@@ -98,6 +116,9 @@ describe('parseBudgetFinderParams', () => {
       budgetOriginal: 500,
       budgetCurrency: 'USD',
       budgetError: null,
+      needBy: null,
+      needByError: null,
+      specInputs: {},
     });
     expect(parseBudgetFinderParams({ budget: '€500' }).budgetUsd).toBe(540);
   });

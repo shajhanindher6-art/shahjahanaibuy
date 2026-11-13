@@ -105,10 +105,13 @@ describe('checkRateLimit (in-memory fallback bucket)', () => {
 
   it('resets after the window expires', async () => {
     const id = `test-bucket-reset-${Date.now()}-${Math.random()}`;
-    checkRateLimit(id, 1, 20);
-    expect(checkRateLimit(id, 1, 20).allowed).toBe(false);
-    await new Promise((r) => setTimeout(r, 30));
-    expect(checkRateLimit(id, 1, 20).allowed).toBe(true);
+    // Section 19, Phase 0 (§12 #90): window 100ms / sleep 150ms
+    // (was 20ms / 30ms) — the 10ms margin was the thinnest timing
+    // assertion in the suite and a flaky-test candidate under load.
+    checkRateLimit(id, 1, 100);
+    expect(checkRateLimit(id, 1, 100).allowed).toBe(false);
+    await new Promise((r) => setTimeout(r, 150));
+    expect(checkRateLimit(id, 1, 100).allowed).toBe(true);
   });
 
   it('keeps separate buckets per identifier', () => {

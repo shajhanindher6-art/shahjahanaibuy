@@ -122,10 +122,15 @@ describe('SignUpPage — signup → dashboard flow', () => {
       email: 'test@example.test',
       password: 'short',
     });
-    await waitFor(() =>
-      expect(
-        screen.getByText('Password must be at least 8 characters long')
-      ).toBeTruthy()
+    await waitFor(
+      () =>
+        expect(
+          screen.getByText('Password must be at least 8 characters long')
+        ).toBeTruthy(),
+      // Section 19, Phase 0 (§12 #90): explicit 5s timeout — the
+      // 1s default timed out under parallel load (the audit's
+      // flaky-test episode: 2 tests failed once, green on re-run).
+      { timeout: 5000 }
     );
     expect(fakeAuth.signUp).not.toHaveBeenCalled();
     expect(fakeRouter.push).not.toHaveBeenCalled();
@@ -139,8 +144,12 @@ describe('SignUpPage — signup → dashboard flow', () => {
       email: 'test@example.test',
       password: 'correct-horse-battery',
     });
-    await waitFor(() =>
-      expect(fakeRouter.push).toHaveBeenCalledWith('/dashboard')
+    await waitFor(
+      () => expect(fakeRouter.push).toHaveBeenCalledWith('/dashboard'),
+      // Section 19, Phase 0 (§12 #90): explicit 5s timeout (see
+      // the first waitFor in this file — default 1s is too tight
+      // under parallel load).
+      { timeout: 5000 }
     );
     expect(fakeAuth.signUp).toHaveBeenCalledWith(
       'test@example.test',
@@ -160,10 +169,12 @@ describe('SignUpPage — signup → dashboard flow', () => {
       email: 'test@example.test',
       password: 'correct-horse-battery',
     });
-    await waitFor(() =>
-      expect(
-        screen.getByText('Account created! Check your email to confirm your account.')
-      ).toBeTruthy()
+    await waitFor(
+      () =>
+        expect(
+          screen.getByText('Account created! Check your email to confirm your account.')
+        ).toBeTruthy(),
+      { timeout: 5000 }
     );
     expect(fakeRouter.push).not.toHaveBeenCalled();
   });
@@ -179,12 +190,14 @@ describe('SignUpPage — signup → dashboard flow', () => {
       email: 'test@example.test',
       password: 'correct-horse-battery',
     });
-    await waitFor(() =>
-      expect(
-        screen.getByText(
-          'Failed to create your account. Check your connection and try again.'
-        )
-      ).toBeTruthy()
+    await waitFor(
+      () =>
+        expect(
+          screen.getByText(
+            'Failed to create your account. Check your connection and try again.'
+          )
+        ).toBeTruthy(),
+      { timeout: 5000 }
     );
     expect(fakeRouter.push).not.toHaveBeenCalled();
   });

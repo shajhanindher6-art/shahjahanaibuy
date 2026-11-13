@@ -41,6 +41,8 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { discountPercent } from '@/lib/deal-math';
+import { savingsVsBudget, savingsVsCompareAt } from '@/lib/budget-savings';
+import { parseNeedByDate, timelineAdvice } from '@/lib/budget-timeline';
 import { dealScoreForDisplay } from '@/lib/deal-score';
 import { parseSearchIntent } from './ai-search';
 import { parseBudgetFromQuery } from './currency';
@@ -77,6 +79,40 @@ export interface GuidedCandidate {
 export interface GuidedPick extends GuidedCandidate {
   /** Merchant-basis saving %, or null when there is no compare-at price. */
   savingPct: number | null;
+  /**
+   * Section 19, Phase 4 (§12 #36) — dollars saved vs the recorded
+   * compare-at (was) price, or null when there is no compare-at
+   * price. The % alone never said how much money a saving is.
+   */
+  savingsUsd: number | null;
+  /**
+   * Section 19, Phase 4 (§12 #36) — budget minus price (positive =
+   * money left over, negative = over budget), or null when no
+   * budget was given. The hard filter already drops over-budget
+   * picks, so this is >= 0 for every pick — it is the "how much of
+   * my budget is left" answer, not a second filter.
+   */
+  savingsVsBudgetUsd: number | null;
+  /**
+   * Section 19, Phase 4 (§12 #37) — the deadline's effect on this
+   * pick: null when no deadline was given, otherwise the honest
+   * note (near deadline → waiting is not offered; far deadline →
+   * waiting is possible in principle but no drop is predicted).
+   */
+  timelineNote: string | null;
+  /**
+   * Section 19, Phase 4 (§12 #37) — false when the deadline is
+   * near (<= 14 days): with only 4 recorded price points no drop
+   * can be predicted before it, so "wait" is not offered. True
+   * when there is no deadline or it is far away.
+   */
+  waitRecommended: boolean;
+  /**
+   * Section 19, Phase 4 (§12 #46) — structured spec inputs this
+   * pick matched, as "Label: value" strings (e.g. "RAM: 16 GB").
+   * Empty when no spec inputs were given.
+   */
+  specMatches: string[];
   /** Category + brand + matched must-haves (relevance signal). */
   matchCount: number;
   /** Short factual reasons, one per matched signal — never invented. */
@@ -95,6 +131,23 @@ export interface GuidedFinderInput {
   brand?: string | null;
   /** Must-have phrases, e.g. ["Long battery life"]. */
   mustHaveKeywords?: string[];
+  /**
+   * Section 19, Phase 4 (§12 #37) — "need by" date, YYYY-MM-DD,
+   * or null for no deadline. A near deadline changes the output
+   * (see `timelineNote` / `waitRecommended` on GuidedPick); an
+   * invalid date is ignored by the ranker (the param parsers
+   * report it instead).
+   */
+  needBy?: string | null;
+  /**
+   * Section 19, Phase 4 (§12 #46) — structured spec inputs, as
+   * { specKey: value } (e.g. { ram: '16 GB', storage: '512 GB' }).
+   * Keys/values must come from GUIDED_SPEC_OPTIONS for the
+   * pick's category — anything else is ignored by the ranker (the
+   * param parsers report it instead). Each input is a HARD filter
+   * on the product text (see the spec-matching note below).
+   */
+  specInputs?: Record<string, string>;
   /** 'match' (quiz: relevance first) or 'deal' (budget finder:
    *  biggest saving first). Same function, same filters — only
    *  the sort priority differs. */
@@ -109,6 +162,10 @@ export interface GuidedAnswers {
   budgetUsd: number | null;
   brand: string | null;
   mustHaves: string[];
+  /** Section 19, Phase 4 (§12 #37) — "need by" date, YYYY-MM-DD, or null. */
+  needBy?: string | null;
+  /** Section 19, Phase 4 (§12 #46) — structured spec inputs, e.g. { ram: '16 GB' }. */
+  specs?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +221,102 @@ export const GUIDED_MUST_HAVES: string[] = [
   'Touchscreen',
   'Noise cancelling',
 ];
+
+// ---------------------------------------------------------------------------
+// Structured spec inputs (Section 19, Phase 4, §12 #46)
+// ---------------------------------------------------------------------------
+
+/**
+ * Structured spec choices per category (keyed by the normalized
+ * category the ranker derives — see `specOptionsForCategory`).
+ * These are CHOICES, not free text: a shared link or a form submit
+ * can only ever carry a value listed here, so a spec input can
+ * never inject an arbitrary filter.
+ *
+ * HONESTY NOTE (read before extending this list): the catalog has
+ * ZERO structured spec rows live — no product carries a recorded
+ * RAM, storage, or battery figure. Spec inputs are therefore
+ * matched against the product's name / brand / category /
+ * description text only (see `specValueMatches`). A product that
+ * meets the spec but never mentions it in its description will
+ * NOT appear, and the pages say so next to the results
+ * (GUIDED_SPEC_DATA_NOTE). Never present a spec match as a
+ * verified specification — it is a text match, and the `why` line
+ * says "mentions" for exactly that reason.
+ */
+export interface GuidedSpecOption {
+  key: string;
+  label: string;
+  options: string[];
+}
+
+export const GUIDED_SPEC_OPTIONS: Record<string, GuidedSpecOption[]> = {
+  laptop: [
+    { key: 'ram', label: 'RAM', options: ['8 GB', '16 GB', '32 GB'] },
+    { key: 'storage', label: 'Storage', options: ['256 GB', '512 GB', '1 TB'] },
+  ],
+  phone: [
+    { key: 'storage', label: 'Storage', options: ['128 GB', '256 GB', '512 GB'] },
+    { key: 'connectivity', label: 'Connectivity', options: ['5G'] },
+  ],
+  headphones: [
+    { key: 'noiseCancelling', label: 'Noise cancelling', options: ['Noise cancelling'] },
+    { key: 'battery', label: 'Battery life', options: ['24 hours'] },
+  ],
+  camera: [
+    { key: 'display', label: 'Video', options: ['4K'] },
+  ],
+  tv: [
+    { key: 'display', label: 'Display', options: ['4K', 'OLED'] },
+  ],
+  tablet: [
+    { key: 'storage', label: 'Storage', options: ['128 GB', '256 GB'] },
+  ],
+  watch: [
+    { key: 'battery', label: 'Battery life', options: ['24 hours', '7 days', '14 days'] },
+  ],
+};
+
+/** Spec options for a category (normalized the same way the ranker normalizes categories). Returns [] for categories with no spec inputs. */
+export function specOptionsForCategory(category: string | null | undefined): GuidedSpecOption[] {
+  if (!category) return [];
+  const parsed = parseSearchIntent(category).category ?? category.toLowerCase().trim();
+  return GUIDED_SPEC_OPTIONS[parsed.toLowerCase()] ?? [];
+}
+
+/** The honest caveat shown whenever spec inputs were used. */
+export const GUIDED_SPEC_DATA_NOTE =
+  'No structured specification data is recorded for products yet — spec choices are matched against product names and descriptions only, so a product that meets your spec but doesn\u2019t mention it in its description won\u2019t appear.';
+
+/** Validate a { key: value } spec map against the options for a category. Returns the valid entries only; unknown keys/values are dropped, never guessed. */
+export function validateSpecInputs(
+  category: string | null | undefined,
+  raw: Record<string, unknown> | null | undefined
+): Record<string, string> {
+  if (!raw || typeof raw !== 'object') return {};
+  const options = specOptionsForCategory(category);
+  const valid: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const option = options.find((o) => o.key === key);
+    if (option && typeof value === 'string' && option.options.includes(value)) {
+      valid[key] = value;
+    }
+  }
+  return valid;
+}
+
+/**
+ * A spec value matches when its space-stripped lowercase form
+ * appears in the space-stripped product text — so "16 GB" matches
+ * a description saying "16GB RAM", and "Noise cancelling" matches
+ * "noise-cancelling headphones". This is a TEXT match (see the
+ * honesty note above), never a verified spec.
+ */
+export function specValueMatches(value: string, haystack: string): boolean {
+  const needle = value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  if (needle.length < 2) return false;
+  return haystack.toLowerCase().replace(/[^a-z0-9]+/g, '').includes(needle);
+}
 
 /** Categories offered by the Budget Finder form (raw labels; the
  *  ranker normalizes them via parseSearchIntent). */
@@ -258,6 +411,16 @@ export function rankGuidedPicks(
     (m) => typeof m === 'string' && m.trim().length > 0
   );
 
+  // Section 19, Phase 4 (§12 #37/#46) — the deadline and the
+  // structured specs. Both are validated here, never trusted:
+  // an invalid date yields no timeline advice (the param parsers
+  // report it to the user), and spec keys/values outside
+  // GUIDED_SPEC_OPTIONS are dropped.
+  const needByParsed = parseNeedByDate(input.needBy ?? null);
+  const advice = needByParsed.date ? timelineAdvice(needByParsed.date) : null;
+  const specInputs = validateSpecInputs(parsedCategory, input.specInputs ?? {});
+  const specOptions = specOptionsForCategory(parsedCategory);
+
   const picks: GuidedPick[] = [];
 
   for (const c of candidates) {
@@ -287,6 +450,23 @@ export function rankGuidedPicks(
     const haystack = [c.name, c.brand ?? '', c.category ?? '', c.description ?? '']
       .join(' ')
       .toLowerCase();
+
+    // Structured specs are HARD filters, like budget/category/
+    // brand: a product whose text never mentions the requested spec
+    // is not a pick. (Text match only — see the §12 #46 honesty
+    // note on GUIDED_SPEC_OPTIONS; 0 spec rows exist live.)
+    const specMatches: string[] = [];
+    let specFailed = false;
+    for (const [key, value] of Object.entries(specInputs)) {
+      if (!specValueMatches(value, haystack)) {
+        specFailed = true;
+        break;
+      }
+      const label = specOptions.find((o) => o.key === key)?.label ?? key;
+      specMatches.push(`${label}: ${value}`);
+    }
+    if (specFailed) continue;
+
     const matchedMustHaves: string[] = [];
     let mustHaveFailed = false;
     for (const phrase of mustHaves) {
@@ -300,6 +480,10 @@ export function rankGuidedPicks(
     if (mustHaveFailed) continue;
 
     const savingPct = discountPercent(price, c.compareAtUsd);
+    // Section 19, Phase 4 (§12 #36) — the saving in dollars, and
+    // the money left of the budget, from recorded prices only.
+    const vsCompareAtSaving = savingsVsCompareAt(price, c.compareAtUsd);
+    const vsBudget = budget !== null ? savingsVsBudget(price, budget) : null;
     const why: string[] = [];
     if (budget !== null) {
       why.push(`$${price.toFixed(2)} — within your $${budget.toFixed(2)} budget`);
@@ -313,14 +497,28 @@ export function rankGuidedPicks(
     if (matchedMustHaves.length > 0) {
       why.push(`Matches your must-haves: ${Array.from(new Set(matchedMustHaves)).join(', ')}`);
     }
+    if (specMatches.length > 0) {
+      why.push(`Mentions your specs: ${specMatches.join(', ')}`);
+    }
     if (savingPct !== null && c.compareAtUsd !== null) {
-      why.push(`Save ${savingPct}% vs $${c.compareAtUsd.toFixed(2)}`);
+      why.push(
+        `Save ${savingPct}% vs $${c.compareAtUsd.toFixed(2)}` +
+          (vsCompareAtSaving ? ` ($${vsCompareAtSaving.savedUsd.toFixed(2)})` : '')
+      );
+    }
+    if (vsBudget) {
+      why.push(`$${vsBudget.remainingUsd.toFixed(2)} left of your $${budget?.toFixed(2)} budget`);
     }
     if (c.dealScore !== null) why.push(`Deal Score ${c.dealScore}/100`);
 
     picks.push({
       ...c,
       savingPct,
+      savingsUsd: vsCompareAtSaving ? vsCompareAtSaving.savedUsd : null,
+      savingsVsBudgetUsd: vsBudget ? vsBudget.remainingUsd : null,
+      timelineNote: advice ? advice.note : null,
+      waitRecommended: advice ? advice.waitOffered : true,
+      specMatches,
       matchCount:
         (parsedCategory ? 1 : 0) + (brandNorm ? 1 : 0) + matchedMustHaves.length,
       why,
@@ -407,6 +605,14 @@ export function rankRelaxedGuidedPicks(
     : null;
   const brandNorm = input.brand ? input.brand.toLowerCase().trim() : null;
 
+  // Section 19, Phase 4 (§12 #37/#46) — same deadline + spec
+  // handling as the exact pass; specs stay HARD here (only
+  // must-haves relax).
+  const needByParsed = parseNeedByDate(input.needBy ?? null);
+  const advice = needByParsed.date ? timelineAdvice(needByParsed.date) : null;
+  const specInputs = validateSpecInputs(parsedCategory, input.specInputs ?? {});
+  const specOptions = specOptionsForCategory(parsedCategory);
+
   const picks: GuidedRelaxedPick[] = [];
 
   for (const c of candidates) {
@@ -428,6 +634,17 @@ export function rankRelaxedGuidedPicks(
     const haystack = [c.name, c.brand ?? '', c.category ?? '', c.description ?? '']
       .join(' ')
       .toLowerCase();
+    const specMatches: string[] = [];
+    let specFailed = false;
+    for (const [key, value] of Object.entries(specInputs)) {
+      if (!specValueMatches(value, haystack)) {
+        specFailed = true;
+        break;
+      }
+      const label = specOptions.find((o) => o.key === key)?.label ?? key;
+      specMatches.push(`${label}: ${value}`);
+    }
+    if (specFailed) continue;
     const matchedPhrases: string[] = [];
     const missedMustHaves: string[] = [];
     const matchedKeywords: string[] = [];
@@ -444,6 +661,11 @@ export function rankRelaxedGuidedPicks(
     if (matchedPhrases.length === 0) continue;
 
     const savingPct = discountPercent(price, c.compareAtUsd);
+    // Section 19, Phase 4 (§12 #36/#37/#46) — same new fields as
+    // the exact pass: dollar savings, deadline note, spec matches.
+    // Specs stay HARD here too (only must-haves relax).
+    const vsCompareAtSaving = savingsVsCompareAt(price, c.compareAtUsd);
+    const vsBudget = budget !== null ? savingsVsBudget(price, budget) : null;
     const why: string[] = [];
     if (budget !== null) {
       why.push(`$${price.toFixed(2)} — within your $${budget.toFixed(2)} budget`);
@@ -459,14 +681,28 @@ export function rankRelaxedGuidedPicks(
         `Matches ${matchedPhrases.length} of ${mustHaves.length} must-haves: ${Array.from(new Set(matchedKeywords)).join(', ')}`
       );
     }
+    if (specMatches.length > 0) {
+      why.push(`Mentions your specs: ${specMatches.join(', ')}`);
+    }
     if (savingPct !== null && c.compareAtUsd !== null) {
-      why.push(`Save ${savingPct}% vs $${c.compareAtUsd.toFixed(2)}`);
+      why.push(
+        `Save ${savingPct}% vs $${c.compareAtUsd.toFixed(2)}` +
+          (vsCompareAtSaving ? ` ($${vsCompareAtSaving.savedUsd.toFixed(2)})` : '')
+      );
+    }
+    if (vsBudget) {
+      why.push(`$${vsBudget.remainingUsd.toFixed(2)} left of your $${budget?.toFixed(2)} budget`);
     }
     if (c.dealScore !== null) why.push(`Deal Score ${c.dealScore}/100`);
 
     picks.push({
       ...c,
       savingPct,
+      savingsUsd: vsCompareAtSaving ? vsCompareAtSaving.savedUsd : null,
+      savingsVsBudgetUsd: vsBudget ? vsBudget.remainingUsd : null,
+      timelineNote: advice ? advice.note : null,
+      waitRecommended: advice ? advice.waitOffered : true,
+      specMatches,
       matchCount:
         (parsedCategory ? 1 : 0) + (brandNorm ? 1 : 0) + matchedKeywords.length,
       why,
@@ -520,6 +756,10 @@ export function encodeQuizAnswers(answers: GuidedAnswers): string {
       budgetUsd: answers.budgetUsd,
       brand: answers.brand,
       mustHaves: answers.mustHaves,
+      // Section 19, Phase 4 (§12 #37/#46) — omitted when unset, so
+      // old links (without them) still decode.
+      ...(answers.needBy ? { needBy: answers.needBy } : {}),
+      ...(answers.specs && Object.keys(answers.specs).length > 0 ? { specs: answers.specs } : {}),
     })
   );
 }
@@ -555,11 +795,35 @@ export function decodeQuizAnswers(raw: string | null | undefined): GuidedAnswers
     ) {
       return null;
     }
+    // Section 19, Phase 4 (§12 #37/#46) — optional on old links.
+    // An invalid date or an unknown spec key/value rejects the
+    // whole link, same as an unknown use-case/brand/must-have.
+    const needBy = obj.needBy;
+    if (needBy !== undefined && needBy !== null) {
+      if (typeof needBy !== 'string' || parseNeedByDate(needBy).error !== null) {
+        return null;
+      }
+    }
+    const specs = obj.specs;
+    if (specs !== undefined && specs !== null) {
+      if (typeof specs !== 'object' || Array.isArray(specs)) return null;
+      const intent = parseSearchIntent(useCase);
+      const valid = validateSpecInputs(intent.category, specs as Record<string, unknown>);
+      if (Object.keys(valid).length !== Object.keys(specs as Record<string, unknown>).length) {
+        return null;
+      }
+    }
     return {
       useCase,
       budgetUsd: budgetUsd as number | null,
       brand: brand as string | null,
       mustHaves: mustHaves as string[],
+      // Omitted when unset, so links written before §12 #37/#46
+      // decode to exactly the old shape.
+      ...(needBy ? { needBy: needBy as string } : {}),
+      ...(specs && Object.keys(specs as Record<string, unknown>).length > 0
+        ? { specs: specs as Record<string, string> }
+        : {}),
     };
   } catch {
     return null;
@@ -576,6 +840,8 @@ export function answersToFinderInput(answers: GuidedAnswers): GuidedFinderInput 
     budgetUsd: answers.budgetUsd,
     brand: answers.brand,
     mustHaveKeywords: answers.mustHaves,
+    needBy: answers.needBy ?? null,
+    specInputs: answers.specs ?? {},
     sortBy: 'match',
   };
 }
@@ -595,6 +861,8 @@ export function answersToFinderInput(answers: GuidedAnswers): GuidedFinderInput 
 export function parseBudgetFinderParams(searchParams: {
   category?: string | string[];
   budget?: string | string[];
+  needBy?: string | string[];
+  [key: string]: string | string[] | undefined;
 }): {
   category: string | null;
   budgetUsd: number | null;
@@ -603,6 +871,19 @@ export function parseBudgetFinderParams(searchParams: {
   /** Currency written (or 'USD' for a bare number); null when no budget was given. */
   budgetCurrency: string | null;
   budgetError: string | null;
+  /**
+   * Section 19, Phase 4 (§12 #37) — the "need by" date, YYYY-MM-DD,
+   * or null when not given. An invalid date is an error, not
+   * silently treated as "no deadline".
+   */
+  needBy: string | null;
+  needByError: string | null;
+  /**
+   * Section 19, Phase 4 (§12 #46) — structured spec inputs from
+   * `spec_<key>` params, validated against GUIDED_SPEC_OPTIONS
+   * for the chosen category (unknown keys/values dropped).
+   */
+  specInputs: Record<string, string>;
 } {
   const rawCategory = Array.isArray(searchParams.category)
     ? searchParams.category[0]
@@ -610,9 +891,25 @@ export function parseBudgetFinderParams(searchParams: {
   const rawBudget = Array.isArray(searchParams.budget)
     ? searchParams.budget[0]
     : searchParams.budget;
+  const rawNeedBy = Array.isArray(searchParams.needBy)
+    ? searchParams.needBy[0]
+    : searchParams.needBy;
   const category = rawCategory && rawCategory.trim().length > 0 ? rawCategory.trim() : null;
+  // Section 19, Phase 4 (§12 #37/#46) — validated once, shared by
+  // the page and the API route.
+  const needByCheck = parseNeedByDate(rawNeedBy ?? null);
+  const needBy = needByCheck.date ? needByCheck.date.toISOString().slice(0, 10) : null;
+  const needByError = needByCheck.error;
+  const specRaw: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(searchParams)) {
+    if (!key.startsWith('spec_')) continue;
+    const specKey = key.slice('spec_'.length);
+    if (specKey.length === 0) continue;
+    specRaw[specKey] = Array.isArray(value) ? value[0] : value;
+  }
+  const specInputs = validateSpecInputs(category, specRaw);
   if (!rawBudget || rawBudget.trim().length === 0) {
-    return { category, budgetUsd: null, budgetOriginal: null, budgetCurrency: null, budgetError: null };
+    return { category, budgetUsd: null, budgetOriginal: null, budgetCurrency: null, budgetError: null, needBy, needByError, specInputs };
   }
   const trimmed = rawBudget.trim();
   // Multi-currency first ("20K PKR", "under $500", "€500") — the
@@ -625,15 +922,18 @@ export function parseBudgetFinderParams(searchParams: {
       budgetOriginal: parsed.budgetOriginal,
       budgetCurrency: parsed.budgetCurrency,
       budgetError: null,
+      needBy,
+      needByError,
+      specInputs,
     };
   }
   // Bare number ("1000") — parseBudgetFromQuery only fires on a
   // keyword / symbol / currency signal, so plain numbers land here.
   const budgetUsd = Number(trimmed);
   if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) {
-    return { category, budgetUsd: null, budgetOriginal: null, budgetCurrency: null, budgetError: `"${rawBudget}" is not a valid budget — enter a positive amount, e.g. 1000 or "20K PKR".` };
+    return { category, budgetUsd: null, budgetOriginal: null, budgetCurrency: null, budgetError: `"${rawBudget}" is not a valid budget — enter a positive amount, e.g. 1000 or "20K PKR".`, needBy, needByError, specInputs };
   }
-  return { category, budgetUsd, budgetOriginal: budgetUsd, budgetCurrency: 'USD', budgetError: null };
+  return { category, budgetUsd, budgetOriginal: budgetUsd, budgetCurrency: 'USD', budgetError: null, needBy, needByError, specInputs };
 }
 
 // ---------------------------------------------------------------------------

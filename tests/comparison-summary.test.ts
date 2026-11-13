@@ -163,14 +163,14 @@ describe('buildComparisonBadges', () => {
     expect(badges.find((b) => b.kind === 'multitasking')).toBeUndefined();
   });
 
-  it('awards Best Value for Money to the unique lowest price', () => {
+  it('awards Lowest Price to the unique lowest price', () => {
     const badges = buildComparisonBadges([
       product({ productId: 'p1', name: 'Laptop A', lowestPriceUsd: 999 }),
       product({ productId: 'p2', name: 'Laptop B', lowestPriceUsd: 1299 }),
     ]);
     expect(badges.find((b) => b.kind === 'value')).toMatchObject({
       productId: 'p1',
-      label: 'Best Value for Money',
+      label: 'Lowest Price',
       priceUsd: 999,
     });
   });

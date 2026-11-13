@@ -202,7 +202,9 @@ describe('logApiError persists to error_log', () => {
       startedAt: Date.now(),
     });
     expect(returned).toBe('req-writer');
-    await vi.waitFor(() => expect(inserts).toHaveLength(1));
+    // Section 19, Phase 0 (§12 #90): explicit 5s timeout — the
+    // 1s default is too tight under parallel load.
+    await vi.waitFor(() => expect(inserts).toHaveLength(1), { timeout: 5000 });
     expect(inserts[0].row).toMatchObject({
       level: 'error',
       message: 'boom',
@@ -221,7 +223,9 @@ describe('logApiError persists to error_log', () => {
     expect(() =>
       logApiError(new Error('boom'), { route: 'x', status: 500 })
     ).not.toThrow();
-    await vi.waitFor(() => expect(inserts).toHaveLength(1));
+    // Section 19, Phase 0 (§12 #90): explicit 5s timeout — the
+    // 1s default is too tight under parallel load.
+    await vi.waitFor(() => expect(inserts).toHaveLength(1), { timeout: 5000 });
   });
 
   it('writer failure never throws and the log line still lands', async () => {
