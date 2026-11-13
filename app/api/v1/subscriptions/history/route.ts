@@ -9,6 +9,7 @@ import { apiSuccess, internalError } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getBillingHistory } from '@/services/stripe';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'subscriptions.history' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -22,7 +23,8 @@ export async function GET(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     const history = await getBillingHistory(supabase, auth.userId);
     return apiSuccess(history);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'subscriptions.history', status: 500 });
     return internalError('Failed to fetch billing history');
   }
 }

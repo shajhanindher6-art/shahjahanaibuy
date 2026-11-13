@@ -35,6 +35,7 @@ import {
 } from '@/lib/savings';
 import { isMissingTableError } from '@/lib/agent-hunt';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const EVENT_COLUMNS = 'id, user_id, product_id, alert_id, amount_saved_usd, basis, recorded_at';
@@ -88,7 +89,8 @@ export async function GET(request: NextRequest) {
     const events = (data ?? []).map((row) => mapEventRow(row as Record<string, unknown>));
     const summary = deriveSavingsSummary(events);
     return apiSuccess({ events, ...summary, savingsEnabled: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'savings.get', status: 500 });
     return internalError('Failed to fetch savings');
   }
 }
@@ -204,7 +206,8 @@ export async function POST(request: NextRequest) {
       return internalError('Failed to record savings event');
     }
     return apiSuccess({ event: mapEventRow(data as Record<string, unknown>), savingsEnabled: true }, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'savings.post', status: 500 });
     return internalError('Failed to record savings event');
   }
 }

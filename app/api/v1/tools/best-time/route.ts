@@ -15,6 +15,7 @@ import { getProducts } from '@/services/products';
 import { getPriceHistory } from '@/services/price-history';
 import { buildBestTimeCalendar, type BestTimePoint } from '@/lib/best-time-calendar';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -51,7 +52,8 @@ export async function GET(request: NextRequest) {
       note: 'Best months come from recorded price history only. Ranges only — no exact date is promised and no future price is predicted.',
       generatedAt: new Date().toISOString(),
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.best-time', status: 500 });
     return internalError('Failed to build the best-time calendar');
   }
 }

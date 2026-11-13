@@ -21,12 +21,13 @@
  */
 
 import type { NextRequest } from 'next/server';
-import { apiSuccess, badRequest } from '@/lib/api/responses';
+import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import {
   logApiRequest,
   rateLimitResponse,
   getClientIp,
 } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import {
   buildStoreSearchUrl,
   getStoresSplit,
@@ -57,47 +58,57 @@ function toEntry(store: LocalStore, query: string | null): StoreEntry {
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'stores' });
-  const limited = await rateLimitResponse(
-    `stores:${getClientIp(request)}`,
-    120
-  );
-  if (limited) return limited;
+  const startedAt = Date.now();
 
-  const params = request.nextUrl.searchParams;
-  const rawQuery = params.get('q');
-  let query: string | null = null;
-  if (rawQuery !== null) {
-    const trimmed = rawQuery.trim();
-    if (trimmed.length === 0 || trimmed.length > 200) {
-      return badRequest(
-        'Search query must be 1-200 characters when provided'
-      );
+  // Section 19, Phase 9 (§12 #92) — outer try/catch: a throw used
+  // to be an unlogged Next 500. Only thrown (5xx) errors are
+  // logged; the deliberate 400 (bad q) below stays unlogged.
+  try {
+    const limited = await rateLimitResponse(
+      `stores:${getClientIp(request)}`,
+      120
+    );
+    if (limited) return limited;
+
+    const params = request.nextUrl.searchParams;
+    const rawQuery = params.get('q');
+    let query: string | null = null;
+    if (rawQuery !== null) {
+      const trimmed = rawQuery.trim();
+      if (trimmed.length === 0 || trimmed.length > 200) {
+        return badRequest(
+          'Search query must be 1-200 characters when provided'
+        );
+      }
+      query = trimmed;
     }
-    query = trimmed;
+
+    const detected = resolveServerCountry({
+      headerCountry: request.headers.get('x-vercel-ip-country'),
+      cookieCountry: request.cookies.get('sb-country')?.value ?? null,
+    });
+    const requested = (params.get('country') ?? '').trim().toUpperCase();
+    const countryCode =
+      requested && getRegionByCountry(requested)
+        ? requested
+        : detected.countryCode;
+    const source =
+      requested && getRegionByCountry(requested) ? 'saved' : detected.source;
+    const region = getRegionByCountry(countryCode) ?? FALLBACK_REGION;
+    const split = getStoresSplit(countryCode);
+
+    return apiSuccess({
+      country: countryCode,
+      countryName: region.name,
+      source,
+      hasLocal: split.hasLocal,
+      local: split.local.map((store) => toEntry(store, query)),
+      international: split.international.map((store) =>
+        toEntry(store, query)
+      ),
+    });
+  } catch (err) {
+    logApiError(err, { request, route: 'stores', status: 500, startedAt });
+    return internalError('Failed to load stores');
   }
-
-  const detected = resolveServerCountry({
-    headerCountry: request.headers.get('x-vercel-ip-country'),
-    cookieCountry: request.cookies.get('sb-country')?.value ?? null,
-  });
-  const requested = (params.get('country') ?? '').trim().toUpperCase();
-  const countryCode =
-    requested && getRegionByCountry(requested)
-      ? requested
-      : detected.countryCode;
-  const source =
-    requested && getRegionByCountry(requested) ? 'saved' : detected.source;
-  const region = getRegionByCountry(countryCode) ?? FALLBACK_REGION;
-  const split = getStoresSplit(countryCode);
-
-  return apiSuccess({
-    country: countryCode,
-    countryName: region.name,
-    source,
-    hasLocal: split.hasLocal,
-    local: split.local.map((store) => toEntry(store, query)),
-    international: split.international.map((store) =>
-      toEntry(store, query)
-    ),
-  });
 }

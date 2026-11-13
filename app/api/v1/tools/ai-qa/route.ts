@@ -34,6 +34,7 @@ import {
   fetchAiQaContext,
 } from '@/lib/ai-product-qa';
 
+import { logApiError } from '@/lib/api/error-logging';
 const AI_QA_LIMIT = 20;
 
 export async function POST(request: NextRequest) {
@@ -72,7 +73,8 @@ export async function POST(request: NextRequest) {
       disclaimer:
         'This is an AI answer generated from recorded specs and reviews — not an answer from the SmartBuy team. For an official answer, ask via the product page Q&A.',
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.ai-qa', status: 500 });
     return internalError('Failed to answer the question');
   }
 }

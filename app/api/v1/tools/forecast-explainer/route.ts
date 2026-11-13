@@ -33,6 +33,7 @@ import {
   type AccuracyOutcomeRow,
 } from '@/lib/prediction-accuracy';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 function explainForecast(
@@ -134,7 +135,8 @@ export async function GET(request: NextRequest) {
       note: 'Forecasts are probabilistic ranges fitted to recorded price history only — never a promised price or date. Backtests are thin while history is ~30 days: each horizon shows its trial count, and accuracy is null when there are no trials.',
       generatedAt: new Date().toISOString(),
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.forecast-explainer', status: 500 });
     return internalError('Failed to build the forecast explainer');
   }
 }

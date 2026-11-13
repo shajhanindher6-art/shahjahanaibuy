@@ -32,6 +32,7 @@ import {
   type ExpenseSource,
 } from '@/lib/expense-tracker';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const EXPENSE_COLUMNS =
@@ -121,7 +122,8 @@ export async function GET(request: NextRequest) {
       month,
       expensesEnabled: true,
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.expenses.get', status: 500 });
     return internalError('Failed to fetch expenses');
   }
 }
@@ -186,7 +188,8 @@ export async function POST(request: NextRequest) {
     const expense = mapExpenseRow(data as Record<string, unknown>);
     if (!expense) return internalError('Failed to record expense');
     return apiSuccess({ expense, expensesEnabled: true }, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.expenses.post', status: 500 });
     return internalError('Failed to record expense');
   }
 }

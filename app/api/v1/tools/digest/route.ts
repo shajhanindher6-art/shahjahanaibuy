@@ -30,6 +30,7 @@ import {
   type DigestFrequency,
 } from '@/lib/price-drop-digest';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const PREF_COLUMNS = 'id, user_id, frequency, is_active';
@@ -143,7 +144,8 @@ export async function GET(request: NextRequest) {
       preferencesEnabled,
       digestEnabled: true,
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.digest.get', status: 500 });
     return internalError('Failed to build price-drop digest');
   }
 }
@@ -185,7 +187,8 @@ export async function POST(request: NextRequest) {
       return internalError('Failed to save digest preference');
     }
     return apiSuccess({ preference: data, preferencesEnabled: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.digest.post', status: 500 });
     return internalError('Failed to save digest preference');
   }
 }

@@ -42,6 +42,7 @@ import {
   type RenewalStatus,
 } from '@/lib/subscription-manager';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const SUBSCRIPTION_COLUMNS =
@@ -185,7 +186,8 @@ export async function GET(request: NextRequest) {
       .map(mapSubscriptionRow)
       .filter((row): row is ConsumerSubscription => row !== null);
     return apiSuccess(buildSummary(subscriptions, true));
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.consumer-subscriptions.get', status: 500 });
     return internalError('Failed to fetch subscriptions');
   }
 }
@@ -234,7 +236,8 @@ export async function POST(request: NextRequest) {
     const subscription = mapSubscriptionRow(data as Record<string, unknown>);
     if (!subscription) return internalError('Failed to add subscription');
     return apiSuccess({ subscription, subscriptionsEnabled: true }, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.consumer-subscriptions.post', status: 500 });
     return internalError('Failed to add subscription');
   }
 }
@@ -289,7 +292,8 @@ export async function PUT(request: NextRequest) {
     const subscription = mapSubscriptionRow(data as Record<string, unknown>);
     if (!subscription) return internalError('Failed to update subscription');
     return apiSuccess({ subscription, subscriptionsEnabled: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.consumer-subscriptions.put', status: 500 });
     return internalError('Failed to update subscription');
   }
 }
@@ -325,7 +329,8 @@ export async function DELETE(request: NextRequest) {
     }
     if (!data) return notFound('Subscription not found.');
     return apiSuccess({ deleted: true, subscriptionsEnabled: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tools.consumer-subscriptions.delete', status: 500 });
     return internalError('Failed to delete subscription');
   }
 }

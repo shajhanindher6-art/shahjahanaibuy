@@ -20,6 +20,7 @@ import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middlew
 import { getPublicSharedWishlist } from '@/services/wishlists';
 import { appConfig } from '@/lib/config/app';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
@@ -48,7 +49,8 @@ export async function GET(
       shareUrl: `${appConfig.url}/wishlists/${shared.id}`,
       giftFinderUrl: '/gifts',
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'shared-wishlists', status: 500 });
     return internalError('Failed to fetch shared wishlist');
   }
 }

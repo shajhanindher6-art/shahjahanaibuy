@@ -20,6 +20,7 @@ import {
   DEFAULT_DAILY_TARGET_HOURS,
 } from '@/services/tech-budget';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'tech-budget.get' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -40,7 +41,8 @@ export async function GET(request: NextRequest) {
       });
     }
     return apiSuccess(budget);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tech-budget.get', status: 500 });
     return internalError('Failed to load tech budget');
   }
 }
@@ -81,7 +83,8 @@ export async function POST(request: NextRequest) {
       );
     }
     return apiSuccess(saved);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'tech-budget.post', status: 500 });
     return internalError('Failed to save tech budget');
   }
 }

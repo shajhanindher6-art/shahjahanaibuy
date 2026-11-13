@@ -9,6 +9,7 @@ import { apiSuccess, internalError } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getSearchHistory } from '@/services/ai-search';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'search-history' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -26,7 +27,8 @@ export async function GET(request: NextRequest) {
     const history = await getSearchHistory(supabase, auth.userId, limit);
 
     return apiSuccess(history, 200);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'search-history', status: 500 });
     return internalError('Failed to fetch search history');
   }
 }

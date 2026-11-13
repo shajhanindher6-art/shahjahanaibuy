@@ -23,6 +23,7 @@ import { rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { logger } from '@/lib/config/logger';
 import { hashGenericWebhookSecret, GENERIC_WEBHOOK_SECRET_MIN_LENGTH } from '@/lib/generic-webhook';
 
+import { logApiError } from '@/lib/api/error-logging';
 const WEBHOOK_COLUMNS = [
   'whatsapp_enabled',
   'whatsapp_phone',
@@ -122,6 +123,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (err) {
+    logApiError(err, { request, route: 'settings.webhooks.get', status: 500 });
     logger.error('webhooks GET failed', { error: String(err) });
     return internalError('Failed to load webhook status.');
   }
@@ -203,6 +205,7 @@ export async function POST(request: NextRequest) {
     }
     return apiSuccess({ saved: true, genericSecretSet: genericSecretHash !== undefined });
   } catch (err) {
+    logApiError(err, { request, route: 'settings.webhooks.post', status: 500 });
     logger.error('webhooks POST failed', { error: String(err) });
     return internalError('Failed to save webhook settings.');
   }
