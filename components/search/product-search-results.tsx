@@ -206,6 +206,7 @@ export function ProductSearchResults({ data, loading, error }: ProductSearchResu
                         // images.unsplash.com / images.pexels.com,
                         // and these are arbitrary merchant URLs, so
                         // next/image would reject them.
+                        // eslint-disable-next-line @next/next/no-img-element -- remote merchant image; next/image remotePatterns allows only Unsplash + Pexels
                         <img
                           src={product.imageUrl}
                           alt={product.name}

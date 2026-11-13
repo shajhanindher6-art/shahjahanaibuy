@@ -183,9 +183,11 @@ export function RecentActivityFeed({
     return () => {
       cancelled = true;
     };
-    // Re-fetch only when a source switches from provided to missing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // Re-fetch when a source switches from provided to missing:
+    // the props are parent state (stable identities), and the
+    // effect only fetches sources that are undefined, so listing
+    // them cannot loop — it only re-runs when a prop changes.
+  }, [items, alerts, alertHistory, searchHistory]);
 
   const resolvedItems = items ?? fetchedItems ?? [];
   const resolvedAlerts = alerts ?? fetchedAlerts ?? [];

@@ -37,7 +37,7 @@ function lowestPriceUsd(retailers: Array<{ price: number }>): number | null {
  *
  * Badges earned deterministically from REAL data only (see
  * services/comparison-summary.ts for the rules): "Best for Battery
- * Life", "Best Value for Money", "Best for Multitasking". Each badge
+ * Life", "Lowest Price", "Best for Multitasking". Each badge
  * names the winning product and the value that earned it.
  *
  * Attributes are loaded per product from the existing public

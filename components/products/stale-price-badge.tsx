@@ -11,8 +11,11 @@
  * one component carries the label so all of them stay identical.
  *
  * Rendering rules (same as the product page, lib/price-freshness.ts):
- * - Unknown age (no recorded freshness) → renders nothing, never a
- *   guessed date or age.
+ * - Unknown age (no recorded freshness) → "Price age unknown"
+ *   (Section 19, Phase 2 §12 #21 — the old code rendered NOTHING,
+ *   so a future row with no freshness timestamp showed no warning
+ *   at all and read as fresh. Unknown is honest text, never a
+ *   guessed date or age, and never silence).
  * - Fresh (≤ STALE_PRICE_DAYS, 7) → quiet "Price checked Nov 2 ·
  *   10 days old" line (the checked date is in the title tooltip).
  * - Stale (> 7 days) → amber "Stale price · N days old" badge.
@@ -30,7 +33,19 @@ interface StalePriceBadgeProps {
 
 export function StalePriceBadge({ dataFreshness, className }: StalePriceBadgeProps) {
   const age = getPriceAgeDays(dataFreshness);
-  if (age === null) return null;
+  // Section 19, Phase 2 (§12 #21): unknown freshness used to
+  // render nothing — indistinguishable from a fresh price. An
+  // honest "age unknown" line is shown instead.
+  if (age === null) {
+    return (
+      <span
+        className={cn('text-xs text-muted-foreground', className)}
+        title="No recorded price-check date for this product — the price age is unknown"
+      >
+        Price age unknown
+      </span>
+    );
+  }
   const checked = formatLastChecked(dataFreshness);
   const stale = isPriceStale(dataFreshness);
   const ageLabel =

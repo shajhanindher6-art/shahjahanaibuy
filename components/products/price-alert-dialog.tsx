@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Bell, BellRing, Trash2 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
@@ -23,6 +23,7 @@ import {
   isValidEmail,
   type LocalPriceAlert,
 } from '@/lib/local-alerts';
+import type { AlertType } from '@/services/alerts';
 import {
   subscribeGuestPush,
   getGuestPushToken,
@@ -53,6 +54,28 @@ interface Alert {
   triggerCount: number;
 }
 
+// Section 19, fix-up (Phase 6 follow-up, §12 #61/#62/#64): the
+// signed-in dialog offers the stored alert types the checker
+// actually evaluates — the descriptions are the checker's own
+// semantics (services/alert-checker.ts), in plain words.
+// `wishlist` is deliberately NOT here: wishlist alerts are a
+// checker phase over wishlist items, not user-created stored
+// alerts (services/alert-checker.ts header). `conditionValue`
+// is a target price for price_drop, a drop-% threshold for
+// significant_drop, and unused for trend / opportunity.
+const ALERT_TYPE_DESCRIPTIONS: Record<AlertType, string> = {
+  price_drop: 'Notifies you when the recorded price falls to your target price.',
+  back_in_stock:
+    'Notifies you only when the product comes back in stock after a recorded out-of-stock period.',
+  deal: 'Notifies you when a new deal is listed for this product.',
+  significant_drop:
+    'Notifies you when the latest recorded price falls by at least your chosen % versus the previous recorded price (default 10%).',
+  trend:
+    'Notifies you when the recorded price trends up or down by 5% or more over the last 30 days (needs at least 5 recorded prices).',
+  opportunity:
+    'Notifies you when the product looks like a good time to buy — near its recorded low, fresh price, validated discount and in stock. This is based on recorded prices, not a guarantee.',
+};
+
 export function PriceAlertDialog({ productId, productName, currentPrice, initialTargetPrice, triggerLabel }: PriceAlertDialogProps) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -60,7 +83,11 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(false);
   const [targetPrice, setTargetPrice] = useState('');
-  const [alertType, setAlertType] = useState('price_drop');
+  const [alertType, setAlertType] = useState<AlertType>('price_drop');
+  // Significant-drop threshold in % (1–90; the checker falls back
+  // to its 10% default outside that range — see the Create button
+  // guard below, which disables Create on an invalid value).
+  const [dropThreshold, setDropThreshold] = useState('10');
   const [channel, setChannel] = useState('email');
   // Option 15 Module 3 — guest (logged-out) alerts, stored on this
   // device only. The signed-in flow below is untouched.
@@ -73,13 +100,13 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
   const [pushState, setPushState] = useState<'idle' | 'busy' | 'subscribed' | 'error'>('idle');
   const [pushMessage, setPushMessage] = useState('');
 
-  const refreshLocalAlerts = () => {
+  const refreshLocalAlerts = useCallback(() => {
     setLocalAlerts(listLocalAlertsForProduct(productId));
-  };
+  }, [productId]);
 
   useEffect(() => {
     if (open && !user) refreshLocalAlerts();
-  }, [open, user]);
+  }, [open, user, refreshLocalAlerts]);
 
   useEffect(() => {
     // Prefilled target (negotiator shortcut) wins over the 90% default.
@@ -90,7 +117,7 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
     }
   }, [currentPrice, initialTargetPrice]);
 
-  const fetchAlerts = async () => {
+  const fetchAlerts = useCallback(async () => {
     if (!user) return;
     try {
       const res = await fetch('/api/v1/alerts');
@@ -100,11 +127,18 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
         setAlerts(allAlerts.filter((a) => a.productId === productId));
       }
     } catch { setAlerts([]); }
-  };
+  }, [user, productId]);
 
   useEffect(() => {
     if (open) fetchAlerts();
-  }, [open]);
+  }, [open, fetchAlerts]);
+
+  const dropThresholdValid =
+    alertType !== 'significant_drop' ||
+    (() => {
+      const n = parseFloat(dropThreshold);
+      return Number.isFinite(n) && n >= 1 && n <= 90;
+    })();
 
   const handleCreate = async () => {
     setLoading(true);
@@ -115,13 +149,36 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
         body: JSON.stringify({
           productId,
           alertType,
-          conditionValue: alertType === 'price_drop' ? parseFloat(targetPrice) : undefined,
+          // price_drop: target price. significant_drop: the drop-%
+          // threshold (the API defaults to 10 when omitted).
+          // trend / opportunity / back_in_stock / deal: no
+          // condition value — sending a price would mislabel it.
+          conditionValue:
+            alertType === 'price_drop'
+              ? parseFloat(targetPrice)
+              : alertType === 'significant_drop'
+                ? parseFloat(dropThreshold)
+                : undefined,
           channel,
         }),
       });
       const data = await res.json();
       if (data.success) {
-        toast({ title: 'Price alert created!', description: `We'll notify you when ${productName} drops below $${targetPrice}.` });
+        // The old toast always said "drops below $X" — wrong for
+        // every type except price_drop. One honest line per type.
+        const createdDescription =
+          alertType === 'price_drop'
+            ? `We'll notify you when ${productName} drops below $${targetPrice}.`
+            : alertType === 'significant_drop'
+              ? `We'll notify you when ${productName} drops ${dropThreshold}% or more in one recorded step.`
+              : alertType === 'trend'
+                ? `We'll notify you when ${productName} trends up or down 5% or more over 30 days.`
+                : alertType === 'opportunity'
+                  ? `We'll notify you when ${productName} looks like a good time to buy.`
+                  : alertType === 'back_in_stock'
+                    ? `We'll notify you when ${productName} is back in stock.`
+                    : `We'll notify you when a new deal appears for ${productName}.`;
+        toast({ title: 'Price alert created!', description: createdDescription });
         fetchAlerts();
       } else {
         toast({ title: 'Failed to create alert', description: data.error?.message ?? 'Please try again.', variant: 'destructive' });
@@ -375,15 +432,38 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
           <div className="space-y-4">
             <div>
               <Label className="mb-1.5 block text-sm">Alert Type</Label>
-              <Select value={alertType} onValueChange={setAlertType}>
+              <Select value={alertType} onValueChange={(v) => setAlertType(v as AlertType)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="price_drop">Price Drop</SelectItem>
                   <SelectItem value="back_in_stock">Back in Stock</SelectItem>
                   <SelectItem value="deal">New Deal</SelectItem>
+                  <SelectItem value="significant_drop">Big Price Drop</SelectItem>
+                  <SelectItem value="trend">Price Trend</SelectItem>
+                  <SelectItem value="opportunity">Good Time to Buy</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {ALERT_TYPE_DESCRIPTIONS[alertType]}
+              </p>
             </div>
+
+            {alertType === 'significant_drop' && (
+              <div>
+                <Label className="mb-1.5 block text-sm">Drop of at least (%)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={90}
+                  value={dropThreshold}
+                  onChange={(e) => setDropThreshold(e.target.value)}
+                  placeholder="e.g. 10"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Fires when one recorded price step falls by this much versus the previous recorded price.
+                </p>
+              </div>
+            )}
 
             {alertType === 'price_drop' && (
               <div>
@@ -423,9 +503,19 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
                       <Badge variant="secondary" className="text-xs capitalize">
                         {alert.alertType.replace('_', ' ')}
                       </Badge>
-                      {alert.conditionValue && (
+                      {/* conditionValue means different things per
+                          type: a target price for price_drop, a drop-%
+                          threshold for significant_drop, nothing for
+                          the rest — never print a % threshold as
+                          dollars ("Below $10.00"). */}
+                      {alert.alertType === 'price_drop' && alert.conditionValue && (
                         <span className="text-sm text-muted-foreground">
                           Below ${alert.conditionValue.toFixed(2)}
+                        </span>
+                      )}
+                      {alert.alertType === 'significant_drop' && alert.conditionValue && (
+                        <span className="text-sm text-muted-foreground">
+                          Drop of {alert.conditionValue}% or more
                         </span>
                       )}
                       <Badge variant="outline" className="text-xs capitalize">{alert.channel}</Badge>
@@ -454,7 +544,7 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
         {user && (
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={loading || (alertType === 'price_drop' && !targetPrice)}>
+            <Button onClick={handleCreate} disabled={loading || (alertType === 'price_drop' && !targetPrice) || !dropThresholdValid}>
               {loading ? 'Creating...' : 'Create Alert'}
             </Button>
           </DialogFooter>

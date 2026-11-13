@@ -65,6 +65,7 @@ export function ProductGallery({ images, fallbackImageUrl, productName }: Produc
     <div>
       <div className="flex h-80 items-center justify-center bg-slate-100 dark:bg-slate-800">
         {mainUrl && !imageFailed ? (
+          // eslint-disable-next-line @next/next/no-img-element -- remote merchant image (possibly null); next/image remotePatterns allows only Unsplash + Pexels
           <img
             src={mainUrl}
             alt={mainAlt}
@@ -106,6 +107,7 @@ export function ProductGallery({ images, fallbackImageUrl, productName }: Produc
                   : 'border-transparent opacity-70 hover:opacity-100'
               )}
             >
+              {/* eslint-disable-next-line @next/next/no-img-element -- remote merchant image; next/image remotePatterns allows only Unsplash + Pexels */}
               <img
                 src={img.url}
                 alt={img.altText ?? `${productName} photo ${index + 1}`}

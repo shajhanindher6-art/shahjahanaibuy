@@ -30,6 +30,8 @@ export function TrustSignals({
   ratingDistribution,
   priceUsd,
   imageUrl,
+  priceHistory,
+  merchantPrices,
 }: {
   slug: string;
   merchantNames: string[];
@@ -38,6 +40,10 @@ export function TrustSignals({
   ratingDistribution: Record<number, number>;
   priceUsd: number | null;
   imageUrl: string | null;
+  /** Recorded price history for time-series anomaly checks (§12 #19) — optional; absent = checks do not run. */
+  priceHistory?: Array<{ price: number; recordedAt: string }>;
+  /** Latest recorded price per priced merchant, for the cross-merchant outlier check — optional. */
+  merchantPrices?: Array<{ merchant: string; price: number }>;
 }) {
   const [result, setResult] = useState<TrustResult | null>(null);
 
@@ -82,9 +88,11 @@ export function TrustSignals({
         priceUsd,
         categoryAverageUsd: categoryAverage,
         imageUrl,
+        priceHistory,
+        merchantPrices,
       })
     );
-  }, [slug, merchantNames, knownRetailers, totalReviews, ratingDistribution, priceUsd, imageUrl]);
+  }, [slug, merchantNames, knownRetailers, totalReviews, ratingDistribution, priceUsd, imageUrl, priceHistory, merchantPrices]);
 
   useEffect(() => {
     load();
@@ -101,7 +109,8 @@ export function TrustSignals({
         </CardTitle>
         <CardDescription>
           Based only on real signals: priced merchants, actual reviews, price vs category average,
-          and image presence. This is a caution aid, not a fraud verdict.
+          image presence, and — when recorded history exists — time-series anomalies (price
+          spike/drop, flatline, cross-merchant outlier). This is a caution aid, not a fraud verdict.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -132,8 +141,11 @@ export function TrustSignals({
             </div>
             <p className="text-sm">{result.verdictLabel}</p>
             <ul className="space-y-1 text-sm text-muted-foreground">
-              {result.signals.map((s) => (
-                <li key={s.kind}>
+              {result.signals.map((s, i) => (
+                // Key includes the index: time-series checks can add
+                // several 'price' signals (§12 #19), so kind alone
+                // is no longer unique.
+                <li key={`${s.kind}-${i}`}>
                   <span className="font-medium text-foreground">{s.kind}:</span> {s.detail}
                 </li>
               ))}

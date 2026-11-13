@@ -289,8 +289,9 @@ export function AIDealFinderWidget() {
       if (stored.data.length > 0) setData(stored.data);
     }
     setHydrated(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // setMessages / setData are the useChat state setters (stable
+    // across renders), so listing them keeps this mount-only.
+  }, [setMessages, setData]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -374,7 +375,7 @@ export function AIDealFinderWidget() {
       ? [
           {
             label: 'Sab se sasta kaunsa hai?',
-            message: `Compare ${lastAssistantProducts.map((p) => p.name).join(', ')} — which is the cheapest and the best value?`,
+            message: `Compare ${lastAssistantProducts.map((p) => p.name).join(', ')} — which has the lowest price?`,
           },
           {
             label: 'In mein best kaunsa hai?',
@@ -402,6 +403,11 @@ export function AIDealFinderWidget() {
     if (last.id === lastSpokenIdRef.current) return;
     lastSpokenIdRef.current = last.id;
     speakText(last.content, voiceLang);
+    // `view` is deliberately NOT listed: it is a fresh array built
+    // from `messages` on every render, so listing it would re-run
+    // this effect on every render; `messages` (already a dep) fully
+    // determines it, and lastSpokenIdRef makes re-runs idempotent
+    // — each answer is spoken once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, messages, open, speakRepliesOn, voiceLang]);
 

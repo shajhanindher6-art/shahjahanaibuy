@@ -1,8 +1,8 @@
 /**
  * Guided Shopping Quiz — /tools/help-me-choose (Section 11).
  *
- * "Help me choose": a 4-step structured form (use-case → budget →
- * brand → must-haves) that returns ranked priced picks, each with a
+ * "Help me choose": a 5-step structured form (use-case → budget →
+ * brand → must-haves → key specs) that returns ranked priced picks, each with a
  * short "why" line. No LLM, no account needed.
  *
  * - The page is a client component: only the step form needs
@@ -36,15 +36,17 @@ import {
   GUIDED_BRANDS,
   GUIDED_BUDGETS,
   GUIDED_MUST_HAVES,
+  GUIDED_SPEC_DATA_NOTE,
   GUIDED_USE_CASES,
   decodeQuizAnswers,
   encodeQuizAnswers,
+  specOptionsForCategory,
   type GuidedAnswers,
   type GuidedPick,
   type GuidedRelaxedPick,
 } from '@/services/guided-finder';
 
-const STEPS = ['What do you need?', 'Your budget', 'Preferred brand', 'Must-haves'] as const;
+const STEPS = ['What do you need?', 'Your budget', 'Preferred brand', 'Must-haves', 'Key specs'] as const;
 
 interface GuidedFinderResponse {
   success: boolean;
@@ -94,6 +96,12 @@ function PickArticle({
           {pick.savingPct !== null && (
             <p className="text-sm font-medium text-green-700">
               Save {pick.savingPct}%
+              {pick.savingsUsd !== null && ` ($${pick.savingsUsd.toFixed(2)})`}
+            </p>
+          )}
+          {pick.savingsVsBudgetUsd !== null && (
+            <p className="text-xs text-muted-foreground">
+              ${pick.savingsVsBudgetUsd.toFixed(2)} left of your budget
             </p>
           )}
           {pick.dealScore !== null && (
@@ -124,7 +132,7 @@ function PickArticle({
 }
 
 function emptyAnswers(): GuidedAnswers {
-  return { useCase: '', budgetUsd: null, brand: null, mustHaves: [] };
+  return { useCase: '', budgetUsd: null, brand: null, mustHaves: [], needBy: null, specs: {} };
 }
 
 function QuizInner() {
@@ -178,7 +186,6 @@ function QuizInner() {
     setStep(STEPS.length);
     setShareUrl(`${window.location.origin}/tools/help-me-choose?answers=${encodeQuizAnswers(decoded)}`);
     void fetchPicks(decoded);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, restored, fetchPicks]);
 
   const finish = () => {
@@ -216,7 +223,20 @@ function QuizInner() {
         ? true // budget always has a value (including "No limit")
         : step === 2
           ? true // brand always has a value (including "Any brand")
-          : true; // must-haves are optional
+          : true; // must-haves and specs are optional
+
+  // Section 19, Phase 4 (§12 #46) — spec choices for the use-case's
+  // category (empty when the category offers none).
+  const quizSpecOptions = specOptionsForCategory(answers.useCase || null);
+
+  const setSpec = (key: string, value: string) => {
+    setAnswers((prev) => {
+      const next = { ...(prev.specs ?? {}) };
+      if (value) next[key] = value;
+      else delete next[key];
+      return { ...prev, specs: next };
+    });
+  };
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -225,7 +245,7 @@ function QuizInner() {
           (Home → AI tools → this tool). */}
       <PageJsonLd
         name="Help me choose"
-        description="Answer four quick questions and get ranked picks from real priced products — with one line each saying why it fits. No account, no waiting."
+        description="Answer five quick questions and get ranked picks from real priced products — with one line each saying why it fits. No account, no waiting."
         path="/tools/help-me-choose"
         crumbs={[
           { name: 'Home', path: '/' },
@@ -239,7 +259,7 @@ function QuizInner() {
             <Compass className="h-7 w-7 text-blue-600" /> {tFor(language, 'toolHeadingHelpMeChoose')}
           </h1>
           <p className="mt-2 text-muted-foreground">
-            Answer four quick questions and get ranked picks from real
+            Answer five quick questions and get ranked picks from real
             priced products — with one line each saying why it fits.
             No account, no waiting: the catalog is small, so some
             answers honestly return only a few picks, or none at all.
@@ -311,6 +331,27 @@ function QuizInner() {
                       </button>
                     ))}
                   </div>
+                  {/* Section 19, Phase 4 (§12 #37) — optional "need
+                      by" date. A near deadline changes the advice:
+                      waiting for a price drop is not offered. */}
+                  <div className="mt-4">
+                    <label htmlFor="quiz-needBy" className="text-sm font-medium">
+                      Need it by (optional)
+                    </label>
+                    <input
+                      id="quiz-needBy"
+                      type="date"
+                      value={answers.needBy ?? ''}
+                      onChange={(e) =>
+                        setAnswers((prev) => ({ ...prev, needBy: e.target.value || null }))
+                      }
+                      className="mt-1 min-h-[44px] w-full rounded-md border bg-background px-3 py-2 text-sm sm:max-w-xs"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Within 14 days, waiting for a price drop is not offered — no drop can be
+                      predicted that soon from the recorded prices.
+                    </p>
+                  </div>
                 </>
               )}
 
@@ -374,6 +415,45 @@ function QuizInner() {
                       </button>
                     ))}
                   </div>
+                </>
+              )}
+
+              {step === 4 && (
+                <>
+                  <h2 className="text-xl font-semibold">Any key specs?</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Optional — structured choices (RAM, storage, battery) instead of free text. A
+                    pick must mention every spec you choose.
+                  </p>
+                  {quizSpecOptions.length === 0 ? (
+                    <p className="mt-4 text-sm text-muted-foreground">
+                      No spec choices for this kind of product — skip ahead to your picks.
+                    </p>
+                  ) : (
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                      {quizSpecOptions.map((option) => (
+                        <div key={option.key}>
+                          <label htmlFor={`quiz-spec-${option.key}`} className="text-sm font-medium">
+                            {option.label}
+                          </label>
+                          <select
+                            id={`quiz-spec-${option.key}`}
+                            value={answers.specs?.[option.key] ?? ''}
+                            onChange={(e) => setSpec(option.key, e.target.value)}
+                            className="mt-1 min-h-[44px] w-full rounded-md border bg-background px-3 py-2 text-sm"
+                          >
+                            <option value="">Any {option.label.toLowerCase()}</option>
+                            {option.options.map((value) => (
+                              <option key={value} value={value}>
+                                {value}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mt-4 text-xs text-muted-foreground">{GUIDED_SPEC_DATA_NOTE}</p>
                 </>
               )}
 
@@ -474,6 +554,15 @@ function QuizInner() {
                     </div>
                   )}
                 </div>
+              )}
+
+              {!loading && !error && picks !== null && picks.length > 0 && picks[0].timelineNote && (
+                <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                  {picks[0].timelineNote}
+                </p>
+              )}
+              {Object.keys(answers.specs ?? {}).length > 0 && !loading && !error && picks !== null && picks.length > 0 && (
+                <p className="mt-2 text-sm text-muted-foreground">{GUIDED_SPEC_DATA_NOTE}</p>
               )}
 
               {!loading && !error && picks !== null && picks.length > 0 && (

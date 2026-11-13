@@ -70,6 +70,7 @@ export function ProductCard({ product, href, className, showReason }: ProductCar
       <Link href={link} aria-label={`View ${product.name}`} className="block focus-visible:outline-none">
         <div className="relative h-40 overflow-hidden bg-muted">
           {product.imageUrl && !imageFailed ? (
+            // eslint-disable-next-line @next/next/no-img-element -- remote merchant image (possibly null); next/image remotePatterns allows only Unsplash + Pexels
             <img
               src={product.imageUrl}
               alt={product.name}

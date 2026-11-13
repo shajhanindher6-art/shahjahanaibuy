@@ -590,7 +590,7 @@ function SearchPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [filters, searchMode, liveWeb, router, writeSearchUrl, sort, storeFilter, priceBand]);
+  }, [filters, searchMode, liveWeb, writeSearchUrl, sort, storeFilter, priceBand, saveRecentSearch]);
 
   // ?q= support (Section 10, chunk 1): /search?q=laptop runs the
   // search on load — deep-linkable, shareable, bookmarkable, and
@@ -615,11 +615,13 @@ function SearchPageContent() {
   // is the WEB results list below — it is fetched alongside the
   // catalog (not server-paginated), so its store / rating / band
   // filters and its sort still run here, on the small list.
-  const inPriceBand = (price: number, band: PriceBand): boolean => {
+  // Pure helper (no component state) — stable via useCallback so the
+  // displayedWebResults memo below can depend on it honestly.
+  const inPriceBand = useCallback((price: number, band: PriceBand): boolean => {
     if (band === 'under-100') return price < 100;
     if (band === '100-500') return price >= 100 && price <= 500;
     return price > 500;
-  };
+  }, []);
 
   // Section 13: category / brand dropdown options — exact product
   // text values from the catalog (the ai-search API matches them
@@ -883,7 +885,7 @@ function SearchPageContent() {
       );
     }
     return applySort(items);
-  }, [webResults, storeFilter, minRatingValue, priceBand, applySort]);
+  }, [webResults, storeFilter, minRatingValue, priceBand, applySort, inPriceBand]);
 
   const clientFiltersActive =
     sort !== 'relevance' || storeFilter !== '' || filters.minRating !== '' || priceBand !== 'all';
@@ -1565,6 +1567,7 @@ function SearchPageContent() {
                       // would throw at runtime. loading="lazy" +
                       // explicit dimensions give the same
                       // below-fold saving without the allowlist.
+                      // eslint-disable-next-line @next/next/no-img-element -- remote merchant image; next/image remotePatterns allows only Unsplash + Pexels
                       <img
                         src={result.product.imageUrl}
                         alt={result.product.name}
@@ -1800,6 +1803,7 @@ function SearchPageContent() {
                         // Same lazy + sized <img> as the catalog
                         // cards above (next/image allowlist does not
                         // cover retailer thumbnail hosts).
+                        // eslint-disable-next-line @next/next/no-img-element -- remote retailer thumbnail; next/image remotePatterns allows only Unsplash + Pexels
                         <img
                           src={web.thumbnail}
                           alt={web.title}

@@ -23,6 +23,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { badRequest } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
+import { logger } from '@/lib/config/logger';
 import {
   isTrackableClickHost,
   resolveGeoCountryOrNull,
@@ -67,7 +68,7 @@ async function recordGoClick(
   try {
     const supabase = createSupabaseServiceClient();
     if (!supabase) {
-      console.warn(
+      logger.warn(
         '[go] service client unavailable; click not stored (SUPABASE_SERVICE_ROLE_KEY missing)'
       );
       return;
@@ -84,7 +85,7 @@ async function recordGoClick(
       country_code: country,
     });
     if (error) {
-      console.error('[go] insert error', {
+      logger.error('[go] insert error', {
         code: (error as { code?: unknown }).code ?? null,
         message: error.message,
       });
@@ -121,7 +122,7 @@ export async function GET(request: NextRequest) {
   // becoming an open redirector. Unlisted hosts are rejected, never
   // redirected — including lookalike hosts such as amazon.evil.com.
   if (!isTrackableClickHost(parsed.hostname, knownStoreHosts())) {
-    console.warn('[go] non-trackable host, redirect refused', {
+    logger.warn('[go] non-trackable host, redirect refused', {
       host: parsed.hostname,
     });
     return badRequest('Target host is not a trackable merchant host');

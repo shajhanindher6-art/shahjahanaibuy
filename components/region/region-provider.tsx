@@ -355,7 +355,12 @@ export function RegionProvider({
     return () => {
       cancelled = true;
     };
-  }, []);
+    // Section 19: the server-resolved initials are listed as deps so
+    // this mount-time init stays correct if they ever change after
+    // mount. In practice they come from the root layout once and never
+    // change, so the effect still runs once per mount; the cleanup
+    // above (cancelled flag) makes a re-run safe.
+  }, [initialCountryCode, initialLanguage, initialSource, serverRegion.code]);
 
   // Keep <html lang> and <html dir> in sync with the UI language
   // (accessibility + correct rendering of localized chrome strings,

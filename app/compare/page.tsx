@@ -24,6 +24,7 @@ import { Price } from '@/components/region/price';
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
+import { TransparencyBlock } from '@/components/ai/transparency-block';
 import { StalePriceBadge } from '@/components/products/stale-price-badge';
 import { PriceTrendSparkline } from '@/components/products/price-trend-sparkline';
 import { DecisionMatrix } from '@/components/comparison/decision-matrix';
@@ -119,6 +120,14 @@ interface ComparisonRetailer {
   seller: string | null;
   warranty: string | null;
   url: string | null;
+  /** Section 19, Phase 5 (§12 #50) — merchant reliability for this
+      retailer's merchant (null = not enough data to score). */
+  reliability?: {
+    score: number | null;
+    level: string;
+    explanation: string;
+    notEnoughData: boolean;
+  } | null;
 }
 
 interface ComparisonProduct {
@@ -159,6 +168,18 @@ interface Comparison {
   products: ComparisonProduct[];
   aiSummary: string;
   bestChoice: string | null;
+  /** Section 19, Phase 5 (§12 #51) — per-requirement suitability
+      prose from the comparison API (optional: older cached
+      responses may not carry it). */
+  suitability?: Array<{
+    requirement: string;
+    bestProductId: string | null;
+    bestProductName: string | null;
+    explanation: string;
+    dataMissing: string | null;
+  }>;
+  /** Section 19, Phase 5 (§12 #55) — source label for the verdict. */
+  sourceLabel?: string;
 }
 
 export default function ComparePage() {
@@ -273,32 +294,35 @@ export default function ComparePage() {
   const compareSearchSaved =
     savedCompareTerm !== '' && savedCompareTerm === searchTerm.trim();
 
-  const runComparison = async (products: Array<{ id: string; name: string; slug: string }> = selectedProducts) => {
-    if (products.length < 2) return;
-    setComparing(true);
-    setCompareError(null);
-    try {
-      // P0 fix (2026-11-09 audit): 30s hard timeout — a hanging
-      // comparison used to leave the page on its spinner forever.
-      const res = await fetchTimed('/api/v1/comparison', 30000, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productIds: products.map((p) => p.id) }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setComparison(data.data);
-        setAffiliateEnabled(data.meta?.affiliateEnabled === true);
-      } else {
+  const runComparison = useCallback(
+    async (products: Array<{ id: string; name: string; slug: string }>) => {
+      if (products.length < 2) return;
+      setComparing(true);
+      setCompareError(null);
+      try {
+        // P0 fix (2026-11-09 audit): 30s hard timeout — a hanging
+        // comparison used to leave the page on its spinner forever.
+        const res = await fetchTimed('/api/v1/comparison', 30000, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productIds: products.map((p) => p.id) }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          setComparison(data.data);
+          setAffiliateEnabled(data.meta?.affiliateEnabled === true);
+        } else {
+          setCompareError('Comparison could not be loaded. Please try again.');
+        }
+      } catch {
+        setComparison(null);
         setCompareError('Comparison could not be loaded. Please try again.');
+      } finally {
+        setComparing(false);
       }
-    } catch {
-      setComparison(null);
-      setCompareError('Comparison could not be loaded. Please try again.');
-    } finally {
-      setComparing(false);
-    }
-  };
+    },
+    []
+  );
 
   // S2#8 deep link: /compare?products=<id1>,<id2> (the product page
   // Compare button pushes /compare?products=<id>). Pre-select those
@@ -345,10 +369,10 @@ export default function ComparePage() {
         // Unresolvable deep link: leave the normal empty state.
       }
     })();
-    // Runs once on mount; runComparison is stable enough for this
-    // one-shot pre-select (it only reads its argument + setters).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // Runs once on mount: runComparison is a stable useCallback
+    // (argument + setters only, [] deps), so listing it keeps this
+    // a one-shot pre-select instead of re-running on every render.
+  }, [runComparison]);
 
   // Section 13: empty-state suggestions when exactly one product is
   // selected — same-category products from the existing
@@ -523,7 +547,7 @@ export default function ComparePage() {
             )}
 
             {selectedProducts.length >= 2 && (
-              <Button onClick={() => runComparison()} disabled={comparing} className="mt-4 min-h-[44px] w-full">
+              <Button onClick={() => runComparison(selectedProducts)} disabled={comparing} className="mt-4 min-h-[44px] w-full">
                 {comparing ? <LoadingSpinner size="sm" /> : <GitCompare className="mr-2 h-4 w-4" />}
                 Compare {selectedProducts.length} Products
               </Button>
@@ -614,6 +638,40 @@ export default function ComparePage() {
                 <p className="text-sm leading-relaxed">{comparison.aiSummary}</p>
               </CardContent>
             </Card>
+
+            {/* Section 19, fix-up (§12 #70): shared transparency
+                block for the comparison verdict — the Best Choice
+                formula (services/ai-comparison.ts
+                determineBestChoice), what was compared, and what the
+                verdict never uses. Fed only from the comparison
+                response already on this page; the API returns no
+                generation timestamp, so the block says so instead of
+                inventing one. */}
+            <TransparencyBlock
+              title="How this comparison was calculated"
+              dataUsed={[
+                `${comparison.products.length} products across ${retailerNames.length} retailer${retailerNames.length !== 1 ? 's' : ''} — recorded merchant prices, discounts, ratings, availability and Deal Scores from the comparison response.`,
+                'Best Choice score: (100 ÷ lowest recorded price) × 30 + average rating × 10 + in-stock retailer count × 5 — the lowest price weighs most.',
+                'Each product carries its recorded price date (shown next to its best price as a stale-price badge); no live retailer price is checked.',
+                ...(comparison.sourceLabel ? [comparison.sourceLabel] : []),
+              ]}
+              dataTimestamp={null}
+              dataTimestampLabel="Comparison generated at"
+              confidence={
+                comparison.bestChoice
+                  ? `Best Choice (${comparison.products.find((p) => p.productId === comparison.bestChoice)?.name ?? 'the picked product'}) is the highest weighted score from the formula above — a ranking, not a measured quality rating and not a guarantee of value.`
+                  : 'No Best Choice was picked — fewer than 2 products, or no product could be scored.'
+              }
+              assumptions={[
+                'The lowest recorded price per product is treated as its comparable price.',
+                'A product with no retailer listings cannot be Best Choice — its price counts as infinitely high in the formula.',
+              ]}
+              missingInfo={[
+                'Warranty, shipping and seller information are shown as recorded (or as "not recorded") and never affect Best Choice.',
+                'Merchant reliability is shown separately and does not affect Best Choice.',
+                'No review text and no specification data beyond the recorded attributes are used for the verdict.',
+              ]}
+            />
 
             {/* Share this comparison (S3#10): the comparison URL is a
                 deep link (/compare?products=…), so the shared link
@@ -726,6 +784,35 @@ export default function ComparePage() {
                             {p.retailers.some((r) => r.availability === 'in_stock') ? 'In Stock' : 'Out of Stock'}
                           </Badge>
                         )}
+                      </p>
+                      {/* Section 19, Phase 5 (§12 #49/#57): warranty,
+                          shipping and seller from the retailer rows
+                          the API already returns — real recorded data
+                          when it exists, an honest empty state when
+                          it doesn't (0 warranty rows live; shipping
+                          only when a listing records it). */}
+                      <p className="text-sm">
+                        <span className="font-medium">Warranty: </span>
+                        {p.retailers.find((r) => r.warranty)?.warranty ?? (
+                          <span className="text-muted-foreground">No warranty information recorded</span>
+                        )}
+                      </p>
+                      <p className="text-sm">
+                        <span className="font-medium">Shipping: </span>
+                        {p.retailers.find((r) => r.shipping)?.shipping ?? (
+                          <span className="text-muted-foreground">No shipping information recorded</span>
+                        )}
+                      </p>
+                      <p className="text-sm">
+                        <span className="font-medium">Seller: </span>
+                        {(() => {
+                          const sellers = [...new Set(p.retailers.map((r) => r.seller).filter((s): s is string => s !== null && s !== ''))];
+                          return sellers.length > 0 ? (
+                            sellers.join(', ')
+                          ) : (
+                            <span className="text-muted-foreground">No seller information recorded</span>
+                          );
+                        })()}
                       </p>
                       <p className="text-sm text-muted-foreground">
                         {p.retailers.length} retailer{p.retailers.length !== 1 ? 's' : ''}
@@ -908,7 +995,28 @@ export default function ComparePage() {
                       says "Not listed", never a guessed price. */}
                   {retailerNames.map((name) => (
                     <tr key={name} className="border-b border-slate-100 dark:border-slate-800">
-                      <td scope="row" className="p-3 text-sm font-medium">{name}</td>
+                      <td scope="row" className="p-3 text-sm font-medium">
+                        {name}
+                        {/* Section 19, Phase 5 (§12 #50): merchant
+                            reliability for this retailer, scored only
+                            from recorded signals — a score when enough
+                            signals exist, an honest "not enough data"
+                            note when they don't. Reliability is per
+                            merchant, so the first listing carrying it
+                            speaks for the row. */}
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          {(() => {
+                            const reliability = comparison.products
+                              .flatMap((p) => p.retailers)
+                              .find((r) => r.retailerName === name)?.reliability;
+                            if (!reliability) return 'Reliability: not enough data to score this merchant';
+                            if (reliability.notEnoughData || reliability.score === null) {
+                              return 'Reliability: not enough data to score this merchant';
+                            }
+                            return `Reliability: ${reliability.level} (${reliability.score}/100)`;
+                          })()}
+                        </span>
+                      </td>
                       {comparison.products.map((p) => {
                         const row = p.retailers.find((r) => r.retailerName === name);
                         return (
@@ -1062,6 +1170,60 @@ export default function ComparePage() {
                       </td>
                     ))}
                   </tr>
+                  {/* Section 19, Phase 5 (§12 #49/#57): warranty,
+                      shipping and seller rows — real recorded data
+                      when a listing carries it, an honest empty
+                      state when it doesn't. Warranty comes from the
+                      merchant's recorded policy (0 rows live);
+                      shipping from the listing's recorded cost/days;
+                      the seller is the merchant of record. */}
+                  <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <td scope="row" className="p-3 text-sm font-medium">Warranty</td>
+                    {comparison.products.map((p) => {
+                      const warranty = p.retailers.find((r) => r.warranty)?.warranty;
+                      return (
+                        <td key={p.productId} className="p-3 text-sm">
+                          {warranty ?? (
+                            <span className="text-muted-foreground">No warranty information recorded</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <td scope="row" className="p-3 text-sm font-medium">Shipping</td>
+                    {comparison.products.map((p) => {
+                      const shipping = p.retailers.find((r) => r.shipping)?.shipping;
+                      return (
+                        <td key={p.productId} className="p-3 text-sm">
+                          {shipping ?? (
+                            <span className="text-muted-foreground">No shipping information recorded</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <td scope="row" className="p-3 text-sm font-medium">Seller</td>
+                    {comparison.products.map((p) => {
+                      const sellers = [
+                        ...new Set(
+                          p.retailers
+                            .map((r) => r.seller)
+                            .filter((s): s is string => s !== null && s !== '')
+                        ),
+                      ];
+                      return (
+                        <td key={p.productId} className="p-3 text-sm">
+                          {sellers.length > 0 ? (
+                            sellers.join(', ')
+                          ) : (
+                            <span className="text-muted-foreground">No seller information recorded</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
                   <tr className="border-b border-slate-100 dark:border-slate-800">
                     <td scope="row" className="p-3 text-sm font-medium">Retailers</td>
                     {comparison.products.map((p) => (
@@ -1114,6 +1276,25 @@ export default function ComparePage() {
                 earned from real specs/prices only — renders nothing
                 when no badge is earned. */}
             <ComparisonSummaryBanner products={comparison.products} />
+
+            {/* Section 19, Phase 5 (§12 #51): per-requirement
+                suitability prose — which product suits each
+                requirement better and WHY, grounded in the real
+                rows. Renders nothing when the API carries no
+                suitability (older cached responses). */}
+            {comparison.suitability && comparison.suitability.length > 0 && (
+              <div>
+                <h2 className="mb-3 text-lg font-semibold">Which suits what</h2>
+                <ul className="space-y-2">
+                  {comparison.suitability.map((s) => (
+                    <li key={s.requirement} className="text-sm leading-relaxed">
+                      <span className="font-medium">{s.requirement}: </span>
+                      {s.explanation}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {/* Decision Matrix (Enterprise #7): the same products in a
                 metric-first table built from recorded data only. */}

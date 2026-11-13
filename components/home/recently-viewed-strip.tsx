@@ -146,6 +146,7 @@ export function RecentlyViewedStrip() {
                 // alt="" is deliberate, not missing: the product
                 // name is rendered as the adjacent text below, so
                 // a spoken alt would repeat it for screen readers.
+                // eslint-disable-next-line @next/next/no-img-element -- remote merchant image; next/image remotePatterns allows only Unsplash + Pexels
                 <img
                   src={item.imageUrl}
                   alt=""

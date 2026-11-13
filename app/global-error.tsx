@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { logger } from '@/lib/config/logger';
 
 /**
  * Global error boundary (Section 4 item 6). Renders its own
@@ -18,7 +19,13 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error('Global error:', error);
+    // Section 19: routed through the shared logger (lib/config/logger
+    // is pure JS — no Node-only APIs — so it is safe to import in this
+    // client component). Sentry reporting below is unchanged.
+    logger.error('Global error', {
+      message: error.message,
+      digest: error.digest ?? null,
+    });
 
     // Report to crash reporting service if configured — exactly
     // like app/error.tsx (Section 18, item 54). DSN-guarded and

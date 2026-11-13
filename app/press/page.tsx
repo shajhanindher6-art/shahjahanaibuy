@@ -22,6 +22,7 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { appConfig } from '@/lib/config/app';
 import pressCounts from '@/lib/generated/press-counts.json';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 export const metadata: Metadata = {
   title: 'Press — SmartBuy AI',
@@ -31,6 +32,14 @@ export const metadata: Metadata = {
     canonical: `${appConfig.url}/press`,
   },
 };
+
+/**
+ * The "last recorded" freshness date is read live at request time
+ * (see buildFacts): a static prerender would bake in whichever
+ * value the build ran with, so the page would keep showing a stale
+ * date after the catalog refreshes.
+ */
+export const dynamic = 'force-dynamic';
 
 const MONTHS = [
   'January',
@@ -53,7 +62,16 @@ function formatPressCountsDate(isoDate: string): string {
   return `${day} ${MONTHS[month - 1]} ${year}`;
 }
 
-const FACTS: Array<[string, string]> = [
+/**
+ * Section 19, Phase 7 (§12 #75): FACTS is a builder, not a static
+ * array, because the "last recorded" price date used to be hardcoded
+ * here ("2 November 2026") and went stale the day after it was
+ * written. It is now read live from the catalog (newest
+ * products.data_freshness) at request time; when the read fails the
+ * date clause is dropped instead of a stale date being shown.
+ */
+function buildFacts(latestFreshnessLabel: string | null): Array<[string, string]> {
+  return [
   ['Live site', 'https://shahjahanaibuy-b1zp.vercel.app'],
   ['Products in the catalog', '10'],
   ['Merchant listings', '20'],
@@ -63,7 +81,7 @@ const FACTS: Array<[string, string]> = [
   ['Regions covered', '61 (60 with a local store; South Africa uses the global fallback)'],
   ['Languages', '20 UI languages (167 interface strings translated; 12 of the 20 are machine-translated — all other content, including product pages and guides, stays English)'],
   ['Currencies', '51 (approximate static rates; live FX in the landed-cost calculator)'],
-  ['Price refresh schedule', 'Every 6 hours (scheduled — but no live refresh happens today: the scheduled run re-reads the site\u2019s own database and fetches no new retailer prices, so recorded prices stay stale until the live refresh work lands; last recorded 2 November 2026)'],
+  ['Price refresh schedule', `Every 6 hours (scheduled — but no live refresh happens today: the scheduled run re-reads the site\u2019s own database and fetches no new retailer prices, so recorded prices stay stale until the live refresh work lands${latestFreshnessLabel ? `; last recorded ${latestFreshnessLabel}` : ''})`],
   // Section 12: the seed writes price history relative to the seed
   // run (now() - 30 days to now()), so no fixed calendar range is
   // published — a hardcoded date range goes stale the moment the
@@ -80,9 +98,32 @@ const FACTS: Array<[string, string]> = [
   ['Automated tests passing', `${pressCounts.tests.toLocaleString('en-US')} passing (${pressCounts.files} test files, full run ${formatPressCountsDate(pressCounts.date)})`],
   ['Founder', 'Independent developer, GitHub: shajhanindher6-art'],
   ['Public repository', 'https://github.com/shajhanindher6-art/shahjahanaibuy'],
-];
+  ];
+}
 
-export default function PressPage() {
+export default async function PressPage() {
+  let latestFreshnessLabel: string | null = null;
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase
+      .from('products')
+      .select('data_freshness')
+      .not('data_freshness', 'is', null)
+      .order('data_freshness', { ascending: false })
+      .limit(1);
+    if (!error && data?.[0]) {
+      latestFreshnessLabel = new Date(
+        (data[0] as { data_freshness: string }).data_freshness
+      ).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+    }
+  } catch {
+    latestFreshnessLabel = null;
+  }
+  const FACTS = buildFacts(latestFreshnessLabel);
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />

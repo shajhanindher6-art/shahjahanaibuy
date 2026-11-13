@@ -59,6 +59,66 @@ export default function SettingsPage() {
   const [guestPushOn, setGuestPushOn] = useState<boolean | null>(null);
   const [guestPushBusy, setGuestPushBusy] = useState(false);
   const [guestPushMessage, setGuestPushMessage] = useState('');
+  // Section 19, Phase 4 (§12 #43) — personalization opt-out. Its
+  // own store (agent_memory.preferences, not user_settings), so its
+  // own load/save — a missing migration 027 must never break the
+  // main settings save above.
+  const [personalizationOptOut, setPersonalizationOptOut] = useState(false);
+  const [personalizationLoaded, setPersonalizationLoaded] = useState(false);
+  const [personalizationUnavailable, setPersonalizationUnavailable] = useState(false);
+  const [personalizationSaving, setPersonalizationSaving] = useState(false);
+  const [personalizationNote, setPersonalizationNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    void fetch('/api/v1/recommendations/personalization')
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled) return;
+        if (json?.success) setPersonalizationOptOut(json.data?.optedOut === true);
+      })
+      .catch(() => {
+        // Fail-soft: the toggle stays off (opted in) until loaded.
+      })
+      .finally(() => {
+        if (!cancelled) setPersonalizationLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  async function handlePersonalizationToggle(optedOut: boolean) {
+    setPersonalizationSaving(true);
+    setPersonalizationNote(null);
+    setPersonalizationUnavailable(false);
+    try {
+      const res = await fetch('/api/v1/recommendations/personalization', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ optedOut }),
+      });
+      if (res.status === 503) {
+        setPersonalizationUnavailable(true);
+        setPersonalizationNote(
+          'Personalization setting is not set up yet — run migration 027 in Supabase. Nothing was changed.'
+        );
+        return;
+      }
+      if (!res.ok) throw new Error('save failed');
+      setPersonalizationOptOut(optedOut);
+      setPersonalizationNote(
+        optedOut
+          ? 'Personalisation is off — recommendations now show trending products only, and your search history, wishlist and views are not read for them.'
+          : 'Personalisation is on — recommendations use your search history, wishlist, views and preferences again.'
+      );
+    } catch {
+      setPersonalizationNote('Could not save — try again.');
+    } finally {
+      setPersonalizationSaving(false);
+    }
+  }
 
   const fetchSettings = useCallback(async () => {
     // Without this, a render with no user yet left `loading` true
@@ -332,6 +392,46 @@ export default function SettingsPage() {
               id="priceAlerts"
               checked={settings.priceAlerts}
               onCheckedChange={(v) => setSettings({ ...settings, priceAlerts: v })}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Section 19, Phase 4 (§12 #43) — personalization opt-out.
+          Turning it on stops personalised recommendations: the
+          engine returns trending-only results and does not read
+          search history, wishlist, or views for them. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Personalised recommendations</CardTitle>
+          <CardDescription>
+            Choose whether recommendations use your activity. Off means trending products only.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="personalizationOptOut">Turn off personalised recommendations</Label>
+              <p className="text-sm text-muted-foreground">
+                {personalizationOptOut
+                  ? 'Off — recommendations show trending products only, and your search history, wishlist and views are not read for them.'
+                  : 'On — recommendations are based on your search history, wishlist, views and preferences.'}
+              </p>
+              {personalizationNote && (
+                <p className="mt-1 text-sm text-muted-foreground">{personalizationNote}</p>
+              )}
+              {personalizationUnavailable && (
+                <p className="mt-1 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  Personalization setting is not set up yet — run migration 027 in Supabase to
+                  save this choice in your account.
+                </p>
+              )}
+            </div>
+            <Switch
+              id="personalizationOptOut"
+              checked={personalizationOptOut}
+              disabled={!personalizationLoaded || personalizationSaving}
+              onCheckedChange={(v) => void handlePersonalizationToggle(v)}
             />
           </div>
         </CardContent>

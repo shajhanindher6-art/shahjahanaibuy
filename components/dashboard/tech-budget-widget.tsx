@@ -7,7 +7,7 @@ import { Wallet } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { budgetStatus, DEFAULT_DAILY_TARGET_HOURS, DEFAULT_MONTHLY_TECH_BUDGET_USD } from '@/services/tech-budget';
+import { budgetStatus, explainTechBudgetOverrun, DEFAULT_DAILY_TARGET_HOURS, DEFAULT_MONTHLY_TECH_BUDGET_USD, type TechBudgetItem } from '@/services/tech-budget';
 import { cn } from '@/lib/utils';
 
 /**
@@ -36,6 +36,7 @@ interface DashboardTechBudget {
   wishlistItemCount: number;
   wishlistPricedCount: number;
   wishlistUnpricedCount: number;
+  wishlistItems: TechBudgetItem[];
 }
 
 function readLocal(): { monthly: number; hours: number } {
@@ -83,6 +84,7 @@ export function TechBudgetWidget() {
           wishlistItemCount: 0,
           wishlistPricedCount: 0,
           wishlistUnpricedCount: 0,
+          wishlistItems: [],
         });
         setMonthlyInput(String(local.monthly));
         setHoursInput(String(local.hours));
@@ -97,6 +99,7 @@ export function TechBudgetWidget() {
           itemCount: number;
           pricedCount: number;
           unpricedCount: number;
+          items?: TechBudgetItem[];
         };
       } | null;
       if (!payload) throw new Error('tech-budget response empty');
@@ -114,6 +117,7 @@ export function TechBudgetWidget() {
         wishlistItemCount: payload.wishlist?.itemCount ?? 0,
         wishlistPricedCount: payload.wishlist?.pricedCount ?? 0,
         wishlistUnpricedCount: payload.wishlist?.unpricedCount ?? 0,
+        wishlistItems: payload.wishlist?.items ?? [],
       });
       setMonthlyInput(String(budget.monthlyTechBudgetUsd));
       setHoursInput(String(budget.dailyTargetHours));
@@ -129,6 +133,7 @@ export function TechBudgetWidget() {
         wishlistItemCount: 0,
         wishlistPricedCount: 0,
         wishlistUnpricedCount: 0,
+        wishlistItems: [],
       });
       setMonthlyInput(String(local.monthly));
       setHoursInput(String(local.hours));
@@ -203,6 +208,18 @@ export function TechBudgetWidget() {
     wishlistTotalUsd: data.wishlistTotalUsd,
   });
 
+  // Section 19, Phase 4 (§12 #39) — an over-budget total is
+  // explained (which items drive it, what to drop, and a real
+  // in-budget alternative), never just reported as a red number.
+  const overrun =
+    signedIn && status.overBudget
+      ? explainTechBudgetOverrun({
+          monthlyBudgetUsd: data.monthlyTechBudgetUsd,
+          totalUsd: data.wishlistTotalUsd,
+          items: data.wishlistItems,
+        })
+      : null;
+
   return (
     <Card>
       <CardHeader>
@@ -242,9 +259,44 @@ export function TechBudgetWidget() {
             {data.wishlistUnpricedCount > 0 &&
               ` — ${data.wishlistUnpricedCount} without a recorded price (counted as $0, never guessed)`}
             {status.overBudget
-              ? '. Your wishlist costs more than one month of tech budget.'
+              ? `. Your wishlist costs more than one month of tech budget.`
               : '. Your wishlist fits inside one month of tech budget.'}
           </p>
+        )}
+        {overrun && (
+          <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">
+            <p className="font-medium">
+              ${overrun.overByUsd.toLocaleString()} over budget — here is why:
+            </p>
+            {overrun.drivers.length > 0 && (
+              <ul className="mt-1 list-disc space-y-1 pl-5">
+                {overrun.drivers.map((driver) => (
+                  <li key={driver.productId}>
+                    {driver.name} — ${driver.priceUsd.toLocaleString()} ({driver.sharePct}% of your wishlist total)
+                  </li>
+                ))}
+              </ul>
+            )}
+            {overrun.dropToFit && (
+              <p className="mt-1">
+                Removing {overrun.dropToFit.names.join(', ')} would bring the total to $
+                {overrun.dropToFit.newTotalUsd.toLocaleString()} — inside your budget.
+              </p>
+            )}
+            {overrun.replacementBudgetUsd !== null && (
+              <p className="mt-1">
+                Or swap the priciest item for a cheaper alternative:{' '}
+                <a
+                  className="underline underline-offset-4"
+                  href={`/tools/budget-finder?${overrun.replacementCategory ? `category=${encodeURIComponent(overrun.replacementCategory)}&` : ''}budget=${overrun.replacementBudgetUsd}`}
+                >
+                  find {overrun.replacementCategory ?? 'products'} under $
+                  {overrun.replacementBudgetUsd.toLocaleString()}
+                </a>
+                .
+              </p>
+            )}
+          </div>
         )}
         {signedIn && data.wishlistItemCount === 0 && (
           <p className="text-sm text-muted-foreground">

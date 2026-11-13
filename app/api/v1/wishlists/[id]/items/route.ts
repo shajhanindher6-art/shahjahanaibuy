@@ -20,6 +20,7 @@ import {
 } from '@/services/wishlists';
 import { getCachedProductBySlug } from '@/services/products';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -37,7 +38,8 @@ export async function GET(
     const items = await getWishlistItems(supabase, params.id, auth.userId);
 
     return apiSuccess(items);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'wishlists.items.get', status: 500 });
     return internalError('Failed to fetch wishlist items');
   }
 }
@@ -90,7 +92,8 @@ export async function POST(
     }
 
     return apiSuccess(item, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'wishlists.items.post', status: 500 });
     return internalError('Failed to add wishlist item');
   }
 }

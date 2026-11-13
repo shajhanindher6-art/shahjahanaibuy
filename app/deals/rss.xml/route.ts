@@ -43,7 +43,7 @@ export async function GET() {
         ).toUTCString();
         const descriptionParts = [
           ranked.deal?.description ?? null,
-          ranked.discountPercentage > 0
+          ranked.discountPercentage !== null && ranked.discountPercentage > 0
             ? `${ranked.discountPercentage}% off`
             : null,
           ranked.savingsAmount > 0

@@ -85,7 +85,11 @@ export function AIChatPanel() {
     onError: async () => {
       const query = pendingMessageRef.current;
       const result = query
-        ? await fetchDealFinderJson({ message: query, country: region.code })
+        ? await fetchDealFinderJson({
+            message: query,
+            country: region.code,
+            contextProducts: pendingContextRef.current,
+          })
         : null;
       // One data entry per assistant turn keeps the products
       // mapping aligned, even when the turn failed. The products
@@ -143,15 +147,58 @@ export function AIChatPanel() {
   const awaitingFirstChunk =
     sending && lastMessage?.role === 'assistant' && lastMessage.content === '';
 
+  // Follow-up chips (Section 19, Phase 5, §12 #56): mirror the
+  // floating AI Deal Finder widget — after an assistant answer that
+  // listed products, offer follow-ups that re-send the question WITH
+  // the product names included, so the (stateless) engine can answer
+  // about those products instead of getting a context-free
+  // "cheapest?" it cannot resolve. With 2+ products the chips
+  // compare them; with a single product they ask for its pros/cons
+  // and whether its price is competitive.
+  const lastAssistantProducts = [...view]
+    .reverse()
+    .find((m) => m.role === 'assistant' && m.products.length > 0)?.products;
+  const followUpChips =
+    lastAssistantProducts && lastAssistantProducts.length > 1
+      ? [
+          {
+            label: 'Sab se sasta kaunsa hai?',
+            message: `Compare ${lastAssistantProducts.map((p) => p.name).join(', ')} — which has the lowest price?`,
+          },
+          {
+            label: 'In mein best kaunsa hai?',
+            message: `Compare ${lastAssistantProducts.map((p) => p.name).join(' vs ')} and recommend the best one for most buyers.`,
+          },
+        ]
+      : lastAssistantProducts && lastAssistantProducts.length === 1
+        ? [
+            {
+              label: 'Pros and cons?',
+              message: `What are the pros and cons of ${lastAssistantProducts[0].name}?`,
+            },
+            {
+              label: 'Is the price competitive?',
+              message: `Is the price of ${lastAssistantProducts[0].name} competitive?`,
+            },
+          ]
+        : [];
+  // Product names for the in-flight turn, so the JSON fallback in
+  // onError can resolve follow-ups the same way send() does.
+  const pendingContextRef = useRef<string[]>([]);
+
   async function send(text: string) {
     const message = text.trim();
     if (!message || sending) return;
     pendingMessageRef.current = message;
+    pendingContextRef.current = (lastAssistantProducts ?? []).map((p) => p.name);
     setInput('');
     try {
       await append(
         { role: 'user', content: message },
-        { body: { country: region.code } }
+        // contextProducts lets the route resolve a bare follow-up
+        // ("and the cheaper one?") against the previous turn's
+        // products server-side, as a safety net under the chips.
+        { body: { country: region.code, contextProducts: pendingContextRef.current } }
       );
     } catch {
       // Stream failures surface through onError (which runs the
@@ -205,6 +252,18 @@ export function AIChatPanel() {
         )}
       </div>
       <div className="flex flex-wrap gap-1.5 border-t border-white/40 px-3 pt-2">
+        {followUpChips.map((chip) => (
+          <Button
+            key={chip.label}
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => send(chip.message)}
+            className="h-auto rounded-full px-2.5 py-1 text-xs"
+          >
+            {chip.label}
+          </Button>
+        ))}
         {SUGGESTIONS.map((s) => (
           <Button
             key={s}

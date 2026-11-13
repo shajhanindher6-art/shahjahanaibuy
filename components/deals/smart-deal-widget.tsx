@@ -170,6 +170,7 @@ export function SmartDealWidget({ title = 'Smart Deals For You', limit = 6, clas
               <CardContent className="p-4">
                 <div className="mb-3 h-32 overflow-hidden rounded-lg bg-muted">
                   {deal.product!.imageUrl && !failedImages.has(deal.product!.id) ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- remote merchant image; next/image remotePatterns allows only Unsplash + Pexels
                     <img
                       src={deal.product!.imageUrl}
                       alt={deal.product!.name}

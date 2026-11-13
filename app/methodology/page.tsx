@@ -6,6 +6,7 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { appConfig } from '@/lib/config/app';
 import { getConfiguredAmazonLocales } from '@/services/affiliate-geo';
 import { DEAL_VERIFIED_MEANING } from '@/lib/fact-check';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 export const metadata: Metadata = {
   title: 'How SmartBuy AI works — SmartBuy AI',
@@ -25,8 +26,37 @@ export const metadata: Metadata = {
  */
 export const dynamic = 'force-dynamic';
 
-export default function MethodologyPage() {
+export default async function MethodologyPage() {
   const configuredLocales = getConfiguredAmazonLocales();
+  // Section 19, Phase 7 (§12 #75): the "last recorded" date used to
+  // be hardcoded here ("2 November 2026") and went stale the day
+  // after it was written. It is now read live from the catalog —
+  // the newest products.data_freshness — at request time, the same
+  // source the owner dashboard's price-source health reads. When
+  // the read fails (or no freshness stamp exists) the date is
+  // omitted entirely instead of a stale one being shown.
+  let latestFreshness: string | null = null;
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase
+      .from('products')
+      .select('data_freshness')
+      .not('data_freshness', 'is', null)
+      .order('data_freshness', { ascending: false })
+      .limit(1);
+    if (!error && data?.[0]) {
+      latestFreshness = (data[0] as { data_freshness: string }).data_freshness;
+    }
+  } catch {
+    latestFreshness = null;
+  }
+  const latestFreshnessLabel = latestFreshness
+    ? new Date(latestFreshness).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      })
+    : null;
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
@@ -52,8 +82,13 @@ export default function MethodologyPage() {
             currently Amazon and Best Buy for the products listed. A price refresh is
             scheduled every six hours, but no live refresh happens today: the scheduled
             run re-reads the site&apos;s own database and fetches no new retailer prices,
-            so the recorded prices are stale (last recorded 2 November 2026) until the
-            live refresh work lands. Every price shown carries the time it was last
+            so the recorded prices are stale
+            {latestFreshnessLabel ? (
+              <> (last recorded {latestFreshnessLabel})</>
+            ) : (
+              <> (no recorded freshness stamp is available right now)</>
+            )}{' '}
+            until the live refresh work lands. Every price shown carries the time it was last
             recorded.
             The recorded price history for most products currently spans about thirty days
             (about 30 days ending when the catalog was seeded); a ninety-day history is still accumulating, and
@@ -82,8 +117,11 @@ export default function MethodologyPage() {
               Discount percentages use the merchant compare-at price as their basis.
             </strong>{' '}
             When a product page says a price is 9% off, it means 9% below the merchant&apos;s
-            own compare-at price for that listing — for example, the MacBook Air 13 at $999
-            against a compare-at price of $1,099. The homepage deals widget uses a different
+            own compare-at price for that listing — the percentage is always measured
+            against the compare-at price shown on that product page, never against a
+            price from another listing. No fixed product-and-price example is given
+            here: catalog prices change, and a printed example would go stale the
+            moment the catalog does. The homepage deals widget uses a different
             basis (the deals table), which is why its percentages can differ from the
             product page for the same product. We state the basis here so the difference is
             a known fact, not a surprise.

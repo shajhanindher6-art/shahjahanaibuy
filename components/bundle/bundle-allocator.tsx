@@ -229,6 +229,37 @@ export function BundleAllocator() {
             </CardContent>
           </Card>
 
+          {/* Section 19, Phase 4 (§12 #38) — per-category budget
+              split: each category's equal share of the budget, what
+              it spent, and what is left of its share. */}
+          {result.categoryAllocations && result.categoryAllocations.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Budget split by category</CardTitle>
+                <CardDescription>
+                  Each category gets an equal share of the budget — spent and remaining per category.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2">
+                  {result.categoryAllocations.map((allocation) => (
+                    <li
+                      key={allocation.category}
+                      className="flex items-center justify-between gap-3 text-sm"
+                    >
+                      <span className="font-medium">{allocation.category}</span>
+                      <span className="text-muted-foreground">
+                        <Price usd={allocation.spentUsd} /> of <Price usd={allocation.allocatedUsd} />
+                        {' · '}
+                        <Price usd={allocation.remainingUsd} /> left
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+
           {result.uncovered.length > 0 && (
             <Card>
               <CardHeader>

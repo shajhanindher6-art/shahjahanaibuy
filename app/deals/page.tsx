@@ -34,6 +34,7 @@ import {
   sortCoupons,
 } from '@/lib/deal-list';
 import { DEAL_VERIFIED_MEANING } from '@/lib/fact-check';
+import { TransparencyBlock } from '@/components/ai/transparency-block';
 
 interface RankedDeal {
   id: string;
@@ -41,7 +42,9 @@ interface RankedDeal {
   productId: string | null;
   dealType: string;
   aiScore: number;
-  discountPercentage: number;
+  // Section 19, Phase 0 (§12 #24): null when no percentage can
+  // honestly be derived (fixed deal, no recorded price).
+  discountPercentage: number | null;
   savingsAmount: number;
   currentPrice: number | null;
   isFeatured: boolean;
@@ -322,7 +325,9 @@ export default function DealsPage() {
     const sorted = [...items];
     switch (dealSort) {
       case 'discount':
-        sorted.sort((a, b) => b.discountPercentage - a.discountPercentage);
+        // Section 19, Phase 0 (§12 #24): a null percentage sorts
+        // as 0 — it contributes nothing, never a fabricated number.
+        sorted.sort((a, b) => (b.discountPercentage ?? 0) - (a.discountPercentage ?? 0));
         break;
       case 'savings':
         sorted.sort((a, b) => b.savingsAmount - a.savingsAmount);
@@ -377,6 +382,17 @@ export default function DealsPage() {
       ? (regularDeals.length > 0 ? regularDeals : deals)
       : deals;
   const dealsTotalPages = Math.max(1, Math.ceil(dealsBaseList.length / DEALS_PAGE_SIZE));
+  // Section 19, Phase 7 (§12 #70): the transparency block's
+  // timestamp — the newest rankedAt across the fetched deals, or
+  // null while nothing has loaded (the block then says "not
+  // recorded" instead of guessing a date).
+  const latestRankedAt = useMemo(() => {
+    let latest: string | null = null;
+    for (const deal of deals) {
+      if (deal.rankedAt && (!latest || deal.rankedAt > latest)) latest = deal.rankedAt;
+    }
+    return latest;
+  }, [deals]);
   const dealsEffectivePage = Math.min(dealsPage, dealsTotalPages);
   const pagedDeals = paginateList(dealsBaseList, dealsEffectivePage, DEALS_PAGE_SIZE);
 
@@ -466,6 +482,35 @@ export default function DealsPage() {
                 How SmartBuy AI works
               </Link>
             </p>
+          </div>
+          {/* Section 19, Phase 7 (§12 #70): shared transparency block
+              for the AI-ranked deals — what the AI Score is, what it
+              was computed from, and what it does NOT check. The
+              formula is the one in services/ai-deals.ts (scoreDeal):
+              base 50 + claimed discount % × 0.5, plus flash / large-
+              discount / confidence bonuses and the recorded-price
+              value term; Featured additionally needs a validated
+              discount. */}
+          <div className="mx-auto mt-4 max-w-2xl">
+            <TransparencyBlock
+              title="How these deals are ranked"
+              dataUsed={[
+                'Ranked deals from the site’s deals table: each deal’s claimed discount, deal type and dates.',
+                'AI Score: base 50 + claimed discount % × 0.5, plus bonuses for flash deals (ending within 24 hours), discounts of $30 or more, high search confidence, and a current recorded price at or near the lowest recorded price.',
+                'Featured deals additionally need a validated discount — a high score alone never features a deal.',
+              ]}
+              dataTimestamp={latestRankedAt}
+              dataTimestampLabel="Rankings generated at"
+              confidence="The AI Score (0–100) is a ranking score, not a verified discount and not a measured match rate — it orders deals, it does not prove any deal is good value."
+              assumptions={[
+                'The claimed discount on each deal card is the merchant’s stated figure from the deals table.',
+                'A fixed-amount discount is converted to a percentage from the current recorded price; when no recorded price exists, no percentage is shown instead of an invented one.',
+              ]}
+              missingInfo={[
+                'Ranking does not check the claimed discount against recorded price history for the list itself — the fake-sale / price-inflation check only gates the Featured flag.',
+                'No review data and no specification data are used for ranking — the catalog has zero recorded reviews.',
+              ]}
+            />
           </div>
           {/* S3#10 — share this deals page (WhatsApp / X / Facebook /
               copy link + your own referral link). */}
@@ -894,7 +939,11 @@ function DealCard({ deal, featured, onClick }: { deal: RankedDeal; featured?: bo
   // fallback value is the ranking's discountPercentage — a PERCENT,
   // not a dollar amount. The old code treated the fallback as a
   // fixed amount and rendered e.g. "$20 OFF" for a 20% deal.
+  // Section 19, Phase 0 (§12 #24): the percentage can now be
+  // null (fixed deal, no recorded price) — then no "% OFF" badge
+  // renders at all, instead of a fabricated "null%".
   const discount = deal.deal?.discountValue ?? deal.discountPercentage;
+  const hasDiscount = typeof discount === 'number' && Number.isFinite(discount);
   const isPercent = deal.deal ? deal.deal.discountType === 'percentage' : true;
   const endDate = deal.deal ? new Date(deal.deal.endAt) : null;
   const hoursLeft = endDate ? Math.round((endDate.getTime() - Date.now()) / (60 * 60 * 1000)) : null;
@@ -971,9 +1020,11 @@ function DealCard({ deal, featured, onClick }: { deal: RankedDeal; featured?: bo
           ) : (
             <span className="text-sm text-muted-foreground">Price not listed</span>
           )}
-          <span className="text-lg font-bold text-green-600">
-            {isPercent ? `${discount}%` : `$${discount}`} OFF
-          </span>
+          {hasDiscount && (
+            <span className="text-lg font-bold text-green-600">
+              {isPercent ? `${discount}%` : `$${discount}`} OFF
+            </span>
+          )}
           {deal.savingsAmount > 0 && (
             <span className="text-sm text-muted-foreground">
               Save <Price usd={deal.savingsAmount} showOriginal={false} />

@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import { RefreshCw, Home, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { logger } from '@/lib/config/logger';
 
 export default function ErrorPage({
   error,
@@ -13,7 +14,13 @@ export default function ErrorPage({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error('Application error:', error);
+    // Section 19: routed through the shared logger (lib/config/logger
+    // is pure JS — no Node-only APIs — so it is safe to import in this
+    // client component). Sentry reporting below is unchanged.
+    logger.error('Application error', {
+      message: error.message,
+      digest: error.digest ?? null,
+    });
 
     // Report to crash reporting service if configured
     const sentryDsn = process.env.NEXT_PUBLIC_SENTRY_DSN;

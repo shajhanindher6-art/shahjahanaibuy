@@ -416,6 +416,7 @@ async function FeaturedProductsStrip({ language }: { language: Language }) {
                         // from merchant hosts outside next/image's
                         // remotePatterns allowlist (next.config.js),
                         // so next/image would throw at runtime.
+                        // eslint-disable-next-line @next/next/no-img-element -- remote merchant image; next/image remotePatterns allows only Unsplash + Pexels
                         <img
                           src={product.imageUrl}
                           alt={product.name}

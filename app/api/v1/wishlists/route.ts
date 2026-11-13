@@ -19,6 +19,7 @@ import {
 } from '@/services/wishlists';
 import { getPollCountsByWishlist } from '@/lib/wishlist-polls';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'wishlists' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -45,7 +46,8 @@ export async function GET(request: NextRequest) {
     return apiSuccess(
       wishlists.map((w) => ({ ...w, pollCount: pollCounts.get(w.id) ?? 0 }))
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'wishlists.get', status: 500 });
     return internalError('Failed to fetch wishlists');
   }
 }
@@ -81,7 +83,8 @@ export async function POST(request: NextRequest) {
     }
 
     return apiSuccess(wishlist, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'wishlists.post', status: 500 });
     return internalError('Failed to create wishlist');
   }
 }

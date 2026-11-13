@@ -10,10 +10,16 @@
  * when the shopper clicks through.
  *
  * Unknown slugs call notFound(), matching the /brands/[slug] and
- * /categories/[slug] pages. (Known repo caveat, Section 15 audit
- * P0-2: notFound() in [slug] routes currently renders with HTTP 200
- * in this Next.js version — a systemic soft-404 issue, not specific
- * to this page.)
+ * /categories/[slug] pages. The middleware (middleware.ts) checks
+ * slug existence BEFORE rendering and rewrites unknown slugs to
+ * /__smartbuy_not_found__ — a path that matches no route — so
+ * Next returns its routing-level 404 (the real app/not-found.tsx
+ * UI, HTTP 404) without rendering anything through the loading
+ * boundary, and the browser URL stays on the requested slug. The
+ * notFound() call here is the in-render fallback for the same
+ * case; the old Section 15 soft-404 caveat (notFound() rendering
+ * with HTTP 200) no longer applies since that middleware rewrite
+ * landed — see middleware.ts and lib/middleware/slug-exists.ts.
  */
 
 import type { Metadata } from 'next';

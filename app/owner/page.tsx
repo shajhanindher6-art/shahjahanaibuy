@@ -31,6 +31,8 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { getOwnerOverview } from '@/services/owner';
 import { listRecentErrors } from '@/services/error-log-admin';
+import { ErrorLogList } from '@/components/owner/error-log-list';
+import { getAiAccuracySummary, accuracySummaryLine } from '@/services/ai-accuracy';
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-GB', {
@@ -61,6 +63,11 @@ export default async function OwnerPage() {
   const service = createSupabaseServiceClient();
   const overview = service ? await getOwnerOverview(service) : null;
   const errorLog = service ? await listRecentErrors(service, 20) : null;
+  // Section 19, Phase 7 (§12 #72): the SAME accuracy computation
+  // the /admin/ai control center shows (services/ai-accuracy) —
+  // no second computation. Fail-safe while migration 032 is
+  // unapplied: "no outcomes recorded yet", never a percentage.
+  const aiAccuracy = service ? await getAiAccuracySummary(service) : null;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -234,6 +241,47 @@ export default async function OwnerPage() {
                 </div>
               )}
 
+              <h2 className="mt-10 text-xl font-semibold">AI prediction accuracy</h2>
+              {!aiAccuracy ? (
+                <p className="mt-4 rounded-lg border border-dashed p-6 text-muted-foreground">
+                  Prediction accuracy is unavailable — the service-role key
+                  is not configured, so the dashboard cannot read the
+                  recorded outcomes.
+                </p>
+              ) : aiAccuracy.error ? (
+                <p className="mt-4 rounded-lg border border-red-300 bg-red-50 p-4 text-sm dark:border-red-800 dark:bg-red-950">
+                  Prediction accuracy could not be read: {aiAccuracy.error}
+                </p>
+              ) : aiAccuracy.tableMissing ? (
+                <p className="mt-4 rounded-lg border border-dashed p-6 text-muted-foreground">
+                  No prediction outcomes recorded yet — the
+                  prediction_outcomes table (migration 032) has not been
+                  applied, so no accuracy can be measured. An accuracy
+                  percentage is published only once 20 outcomes have
+                  resolved; until then there is no number to show.
+                </p>
+              ) : (
+                <div className="mt-4 rounded-lg border p-6">
+                  {aiAccuracy.summary.accuracyPercent !== null ? (
+                    <p className="text-4xl font-bold">
+                      {aiAccuracy.summary.accuracyPercent}%
+                    </p>
+                  ) : (
+                    <p className="text-2xl font-bold">No accuracy percentage yet</p>
+                  )}
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {accuracySummaryLine(aiAccuracy.summary)}
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {aiAccuracy.summary.totalRecorded} outcome(s) recorded —{' '}
+                    {aiAccuracy.summary.resolved} resolved,{' '}
+                    {aiAccuracy.summary.pending} still waiting for their
+                    horizon to pass, {aiAccuracy.summary.expired} expired.
+                    Same figures as the AI control center in /admin/ai.
+                  </p>
+                </div>
+              )}
+
               <h2 className="mt-10 text-xl font-semibold">Error logs</h2>
               {!errorLog ? (
                 <p className="mt-4 rounded-lg border border-dashed p-6 text-muted-foreground">
@@ -262,23 +310,7 @@ export default async function OwnerPage() {
                   error has been recorded since it was applied.
                 </p>
               ) : (
-                <ul className="mt-4 space-y-2">
-                  {errorLog.errors.map((entry) => (
-                    <li
-                      key={entry.id}
-                      className="rounded-lg border p-4 text-sm"
-                    >
-                      <p>
-                        <span className="font-medium">{entry.level}</span>
-                        {entry.route ? ` · ${entry.route}` : ''} ·{' '}
-                        {formatDateTime(entry.created_at)}
-                      </p>
-                      <p className="mt-1 text-muted-foreground">
-                        {entry.message}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
+                <ErrorLogList errors={errorLog.errors} />
               )}
             </>
           )}

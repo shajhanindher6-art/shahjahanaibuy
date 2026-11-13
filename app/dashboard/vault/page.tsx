@@ -81,7 +81,7 @@ export default function VaultPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const onFileChange = (f: File | null) => {
     setReceiptFile(f);

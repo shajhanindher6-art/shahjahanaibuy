@@ -204,9 +204,9 @@ export default function PriceDropDigestPage() {
       // Defaults stand.
     }
     void load(initial);
-    // Mount-only: load is stable (useCallback with stable deps).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // load is a useCallback with stable deps, so listing it keeps
+    // this mount-only in practice (it never changes identity).
+  }, [load]);
 
   async function changeFrequency(freq: 'daily' | 'weekly') {
     setError(null);

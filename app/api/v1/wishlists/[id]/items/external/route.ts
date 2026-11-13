@@ -26,6 +26,7 @@ import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/li
 import { getCachedProductBySlug } from '@/services/products';
 import { storeDomainFromUrl } from '@/services/external-wishlist';
 
+import { logApiError } from '@/lib/api/error-logging';
 function isMissingColumnOrTable(error: { code?: string } | null | undefined): boolean {
   return error?.code === '42P01' || error?.code === '42703';
 }
@@ -75,7 +76,8 @@ export async function GET(
       return internalError('Failed to fetch external items');
     }
     return apiSuccess(data ?? [], 200, { externalEnabled: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'wishlists.items.external.get', status: 500 });
     return internalError('Failed to fetch external items');
   }
 }
@@ -144,7 +146,8 @@ export async function POST(
       return internalError('Failed to add external item');
     }
     return apiSuccess(data, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'wishlists.items.external.post', status: 500 });
     return internalError('Failed to add external item');
   }
 }

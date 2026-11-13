@@ -101,6 +101,14 @@ export function TrustCheckSection({
 
   const [fakeSaleRows, setFakeSaleRows] = useState<FakeSaleRow[] | null>(null);
   const [fakeSaleFailed, setFakeSaleFailed] = useState(false);
+  // Section 19, Phase 2 (§12 #19): the raw recorded points, kept
+  // so the unified TrustSignals card can run its time-series
+  // anomaly checks (spike/drop, flatline) on the same history the
+  // Fake Sale scan already fetched — no second request.
+  const [historyPoints, setHistoryPoints] = useState<Array<{ price: number; recordedAt: string }> | null>(null);
+  // Latest recorded price per retailer name, for the
+  // cross-merchant outlier check — derived from the same series.
+  const [merchantPrices, setMerchantPrices] = useState<Array<{ merchant: string; price: number }>>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -176,6 +184,25 @@ export function TrustCheckSection({
           }
         }
         if (!cancelled) setFakeSaleRows(rows);
+        // Section 19, Phase 2 (§12 #19): hand the same recorded
+        // points to the TrustSignals card for its time-series
+        // checks, plus the latest price per retailer for the
+        // cross-merchant outlier check.
+        if (!cancelled) {
+          setHistoryPoints(
+            points
+              .filter((p) => Number.isFinite(Number(p.price)) && Number(p.price) > 0)
+              .map((p) => ({ price: Number(p.price), recordedAt: p.recordedAt }))
+          );
+          setMerchantPrices(
+            Array.from(byName.values()).map((entry) => {
+              const sorted = [...entry.series].sort(
+                (a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()
+              );
+              return { merchant: entry.displayName, price: sorted[sorted.length - 1].price };
+            })
+          );
+        }
       } catch {
         if (!cancelled) setFakeSaleFailed(true);
       }
@@ -206,6 +233,8 @@ export function TrustCheckSection({
         ratingDistribution={ratingDistribution}
         priceUsd={priceUsd}
         imageUrl={imageUrl}
+        priceHistory={historyPoints ?? undefined}
+        merchantPrices={merchantPrices.length > 0 ? merchantPrices : undefined}
       />
 
       {/* (1b) Review authenticity, compact: full analysis stays in the Reviews tab. */}

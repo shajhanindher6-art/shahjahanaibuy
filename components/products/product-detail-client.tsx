@@ -178,11 +178,14 @@ const ProductVisualizer = dynamic(
   { ssr: false, loading: () => <LoadingSpinner /> }
 );
 import { DealScoreBadge } from '@/components/products/deal-score-badge';
+import { TransparencyBlock } from '@/components/ai/transparency-block';
 // Section 13, Chunk C: hero 30-day trend chip — the wrapper is
 // small (recharts loads lazily inside it), so a static import is
 // fine; it renders nothing with <2 recorded points.
 import { PriceTrendSparkline } from '@/components/products/price-trend-sparkline';
 import { BestTimeToBuyIndicator } from '@/components/products/best-time-to-buy';
+import { BuyingOpportunityBadge } from '@/components/products/buying-opportunity-badge';
+import { BuyingConsiderations } from '@/components/products/buying-considerations';
 import { PricePredictionBadge } from '@/components/products/price-prediction-badge';
 // Section 14, chunk 5: product gallery — static import, small
 // (no chart library); renders the single product image when no
@@ -400,6 +403,7 @@ import {
   bestCoupon,
   couponValueLabel,
   discountPercent,
+  COUPON_CHECKOUT_UNVERIFIED_LABEL,
   type DealCoupon,
 } from '@/lib/deal-math';
 import { useAuth } from '@/features/auth/auth-provider';
@@ -558,6 +562,12 @@ interface AISummary {
   pros: string[];
   cons: string[];
   alternatives: string[];
+  /** Real generation time (Section 19, Phase 2 §12 #16 stamp). */
+  createdAt?: string;
+  /** Real price-as-of date — the product's dataFreshness, never fabricated. */
+  priceAsOf?: string | null;
+  /** Freshness qualifier for the verdict text, or null while the price is fresh. */
+  freshnessNote?: string | null;
 }
 
 interface Prediction {
@@ -1486,6 +1496,26 @@ export default function ProductDetailClient({
               />
             )}
 
+            {/* Section 19, Phase 2 (§12 #25): buying-opportunity
+                composite — renders ONLY when all four conditions
+                hold (near recorded low + fresh + validated discount
+                + in stock); any missing condition renders nothing.
+                Freshness comes from lastCheckedAt — the latest
+                recorded_at across the price history, the most
+                accurate check date this page holds (the local
+                Product shape carries no dataFreshness). */}
+            {prediction && product && (
+              <BuyingOpportunityBadge
+                slug={slug}
+                currentPrice={prediction.currentPrice}
+                lowestPrice={prediction.lowestPrice}
+                dataFreshness={lastCheckedAt}
+                inStock={merchants.some(
+                  (m) => m.inStock || m.availability === 'in_stock'
+                )}
+              />
+            )}
+
             {/* Option 15 Module 1: deterministic MA-based badge — renders nothing
                 while loading, on fetch failure, or with <2 recorded price points. */}
             <PricePredictionBadge slug={slug} />
@@ -1525,6 +1555,73 @@ export default function ProductDetailClient({
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm leading-relaxed">{summary.summary}</p>
+                  {/* Section 19, Phase 2 (§12 #16): generated-at +
+                      price-as-of stamp — real values only (createdAt
+                      is the generation time; priceAsOf is the
+                      product's dataFreshness). The freshness note
+                      qualifies the verdict when the price is stale
+                      or its age is unknown (§12 #20). */}
+                  {(summary.createdAt || summary.priceAsOf) && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Summary generated{' '}
+                      {summary.createdAt
+                        ? formatLastChecked(summary.createdAt) ?? summary.createdAt
+                        : '—'}
+                      {' · '}Price as of{' '}
+                      {summary.priceAsOf
+                        ? (formatLastChecked(summary.priceAsOf) ?? summary.priceAsOf)
+                        : 'unknown'}
+                    </p>
+                  )}
+                  {summary.freshnessNote && (
+                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                      {summary.freshnessNote}
+                    </p>
+                  )}
+                  {/* Section 19, fix-up (§12 #70): shared transparency
+                      block for the AI summary — what it was built
+                      from, when, and what it never checks. Fed only
+                      from this page's own state (the summary's real
+                      generation time and price-as-of, the loaded
+                      review count, the recorded specification count,
+                      and the loaded price prediction); any value the
+                      page has not loaded is stated as not shown here
+                      rather than guessed. */}
+                  <div className="mt-4">
+                    <TransparencyBlock
+                      title="How this summary was calculated"
+                      dataUsed={[
+                        `Recorded product details: ${product?.name ?? 'this product'}${product?.brand ? `, ${product.brand}` : ''}${product?.category ? ` (${product.category})` : ''}.`,
+                        prediction
+                          ? `Recorded price history: ${prediction.dataPoints ?? 'an unknown number of'} recorded points${prediction.currentPrice !== null && prediction.currentPrice !== undefined ? ` — current $${prediction.currentPrice.toFixed(2)}` : ''}${prediction.lowestPrice !== null && prediction.lowestPrice !== undefined ? `, lowest $${prediction.lowestPrice.toFixed(2)}` : ''}${prediction.highestPrice !== null && prediction.highestPrice !== undefined ? `, highest $${prediction.highestPrice.toFixed(2)}` : ''}.`
+                          : 'Recorded price history (the summary generator reads it; this page has not loaded the price prediction, so the point count is not shown here).',
+                        reviewSummary
+                          ? `Recorded reviews: ${reviewSummary.totalReviews} recorded review${reviewSummary.totalReviews !== 1 ? 's' : ''}${reviewSummary.totalReviews > 0 ? `, average rating ${reviewSummary.averageRating.toFixed(1)}` : ''}.`
+                          : 'Recorded reviews: the review count has not loaded on this page.',
+                        `${product?.attributes?.length ?? 0} recorded specifications.`,
+                        summary.alternatives.length > 0
+                          ? `Alternatives: ${summary.alternatives.length} same-category product${summary.alternatives.length !== 1 ? 's' : ''} listed below the pros and cons.`
+                          : 'No alternatives were listed for this product.',
+                      ]}
+                      dataTimestamp={summary.createdAt ?? null}
+                      dataTimestampLabel="Summary generated at"
+                      confidence="No confidence score — this summary is a deterministic template over the recorded rows above, not a scored prediction and not a language-model analysis."
+                      assumptions={[
+                        'The recorded price, reviews and specifications are taken as accurate as recorded; nothing is checked against the merchant’s live listing.',
+                        'The verdict text was written when the summary was generated — if the price has gone stale since, the freshness note above qualifies it.',
+                      ]}
+                      missingInfo={[
+                        ...(reviewSummary !== null && reviewSummary.totalReviews === 0
+                          ? ['No review data exists for this product, so no quality claim in the summary is backed by reviews.']
+                          : []),
+                        ...((product?.attributes?.length ?? 0) === 0
+                          ? ['No specifications are recorded for this product.']
+                          : []),
+                        'No merchant reliability, warranty or shipping data is used in this summary.',
+                        'The summary does not check the merchant’s live price — it uses the last recorded price (see "Price as of" above).',
+                      ]}
+                    />
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -1688,7 +1785,7 @@ export default function ProductDetailClient({
                                 ? `Valid until ${new Date(coupon.validUntil).toLocaleDateString()} · `
                                 : ''}
                               Apply this code at the retailer&apos;s checkout — SmartBuy cannot apply
-                              codes inside a retailer&apos;s checkout.
+                              codes inside a retailer&apos;s checkout. {COUPON_CHECKOUT_UNVERIFIED_LABEL}
                             </p>
                           </div>
                         )}
@@ -1955,6 +2052,22 @@ export default function ProductDetailClient({
             reviews={reviews}
           />
         )}
+        {/* Section 19, §12 #18: consolidated buying considerations —
+            price freshness, discount validation, price position and
+            recorded trust signals, from data the page already holds.
+            Renders the honest "not enough data" line when no signal
+            exists for this product — never an invented checklist. */}
+        {product && (
+          <div className="mt-6">
+            <BuyingConsiderations
+              lastCheckedAt={lastCheckedAt}
+              merchants={merchants}
+              totalReviews={reviewSummary?.totalReviews ?? 0}
+              averageRating={reviewSummary?.averageRating ?? null}
+              verifiedReviews={reviews.filter((r) => r.verifiedPurchase).length}
+            />
+          </div>
+        )}
         {/* Section 6, Item 10: manufacturer authenticity method —
             recorded only, never a "genuine" badge. */}
         {product && (
@@ -2142,8 +2255,12 @@ export default function ProductDetailClient({
                     It replaces the retired exact-date / exact-price
                     forecast: no future price or date is ever presented
                     as a fact — only a recommendation + capped confidence
-                    + a reason tied to the recorded points. */}
-                <BuyVsWait slug={slug} />
+                    + a reason tied to the recorded points.
+                    Section 19, Phase 3 (§12 #33): the visitor's
+                    stated max budget (when one was stated) is passed
+                    through, so an over-budget price is never
+                    recommended as a buy. */}
+                <BuyVsWait slug={slug} budgetUsd={budgetUsd} />
                 {/* Batch 2 Module 3: resale projection from the product's own
                     recorded decline — simulated, never a resale quote.
                     Option 19: a recorded annual rate overrides the
@@ -2310,6 +2427,7 @@ export default function ProductDetailClient({
                         {(reviewPhotos[review.id] ?? []).length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-2">
                             {reviewPhotos[review.id].map((url, i) => (
+                              // eslint-disable-next-line @next/next/no-img-element -- user-uploaded review photo on an arbitrary host; next/image remotePatterns allows only Unsplash + Pexels
                               <img
                                 key={`${review.id}-photo-${i}`}
                                 src={url}
@@ -2374,7 +2492,7 @@ export default function ProductDetailClient({
             </Card>
             {/* Seeded specs with a stored group: one card per group,
                 group name verbatim from the database. Products with no
-                attribute rows render nothing here at all. */}
+                attribute rows get the honest empty state below. */}
             {namedAttributeGroups.map((g) => (
               <Card key={g.group ?? 'specs'} className="mt-4">
                 <CardHeader>
@@ -2393,6 +2511,20 @@ export default function ProductDetailClient({
                 </CardContent>
               </Card>
             ))}
+            {/* Section 19, §12 #26: products with no attribute rows
+                previously rendered nothing here at all. Honest empty
+                state instead — the base card above still shows the
+                Brand/Category/GTIN/Confidence rows. */}
+            {namedAttributeGroups.length === 0 &&
+              ungroupedAttributes.length === 0 && (
+                <Card className="mt-4">
+                  <CardContent className="pt-6">
+                    <p className="text-muted-foreground">
+                      No specifications recorded for this product yet.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
             {/* Option 7: Size & 3D view. No catalog product carries
                 dimensions or a 3D model file today, so this honestly
                 renders the no-data notes; when real dimensions or a

@@ -34,10 +34,12 @@ import { formatOriginalAmount } from '@/services/currency';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   GUIDED_CATEGORIES,
+  GUIDED_SPEC_DATA_NOTE,
   loadGuidedCandidates,
   parseBudgetFinderParams,
   rankGuidedPicks,
   rankRelaxedGuidedPicks,
+  specOptionsForCategory,
 } from '@/services/guided-finder';
 
 export const dynamic = 'force-dynamic';
@@ -86,19 +88,25 @@ function toolLanguage(): Language {
 
 export default async function BudgetFinderPage({ searchParams }: BudgetFinderProps) {
   const language = toolLanguage();
-  const { category, budgetUsd, budgetOriginal, budgetCurrency, budgetError } =
+  const { category, budgetUsd, budgetOriginal, budgetCurrency, budgetError, needBy, needByError, specInputs } =
     parseBudgetFinderParams(searchParams);
-  const hasQuery = category !== null || budgetUsd !== null;
+  const hasQuery = category !== null || budgetUsd !== null || needBy !== null || Object.keys(specInputs).length > 0;
+  const hasError = budgetError !== null || needByError !== null;
+  // Section 19, Phase 4 (§12 #46) — spec selects for the chosen
+  // category (empty until a category is picked).
+  const specOptions = specOptionsForCategory(category);
 
   const candidates =
-    hasQuery && !budgetError
+    hasQuery && !hasError
       ? await loadGuidedCandidates(await createSupabaseServerClient())
       : [];
   const picks =
-    hasQuery && !budgetError
+    hasQuery && !hasError
       ? rankGuidedPicks(candidates, {
           category,
           budgetUsd,
+          needBy,
+          specInputs,
           sortBy: 'deal',
           limit: 12,
         })
@@ -112,10 +120,14 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
     picks !== null && picks.length === 0
       ? rankRelaxedGuidedPicks(
           candidates,
-          { category, budgetUsd, sortBy: 'deal' },
+          { category, budgetUsd, needBy, specInputs, sortBy: 'deal' },
           3
         )
       : [];
+  // Section 19, Phase 4 (§12 #37) — the deadline note is the same
+  // for every pick (it comes from the deadline, not the product),
+  // so the first pick carries it for the whole results section.
+  const timelineNote = picks !== null && picks.length > 0 ? picks[0].timelineNote : null;
 
   // B9: show the amount the visitor actually wrote — "20,000 PKR
   // (≈ $71.00)" — not just the converted USD figure.
@@ -216,9 +228,63 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
                 </p>
               </div>
             </div>
+            {/* Section 19, Phase 4 (§12 #37) — optional "need by"
+                date. A near deadline changes the advice: waiting for
+                a price drop is not offered, because with only 4
+                recorded price points no drop can be predicted before
+                it. */}
+            <div className="mt-4">
+              <label htmlFor="needBy" className="text-sm font-medium">
+                Need it by (optional)
+              </label>
+              <input
+                id="needBy"
+                name="needBy"
+                type="date"
+                defaultValue={needBy ?? ''}
+                className="mt-1 min-h-[44px] w-full rounded-md border bg-background px-3 py-2 text-sm sm:max-w-xs"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                If your deadline is within 14 days, waiting for a price drop is not offered — no
+                drop can be predicted that soon from the recorded prices.
+              </p>
+            </div>
+            {/* Section 19, Phase 4 (§12 #46) — structured spec
+                inputs for the chosen category. Matched against
+                product names/descriptions only (no spec data is
+                recorded) — the results say so. */}
+            {specOptions.length > 0 && (
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                {specOptions.map((option) => (
+                  <div key={option.key}>
+                    <label htmlFor={`spec_${option.key}`} className="text-sm font-medium">
+                      {option.label}
+                    </label>
+                    <select
+                      id={`spec_${option.key}`}
+                      name={`spec_${option.key}`}
+                      defaultValue={specInputs[option.key] ?? ''}
+                      className="mt-1 min-h-[44px] w-full rounded-md border bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="">Any {option.label.toLowerCase()}</option>
+                      {option.options.map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            )}
             {budgetError && (
               <p className="mt-3 text-sm font-medium text-red-600" role="alert">
                 {budgetError}
+              </p>
+            )}
+            {needByError && (
+              <p className="mt-3 text-sm font-medium text-red-600" role="alert">
+                {needByError}
               </p>
             )}
             <Button type="submit" className="mt-4">
@@ -226,9 +292,17 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
             </Button>
           </form>
 
-          {hasQuery && !budgetError && (
+          {hasQuery && !hasError && (
             <section className="mt-10" aria-live="polite">
               <h2 className="text-xl font-semibold">{heading}</h2>
+              {timelineNote && (
+                <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                  {timelineNote}
+                </p>
+              )}
+              {Object.keys(specInputs).length > 0 && (
+                <p className="mt-2 text-sm text-muted-foreground">{GUIDED_SPEC_DATA_NOTE}</p>
+              )}
 
               {/* Section 12, Chunk E: copy/share for these results.
                   The URL is already shareable (?category=&budget=,
@@ -263,6 +337,10 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
                               : String(budgetOriginal),
                         }
                       : {}),
+                    ...(needBy ? { needBy } : {}),
+                    ...Object.fromEntries(
+                      Object.entries(specInputs).map(([key, value]) => [`spec_${key}`, value])
+                    ),
                   }}
                 />
               </div>
@@ -327,6 +405,12 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
                                 {pick.savingPct !== null && (
                                   <p className="text-sm font-medium text-green-700">
                                     Save {pick.savingPct}%
+                                    {pick.savingsUsd !== null && ` ($${pick.savingsUsd.toFixed(2)})`}
+                                  </p>
+                                )}
+                                {pick.savingsVsBudgetUsd !== null && (
+                                  <p className="text-xs text-muted-foreground">
+                                    ${pick.savingsVsBudgetUsd.toFixed(2)} left of your budget
                                   </p>
                                 )}
                               </div>
@@ -384,6 +468,12 @@ export default async function BudgetFinderPage({ searchParams }: BudgetFinderPro
                           {pick.savingPct !== null && (
                             <p className="text-sm font-medium text-green-700">
                               Save {pick.savingPct}%
+                              {pick.savingsUsd !== null && ` ($${pick.savingsUsd.toFixed(2)})`}
+                            </p>
+                          )}
+                          {pick.savingsVsBudgetUsd !== null && (
+                            <p className="text-xs text-muted-foreground">
+                              ${pick.savingsVsBudgetUsd.toFixed(2)} left of your budget
                             </p>
                           )}
                           {pick.dealScore !== null && (

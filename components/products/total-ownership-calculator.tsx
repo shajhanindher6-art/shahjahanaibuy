@@ -105,7 +105,6 @@ export function TotalOwnershipCalculator({
       setLoaded(true);
     }
     // The key is derived from the slug prop; reload when it changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
 
   const persist = (next: SavedOwnershipInputs) => {

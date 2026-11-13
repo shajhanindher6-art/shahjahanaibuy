@@ -21,6 +21,7 @@ import {
   type UpdateWishlistInput,
 } from '@/services/wishlists';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -43,7 +44,8 @@ export async function GET(
     }
 
     return apiSuccess(wishlist);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'wishlists.get', status: 500 });
     return internalError('Failed to fetch wishlist');
   }
 }
@@ -81,7 +83,8 @@ export async function PATCH(
     }
 
     return apiSuccess(updated);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'wishlists.patch', status: 500 });
     return internalError('Failed to update wishlist');
   }
 }
@@ -107,7 +110,8 @@ export async function DELETE(
     }
 
     return apiSuccess({ id: params.id, deleted: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'wishlists.delete', status: 500 });
     return internalError('Failed to delete wishlist');
   }
 }

@@ -8,6 +8,7 @@ import {
   bestCoupon,
   couponValueLabel,
   isCouponCurrentlyValid,
+  COUPON_CHECKOUT_UNVERIFIED_LABEL,
   type DealCoupon,
 } from '@/lib/deal-math';
 
@@ -130,6 +131,10 @@ export function AutoCouponHub({
                   ? ` · Valid until ${new Date(coupon.validUntil).toLocaleDateString()}`
                   : ''}
               </p>
+              {/* Section 19, Phase 2 (§12 #22): "valid" here is an
+                  expiry-date check only — the code has not been
+                  confirmed to work at the merchant checkout. */}
+              <p className="text-xs text-muted-foreground">{COUPON_CHECKOUT_UNVERIFIED_LABEL}</p>
             </div>
             <Button
               type="button"
