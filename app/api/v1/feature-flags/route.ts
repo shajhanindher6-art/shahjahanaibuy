@@ -9,6 +9,7 @@ import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middlew
 import { FEATURE_FLAG_DEFAULTS } from '@/lib/config/feature-flags';
 import type { NextRequest } from 'next/server';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'feature-flags' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -29,7 +30,8 @@ export async function GET(request: NextRequest) {
     }
 
     return apiSuccess(flags);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'feature-flags', status: 500 });
     return internalError('Failed to fetch feature flags');
   }
 }

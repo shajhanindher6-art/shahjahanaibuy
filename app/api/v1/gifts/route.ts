@@ -31,6 +31,7 @@ import { buildGeoAffiliateUrl, isGeoAffiliateEnabled } from '@/services/affiliat
 import { bestCoupon, couponValueLabel, type DealCoupon } from '@/lib/deal-math';
 import { findGiftPicks, SHIPPING_NOTE, type GiftCandidate } from '@/services/gift-finder';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'gifts' });
 
@@ -158,7 +159,8 @@ export async function POST(request: NextRequest) {
       storeKind: stores.kind,
       affiliateEnabled: isGeoAffiliateEnabled(),
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'gifts', status: 500 });
     return internalError('Gift recommendations failed');
   }
 }

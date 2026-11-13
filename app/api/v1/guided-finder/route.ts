@@ -19,6 +19,7 @@ import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import {
   answersToFinderInput,
   decodeQuizAnswers,
@@ -32,9 +33,13 @@ import {
 } from '@/services/guided-finder';
 
 export const dynamic = 'force-dynamic';
+// Section 19, Phase 1 (§12 #10) — expensive inline AI work runs under
+// maxDuration 60 (matching the 5 cron routes), not the platform default.
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'guided-finder' });
+  const startedAt = Date.now();
 
   // Public quiz picks are read-only compute; cap per IP so one
   // client cannot flood them.
@@ -113,7 +118,8 @@ export async function GET(request: NextRequest) {
       // missing catalog.
       pricedOnly: true,
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'guided-finder', status: 500, startedAt });
     return internalError('Guided finder failed');
   }
 }

@@ -18,6 +18,7 @@ import { logger } from '@/lib/config/logger';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getCreatorBySlug } from '@/lib/creator-storefront';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
@@ -34,6 +35,7 @@ export async function GET(
     if (!creator) return notFound('Creator not found');
     return apiSuccess(creator, 200, { storefrontsEnabled: true });
   } catch (err) {
+    logApiError(err, { request, route: 'creators', status: 500 });
     logger.error('[creators.slug] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch creator storefront');
   }

@@ -21,6 +21,7 @@ import {
   TRUST_GRADE_INSUFFICIENT_LABEL,
 } from '@/lib/merchant-trust';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
@@ -62,7 +63,8 @@ export async function GET(
       method:
         'Grade A (≥85) / B (≥70) / C (≥50) / D (<50) from recorded return window (0–40), warranty (0–30) and reputation (0–30). Any missing input means no grade is shown.',
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'merchants.trust', status: 500 });
     return internalError('Failed to fetch merchant trust score');
   }
 }

@@ -20,6 +20,7 @@ import {
   nextBadge,
 } from '@/lib/creator-rewards';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 function isMissingTable(error: { code?: string } | null | undefined): boolean {
@@ -67,7 +68,8 @@ export async function GET(request: NextRequest) {
       200,
       { rewardsEnabled: true, revenueShareConfigured: getCreatorRevenueShareConfig().configured }
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'creator-rewards.me', status: 500 });
     return internalError('Failed to fetch rewards');
   }
 }

@@ -1,7 +1,9 @@
 /**
  * API v1 forecast backtest endpoint.
  * GET /api/v1/forecast/[productId]/backtest?horizon=30 — the full
- * walk-forward backtest report for one horizon (7, 30, or 90 days):
+ * walk-forward backtest report for one horizon (7, 14, 30, 60, or
+ * 90 days — Section 19, Phase 3, §12 #35, same configurable set
+ * as the forecast itself):
  * every past forecast this product's own recorded history allows,
  * each checked against the price actually recorded at its horizon
  * date. Public, no auth.
@@ -18,7 +20,7 @@ import { apiSuccess, badRequest, notFound } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { logger } from '@/lib/config/logger';
 import { getProductById, getProductBySlug } from '@/services/products';
-import { backtestForecast, FORECAST_HORIZONS } from '@/lib/forecast';
+import { backtestForecast, FORECAST_ALLOWED_HORIZONS, isAllowedForecastHorizon } from '@/lib/forecast';
 
 // Live DB data must never be served from a stale edge cache.
 export const dynamic = 'force-dynamic';
@@ -31,17 +33,17 @@ export async function GET(
   { params }: { params: { productId: string } }
 ) {
   logApiRequest(request, { endpoint: 'forecast-backtest', productId: params.productId });
+  // Section 19, Phase 9 (§12 #92) — intentionally unwired: DB failures return an honest empty 200 (fail-safe) and the catch already records them via logger.error, so no 5xx is ever returned for error_log/Sentry capture.
 
   const limited = await rateLimitResponse(`forecast-backtest:${getClientIp(request)}`, 30);
   if (limited) return limited;
 
   const horizonRaw = request.nextUrl.searchParams.get('horizon') ?? '30';
   const horizon = Number(horizonRaw);
-  if (
-    !Number.isInteger(horizon) ||
-    !(FORECAST_HORIZONS as readonly number[]).includes(horizon)
-  ) {
-    return badRequest('horizon must be one of 7, 30, 90');
+  if (!Number.isInteger(horizon) || !isAllowedForecastHorizon(horizon)) {
+    return badRequest(
+      `horizon must be one of ${FORECAST_ALLOWED_HORIZONS.join(', ')}`
+    );
   }
 
   try {
@@ -81,7 +83,7 @@ export async function GET(
     const points = ((data ?? []) as Array<{ price: number; recorded_at: string }>).map(
       (r) => ({ price: Number(r.price), recordedAt: r.recorded_at })
     );
-    const report = backtestForecast(points, horizon as 7 | 30 | 90);
+    const report = backtestForecast(points, horizon);
 
     return apiSuccess({
       product: { id: resolved.id, name: resolved.name, slug: resolved.slug },

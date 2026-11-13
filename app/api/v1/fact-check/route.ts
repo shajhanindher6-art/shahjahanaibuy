@@ -31,6 +31,7 @@ import {
   type FactCheckStatus,
 } from '@/lib/fact-check';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const VALID_STATUSES: FactCheckStatus[] = ['pending', 'approved', 'rejected', 'taken_down'];
@@ -68,7 +69,8 @@ export async function GET(request: NextRequest) {
         total: queue.length,
       },
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'fact-check.get', status: 500 });
     return internalError('Failed to fetch fact-check queue');
   }
 }
@@ -159,7 +161,8 @@ export async function POST(request: NextRequest) {
     }
 
     return apiSuccess(data, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'fact-check.post', status: 500 });
     return internalError('Failed to create fact-check');
   }
 }

@@ -29,6 +29,7 @@ import {
 import { getFactCheck, type FactCheckStatus } from '@/lib/fact-check';
 import { logger } from '@/lib/config/logger';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const DECISIONS: Record<string, FactCheckStatus> = {
@@ -57,7 +58,8 @@ export async function GET(
       return notFound('Fact-check entry not found');
     }
     return apiSuccess(entry);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'fact-check.get', status: 500 });
     return internalError('Failed to fetch fact-check entry');
   }
 }
@@ -138,7 +140,8 @@ export async function PATCH(
     }
 
     return apiSuccess({ ...data, takedownApplied });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'fact-check.patch', status: 500 });
     return internalError('Failed to record the decision');
   }
 }

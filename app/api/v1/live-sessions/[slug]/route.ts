@@ -14,6 +14,7 @@ import { logger } from '@/lib/config/logger';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getLiveSessionDetail } from '@/lib/live-sessions';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
@@ -36,6 +37,7 @@ export async function GET(
     }
     return apiSuccess({ session, products }, 200, { liveEnabled: true });
   } catch (err) {
+    logApiError(err, { request, route: 'live-sessions', status: 500 });
     logger.error('[live-sessions] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch live shopping session');
   }

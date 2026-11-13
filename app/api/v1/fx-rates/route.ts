@@ -11,6 +11,7 @@ import { apiSuccess, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getFxRates } from '@/services/fx-rates';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'fx-rates' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -29,7 +30,8 @@ export async function GET(request: NextRequest) {
       },
       200
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'fx-rates', status: 500 });
     return internalError('Failed to fetch FX rates');
   }
 }

@@ -26,6 +26,7 @@ import { getCachedPriceHistory } from '@/services/price-history';
 import { simulateDropWindow } from '@/services/drop-window';
 import { qualifiesAsDropToWatch } from '@/services/dashboard-helpers';
 
+import { logApiError } from '@/lib/api/error-logging';
 const MAX_PRODUCTS = 6;
 
 export async function GET(request: NextRequest) {
@@ -68,7 +69,8 @@ export async function GET(request: NextRequest) {
       trackedCount: tracking.items.length,
       simulatedCount: drops.length,
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'dashboard.drops-to-watch', status: 500 });
     return internalError('Failed to fetch drops to watch');
   }
 }

@@ -39,6 +39,7 @@ import {
 import { deMinimisForCountry } from '@/services/duty-optimizer';
 import { convertUsdWithRates, getFxRates } from '@/services/fx-rates';
 
+import { logApiError } from '@/lib/api/error-logging';
 const MAX_PRODUCTS = 6;
 
 export interface LandedCostWidgetItem {
@@ -146,7 +147,8 @@ export async function GET(request: NextRequest) {
       200,
       { trackedCount: tracking.items.length, pricedCount: priced.length, unpricedCount }
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'dashboard.landed-cost', status: 500 });
     return internalError('Failed to fetch landed-cost estimates');
   }
 }

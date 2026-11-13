@@ -23,6 +23,7 @@ import { apiSuccess, internalError } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getPastDigests } from '@/services/notifications';
 
+import { logApiError } from '@/lib/api/error-logging';
 // Section 15, B12 — live per-request data: never statically prerendered.
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +46,8 @@ export async function GET(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     const digests = await getPastDigests(supabase, auth.userId, limit);
     return apiSuccess(digests, 200, { total: digests.length, limit });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'digests', status: 500 });
     return internalError('Failed to fetch digests');
   }
 }

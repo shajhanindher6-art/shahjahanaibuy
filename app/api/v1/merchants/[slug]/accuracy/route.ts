@@ -37,6 +37,7 @@ import {
   ACCURACY_MIN_SAMPLES_FOR_CAUTION,
 } from '@/lib/price-accuracy';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
@@ -85,7 +86,8 @@ export async function GET(
       })),
       note: 'Samples are entered manually by the owner/admin from real checkout observations. No live checkout is verified automatically.',
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'merchants.accuracy.get', status: 500 });
     return internalError('Failed to fetch merchant accuracy score');
   }
 }
@@ -152,7 +154,8 @@ export async function POST(
     const result = accuracyScore(samples);
 
     return apiSuccess({ sample, accuracy: result }, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'merchants.accuracy.post', status: 500 });
     return internalError('Failed to record accuracy sample');
   }
 }

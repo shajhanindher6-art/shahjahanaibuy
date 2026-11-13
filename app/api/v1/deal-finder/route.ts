@@ -54,6 +54,7 @@ import { createDataStreamResponse, formatDataStreamPart } from 'ai';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import { resolveRegion } from '@/lib/region';
 import { generateChatResponse, type ChatMessage, type ChatMetadata } from '@/services/chat';
 import {
@@ -135,8 +136,13 @@ function dataStreamResponse(content: string, metadata: ChatMetadata | null): Res
   });
 }
 
+// Section 19, Phase 1 (§12 #10) — expensive inline AI work runs under
+// maxDuration 60 (matching the 5 cron routes), not the platform default.
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'deal-finder' });
+  const startedAt = Date.now();
 
   // AI compute is unauthenticated by design; cap it per IP so one
   // client cannot flood the assistant. In-memory bucket (per
@@ -211,7 +217,8 @@ export async function POST(request: NextRequest) {
     }
 
     return apiSuccess({ response: content, metadata });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'deal-finder', status: 500, startedAt });
     return internalError('Failed to generate deal recommendation');
   }
 }

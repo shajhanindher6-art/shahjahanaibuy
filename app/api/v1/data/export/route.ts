@@ -24,6 +24,7 @@ import {
 } from '@/lib/data-export';
 import { isMissingTableError } from '@/lib/buy-list';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const EXPORT_LIMIT = 500;
@@ -106,7 +107,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const [alerts, buyList, savings, searchHistory, referralLinks] = await Promise.all([
+    const [alerts, buyList, savings, searchHistory, referralLinks, productViews, userPreferences] = await Promise.all([
       readSection(
         supabase,
         'alerts',
@@ -138,6 +139,25 @@ export async function GET(request: NextRequest) {
         'code, click_count, created_at',
         userId
       ),
+      // Section 19, Phase 4 (§12 #44) — product_views (migration
+      // 008: id, user_id, product_id, viewed_at) and
+      // user_preferences (migration 008: budget_min/max, favourite
+      // brands/categories/retailers, notification flags). Both read
+      // through the same fail-safe helper: a missing table is an
+      // empty section, never a failed export.
+      readSection(
+        supabase,
+        'product_views',
+        'id, product_id, viewed_at',
+        userId,
+        'viewed_at'
+      ),
+      readSection(
+        supabase,
+        'user_preferences',
+        'id, budget_min, budget_max, favorite_brands, favorite_categories, preferred_retailers, notification_email, notification_push, created_at, updated_at',
+        userId
+      ),
     ]);
 
     const sections: UserDataExport['sections'] = {
@@ -149,10 +169,13 @@ export async function GET(request: NextRequest) {
       savings: buildExportSection(savings),
       searchHistory: buildExportSection(searchHistory),
       referralLinks: buildExportSection(referralLinks),
+      productViews: buildExportSection(productViews),
+      userPreferences: buildExportSection(userPreferences),
     };
 
     return apiSuccess(buildExportDocument(userId, sections));
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'data.export', status: 500 });
     return internalError('Failed to build data export');
   }
 }

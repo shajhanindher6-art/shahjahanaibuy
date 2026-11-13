@@ -40,6 +40,7 @@ import { embedText, isVectorSearchConfigured, productEmbeddingText } from '@/ser
 import { getMerchantProducts } from '@/services/commerce';
 import { logger } from '@/lib/config/logger';
 
+import { logApiError } from '@/lib/api/error-logging';
 export interface DigestSavedItem {
   itemId: string;
   productId: string;
@@ -297,7 +298,8 @@ export async function GET(request: NextRequest) {
       trackedCount: tracking.items.length,
       alertCount: alerts.length,
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'dashboard.digest', status: 500 });
     return internalError('Failed to fetch your shopping digest');
   }
 }

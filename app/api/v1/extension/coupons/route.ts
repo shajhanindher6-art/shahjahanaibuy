@@ -17,6 +17,7 @@ import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getCoupons, getMerchants } from '@/services/commerce';
 
+import { logApiError } from '@/lib/api/error-logging';
 /** Retailer domain fragment → merchant name in the merchants table. */
 const DOMAIN_MERCHANTS: Array<{ fragment: string; name: string }> = [
   { fragment: 'amazon', name: 'Amazon' },
@@ -55,7 +56,8 @@ export async function GET(request: NextRequest) {
       200,
       { merchant: merchant.name, merchantId: merchant.id }
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'extension.coupons', status: 500 });
     return internalError('Failed to fetch extension coupons');
   }
 }

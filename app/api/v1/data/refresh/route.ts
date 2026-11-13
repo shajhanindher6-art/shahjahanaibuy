@@ -27,6 +27,7 @@ import { enqueueJob, getJobResult } from '@/lib/workers/queue';
 import type { ProductFetchJobData } from '@/lib/workers/types';
 import { z } from 'zod';
 
+import { logApiError } from '@/lib/api/error-logging';
 /**
  * Section 18, item 36 — `maxDuration` (see
  * app/api/v1/notifications/process/route.ts for the plan
@@ -90,7 +91,8 @@ export async function POST(request: NextRequest) {
       });
     }
     return apiSuccess({ jobId, status: 'queued' }, 202);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'data.refresh', status: 500 });
     return internalError('Failed to enqueue data refresh job');
   }
 }

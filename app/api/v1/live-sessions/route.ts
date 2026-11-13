@@ -31,6 +31,7 @@ import {
   isValidLiveSessionSlug,
 } from '@/lib/live-sessions';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
     const { sessions, liveEnabled } = await getLiveSessions(supabase);
     return apiSuccess(sessions, 200, { liveEnabled });
   } catch (err) {
+    logApiError(err, { request, route: 'live-sessions.get', status: 500 });
     logger.error('[live-sessions] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch live shopping sessions');
   }
@@ -88,6 +90,7 @@ export async function POST(request: NextRequest) {
         const u = new URL(streamUrl);
         if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('bad protocol');
       } catch {
+        // User input error (422) — not a server error, so not logged to error_log.
         return validationError('streamUrl must be a valid http(s) URL.');
       }
     }
@@ -132,6 +135,7 @@ export async function POST(request: NextRequest) {
 
     return apiSuccess(data, 201, { liveEnabled: true });
   } catch (err) {
+    logApiError(err, { request, route: 'live-sessions.post', status: 500 });
     logger.error('[live-sessions] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to create live shopping session');
   }

@@ -35,6 +35,7 @@ import {
   findPublicProductBySlug,
 } from '@/lib/public-products';
 
+import { logApiError } from '@/lib/api/error-logging';
 interface MerchantProductRow {
   price: number;
   compare_at_price: number | null;
@@ -122,7 +123,8 @@ export async function GET(request: NextRequest) {
       : [];
 
     return apiSuccess(offers, 200, { product: { name: productName, slug: productSlug }, storeLinks });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'extension.price', status: 500 });
     return internalError('Failed to fetch extension price');
   }
 }
