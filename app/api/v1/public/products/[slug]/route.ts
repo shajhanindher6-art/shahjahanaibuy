@@ -19,6 +19,7 @@ import { extractApiKey, validateApiKey } from '@/lib/api-keys';
 import { enforceApiQuota } from '@/lib/api-quota';
 import { getProductBySlug } from '@/services/products';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
@@ -69,7 +70,8 @@ export async function GET(
       dataNotice:
         'Latest price is the most recent recorded price, not a live retailer quote.',
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'public.products', status: 500 });
     return internalError('Failed to fetch product');
   }
 }

@@ -23,6 +23,7 @@ import { extractApiKey, validateApiKey } from '@/lib/api-keys';
 import { enforceApiQuota } from '@/lib/api-quota';
 import { getProducts, type ProductListOptions } from '@/services/products';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -63,7 +64,8 @@ export async function GET(request: NextRequest) {
       dataNotice:
         'Catalog data only. Prices shown on SmartBuy AI are demo/seed data, not live retailer prices.',
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'public.products', status: 500 });
     return internalError('Failed to fetch products');
   }
 }

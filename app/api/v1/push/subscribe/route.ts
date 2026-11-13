@@ -23,6 +23,7 @@ import {
 } from '@/lib/api/middleware';
 import { savePushSubscription, removePushSubscription } from '@/services/push';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'push.subscribe' });
 
@@ -82,7 +83,8 @@ export async function POST(request: NextRequest) {
 
     if (!ok) return internalError('Failed to save push subscription');
     return apiSuccess({ subscribed: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'push.subscribe.post', status: 500 });
     return internalError('Failed to subscribe to push notifications');
   }
 }
@@ -128,7 +130,8 @@ export async function DELETE(request: NextRequest) {
     const ok = await removePushSubscription(supabase, auth.userId, endpoint);
     if (!ok) return internalError('Failed to remove push subscription');
     return apiSuccess({ unsubscribed: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'push.subscribe.delete', status: 500 });
     return internalError('Failed to unsubscribe');
   }
 }

@@ -33,6 +33,7 @@ import {
 } from '@/lib/referral';
 import { countReferralSignups } from '@/services/referral-attribution';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 function newReferralCode(): string {
@@ -118,7 +119,8 @@ export async function POST(request: NextRequest) {
       }
     }
     return internalError('Could not create a referral link');
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'referrals.post', status: 500 });
     return internalError('Failed to create a referral link');
   }
 }
@@ -152,7 +154,8 @@ export async function GET(request: NextRequest) {
     try {
       const { count, available } = await countReferralSignups(service, auth.userId);
       return apiSuccess({ signups: count, available });
-    } catch {
+    } catch (err) {
+      logApiError(err, { request, route: 'referrals.get', status: 500 });
       return internalError('Failed to fetch referral signups');
     }
   }
@@ -179,7 +182,8 @@ export async function GET(request: NextRequest) {
       clicks: row.click_count ?? 0,
       createdAt: row.created_at,
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'referrals.get', status: 500 });
     return internalError('Failed to fetch referral stats');
   }
 }

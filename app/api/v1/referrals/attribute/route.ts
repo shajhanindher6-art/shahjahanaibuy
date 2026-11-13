@@ -32,6 +32,7 @@ import {
 import { isValidReferralCode } from '@/lib/referral';
 import { attributeReferralSignup } from '@/services/referral-attribution';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -64,7 +65,8 @@ export async function POST(request: NextRequest) {
   try {
     const result = await attributeReferralSignup(service, auth.userId, rawCode);
     return apiSuccess(result);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'referrals.attribute', status: 500 });
     return internalError('Failed to record referral attribution');
   }
 }

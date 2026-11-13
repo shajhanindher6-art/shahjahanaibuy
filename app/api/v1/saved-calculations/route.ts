@@ -36,6 +36,7 @@ import {
   validateSavedCalculationInput,
 } from '@/services/saved-calculations';
 
+import { logApiError } from '@/lib/api/error-logging';
 // Live per-request data: never statically prerendered.
 export const dynamic = 'force-dynamic';
 
@@ -51,7 +52,8 @@ export async function GET(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     const saved = await listSavedCalculations(supabase, auth.userId);
     return apiSuccess(saved, 200, { total: saved.length });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'saved-calculations.get', status: 500 });
     return internalError('Failed to fetch saved calculations');
   }
 }
@@ -95,7 +97,8 @@ export async function POST(request: NextRequest) {
       return internalError('Failed to save calculation');
     }
     return apiSuccess(result.savedCalculation, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'saved-calculations.post', status: 500 });
     return internalError('Failed to save calculation');
   }
 }
@@ -118,7 +121,8 @@ export async function DELETE(request: NextRequest) {
     // identically, so existence never leaks across users.
     if (!deleted) return notFound('Saved calculation not found or not owned by user');
     return apiSuccess({ id, deleted: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'saved-calculations.delete', status: 500 });
     return internalError('Failed to delete saved calculation');
   }
 }

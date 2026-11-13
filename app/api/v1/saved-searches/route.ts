@@ -41,6 +41,7 @@ import {
   validateSavedSearchInput,
 } from '@/services/saved-searches';
 
+import { logApiError } from '@/lib/api/error-logging';
 // Section 15, C2 — live per-request data: never statically prerendered.
 export const dynamic = 'force-dynamic';
 
@@ -57,7 +58,8 @@ export async function GET(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     const saved = await listSavedSearches(supabase, auth.userId);
     return apiSuccess(saved, 200, { total: saved.length });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'saved-searches.get', status: 500 });
     return internalError('Failed to fetch saved searches');
   }
 }
@@ -106,7 +108,8 @@ export async function POST(request: NextRequest) {
       return internalError('Failed to save search');
     }
     return apiSuccess(result.savedSearch, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'saved-searches.post', status: 500 });
     return internalError('Failed to save search');
   }
 }
@@ -143,7 +146,8 @@ export async function PATCH(request: NextRequest) {
       return internalError('Failed to update saved search notifications');
     }
     return apiSuccess(result.savedSearch, 200);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'saved-searches.patch', status: 500 });
     return internalError('Failed to update saved search notifications');
   }
 }
@@ -167,7 +171,8 @@ export async function DELETE(request: NextRequest) {
     // identically, so existence never leaks across users.
     if (!deleted) return notFound('Saved search not found or not owned by user');
     return apiSuccess({ id, deleted: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'saved-searches.delete', status: 500 });
     return internalError('Failed to delete saved search');
   }
 }

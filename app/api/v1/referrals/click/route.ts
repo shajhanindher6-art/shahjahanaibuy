@@ -27,6 +27,7 @@ import {
   referralClickCookieName,
 } from '@/lib/referral-dedupe';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'referrals.click' });
 
@@ -95,7 +96,8 @@ export async function POST(request: NextRequest) {
       sameSite: 'lax',
     });
     return response;
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'referrals.click', status: 500 });
     return internalError('Failed to track referral click');
   }
 }

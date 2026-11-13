@@ -24,6 +24,7 @@ import { logApiRequest, rateLimitResponse, requireAuth } from '@/lib/api/middlew
 import { sendPushNotification } from '@/services/push';
 import { getVapidPublicKey } from '@/services/push';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -76,7 +77,8 @@ export async function POST(request: NextRequest) {
       reason: 'sent',
       message: 'Test notification sent — check your browser notifications.',
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'push.test', status: 500 });
     return internalError('Failed to send test notification');
   }
 }
