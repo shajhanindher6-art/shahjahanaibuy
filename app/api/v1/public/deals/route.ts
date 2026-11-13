@@ -19,6 +19,7 @@ import { extractApiKey, validateApiKey } from '@/lib/api-keys';
 import { enforceApiQuota } from '@/lib/api-quota';
 import { getDeals } from '@/services/commerce';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -62,7 +63,8 @@ export async function GET(request: NextRequest) {
       total,
       totalPages: Math.ceil(total / pageSize),
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'public.deals', status: 500 });
     return internalError('Failed to fetch deals');
   }
 }

@@ -17,6 +17,7 @@ import { apiSuccess, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getProducts, type ProductListOptions } from '@/services/products';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const SORT_VALUES = ['price-asc', 'price-desc', 'name-asc', 'name-desc', 'newest'] as const;
@@ -65,7 +66,8 @@ export async function GET(request: NextRequest) {
       total: result.total,
       totalPages: result.totalPages,
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'products', status: 500 });
     return internalError('Failed to fetch products');
   }
 }

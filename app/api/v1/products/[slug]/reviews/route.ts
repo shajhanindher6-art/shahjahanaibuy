@@ -40,6 +40,7 @@ import {
   type CreateReviewInput,
 } from '@/services/reviews';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 /** Max review-photo size: 5 MB. Larger files are refused, not resized. */
@@ -126,7 +127,8 @@ export async function GET(
         totalPages: reviews.totalPages,
       }
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'products.reviews.get', status: 500 });
     return internalError('Failed to fetch reviews');
   }
 }
@@ -272,7 +274,8 @@ export async function POST(
       },
       201
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'products.reviews.post', status: 500 });
     return internalError('Failed to create review');
   }
 }

@@ -20,6 +20,7 @@ import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middlew
 import { getCachedProductBySlug } from '@/services/products';
 import { getReviewAISummary } from '@/services/review-summary';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
@@ -42,7 +43,8 @@ export async function GET(
     const summary = await getReviewAISummary(supabase, product.id);
 
     return apiSuccess(summary);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'products.review-summary', status: 500 });
     return internalError('Failed to fetch review summary');
   }
 }

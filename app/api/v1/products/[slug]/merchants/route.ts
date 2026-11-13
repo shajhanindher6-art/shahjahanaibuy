@@ -15,6 +15,7 @@ import {
   resolveGeoCountry,
 } from '@/services/affiliate-geo';
 
+import { logApiError } from '@/lib/api/error-logging';
 // Section 14, Chunk 1 — live per-request data: never statically prerendered.
 export const dynamic = 'force-dynamic';
 
@@ -63,7 +64,8 @@ export async function GET(
     return apiSuccess(withNames, 200, {
       affiliateEnabled: isGeoAffiliateEnabled(),
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'products.merchants', status: 500 });
     return internalError('Failed to fetch merchant listings');
   }
 }

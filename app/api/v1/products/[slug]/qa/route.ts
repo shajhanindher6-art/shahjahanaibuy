@@ -37,6 +37,7 @@ import {
   validateAnswer,
 } from '@/lib/product-qa';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
@@ -64,7 +65,8 @@ export async function GET(
       questions,
       qaEnabled: true,
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'products.qa.get', status: 500 });
     return internalError('Failed to fetch questions');
   }
 }
@@ -115,7 +117,8 @@ export async function POST(
     }
 
     return apiSuccess(question, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'products.qa.post', status: 500 });
     return internalError('Failed to submit your question');
   }
 }
@@ -168,7 +171,8 @@ export async function PATCH(
     }
 
     return apiSuccess(updated);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'products.qa.patch', status: 500 });
     return internalError('Failed to update the question');
   }
 }

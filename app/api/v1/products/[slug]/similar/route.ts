@@ -13,8 +13,10 @@ import type { NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { apiSuccess, notFound, internalError } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
-import { getProductBySlug, getLowestMerchantPrices } from '@/services/products';
+import { getProductBySlug, getLowestMerchantPrices, type LowestMerchantPrice } from '@/services/products';
+import { rankSimilarByValue } from '@/lib/similar-value';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
@@ -37,6 +39,13 @@ export async function GET(
       return notFound('Product not found');
     }
 
+    // Section 19, Phase 4 (§12 #47) — fetch a wider pool than the
+    // requested limit (up to 3x, capped at 20) so value ranking can
+    // surface a cheaper / bigger-saving alternative that confidence
+    // order alone would have cut off; the final slice below restores
+    // the requested limit.
+    const fetchLimit = Math.min(20, limit * 3);
+
     let query = supabase
       .from('products')
       .select('id, name, slug, description, brand, category, image_url, confidence_score, data_freshness')
@@ -48,7 +57,7 @@ export async function GET(
       .neq('slug', 'sample-laptop')
       .is('deleted_at', null)
       .order('confidence_score', { ascending: false })
-      .limit(limit);
+      .limit(fetchLimit);
 
     const orConditions: string[] = [];
     if (product.category) orConditions.push(`category.ilike.%${product.category}%`);
@@ -69,7 +78,7 @@ export async function GET(
     // Lowest in-stock merchant price + in-stock merchant count per
     // similar product (one batched query). A failure here degrades
     // to priceless cards, never a guessed price.
-    let lowest = new Map<string, { price: number; merchantCount: number }>();
+    let lowest = new Map<string, LowestMerchantPrice>();
     try {
       lowest = await getLowestMerchantPrices(
         supabase,
@@ -79,30 +88,41 @@ export async function GET(
       lowest = new Map();
     }
 
-    const results = (data ?? []).map((row) => ({
-      id: row.id,
-      name: row.name,
-      slug: row.slug,
-      brand: row.brand,
-      category: row.category,
-      imageUrl: row.image_url,
-      description: row.description,
-      price: lowest.get(row.id)?.price ?? null,
-      merchantCount: lowest.get(row.id)?.merchantCount ?? 0,
-      // Section 16, item 9: recorded freshness rides with the card
-      // so the stale-price badge + age can render under the price.
-      dataFreshness: (row.data_freshness as string | null) ?? null,
-      // Deterministic: the old term added Math.random() * 20, so the same
-      // product's "match" value jittered on every request. confidence_score
-      // alone is the stated similarity signal (50 when unrecorded).
-      matchScore: Math.round(row.confidence_score ?? 50),
-      reason: product.brand && row.brand === product.brand
-        ? `Same brand as ${product.name}`
-        : `Similar ${product.category ?? 'product'} category`,
-    }));
+    const results = rankSimilarByValue(
+      (data ?? []).map((row) => ({
+        id: row.id,
+        name: row.name,
+        slug: row.slug,
+        brand: row.brand,
+        category: row.category,
+        imageUrl: row.image_url,
+        description: row.description,
+        price: lowest.get(row.id)?.price ?? null,
+        merchantCount: lowest.get(row.id)?.merchantCount ?? 0,
+        // Section 16, item 9: recorded freshness rides with the card
+        // so the stale-price badge + age can render under the price.
+        dataFreshness: (row.data_freshness as string | null) ?? null,
+        // Deterministic: the old term added Math.random() * 20, so the same
+        // product's "match" value jittered on every request. confidence_score
+        // alone is the stated similarity signal (50 when unrecorded).
+        matchScore: Math.round(row.confidence_score ?? 50),
+        reason: product.brand && row.brand === product.brand
+          ? `Same brand as ${product.name}`
+          : `Similar ${product.category ?? 'product'} category`,
+        // Section 19, Phase 4 (§12 #47) — the value rank inputs:
+        // the merchant-basis saving % behind the lowest price
+        // (null when no compare-at price exists — never 0% pretending
+        // to be measured). rankSimilarByValue orders by saving %,
+        // then lowest price, then match score, so better-value
+        // alternatives surface first instead of just the closest
+        // confidence match.
+        savingPct: lowest.get(row.id)?.discountPercent ?? null,
+      }))
+    ).slice(0, limit);
 
     return apiSuccess(results, 200, { total: results.length });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'products.similar', status: 500 });
     return internalError('Failed to fetch similar products');
   }
 }

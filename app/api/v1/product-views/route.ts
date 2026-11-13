@@ -22,6 +22,7 @@ import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/li
 import { getLowestMerchantPrices } from '@/services/products';
 import type { RecentlyViewedItem } from '@/lib/recently-viewed';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -83,7 +84,8 @@ export async function GET(request: NextRequest) {
       });
     }
     return apiSuccess(items, 200);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'product-views.get', status: 500 });
     return internalError('Failed to fetch recently viewed products');
   }
 }
@@ -106,7 +108,8 @@ export async function DELETE(request: NextRequest) {
       return internalError('Failed to clear recently viewed products');
     }
     return apiSuccess({ cleared: true, productId: productId ?? null });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'product-views.delete', status: 500 });
     return internalError('Failed to clear recently viewed products');
   }
 }
@@ -139,7 +142,8 @@ export async function POST(request: NextRequest) {
     }
 
     return apiSuccess({ recorded: true }, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'product-views.post', status: 500 });
     return internalError('Failed to record product view');
   }
 }

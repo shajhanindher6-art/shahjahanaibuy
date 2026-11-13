@@ -24,6 +24,7 @@ import {
   getProductSupplyChain,
 } from '@/services/product-dimensions';
 
+import { logApiError } from '@/lib/api/error-logging';
 // Section 14, Chunk 1 — live per-request data: never statically prerendered.
 export const dynamic = 'force-dynamic';
 
@@ -82,7 +83,8 @@ export async function GET(
         : dimensions;
 
     return apiSuccess({ ...product, images, attributes, repairability, endurance, physical, recorded, globalReadiness, dimensions: dimensionsOut, modelUrl, authenticity, supplyChain });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'products', status: 500 });
     return internalError('Failed to fetch product');
   }
 }

@@ -21,6 +21,7 @@ import {
   type ApiKeyScope,
 } from '@/lib/api-keys';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const MAX_NAME_LENGTH = 100;
@@ -52,7 +53,8 @@ export async function GET(request: NextRequest) {
 
     if (error || !data) return apiSuccess([]);
     return apiSuccess(data);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'public.keys.get', status: 500 });
     return internalError('Failed to list API keys');
   }
 }
@@ -120,7 +122,8 @@ export async function POST(request: NextRequest) {
       },
       201
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'public.keys.post', status: 500 });
     return internalError('Failed to create API key');
   }
 }

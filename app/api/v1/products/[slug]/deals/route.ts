@@ -10,6 +10,7 @@ import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middlew
 import { getCachedProductBySlug } from '@/services/products';
 import { getDeals } from '@/services/commerce';
 
+import { logApiError } from '@/lib/api/error-logging';
 // Section 14, Chunk 1 — live per-request data: never statically prerendered.
 export const dynamic = 'force-dynamic';
 
@@ -42,7 +43,8 @@ export async function GET(
     });
 
     return apiSuccess(deals);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'products.deals', status: 500 });
     return internalError('Failed to fetch deals');
   }
 }

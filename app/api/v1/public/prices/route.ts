@@ -19,6 +19,7 @@ import { extractApiKey, validateApiKey } from '@/lib/api-keys';
 import { enforceApiQuota } from '@/lib/api-quota';
 import { getProductBySlug } from '@/services/products';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const UUID_RE =
@@ -91,7 +92,8 @@ export async function GET(request: NextRequest) {
       dataNotice:
         'Recorded price history only — these are demo/seed prices, not live retailer prices.',
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'public.prices', status: 500 });
     return internalError('Failed to fetch prices');
   }
 }

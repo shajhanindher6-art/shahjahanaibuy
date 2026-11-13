@@ -13,6 +13,7 @@ import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { apiSuccess, internalError, notFound } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, requireAuth } from '@/lib/api/middleware';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function DELETE(
@@ -47,7 +48,8 @@ export async function DELETE(
     }
 
     return apiSuccess(data);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'public.keys', status: 500 });
     return internalError('Failed to revoke API key');
   }
 }
