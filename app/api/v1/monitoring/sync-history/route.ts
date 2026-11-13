@@ -9,6 +9,7 @@ import { apiSuccess, internalError } from '@/lib/api/responses';
 import { logApiRequest, requireAdmin, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getSyncHistory } from '@/services/monitoring';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'monitoring.sync-history' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -30,7 +31,8 @@ export async function GET(request: NextRequest) {
     const history = await getSyncHistory(supabase, limit);
 
     return apiSuccess(history);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'monitoring.sync-history', status: 500 });
     return internalError('Failed to fetch sync history');
   }
 }

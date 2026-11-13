@@ -20,6 +20,7 @@ import { apiSuccess, badRequest, internalError } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { NOTIFICATIONS_FETCH_CAP, isNotificationRead } from '@/lib/notifications';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'notifications.readAll' });
   // Bulk write: tighter cap than the single-row PATCH.
@@ -67,7 +68,8 @@ export async function POST(request: NextRequest) {
     }
 
     return apiSuccess({ updated, total: (rows ?? []).length });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'notifications.read-all', status: 500 });
     return internalError('Failed to mark notifications');
   }
 }

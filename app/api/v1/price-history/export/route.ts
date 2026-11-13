@@ -14,8 +14,9 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { badRequest, notFound } from '@/lib/api/responses';
+import { badRequest, internalError, notFound } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logger } from '@/lib/config/logger';
 import { getPriceHistory } from '@/services/price-history';
 import { getProductById, getProductBySlug } from '@/services/products';
 import {
@@ -25,57 +26,69 @@ import {
   type PriceHistoryExportRow,
 } from '@/lib/price-history-export';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  logApiRequest(request, { endpoint: 'price-history-export' });
-  const limited = await rateLimitResponse(`price-history-export:${getClientIp(request)}`, 30);
-  if (limited) return limited;
+  // Section 19, item 96: a throw used to yield an unlogged Next 500.
+  // The whole handler is wrapped so failures return the generic
+  // error envelope instead.
+  try {
+    logApiRequest(request, { endpoint: 'price-history-export' });
+    const limited = await rateLimitResponse(`price-history-export:${getClientIp(request)}`, 30);
+    if (limited) return limited;
 
-  const format = (request.nextUrl.searchParams.get('format') ?? 'csv').toLowerCase();
-  if (format !== 'csv' && format !== 'json') {
-    return badRequest('format must be csv or json');
-  }
-  const productParam = request.nextUrl.searchParams.get('product');
-  if (!productParam || productParam.trim().length === 0) {
-    return badRequest('product is required (a product slug or id)');
-  }
+    const format = (request.nextUrl.searchParams.get('format') ?? 'csv').toLowerCase();
+    if (format !== 'csv' && format !== 'json') {
+      return badRequest('format must be csv or json');
+    }
+    const productParam = request.nextUrl.searchParams.get('product');
+    if (!productParam || productParam.trim().length === 0) {
+      return badRequest('product is required (a product slug or id)');
+    }
 
-  const supabase = await createSupabaseServerClient();
-  const product =
-    (await getProductBySlug(supabase, productParam.trim())) ??
-    (await getProductById(supabase, productParam.trim()));
-  if (!product) {
-    return notFound('Product not found');
-  }
+    const supabase = await createSupabaseServerClient();
+    const product =
+      (await getProductBySlug(supabase, productParam.trim())) ??
+      (await getProductById(supabase, productParam.trim()));
+    if (!product) {
+      return notFound('Product not found');
+    }
 
-  const result = await getPriceHistory(supabase, product.id, { limit: 500 });
-  const rows: PriceHistoryExportRow[] = [...result.history]
-    .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime())
-    .map((h) => ({
-      productSlug: product.slug,
-      productName: product.name,
-      price: h.price,
-      currency: h.currency,
-      availability: h.availability,
-      recordedAt: h.recordedAt,
-    }));
+    const result = await getPriceHistory(supabase, product.id, { limit: 500 });
+    const rows: PriceHistoryExportRow[] = [...result.history]
+      .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime())
+      .map((h) => ({
+        productSlug: product.slug,
+        productName: product.name,
+        price: h.price,
+        currency: h.currency,
+        availability: h.availability,
+        recordedAt: h.recordedAt,
+      }));
 
-  const fileName = priceHistoryExportFileName(product.slug, format);
-  if (format === 'json') {
-    return new NextResponse(priceHistoryRowsToJson(product, rows), {
+    const fileName = priceHistoryExportFileName(product.slug, format);
+    if (format === 'json') {
+      return new NextResponse(priceHistoryRowsToJson(product, rows), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'content-disposition': `attachment; filename="${fileName}"`,
+        },
+      });
+    }
+    return new NextResponse(priceHistoryRowsToCsv(rows), {
       status: 200,
       headers: {
-        'content-type': 'application/json; charset=utf-8',
+        'content-type': 'text/csv; charset=utf-8',
         'content-disposition': `attachment; filename="${fileName}"`,
       },
     });
+  } catch (err) {
+    logApiError(err, { request, route: 'price-history.export', status: 500 });
+    logger.error('price-history-export: unexpected error', {
+      error: err instanceof Error ? err.message : 'unknown',
+    });
+    return internalError('Price history export failed');
   }
-  return new NextResponse(priceHistoryRowsToCsv(rows), {
-    status: 200,
-    headers: {
-      'content-type': 'text/csv; charset=utf-8',
-      'content-disposition': `attachment; filename="${fileName}"`,
-    },
-  });
 }

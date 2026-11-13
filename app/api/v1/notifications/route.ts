@@ -29,6 +29,7 @@ import {
   type NotificationDbRow,
 } from '@/lib/notifications';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -66,7 +67,8 @@ export async function GET(request: NextRequest) {
       limit: query.limit,
       offset: query.offset,
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'notifications', status: 500 });
     return internalError('Failed to fetch notifications');
   }
 }

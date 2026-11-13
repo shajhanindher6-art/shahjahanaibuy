@@ -28,6 +28,7 @@ import { isCronAuthorized } from '@/lib/api/cron-auth';
 import { generateWeeklyDigest, DIGEST_PLANS } from '@/services/notifications';
 import { logger } from '@/lib/config/logger';
 
+import { logApiError } from '@/lib/api/error-logging';
 /**
  * Section 18, item 36 — `maxDuration` (see
  * app/api/v1/notifications/process/route.ts for the plan
@@ -94,7 +95,8 @@ export async function POST(request: NextRequest) {
 
     logger.info('Weekly digest generated', { count: generated, failed, total: subs.length });
     return apiSuccess({ generated, failed, total: subs.length });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'notifications.digest', status: 500 });
     return internalError('Failed to generate weekly digests');
   }
 }

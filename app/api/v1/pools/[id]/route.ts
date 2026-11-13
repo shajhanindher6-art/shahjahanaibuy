@@ -21,6 +21,7 @@ import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middlew
 import { normalizeQuantity, poolQuantityProgress, poolQuantityProgressText } from '@/lib/pool-quantities';
 import { splitShippingEstimate, POOL_NO_GUARANTEE_NOTE } from '@/services/smartpool';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 function isMissingTable(error: { code?: string } | null | undefined): boolean {
@@ -122,6 +123,7 @@ export async function GET(
       { poolsEnabled: true }
     );
   } catch (err) {
+    logApiError(err, { request, route: 'pools', status: 500 });
     logger.error('[pools.id] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch pool');
   }

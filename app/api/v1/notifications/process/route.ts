@@ -19,6 +19,7 @@ import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middlew
 import { isCronAuthorized } from '@/lib/api/cron-auth';
 import { processNotificationQueue } from '@/services/notification-dispatch';
 
+import { logApiError } from '@/lib/api/error-logging';
 /**
  * Section 18, item 36 — `maxDuration` for the long-running cron
  * routes (refresh, alerts/check, data/refresh, notifications
@@ -66,7 +67,8 @@ export async function POST(request: NextRequest) {
   try {
     const result = await processNotificationQueue(supabase);
     return apiSuccess(result);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'notifications.process', status: 500 });
     return internalError('Failed to process notification queue');
   }
 }

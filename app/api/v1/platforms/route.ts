@@ -12,23 +12,36 @@
  */
 
 import type { NextRequest } from 'next/server';
-import { apiSuccess } from '@/lib/api/responses';
+import { apiSuccess, internalError } from '@/lib/api/responses';
 import {
   logApiRequest,
   rateLimitResponse,
   getClientIp,
 } from '@/lib/api/middleware';
+import { logger } from '@/lib/config/logger';
 import { describePlatformStatus } from '@/services/platform-status';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  logApiRequest(request, { endpoint: 'platforms' });
-  const limited = await rateLimitResponse(
-    `platforms:${getClientIp(request)}`,
-    120
-  );
-  if (limited) return limited;
+  // Section 19, item 96: a throw used to yield an unlogged Next 500.
+  // The whole handler is wrapped so failures return the generic
+  // error envelope instead.
+  try {
+    logApiRequest(request, { endpoint: 'platforms' });
+    const limited = await rateLimitResponse(
+      `platforms:${getClientIp(request)}`,
+      120
+    );
+    if (limited) return limited;
 
-  return apiSuccess({ platforms: describePlatformStatus() });
+    return apiSuccess({ platforms: describePlatformStatus() });
+  } catch (err) {
+    logApiError(err, { request, route: 'platforms', status: 500 });
+    logger.error('platforms: unexpected error', {
+      error: err instanceof Error ? err.message : 'unknown',
+    });
+    return internalError('Could not load platform status');
+  }
 }

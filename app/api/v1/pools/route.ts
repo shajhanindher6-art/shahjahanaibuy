@@ -29,6 +29,7 @@ import { logger } from '@/lib/config/logger';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { normalizeQuantity, poolQuantityProgressText } from '@/lib/pool-quantities';
 
+import { logApiError } from '@/lib/api/error-logging';
 // PostgREST reports a table missing from its schema cache as PGRST205
 // (not Postgres 42P01) on the REST path, so both codes must count as
 // "migration not run yet" — otherwise a missing table surfaces as a
@@ -168,6 +169,7 @@ export async function GET(request: NextRequest) {
       { poolsEnabled: true }
     );
   } catch (err) {
+    logApiError(err, { request, route: 'pools.get', status: 500 });
     logger.error('[pools] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch pools');
   }
@@ -284,7 +286,8 @@ export async function POST(request: NextRequest) {
       },
       201
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'pools.post', status: 500 });
     return internalError('Failed to create pool');
   }
 }

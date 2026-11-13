@@ -36,6 +36,7 @@ import {
   type VaultItemForWatch,
 } from '@/lib/price-protection';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 const MISSING_TABLE_MESSAGE =
@@ -59,6 +60,7 @@ export async function GET(request: NextRequest) {
     }
     return apiSuccess(watches, 200, { priceProtectionEnabled: enabled });
   } catch (err) {
+    logApiError(err, { request, route: 'price-protection.get', status: 500 });
     logger.error('[price-protection] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to fetch protection watches');
   }
@@ -117,6 +119,7 @@ export async function POST(request: NextRequest) {
       priceProtectionEnabled: true,
     });
   } catch (err) {
+    logApiError(err, { request, route: 'price-protection.post', status: 500 });
     logger.error('[price-protection] unexpected error', { error: err instanceof Error ? err.message : err });
     return internalError('Failed to create protection watch');
   }

@@ -21,6 +21,7 @@ import {
   VERIFIED_MERCHANT_RECHECK_DAYS,
 } from '@/lib/verified-merchants';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -44,7 +45,8 @@ export async function GET(request: NextRequest) {
           ? 'No verified merchants yet — no merchant has recorded data meeting all five standards. The badge is earned by evidence, never granted by default.'
           : `${merchants.length} verified merchant${merchants.length === 1 ? '' : 's'}.`,
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'merchants.verified', status: 500 });
     return internalError('Failed to fetch verified merchants');
   }
 }

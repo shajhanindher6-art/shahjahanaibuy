@@ -23,6 +23,7 @@ import {
   submitProtectionClaim,
 } from '@/lib/price-protection';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function PATCH(
@@ -48,7 +49,8 @@ export async function PATCH(
     const updated = await submitProtectionClaim(supabase, auth.userId, params.id);
     if (!updated) return notFound('Protection watch not found or not owned by user');
     return apiSuccess(updated);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'price-protection.patch', status: 500 });
     return internalError('Failed to submit protection claim');
   }
 }
@@ -70,7 +72,8 @@ export async function DELETE(
     const deleted = await deletePriceProtectionWatch(supabase, auth.userId, params.id);
     if (!deleted) return notFound('Protection watch not found or not owned by user');
     return apiSuccess({ id: params.id, deleted: true });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'price-protection.delete', status: 500 });
     return internalError('Failed to remove protection watch');
   }
 }

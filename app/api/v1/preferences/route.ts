@@ -14,6 +14,7 @@ import {
   type UpdatePreferencesInput,
 } from '@/services/user-preferences';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'preferences' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -28,7 +29,8 @@ export async function GET(request: NextRequest) {
     const preferences = await getUserPreferences(supabase, auth.userId);
 
     return apiSuccess(preferences, 200);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'preferences.get', status: 500 });
     return internalError('Failed to fetch preferences');
   }
 }
@@ -72,7 +74,8 @@ export async function PUT(request: NextRequest) {
     }
 
     return apiSuccess(preferences, 200);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'preferences.put', status: 500 });
     return internalError('Failed to update preferences');
   }
 }

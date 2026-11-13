@@ -21,6 +21,7 @@ import { logApiRequest, rateLimitResponse, getClientIp, requireAdmin } from '@/l
 import { isCronAuthorized } from '@/lib/api/cron-auth';
 import { DEFAULT_UPTIME_TARGET, runUptimeCheck } from '@/lib/uptime';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 function isHttpUrl(value: string): boolean {
@@ -85,7 +86,8 @@ export async function POST(request: NextRequest) {
     }
 
     return apiSuccess({ ...data, target_url: targetUrl, status_code: result.statusCode });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'monitoring.uptime.check', status: 500 });
     return internalError('Uptime check failed');
   }
 }

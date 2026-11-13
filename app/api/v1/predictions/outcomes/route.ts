@@ -20,10 +20,14 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { apiSuccess, badRequest, internalError, unauthorized } from '@/lib/api/responses';
 import { logApiRequest, rateLimitResponse, getClientIp, requireAdmin } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import { isCronAuthorized } from '@/lib/api/cron-auth';
 import { resolvePredictionOutcome } from '@/lib/prediction-accuracy';
 
 export const dynamic = 'force-dynamic';
+// Section 19, Phase 1 (§12 #10) — expensive inline AI work runs under
+// maxDuration 60 (matching the 5 cron routes), not the platform default.
+export const maxDuration = 60;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -61,6 +65,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   logApiRequest(request, { endpoint: 'predictions.outcomes.record' });
+  const startedAt = Date.now();
 
   const limited = await rateLimitResponse(
     `predictions-outcomes-write:${getClientIp(request)}`,
@@ -173,7 +178,8 @@ export async function POST(request: NextRequest) {
     }
 
     return apiSuccess(data, 200);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'predictions.outcomes.record', status: 500, startedAt });
     return internalError('Failed to record prediction outcome');
   }
 }

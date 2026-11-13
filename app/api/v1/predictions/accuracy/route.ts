@@ -20,9 +20,13 @@ import {
 } from '@/lib/prediction-accuracy';
 
 export const dynamic = 'force-dynamic';
+// Section 19, Phase 1 (§12 #10) — expensive inline AI work runs under
+// maxDuration 60 (matching the 5 cron routes), not the platform default.
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'predictions.accuracy' });
+  // Section 19, Phase 9 (§12 #92) — intentionally unwired: the honest empty summary IS the designed response while migration 032 is unapplied (missing table is the expected state, not an error); the endpoint never returns a 5xx.
 
   const limited = await rateLimitResponse(
     `predictions-accuracy:${getClientIp(request)}`,

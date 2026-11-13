@@ -9,6 +9,7 @@ import { apiSuccess, internalError } from '@/lib/api/responses';
 import { logApiRequest, requireAdmin, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getProviderHealth } from '@/services/monitoring';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'monitoring.providers' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -25,7 +26,8 @@ export async function GET(request: NextRequest) {
     const providers = await getProviderHealth(supabase);
 
     return apiSuccess(providers);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'monitoring.providers', status: 500 });
     return internalError('Failed to fetch provider health');
   }
 }

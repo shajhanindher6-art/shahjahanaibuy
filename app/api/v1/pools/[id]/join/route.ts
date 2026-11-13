@@ -14,6 +14,7 @@ import {
   serviceUnavailable,
 } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import { normalizeQuantity } from '@/lib/pool-quantities';
 
 export async function POST(
@@ -63,7 +64,8 @@ export async function POST(
       .from('pool_member_quantities')
       .upsert({ pool_id: params.id, user_id: auth.userId, quantity }, { onConflict: 'pool_id,user_id' });
     return apiSuccess({ joined: true, quantity }, 201);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request: _request, route: 'pools.join', status: 500 });
     return internalError('Failed to join pool');
   }
 }

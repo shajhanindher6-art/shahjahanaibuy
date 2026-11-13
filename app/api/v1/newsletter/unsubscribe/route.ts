@@ -34,6 +34,7 @@ import {
   rateLimitResponse,
   getClientIp,
 } from '@/lib/api/middleware';
+import { logApiError } from '@/lib/api/error-logging';
 import { isMissingTableError } from '@/lib/newsletter';
 
 export const dynamic = 'force-dynamic';
@@ -107,7 +108,8 @@ async function unsubscribe(request: NextRequest, body: unknown) {
     // Unknown token: same generic success as a real unsubscribe
     // (no existence leak). The update simply matched zero rows.
     return apiSuccess({ unsubscribed: true, message: GENERIC_MESSAGE });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'newsletter.unsubscribe', status: 500 });
     return internalError('Could not unsubscribe right now');
   }
 }

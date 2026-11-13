@@ -25,6 +25,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'price-index' });
+  // Section 19, Phase 9 (§12 #92) — intentionally unwired: DB failures return an honest empty 200 (fail-safe) and the catch already records them via logger.error, so no 5xx is ever returned for error_log/Sentry capture.
 
   const limited = await rateLimitResponse(`price-index:${getClientIp(request)}`, 60);
   if (limited) return limited;

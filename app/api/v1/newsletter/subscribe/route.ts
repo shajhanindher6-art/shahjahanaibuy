@@ -42,6 +42,7 @@ import {
   resolveSubscribeInsertResult,
 } from '@/lib/newsletter';
 
+import { logApiError } from '@/lib/api/error-logging';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -100,7 +101,8 @@ export async function POST(request: NextRequest) {
       },
       201
     );
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'newsletter.subscribe', status: 500 });
     return internalError('Failed to save the newsletter signup');
   }
 }

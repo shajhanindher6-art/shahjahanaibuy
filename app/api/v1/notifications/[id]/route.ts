@@ -25,6 +25,7 @@ import {
 } from '@/lib/api/responses';
 import { logApiRequest, requireAuth, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -80,7 +81,8 @@ export async function PATCH(
     }
 
     return apiSuccess(updated);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'notifications', status: 500 });
     return internalError('Failed to mark notification');
   }
 }

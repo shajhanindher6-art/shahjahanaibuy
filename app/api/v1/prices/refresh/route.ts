@@ -36,6 +36,11 @@
  *      digest trigger (no second cron job — single-scheduler rule).
  *      A missing weekly_digests table (migration 009 unapplied)
  *      skips the step honestly instead of failing the run.
+ *   9. (S19 P3, §12 #34) resolvePendingPredictionOutcomes():
+ *      resolve due 'pending' prediction outcomes against the
+ *      lowest price actually recorded inside each horizon. A
+ *      missing prediction_outcomes table (migration 032 unapplied)
+ *      skips the step honestly instead of failing the run.
  *
  * Steps 4–6 are best-effort and fail-safe: a missing migration 026
  * table (or any error inside them) is counted and reported, never
@@ -130,6 +135,10 @@ import {
   notifySavedSearchMatches,
   type SavedSearchNotifyResult,
 } from '@/services/saved-searches';
+import {
+  resolvePendingPredictionOutcomes,
+  type ResolvePendingOutcomesResult,
+} from '@/services/prediction-outcomes';
 import {
   generateWeeklyDigestsForPremiumUsers,
   type WeeklyDigestRunResult,
@@ -693,7 +702,12 @@ async function checkGuestEmailAlerts(
         },
         {
           price,
+          // §12 #67: backInStockProductIds is the transition set
+          // from recordAvailabilitySnapshots (out→in per
+          // availability_history), passed explicitly as the
+          // transition — never raw in-stock membership.
           backInStock: backInStockProductIds.has(row.product_id),
+          backInStockTransition: backInStockProductIds.has(row.product_id),
           hasActiveDeal: dealProductIds.has(row.product_id),
         }
       );
@@ -921,6 +935,7 @@ export async function POST(request: NextRequest) {
       'guestAlerts',
       'guestEmail',
       'savedSearches',
+      'outcomes',
     ] as const;
     const skipMessage =
       guard.reason === 'guard-error'
@@ -985,7 +1000,11 @@ export async function POST(request: NextRequest) {
     triggered: 0,
     queued: 0,
     skippedDuplicate: 0,
+    skippedOptedOut: 0,
     failed: 0,
+    wishlistChecked: 0,
+    wishlistTriggered: 0,
+    wishlistQueued: 0,
   };
   const zeroHunts: Awaited<ReturnType<typeof runHuntsForConsentedUsers>> = {
     usersChecked: 0,
@@ -1030,6 +1049,20 @@ export async function POST(request: NextRequest) {
     ok: true,
     searchesChecked: 0,
     notified: 0,
+  };
+  // Section 19, Phase 3 (§12 #34) — prediction-outcome resolution.
+  // Resolves due 'pending' outcomes against the prices this run
+  // just recorded. A missing prediction_outcomes table (032
+  // unapplied) is a clean skip, not a failure — the resolver
+  // reports reason 'table-missing' and the step never fails the
+  // run (see the isFailed predicate below, same shape as
+  // savedSearches).
+  const zeroOutcomes: ResolvePendingOutcomesResult = {
+    ok: true,
+    checked: 0,
+    resolved: 0,
+    stillPending: 0,
+    failed: 0,
   };
 
   // Section 18, item 37 — the chain runs in WAVES. Steps that
@@ -1091,7 +1124,7 @@ export async function POST(request: NextRequest) {
       (r) => (r.loadFailed ? (r.loadError ?? 'availability load failed') : null)
     ),
   ]);
-  const [alerts, hunts, digest, savedSearches] = await Promise.all([
+  const [alerts, hunts, digest, savedSearches, outcomes] = await Promise.all([
     runRefreshStep(
       'checkPriceAlerts',
       () => checkPriceAlerts(supabase),
@@ -1128,6 +1161,17 @@ export async function POST(request: NextRequest) {
       // failure — otherwise every refresh would report
       // completed_with_failures until the owner applies 042.
       (r) => (r.ok || r.reason === 'table-missing' ? null : (r.reason ?? 'saved-search match notifications failed'))
+    ),
+    // Section 19, Phase 3 (§12 #34) — resolve due prediction
+    // outcomes against the price_history rows this run just
+    // wrote. Runs AFTER refresh (wave B), in wave C with the
+    // other post-refresh steps. Never throws; a missing table
+    // (032 unapplied) is a clean skip, not a failure.
+    runRefreshStep(
+      'resolvePendingPredictionOutcomes',
+      () => resolvePendingPredictionOutcomes(supabase),
+      zeroOutcomes,
+      (r) => (r.ok || r.reason === 'table-missing' ? null : (r.reason ?? 'prediction outcome resolution failed'))
     ),
   ]);
   const [notifications, guestAlerts] = await Promise.all([
@@ -1220,6 +1264,12 @@ export async function POST(request: NextRequest) {
           }
         : undefined
     ),
+    outcomes: summarizeStep(outcomes, {
+      processed: outcomes.result.checked,
+      succeeded: outcomes.result.resolved,
+      failed: outcomes.result.failed,
+      skipped: outcomes.result.stillPending,
+    }),
   };
   const failedSteps = Object.entries(steps).filter(
     ([, s]) => s.status === 'failed'
@@ -1256,6 +1306,7 @@ export async function POST(request: NextRequest) {
     guestAlerts: guestAlerts.result,
     guestEmail: guestEmail.result,
     savedSearches: savedSearches.result,
+    outcomes: outcomes.result,
     steps,
   });
 }

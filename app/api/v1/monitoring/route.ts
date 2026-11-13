@@ -9,6 +9,7 @@ import { apiSuccess, internalError } from '@/lib/api/responses';
 import { logApiRequest, requireAdmin, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 import { getMonitoringSummary } from '@/services/monitoring';
 
+import { logApiError } from '@/lib/api/error-logging';
 export async function GET(request: NextRequest) {
   logApiRequest(request, { endpoint: 'monitoring' });
   // Rate limit: 120 requests/min per IP (see docs/rate-limits.md).
@@ -25,7 +26,8 @@ export async function GET(request: NextRequest) {
     const summary = await getMonitoringSummary(supabase);
 
     return apiSuccess(summary);
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'monitoring', status: 500 });
     return internalError('Failed to fetch monitoring summary');
   }
 }

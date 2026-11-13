@@ -38,6 +38,7 @@ import {
   getClientIp,
 } from '@/lib/api/middleware';
 import { sendWelcomeEmail } from '@/services/email';
+import { logApiError } from '@/lib/api/error-logging';
 import { isMissingTableError } from '@/lib/newsletter';
 
 export const dynamic = 'force-dynamic';
@@ -177,7 +178,8 @@ async function confirm(request: NextRequest, body: unknown) {
       delivery:
         'Confirmation saved. No welcome email has been sent — sending starts once email delivery is configured.',
     });
-  } catch {
+  } catch (err) {
+    logApiError(err, { request, route: 'newsletter.confirm', status: 500 });
     return internalError('Could not confirm the newsletter signup');
   }
 }
