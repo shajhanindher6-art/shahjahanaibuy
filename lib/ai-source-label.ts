@@ -104,6 +104,29 @@ export function verifiedDataRangeLabel(asOfList: Array<string | null>): string {
   );
 }
 
+/**
+ * Recorded-data label for a RANGE of freshness timestamps — the
+ * counterpart of verifiedDataRangeLabel (Section 21, P0 #1). The
+ * comparison verdict covers 2–5 products; when ANY of them is
+ * unverified or stale the verdict is earned-recorded, not
+ * verified, so the range label must say recorded, never
+ * "verified". Same oldest→newest range, same real timestamps.
+ */
+export function recordedDataRangeLabel(asOfList: Array<string | null>): string {
+  const dates = asOfList
+    .map((iso) => (iso ? new Date(iso).getTime() : NaN))
+    .filter((t) => Number.isFinite(t));
+  if (dates.length === 0) return recordedDataLabel(null);
+  const oldest = formatLabelDate(new Date(Math.min(...dates)).toISOString());
+  const newest = formatLabelDate(new Date(Math.max(...dates)).toISOString());
+  if (oldest === newest) return recordedDataLabel(new Date(Math.min(...dates)).toISOString());
+  return (
+    `Source: based on recorded catalog data from the SmartBuy catalog ` +
+    `(prices last checked ${oldest} to ${newest} across the compared products ` +
+    `— recorded prices, not checked live at the merchant).`
+  );
+}
+
 /** General-guidance label for text that is advice, not data. */
 export function generalGuidanceLabel(): string {
   return `Source: ${GENERAL_GUIDANCE_LABEL}.`;

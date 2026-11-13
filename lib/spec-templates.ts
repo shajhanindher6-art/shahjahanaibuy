@@ -21,9 +21,11 @@
  * so its specs cannot be validated (reported, not invented).
  *
  * Categories are matched case-insensitively on the template key
- * (`laptop`, `smartphone`, `tablet`); `phone` is accepted as an
- * alias of `smartphone` because the guided finder and the seed
- * both use "phone" as the category word.
+ * (9 categories since Section 21–25 Stage C: laptop, smartphone,
+ * tablet, headphones, camera, smartwatch, accessories, wearables,
+ * monitor); `phone` is accepted as an alias of `smartphone`
+ * because the guided finder and the seed both use "phone" as the
+ * category word.
  */
 
 export interface SpecTemplateEntry {
@@ -41,7 +43,16 @@ export interface SpecTemplateEntry {
   units?: string[];
 }
 
-export type SpecTemplateCategory = 'laptop' | 'smartphone' | 'tablet';
+export type SpecTemplateCategory =
+  | 'laptop'
+  | 'smartphone'
+  | 'tablet'
+  | 'headphones'
+  | 'camera'
+  | 'smartwatch'
+  | 'accessories'
+  | 'wearables'
+  | 'monitor';
 
 /** Canonical spec keys per category, as data — not UI copy. */
 export const SPEC_TEMPLATES: Record<SpecTemplateCategory, SpecTemplateEntry[]> = {
@@ -71,6 +82,63 @@ export const SPEC_TEMPLATES: Record<SpecTemplateCategory, SpecTemplateEntry[]> =
     { key: 'battery', label: 'Battery', units: ['mAh', 'Wh', 'hours'] },
     { key: 'connectivity', label: 'Connectivity' },
   ],
+  // Section 21–25, Stage C (B10) — the 6 uncovered live
+  // categories. The live seed (supabase/seed-products.sql) has 6
+  // distinct category values; laptop + smartphone were already
+  // covered, so headphones / cameras / smartwatches / accessories
+  // are the 4 uncovered LIVE ones. Wearables + monitors are the
+  // other 2 category words the tree itself uses (find queries,
+  // guided finder) — added so the template set covers 9
+  // categories instead of leaving the next-nearest words
+  // template-less. Keys are canonical spec keys only — no values
+  // are recorded here, and an unknown value still stays unknown.
+  headphones: [
+    { key: 'driver', label: 'Driver size', units: ['mm'] },
+    { key: 'battery', label: 'Battery life', units: ['hours'] },
+    { key: 'noise_cancelling', label: 'Noise cancelling' },
+    { key: 'connectivity', label: 'Connectivity' },
+    { key: 'bluetooth', label: 'Bluetooth version' },
+    { key: 'weight', label: 'Weight', units: ['g'] },
+  ],
+  camera: [
+    { key: 'sensor', label: 'Sensor' },
+    { key: 'megapixels', label: 'Resolution', units: ['MP'] },
+    { key: 'lens_mount', label: 'Lens mount' },
+    { key: 'video', label: 'Video recording' },
+    { key: 'display', label: 'Display', units: ['inch'] },
+    { key: 'battery', label: 'Battery', units: ['mAh', 'Wh'] },
+    { key: 'weight', label: 'Weight', units: ['g'] },
+  ],
+  smartwatch: [
+    { key: 'display', label: 'Display', units: ['inch'] },
+    { key: 'battery', label: 'Battery life', units: ['hours', 'days'] },
+    { key: 'sensors', label: 'Sensors' },
+    { key: 'water_resistance', label: 'Water resistance' },
+    { key: 'connectivity', label: 'Connectivity' },
+    { key: 'weight', label: 'Weight', units: ['g'] },
+  ],
+  accessories: [
+    { key: 'connectivity', label: 'Connectivity' },
+    { key: 'battery', label: 'Battery life', units: ['hours', 'mAh'] },
+    { key: 'compatibility', label: 'Compatibility' },
+    { key: 'weight', label: 'Weight', units: ['g'] },
+    { key: 'material', label: 'Material' },
+  ],
+  wearables: [
+    { key: 'display', label: 'Display', units: ['inch'] },
+    { key: 'battery', label: 'Battery life', units: ['hours', 'days'] },
+    { key: 'sensors', label: 'Sensors' },
+    { key: 'water_resistance', label: 'Water resistance' },
+    { key: 'connectivity', label: 'Connectivity' },
+    { key: 'weight', label: 'Weight', units: ['g'] },
+  ],
+  monitor: [
+    { key: 'display', label: 'Display size', units: ['inch'] },
+    { key: 'resolution', label: 'Resolution' },
+    { key: 'refresh_rate', label: 'Refresh rate', units: ['Hz'] },
+    { key: 'panel', label: 'Panel type' },
+    { key: 'connectivity', label: 'Connectivity' },
+  ],
 };
 
 /** Category words that resolve to a template (`phone` → smartphone). */
@@ -85,6 +153,28 @@ const CATEGORY_ALIASES: Record<string, SpecTemplateCategory> = {
   'cell phones': 'smartphone',
   tablet: 'tablet',
   tablets: 'tablet',
+  headphones: 'headphones',
+  headphone: 'headphones',
+  earphones: 'headphones',
+  earbuds: 'headphones',
+  camera: 'camera',
+  cameras: 'camera',
+  'action camera': 'camera',
+  'action cameras': 'camera',
+  smartwatch: 'smartwatch',
+  smartwatches: 'smartwatch',
+  watch: 'smartwatch',
+  watches: 'smartwatch',
+  accessories: 'accessories',
+  accessory: 'accessories',
+  wearables: 'wearables',
+  wearable: 'wearables',
+  'fitness tracker': 'wearables',
+  'fitness trackers': 'wearables',
+  monitor: 'monitor',
+  monitors: 'monitor',
+  display: 'monitor',
+  displays: 'monitor',
 };
 
 /** Resolve a free-text category to its template, or null when it has none. */

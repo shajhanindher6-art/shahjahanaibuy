@@ -3,6 +3,7 @@ import { getRegionByCountry, languageForCountry } from '@/lib/region';
 import { buildCsp } from '@/lib/csp';
 import { resolveSlugRequest } from '@/lib/middleware/slug-exists';
 import { ensureRequestId, REQUEST_ID_HEADER } from '@/lib/api/request-id';
+import { checkCsrfOrigin, isMutatingApiRequest } from '@/lib/api/csrf';
 import { NextResponse, type NextRequest } from 'next/server';
 
 /**
@@ -70,6 +71,25 @@ export async function middleware(request: NextRequest) {
   }
 
   const response = await updateSession(request);
+
+  // Sections 21–25, Stage G, G-P1-3 — uniform CSRF Origin check
+  // for mutating API calls. The audit found the check on only 4
+  // of ~56 cookie-auth mutating route files (intake, alerts,
+  // subscriptions ×2); applying it file-by-file would leave the
+  // next new route unprotected by default. This middleware layer
+  // covers every mutating /api/* request instead, and each
+  // mutating admin route ALSO checks directly (defense in depth).
+  // Fail-open on an absent Origin (see lib/api/csrf.ts): the
+  // check stops cross-site browser forgery, not server-to-server
+  // callers — cron-job.org, Stripe webhooks and curl send no
+  // Origin and pass through untouched. SameSite=Lax auth cookies
+  // (verified in @supabase/ssr defaults) are the first mitigation;
+  // this Origin check is the second. Checked AFTER updateSession
+  // so a rejected forgery never refreshes a session cookie.
+  if (isMutatingApiRequest(request)) {
+    const csrf = checkCsrfOrigin(request);
+    if (csrf) return csrf;
+  }
 
   // The CSP header lives here now (per-request nonce), NOT in
   // next.config.js — a static header there cannot carry a nonce.

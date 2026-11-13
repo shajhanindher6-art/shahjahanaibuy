@@ -24,6 +24,11 @@
  *   host list exists), so any public https host is accepted and
  *   the CSP `img-src https:` rule is the backstop. An allowlist
  *   must wait for the owner image-host policy decision (§12 #102).
+ *   The allowlist code itself now exists (lib/image-allowlist.ts,
+ *   Sections 21–25 Stage K / K6 — fail-closed, empty until the
+ *   owner supplies IMAGE_ALLOWED_HOSTS); it is not wired in here
+ *   yet, because wiring an empty fail-closed list would reject
+ *   every image. The integration point is the upload path.
  */
 
 export const IMAGE_URL_MAX_LENGTH = 2048;

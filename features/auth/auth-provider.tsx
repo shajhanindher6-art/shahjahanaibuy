@@ -11,6 +11,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { getProfile } from '@/services/profiles';
 import { runGuestMerge } from '@/lib/guest-merge';
 import { mapSignUpErrorMessage } from '@/lib/auth/error-messages';
+import { readCaptchaToken } from '@/lib/auth/captcha-client';
 import { mapAuthError } from './auth-errors';
 import type { AuthContextValue, AuthResult } from '@/types/auth';
 import type { Profile, UserRole } from '@/types';
@@ -113,12 +114,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(
     async (email: string, password: string): Promise<AuthResult> => {
+      // Section 21–25, Stage J, J-P1-1 — sign-in goes through the
+      // rate-limited server proxy (/api/v1/auth/sign-in, 5/min/IP)
+      // instead of browser → Supabase directly. The proxy sets the
+      // session cookies server-side and returns the session tokens;
+      // setSession() establishes the browser session, then the flow
+      // continues exactly as before (profile fetch, guest merge via
+      // the SIGNED_IN listener). A 429/401 from the proxy is
+      // honoured, never bypassed. Only a network failure reaching
+      // the proxy falls back to the direct call, so a proxy outage
+      // cannot lock every user out of sign-in.
+      const captchaToken = readCaptchaToken();
       try {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) return authFailure(error, 'Failed to sign in. Check your connection and try again.');
-        if (data.user) {
-          setUser(data.user);
-          await fetchProfile(data.user.id);
+        let res: Response;
+        try {
+          res = await fetch('/api/v1/auth/sign-in', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email,
+              password,
+              ...(captchaToken ? { captchaToken } : {}),
+            }),
+          });
+        } catch {
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+          if (error) return authFailure(error, 'Failed to sign in. Check your connection and try again.');
+          if (data.user) {
+            setUser(data.user);
+            await fetchProfile(data.user.id);
+          }
+          return { success: true };
+        }
+        const payload = (await res.json().catch(() => null)) as {
+          success?: boolean;
+          data?: {
+            user?: { id?: string | null; email?: string | null };
+            session?: { access_token?: string; refresh_token?: string } | null;
+          } | null;
+          error?: { message?: string };
+        } | null;
+        if (!res.ok || !payload?.success) {
+          return authFailure(
+            payload?.error?.message ?? 'Invalid email or password.',
+            'Failed to sign in. Check your connection and try again.'
+          );
+        }
+        const session = payload.data?.session;
+        if (session?.access_token && session?.refresh_token) {
+          const { data: sessionData } = await supabase.auth.setSession({
+            access_token: session.access_token,
+            refresh_token: session.refresh_token,
+          });
+          if (sessionData.user) {
+            setUser(sessionData.user);
+            await fetchProfile(sessionData.user.id);
+          }
+        } else if (payload.data?.user?.id) {
+          // No tokens (should not happen) — re-read the session
+          // the proxy set via cookies.
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData.session?.user) {
+            setUser(sessionData.session.user);
+            await fetchProfile(sessionData.session.user.id);
+          }
         }
         return { success: true };
       } catch (err) {
@@ -130,39 +189,96 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = useCallback(
     async (email: string, password: string, fullName?: string): Promise<AuthResult> => {
+      // Section 21–25, Stage J, J-P1-1 — same proxy pattern as
+      // signIn: /api/v1/auth/sign-up (5/min/IP, anti-enumeration —
+      // an existing email gets the same success shape as a fresh
+      // one). Response shapes are unchanged, so the sign-up page
+      // branches exactly as before.
+      const captchaToken = readCaptchaToken();
       try {
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: { full_name: fullName ?? '' },
-          },
-        });
-        // Section 18, Phase 2, item 5 (audit §1 #55): Supabase
-        // returns "User already registered" for an existing email,
-        // which would let an attacker enumerate registered emails.
-        // That error is mapped to the same generic "check your
-        // email" wording a fresh sign-up shows, reported as a
-        // success-with-message — indistinguishable from a new
-        // account creation. This runs before the generic
-        // authFailure mapper: the point is not just friendly copy,
-        // but the success shape itself.
-        if (error) {
-          const generic = mapSignUpErrorMessage(error.message);
+        let res: Response;
+        try {
+          res = await fetch('/api/v1/auth/sign-up', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email,
+              password,
+              ...(fullName !== undefined ? { fullName } : {}),
+              ...(captchaToken ? { captchaToken } : {}),
+            }),
+          });
+        } catch {
+          // Proxy unreachable — direct fallback (see signIn).
+          const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              data: { full_name: fullName ?? '' },
+            },
+          });
+          if (error) {
+            const generic = mapSignUpErrorMessage(error.message);
+            if (generic) return { success: true, error: generic };
+            return authFailure(error, 'Failed to create your account. Check your connection and try again.');
+          }
+          if (!data.session) {
+            return {
+              success: true,
+              error: 'Account created! Check your email to confirm your account.',
+            };
+          }
+          if (data.user) {
+            setUser(data.user);
+            await fetchProfile(data.user.id);
+          }
+          return { success: true };
+        }
+        const payload = (await res.json().catch(() => null)) as {
+          success?: boolean;
+          data?: {
+            user?: { id?: string | null; email?: string | null };
+            session?: { access_token?: string; refresh_token?: string } | null;
+            message?: string;
+          } | null;
+          error?: { message?: string };
+        } | null;
+        if (!res.ok || !payload?.success) {
+          // Section 18, Phase 2, item 5 (audit §1 #55): Supabase
+          // returns "User already registered" for an existing email,
+          // which would let an attacker enumerate registered emails.
+          // That error is mapped to the same generic "check your
+          // email" wording a fresh sign-up shows, reported as a
+          // success-with-message — indistinguishable from a new
+          // account creation. This runs before the generic
+          // authFailure mapper: the point is not just friendly copy,
+          // but the success shape itself.
+          const generic = mapSignUpErrorMessage(payload?.error?.message ?? '');
           if (generic) return { success: true, error: generic };
-          return authFailure(error, 'Failed to create your account. Check your connection and try again.');
+          return authFailure(
+            payload?.error?.message ?? 'Failed to create your account.',
+            'Failed to create your account. Check your connection and try again.'
+          );
         }
-        if (!data.session) {
-          return {
-            success: true,
-            error: 'Account created! Check your email to confirm your account.',
-          };
+        if (payload.data?.message) {
+          return { success: true, error: payload.data.message };
         }
-        if (data.user) {
-          setUser(data.user);
-          await fetchProfile(data.user.id);
+        const session = payload.data?.session;
+        if (session?.access_token && session?.refresh_token) {
+          const { data: sessionData } = await supabase.auth.setSession({
+            access_token: session.access_token,
+            refresh_token: session.refresh_token,
+          });
+          if (sessionData.user) {
+            setUser(sessionData.user);
+            await fetchProfile(sessionData.user.id);
+          }
+          return { success: true };
         }
-        return { success: true };
+        return {
+          success: true,
+          error: 'Account created! Check your email to confirm your account.',
+        };
       } catch (err) {
         return authFailure(err, 'Failed to create your account. Check your connection and try again.');
       }

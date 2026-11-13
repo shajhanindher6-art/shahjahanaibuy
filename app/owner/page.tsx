@@ -26,6 +26,8 @@
  */
 
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
@@ -60,9 +62,18 @@ const REFRESH_RUN_STATUS_LABELS: Record<string, string> = {
 };
 
 export default async function OwnerPage() {
+  // Sections 21–25, Stage G, G-P1-4 — the error-log read service
+  // re-checks the admin role itself (defense in depth, beyond the
+  // owner layout guard), so the page passes the session user id.
+  const sessionClient = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await sessionClient.auth.getUser();
+  if (!user) redirect('/sign-in?reason=session-expired');
+
   const service = createSupabaseServiceClient();
   const overview = service ? await getOwnerOverview(service) : null;
-  const errorLog = service ? await listRecentErrors(service, 20) : null;
+  const errorLog = service ? await listRecentErrors(service, 20, { adminUserId: user.id }) : null;
   // Section 19, Phase 7 (§12 #72): the SAME accuracy computation
   // the /admin/ai control center shows (services/ai-accuracy) —
   // no second computation. Fail-safe while migration 032 is

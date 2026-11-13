@@ -117,7 +117,73 @@ interface DataQualityPayload {
   freshness: { fresh: number; stale: number; unknown: number };
   averageDataQualityScore: number | null;
   columnsMissing: boolean;
+  /** Section 21–25, Stage H (H-P2-4): the average may understate. */
+  scoreMayUnderstate?: boolean;
+  merchantSourceMissing?: boolean;
+  /** Section 21–25, Stage H (H-P2-2): 5-state taxonomy counts. */
+  qualityStates?: { verified: number; partial: number; unverified: number; stale: number; missing: number };
   notes: string[];
+}
+
+interface ProviderHealthPayload {
+  providers: Array<{
+    key: string;
+    name: string;
+    category: string;
+    available: boolean;
+    notConfiguredReason: string | null;
+    breaker: {
+      open: boolean;
+      halfOpen: boolean;
+      consecutiveFailures: number;
+      openedAt: string | null;
+    };
+    budget: {
+      used: number;
+      limit: number;
+      remaining: number;
+      allowed: boolean;
+      dateKey: string;
+      fromEnv: boolean;
+    };
+  }>;
+  health: Array<{
+    providerKey: string;
+    status: string;
+    successCount: number;
+    failureCount: number;
+    consecutiveFailures: number;
+    lastSuccessAt: string | null;
+    lastFailureAt: string | null;
+    lastError: string | null;
+    avgResponseMs: number | null;
+  }>;
+  syncHistory: Array<{
+    id: string;
+    providerKey: string;
+    syncType: string;
+    status: string;
+    recordsFetched: number;
+    recordsInserted: number;
+    recordsUpdated: number;
+    recordsRejected: number;
+    errorMessage: string | null;
+    startedAt: string;
+    completedAt: string | null;
+  }>;
+  merchantReliability: Array<{
+    merchantId: string;
+    merchantName: string;
+    score: number | null;
+    level: string;
+    verified: boolean | null;
+    trustGrade: string | null;
+    explanation: string;
+    notEnoughData: boolean;
+  }>;
+  serviceUnavailable: boolean;
+  tablesMissing: string[];
+  generatedAt: string;
 }
 
 interface AiAdminData {
@@ -132,6 +198,12 @@ interface AiAdminData {
 export function AiControlCenter() {
   const [data, setData] = useState<AiAdminData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Sections 21–25, Stage B (B13) — provider health (registry
+  // providers, not AI providers): read-only, same fetch pattern
+  // as the main payload. A failed load degrades to an honest
+  // "could not be loaded" note, never a blank section.
+  const [providerHealth, setProviderHealth] = useState<ProviderHealthPayload | null>(null);
+  const [providerHealthError, setProviderHealthError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,6 +216,17 @@ export function AiControlCenter() {
       .catch((err: unknown) => {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'AI admin data could not be loaded.');
+        }
+      });
+    fetch('/api/v1/admin/providers')
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Provider health request failed (${res.status})`);
+        const body = (await res.json()) as { data?: ProviderHealthPayload };
+        if (!cancelled) setProviderHealth(body.data ?? null);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setProviderHealthError(err instanceof Error ? err.message : 'Provider health could not be loaded.');
         }
       });
     return () => {
@@ -206,6 +289,151 @@ export function AiControlCenter() {
             </Card>
           ))}
         </div>
+      </section>
+
+      <section aria-label="Provider health">
+        <h2 className="text-xl font-semibold">Provider health</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Registry data providers (CSV, Amazon, Best Buy, Apify) — read
+          only. A provider that cannot fetch says why, in plain
+          language; a provider with no recorded calls shows no health
+          history rather than a guessed status.
+        </p>
+        {providerHealthError ? (
+          <p className="mt-4 rounded-lg border border-red-300 bg-red-50 p-4 text-sm dark:border-red-800 dark:bg-red-950">
+            Provider health could not be loaded: {providerHealthError}
+          </p>
+        ) : !providerHealth ? (
+          <div className="mt-4 flex items-center gap-2 text-muted-foreground">
+            <LoadingSpinner />
+            <span>Loading provider health…</span>
+          </div>
+        ) : (
+          <div className="mt-4 space-y-4">
+            {providerHealth.serviceUnavailable ? (
+              <p className="rounded-lg border border-dashed p-6 text-muted-foreground">
+                The service-role key is not configured, so recorded
+                provider health and sync history cannot be read. The
+                provider list below still shows configuration status —
+                it does not need the database.
+              </p>
+            ) : null}
+            {providerHealth.tablesMissing.length > 0 ? (
+              <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                Not recorded yet — these tables have not been applied, so
+                there is no history to show: {providerHealth.tablesMissing.join(', ')}.
+                This is missing data, not zero activity.
+              </p>
+            ) : null}
+            <div className="space-y-3">
+              {providerHealth.providers.map((p) => {
+                const recorded = providerHealth.health.find((h) => h.providerKey === p.key);
+                return (
+                  <Card key={p.key}>
+                    <CardHeader>
+                      <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+                        {p.name}
+                        <Badge variant={p.available ? 'default' : 'secondary'}>
+                          {p.available ? 'Available' : 'Not configured'}
+                        </Badge>
+                        <Badge variant="outline">{p.category}</Badge>
+                        {p.breaker.open ? (
+                          <Badge variant="destructive">Circuit open</Badge>
+                        ) : p.breaker.halfOpen ? (
+                          <Badge variant="outline">Circuit half-open (probe allowed)</Badge>
+                        ) : null}
+                      </CardTitle>
+                      <CardDescription>
+                        {p.notConfiguredReason ?? 'No configuration issue recorded.'}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground">
+                        Daily budget: {p.budget.used} of {p.budget.limit} calls used
+                        ({p.budget.remaining} remaining, {p.budget.dateKey}
+                        {p.budget.fromEnv ? ', limit set by the owner' : ', default limit'}).
+                      </p>
+                      {recorded ? (
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Recorded health: {recorded.status} — {recorded.successCount} succeeded,{' '}
+                          {recorded.failureCount} failed
+                          {recorded.consecutiveFailures > 0
+                            ? `, ${recorded.consecutiveFailures} consecutive failure(s)`
+                            : ''}
+                          {recorded.avgResponseMs !== null
+                            ? `, average latency ${recorded.avgResponseMs} ms`
+                            : ''}
+                          {recorded.lastSuccessAt
+                            ? `. Last success ${new Date(recorded.lastSuccessAt).toLocaleString('en-GB')}`
+                            : '. No successful call recorded yet'}
+                          {recorded.lastFailureAt
+                            ? `; last failure ${new Date(recorded.lastFailureAt).toLocaleString('en-GB')}`
+                            : ''}
+                          {recorded.lastError ? `. Last error: ${recorded.lastError}` : ''}
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          No recorded health yet — this provider has never had a call recorded.
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+            {providerHealth.syncHistory.length > 0 ? (
+              <div className="rounded-lg border p-4">
+                <p className="font-medium">Recent syncs</p>
+                <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                  {providerHealth.syncHistory.map((s) => (
+                    <li key={s.id}>
+                      {s.providerKey} · {s.syncType} · {s.status} — {s.recordsFetched} fetched,{' '}
+                      {s.recordsInserted} inserted, {s.recordsRejected} rejected ·{' '}
+                      {new Date(s.startedAt).toLocaleString('en-GB')}
+                      {s.errorMessage ? ` — ${s.errorMessage}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                No syncs recorded yet — no provider call has written sync history.
+              </p>
+            )}
+            <div className="rounded-lg border p-4">
+              <p className="font-medium">Merchant reliability</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Canonical scorer: recorded policy, trust grade, verified badge and directory
+                signals only. A merchant with too little evidence gets no score, never a guess.
+              </p>
+              {providerHealth.merchantReliability.length === 0 ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  No merchants to score yet.
+                </p>
+              ) : (
+                <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
+                  {providerHealth.merchantReliability.map((m) => (
+                    <li key={m.merchantId}>
+                      <span className="font-medium text-foreground">{m.merchantName}</span>
+                      {m.score !== null ? (
+                        <> — {m.score}/100 ({m.level})</>
+                      ) : (
+                        <> — not enough data to score</>
+                      )}
+                      {m.trustGrade ? <> · trust grade {m.trustGrade}</> : null}
+                      {m.verified === true ? <> · Verified Merchant badge</> : null}
+                      <br />
+                      <span>{m.explanation}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Generated at {new Date(providerHealth.generatedAt).toLocaleString('en-GB')}.
+            </p>
+          </div>
+        )}
       </section>
 
       <section aria-label="Usage">
@@ -339,6 +567,32 @@ export function AiControlCenter() {
                 source attribution — with missing fields counted as
                 missing, never guessed.
               </p>
+              {/* Section 21–25, Stage H (H-P2-4): never show a bare
+                  average while a verification/source column is
+                  missing — the number is a lower bound, say so. */}
+              {data.dataQuality.scoreMayUnderstate ? (
+                <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950">
+                  This average may understate data quality: a
+                  verification or price-source column does not exist
+                  yet (migration 045 not applied), so the attribution
+                  dimension cannot count a recorded price source.
+                </p>
+              ) : null}
+            </div>
+            <div className="rounded-lg border p-4">
+              <p className="font-medium">Data verification (5-state taxonomy)</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                The same label system the public product page shows
+                per product: Verified / Partially verified /
+                Unverified / Stale / Missing information.
+              </p>
+              <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                <li>Verified: {data.dataQuality.qualityStates?.verified ?? 0}</li>
+                <li>Partially verified: {data.dataQuality.qualityStates?.partial ?? 0}</li>
+                <li>Unverified: {data.dataQuality.qualityStates?.unverified ?? 0}</li>
+                <li>Stale: {data.dataQuality.qualityStates?.stale ?? 0}</li>
+                <li>Missing information: {data.dataQuality.qualityStates?.missing ?? 0}</li>
+              </ul>
             </div>
             <div className="rounded-lg border p-4">
               <p className="font-medium">Verification distribution</p>

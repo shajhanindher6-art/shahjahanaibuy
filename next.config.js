@@ -7,9 +7,13 @@
 // upload with a warning — the build itself is unaffected.
 const { withSentryConfig } = require('@sentry/nextjs');
 
-// NOTE: the Content-Security-Policy header is NOT set here. It is
-// built per request in middleware.ts (lib/csp.ts) because it carries
-// a fresh nonce on every response — a static header cannot do that.
+// NOTE: no static Content-Security-Policy header is set HERE —
+// that is deliberate, not a gap. The CSP header IS set on every
+// response by middleware.ts (lib/csp.ts `buildCsp`, nonce-based,
+// tested in tests/csp.test.ts): a static header cannot carry the
+// fresh per-request nonce, and adding one here would send TWO CSP
+// headers, whose intersection could break the app. Do NOT add a
+// CSP header to `securityHeaders` below.
 // All other security headers stay here.
 const securityHeaders = [
   {

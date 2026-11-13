@@ -438,7 +438,7 @@ export default function ComparePage() {
       {/* Section 16, item 14: page-level JSON-LD (WebPage + BreadcrumbList). */}
       <PageJsonLd
         name="Product Comparison"
-        description="Compare products across retailers with AI-powered insights — real recorded prices and price history only."
+        description="Compare products across retailers with deterministic, rule-based insights — real recorded prices and price history only."
         path="/compare"
         crumbs={[ { name: "Home", path: "/" }, { name: "Product Comparison" } ]}
       />
@@ -449,7 +449,7 @@ export default function ComparePage() {
             {tFor(language, 'pageHeadingCompare')}
           </h1>
           <p className="mt-2 text-muted-foreground">
-            Compare products across retailers with AI-powered insights
+            Compare products across retailers with deterministic, rule-based insights
           </p>
         </div>
 

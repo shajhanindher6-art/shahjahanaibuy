@@ -13,7 +13,12 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
-import { recordProviderHealth, type ProviderHealthUpdate } from '@/services/monitoring';
+import {
+  recordProviderHealth,
+  recordSyncHistory,
+  type ProviderHealthUpdate,
+  type SyncHistoryEntry,
+} from '@/services/monitoring';
 
 export async function reportAiProviderHealth(
   supabase: AnySupabaseClient | null | undefined,
@@ -30,6 +35,29 @@ export async function reportAiProviderHealth(
     // contains "key".)
     logger.debug('ai-engine: recordProviderHealth failed (best-effort)', {
       provider: providerKey,
+      error: String(err),
+    });
+  }
+}
+
+/**
+ * Sections 21–25, Stage B (B4) — best-effort `recordSyncHistory`
+ * reporting for real provider calls. `recordSyncHistory` had ZERO
+ * callers, so `sync_history` was never written. Same contract as
+ * reportAiProviderHealth: never throws, never blocks the call it
+ * reports on — a missing table (migration unapplied), an RLS
+ * denial, or a null client degrades to a debug log.
+ */
+export async function reportProviderSyncHistory(
+  supabase: AnySupabaseClient | null | undefined,
+  entry: SyncHistoryEntry
+): Promise<void> {
+  if (!supabase) return;
+  try {
+    await recordSyncHistory(supabase, entry);
+  } catch (err) {
+    logger.debug('provider sync history failed (best-effort)', {
+      provider: entry.providerKey,
       error: String(err),
     });
   }

@@ -86,7 +86,7 @@ const features = [
     icon: Shield,
     title: 'Trust Scoring',
     description:
-      'Make confident decisions with AI-powered trust scores for products and sellers based on real data.',
+      'Make confident decisions with rule-based trust scores for products and sellers based on real data.',
   },
   {
     icon: BarChart3,
@@ -581,7 +581,7 @@ export default function HomePage() {
             <div className="mt-10 flex flex-col items-center gap-3">
               <p className="text-sm font-medium">Found a good deal? Share SmartBuy AI</p>
               <ShareButtons
-                title="SmartBuy AI — AI-powered shopping"
+                title="SmartBuy AI — price tracking and deal finding"
                 text="SmartBuy AI tracks prices and finds the best deals — check it out"
                 enableReferral
               />

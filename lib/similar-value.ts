@@ -28,8 +28,50 @@ export interface SimilarValueCandidate {
   price: number | null;
   /** Merchant-basis saving %, or null when no compare-at price exists. */
   savingPct: number | null;
-  /** Similarity signal (confidence_score, 50 when unrecorded). */
+  /** Real similarity 0–100 (see similarityScore) — never a completeness count. */
   matchScore: number;
+}
+
+/**
+ * Sections 21–25, Stage H (H-P2-7) — a REAL similarity score for
+ * "similar products", 0–100, from the things that actually make two
+ * products similar: same brand +40, same category +30, price within
+ * 20% of the anchor +30 (0 when either price is unknown — an
+ * unknown price is not evidence of closeness). Deterministic, no
+ * randomness, no invented data. This replaces the old
+ * `confidence_score` (a field-presence completeness count, floored
+ * at 50) that was presented as a match score.
+ */
+export function similarityScore(input: {
+  anchorBrand: string | null | undefined;
+  anchorCategory: string | null | undefined;
+  anchorPrice: number | null | undefined;
+  brand: string | null | undefined;
+  category: string | null | undefined;
+  price: number | null | undefined;
+}): number {
+  const sameText = (a: string | null | undefined, b: string | null | undefined): boolean =>
+    typeof a === 'string' &&
+    typeof b === 'string' &&
+    a.trim() !== '' &&
+    a.trim().toLowerCase() === b.trim().toLowerCase();
+  let score = 0;
+  if (sameText(input.anchorBrand, input.brand)) score += 40;
+  if (sameText(input.anchorCategory, input.category)) score += 30;
+  const anchor = input.anchorPrice;
+  const price = input.price;
+  if (
+    typeof anchor === 'number' &&
+    Number.isFinite(anchor) &&
+    anchor > 0 &&
+    typeof price === 'number' &&
+    Number.isFinite(price) &&
+    price > 0 &&
+    Math.abs(price - anchor) / anchor <= 0.2
+  ) {
+    score += 30;
+  }
+  return score;
 }
 
 export function rankSimilarByValue<T extends SimilarValueCandidate>(items: T[]): T[] {

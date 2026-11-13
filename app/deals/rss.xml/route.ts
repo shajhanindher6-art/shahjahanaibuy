@@ -44,7 +44,7 @@ export async function GET() {
         const descriptionParts = [
           ranked.deal?.description ?? null,
           ranked.discountPercentage !== null && ranked.discountPercentage > 0
-            ? `${ranked.discountPercentage}% off`
+            ? `${ranked.discountPercentage}% off vs list price`
             : null,
           ranked.savingsAmount > 0
             ? `Save $${ranked.savingsAmount.toFixed(2)}`

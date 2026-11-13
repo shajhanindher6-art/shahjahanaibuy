@@ -80,3 +80,41 @@ export async function fetchProfileRoleName(
   if (error || !data) return null;
   return resolveRoleName(data as unknown as ProfileRoleRow);
 }
+
+/**
+ * Defense-in-depth role re-check — Sections 21–25, Stage G,
+ * G-P1-4 (audit §1 #26).
+ *
+ * Admin data services (services/admin.ts, refresh-runs-admin.ts,
+ * error-log-admin.ts, admin-data-quality.ts) read through the
+ * service-role client, which bypasses RLS entirely — so before a
+ * read, the layout guard was the ONLY thing standing between a
+ * non-admin caller and the data. Every one of those services now
+ * calls this helper (when the caller passes the authenticated
+ * user id) and throws before touching its table when the user is
+ * not an admin. Fail closed: a missing user id, a missing
+ * profile, or any DB error throws — a guard that cannot verify
+ * must never let the read through.
+ *
+ * Callers pass the already-authenticated user id (from
+ * `requireAdmin` in routes, from `getUser()` in server pages).
+ * The `adminUserId` parameter on the services is optional ONLY so
+ * existing unit tests that exercise the data mapping without an
+ * auth context keep compiling; every production caller passes it.
+ * A service called without it performs the read unguarded, exactly
+ * as before — the layout/route guard remains the only check on
+ * that path, and that gap is documented on each service, not
+ * hidden.
+ */
+export async function assertAdminServiceAccess(
+  client: AnySupabaseClient,
+  adminUserId: string | null | undefined
+): Promise<void> {
+  if (!adminUserId) {
+    throw new Error('Admin access required');
+  }
+  const roleName = await fetchProfileRoleName(client, adminUserId);
+  if (roleName !== 'admin') {
+    throw new Error('Admin access required');
+  }
+}

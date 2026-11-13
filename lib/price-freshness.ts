@@ -116,6 +116,35 @@ export function getFreshnessStatus(
 }
 
 /**
+ * Section 20, §12 #81 — the freshness gate for "is now" alert
+ * triggers. Returns 'stale' when the triggering record is older
+ * than STALE_PRICE_DAYS, 'unknown' when no check date exists, and
+ * 'fresh' otherwise. Callers SUPPRESS stale triggers and QUALIFY
+ * unknown-age ones (the price may be out of date) — never present
+ * either as a current price.
+ *
+ * Sections 21–25 (gate fix) — these two pure helpers used to live
+ * in services/alert-checker.ts, which the refresh-chain route
+ * tests mock with `{ checkPriceAlerts }` only. The guest-alert
+ * path (services/guest-alerts.ts) calls them, so the mock made
+ * them undefined and every guest alert failed with a vitest
+ * "No export defined" throw. They live here now, next to
+ * getFreshnessStatus, and alert-checker re-exports them so
+ * existing importers keep working.
+ */
+export function alertPriceFreshness(
+  recordedAt: string | null | undefined,
+  now: Date = new Date()
+): 'fresh' | 'stale' | 'unknown' {
+  return getFreshnessStatus(recordedAt, now).status;
+}
+
+/** Staleness note appended to a trigger body whose price age is unknown. */
+export function alertUnknownAgeNote(): string {
+  return ' Price age unknown — this price was not recorded with a check date, so it may be out of date.';
+}
+
+/**
  * Freshness gate for INTERPRETIVE verdicts (Section 19, Phase 2
  * §12 #20). A "good time to buy" / "near its lowest" verdict that
  * reasons about a stale price must be suppressed or qualified —

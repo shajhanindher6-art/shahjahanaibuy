@@ -138,7 +138,7 @@ export default async function PressPage() {
 
           <h2 className="mt-8 text-xl font-semibold">What SmartBuy AI is</h2>
           <p className="mt-3 text-muted-foreground">
-            SmartBuy AI is an AI-powered shopping and price-tracking site. It tracks prices
+            SmartBuy AI is a shopping and price-tracking site that works from recorded prices. It tracks prices
             across retailers, alerts shoppers when a price drops, compares products side by
             side, and explains its own reasoning — including a published methodology for its
             Deal Score. It works across 61 regions, with its interface in

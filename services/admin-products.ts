@@ -33,6 +33,7 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import { validateGtin } from '@/lib/gtin';
 import {
   normalizePriceVerificationStatus,
   normalizeProductStatus,
@@ -41,6 +42,13 @@ import {
   type ProductStatus,
 } from './price-verification';
 import { isValidImageUrl, type QualityScoreContext } from './product-quality-score';
+import {
+  deleteProductSpecs,
+  listProductSpecsWithAttribution,
+  replaceProductSpecs,
+  type StoredProductSpec,
+} from './product-attributes';
+import { specKeysForCategory, validateSpecEntries, type SpecEntryInput } from '@/lib/spec-templates';
 import type {
   DuplicateCandidate as SweepCandidate,
   DuplicateSweepProduct,
@@ -288,8 +296,11 @@ const PATCHABLE_FIELDS = ['name', 'description', 'brand', 'category', 'image_url
  * - image_url must be a valid http(s) URL when given — `data:` /
  *   `javascript:` / relative URLs are rejected (audit §1 #10:
  *   image_url is rendered raw in <img> on public pages);
- * - gtin is length-checked only here — format/check-digit
- *   validation is audit §12 #31 (another worker's item);
+ * - gtin is validated with the SAME GS1 check-digit rule as the
+ *   pipeline (Section 21–25, Stage C, B2 — lib/gtin.ts: lengths
+ *   8/12/13/14 + check digit). A present GTIN that fails is
+ *   rejected, never stored; a valid GTIN is stored digits-only
+ *   (spaces/hyphens stripped). Null clears the GTIN;
  * - status must be a migration 045 value; the column itself may
  *   not exist yet, which the update reports separately.
  */
@@ -340,7 +351,18 @@ export function validateAdminProductPatch(
   if (body.gtin !== undefined) {
     const { value, error } = asText('gtin', 50);
     if (error) return { patch: null, error };
-    patch.gtin = value;
+    if (value !== null) {
+      const check = validateGtin(value);
+      if (!check.valid) {
+        return {
+          patch: null,
+          error: `"gtin" is not a valid GS1 GTIN: ${check.reason ?? 'invalid GTIN'}.`,
+        };
+      }
+      patch.gtin = check.normalized;
+    } else {
+      patch.gtin = null;
+    }
   }
   if (body.status !== undefined) {
     const raw = body.status;
@@ -441,6 +463,219 @@ export async function deleteAdminProduct(
 }
 
 // ---------------------------------------------------------------------------
+// Admin spec verify / correct (Section 21–25, Stage C — B1 + K12)
+// ---------------------------------------------------------------------------
+
+export interface AdminSpecView {
+  /** The product's stored specs, with per-spec attribution. */
+  specs: StoredProductSpec[];
+  /** Canonical spec keys for the product's category (empty = no template). */
+  templateKeys: string[];
+  /** True when the 058 attribution columns are missing (legacy read ran). */
+  attributionMissing: boolean;
+  error?: string;
+}
+
+/**
+ * Read a product's specs for the admin verify/correct UI: stored
+ * rows with attribution + the category's template keys, so the UI
+ * can show recorded values next to the keys that are still
+ * unknown (never pre-filled — an unknown spec stays unknown
+ * until an admin records a real value against its source).
+ */
+export async function listProductSpecsForAdmin(
+  supabase: AnySupabaseClient,
+  productId: string,
+  category: string | null | undefined
+): Promise<AdminSpecView> {
+  const { specs, attributionMissing, error } = await listProductSpecsWithAttribution(
+    supabase,
+    productId
+  );
+  return {
+    specs,
+    templateKeys: specKeysForCategory(category),
+    attributionMissing,
+    ...(error ? { error } : {}),
+  };
+}
+
+export interface SpecCorrectionInput {
+  entries: SpecEntryInput[];
+  /** Keys to remove entirely (a spec the admin confirms is wrong / not applicable). */
+  deleteKeys?: string[];
+  /** Where the corrected values came from, e.g. 'manual-intake' or a manufacturer name. */
+  source?: string | null;
+}
+
+export interface ValidateSpecCorrectionResult {
+  /** Cleaned entries + delete keys, or null when invalid. */
+  correction: { entries: SpecEntryInput[]; deleteKeys: string[]; source: string | null } | null;
+  error?: string;
+}
+
+/**
+ * Pure validation for an admin spec correction. Rules:
+ * - entries must be an array (max 50) of { key, value, unit? }
+ *   with non-empty string keys/values; deleteKeys an array of
+ *   non-empty strings (max 50); at least one of the two must be
+ *   non-empty — an empty correction corrects nothing;
+ * - every entry is validated against the category's spec template
+ *   (unknown key / empty value / disallowed unit → error, and
+ *   nothing is written);
+ * - source, when given, must be a non-empty string (free text —
+ *   a future source must not need a migration to be named).
+ * Nothing is invented: a value the admin did not supply is never
+ * filled in, and a key with no template cannot be validated.
+ */
+export function validateSpecCorrection(
+  category: string | null | undefined,
+  body: Record<string, unknown>
+): ValidateSpecCorrectionResult {
+  const rawEntries = body.entries;
+  const rawDeleteKeys = body.deleteKeys;
+  const entries: SpecEntryInput[] = [];
+  if (rawEntries !== undefined) {
+    if (!Array.isArray(rawEntries)) {
+      return { correction: null, error: '"entries" must be an array.' };
+    }
+    if (rawEntries.length > 50) {
+      return { correction: null, error: '"entries" must contain at most 50 specs.' };
+    }
+    for (const entry of rawEntries as Array<Record<string, unknown>>) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return { correction: null, error: 'Each spec entry must be an object.' };
+      }
+      const key = typeof entry.key === 'string' ? entry.key.trim().toLowerCase() : '';
+      const value = typeof entry.value === 'string' ? entry.value.trim() : '';
+      const unit =
+        typeof entry.unit === 'string' && entry.unit.trim() !== '' ? entry.unit.trim() : undefined;
+      if (key === '' || value === '') {
+        return { correction: null, error: 'Each spec entry needs a non-empty "key" and "value".' };
+      }
+      entries.push({ key, value, ...(unit ? { unit } : {}) });
+    }
+  }
+  const deleteKeys: string[] = [];
+  if (rawDeleteKeys !== undefined) {
+    if (!Array.isArray(rawDeleteKeys)) {
+      return { correction: null, error: '"deleteKeys" must be an array.' };
+    }
+    if (rawDeleteKeys.length > 50) {
+      return { correction: null, error: '"deleteKeys" must contain at most 50 keys.' };
+    }
+    for (const key of rawDeleteKeys as unknown[]) {
+      if (typeof key !== 'string' || key.trim() === '') {
+        return { correction: null, error: 'Each deleted key must be a non-empty string.' };
+      }
+      deleteKeys.push(key.trim().toLowerCase());
+    }
+  }
+  if (entries.length === 0 && deleteKeys.length === 0) {
+    return { correction: null, error: 'Provide "entries" to correct and/or "deleteKeys" to remove.' };
+  }
+  let source: string | null = null;
+  if (body.source !== undefined && body.source !== null) {
+    if (typeof body.source !== 'string' || body.source.trim() === '') {
+      return { correction: null, error: '"source" must be a non-empty string when provided.' };
+    }
+    source = body.source.trim();
+  }
+  if (entries.length > 0) {
+    const validation = validateSpecEntries(category, entries);
+    if (!validation.valid) {
+      return { correction: null, error: validation.errors.join('; ') };
+    }
+    return { correction: { entries: validation.validEntries, deleteKeys, source } };
+  }
+  return { correction: { entries, deleteKeys, source } };
+}
+
+export interface CorrectProductSpecsResult {
+  specs: StoredProductSpec[];
+  replacedKeys: string[];
+  removedKeys: string[];
+  /** True when rows landed without attribution (058 unapplied). */
+  attributionMissing: boolean;
+  error?: string;
+}
+
+/**
+ * Apply an admin spec correction: replace the stored rows for
+ * the corrected keys, remove the deleted keys, then re-read the
+ * product's specs. A validation failure writes nothing. The
+ * correction is attributed to the given source with
+ * `verifiedBy` = the admin's id (passed by the route); a named
+ * source stamps `verified_at`, an 'unknown' source never does
+ * (see services/product-attributes.ts). Never throws.
+ */
+export async function correctProductSpecsForAdmin(
+  supabase: AnySupabaseClient,
+  productId: string,
+  category: string | null | undefined,
+  correction: { entries: SpecEntryInput[]; deleteKeys: string[]; source: string | null },
+  verifiedBy: string | null
+): Promise<CorrectProductSpecsResult> {
+  let replacedKeys: string[] = [];
+  let attributionMissing = false;
+  if (correction.entries.length > 0) {
+    const replaced = await replaceProductSpecs(supabase, {
+      productId,
+      category,
+      entries: correction.entries,
+      attribution: {
+        source: correction.source ?? 'manual-intake',
+        verifiedBy: verifiedBy ?? 'system',
+      },
+    });
+    if (replaced.errors.length > 0) {
+      return {
+        specs: [],
+        replacedKeys: [],
+        removedKeys: [],
+        attributionMissing: false,
+        error: replaced.errors.join('; '),
+      };
+    }
+    replacedKeys = replaced.replacedKeys;
+    attributionMissing = replaced.attributionMissing;
+  }
+  let removedKeys: string[] = [];
+  if (correction.deleteKeys.length > 0) {
+    const removed = await deleteProductSpecs(supabase, productId, correction.deleteKeys);
+    if (removed.error) {
+      return {
+        specs: [],
+        replacedKeys,
+        removedKeys: [],
+        attributionMissing,
+        error: removed.error,
+      };
+    }
+    removedKeys = removed.removedKeys;
+  }
+  const { specs, attributionMissing: readMissing, error } = await listProductSpecsWithAttribution(
+    supabase,
+    productId
+  );
+  if (error) {
+    return {
+      specs: [],
+      replacedKeys,
+      removedKeys,
+      attributionMissing: attributionMissing || readMissing,
+      error,
+    };
+  }
+  return {
+    specs,
+    replacedKeys,
+    removedKeys,
+    attributionMissing: attributionMissing || readMissing,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Quality-score context for a set of products
 // ---------------------------------------------------------------------------
 
@@ -451,13 +686,27 @@ export async function deleteAdminProduct(
  * yields an empty context for that dimension — the scorer then
  * counts it as missing, never as present.
  */
+export interface ProductQualityContextsResult {
+  contexts: Map<string, QualityScoreContext>;
+  /**
+   * Section 21–25, Stage H (H-P2-4) — true when the 045
+   * `merchant_products.price_source` column does not exist yet.
+   * The merchant read retries without it (counts stay right), but
+   * the attribution dimension cannot count a recorded price
+   * source, so per-product scores may understate — callers must
+   * say so next to the score instead of showing a bare number.
+   */
+  merchantSourceMissing: boolean;
+}
+
 export async function getProductQualityContexts(
   supabase: AnySupabaseClient,
   productIds: string[]
-): Promise<Map<string, QualityScoreContext>> {
+): Promise<ProductQualityContextsResult> {
   const contexts = new Map<string, QualityScoreContext>();
   for (const id of productIds) contexts.set(id, {});
-  if (productIds.length === 0) return contexts;
+  if (productIds.length === 0) return { contexts, merchantSourceMissing: false };
+  let merchantSourceMissing = false;
 
   try {
     const { data: attrs } = await supabase
@@ -487,19 +736,41 @@ export async function getProductQualityContexts(
     // As above.
   }
 
+  // Section 21–25, Stage H (H-P2-4) — staged 42703 retry, the
+  // same defect as services/admin-data-quality.ts: selecting
+  // `price_source` (migration 045) with no fallback errored the
+  // whole merchant read when 045 was unapplied, and the catch
+  // below silently zeroed the merchant dimension (25/100 instead
+  // of 35/100). Retry without the column — counts stay right —
+  // and report merchantSourceMissing so the page can say the
+  // score may understate.
   try {
-    const { data: merchants } = await supabase
-      .from('merchant_products')
-      .select('product_id, price, in_stock, price_source')
-      .in('product_id', productIds)
-      .is('deleted_at', null)
-      .order('price', { ascending: true })
-      .limit(5000);
-    for (const row of (merchants ?? []) as Array<{
+    type MerchantContextRow = {
       product_id: string;
       in_stock: boolean;
       price_source?: string | null;
-    }>) {
+    };
+    const runMerchantQuery = async (withSource: boolean) => {
+      const columns = withSource
+        ? 'product_id, price, in_stock, price_source'
+        : 'product_id, price, in_stock';
+      return (await supabase
+        .from('merchant_products')
+        .select(columns)
+        .in('product_id', productIds)
+        .is('deleted_at', null)
+        .order('price', { ascending: true })
+        .limit(5000)) as unknown as {
+        data: MerchantContextRow[] | null;
+        error: { code?: string; message: string } | null;
+      };
+    };
+    let { data: merchants, error: merchantError } = await runMerchantQuery(true);
+    if (merchantError && isUndefinedColumnError(merchantError)) {
+      merchantSourceMissing = true;
+      ({ data: merchants, error: merchantError } = await runMerchantQuery(false));
+    }
+    for (const row of (merchantError ? [] : (merchants ?? [])) as MerchantContextRow[]) {
       const ctx = contexts.get(row.product_id);
       if (!ctx) continue;
       ctx.merchantCount = (ctx.merchantCount ?? 0) + 1;
@@ -509,7 +780,7 @@ export async function getProductQualityContexts(
       if (ctx.priceSource === undefined) ctx.priceSource = row.price_source ?? null;
     }
   } catch {
-    // As above.
+    // Missing context scores 0 in its dimension — never a throw.
   }
 
   try {
@@ -529,7 +800,7 @@ export async function getProductQualityContexts(
     // As above.
   }
 
-  return contexts;
+  return { contexts, merchantSourceMissing };
 }
 
 // ---------------------------------------------------------------------------

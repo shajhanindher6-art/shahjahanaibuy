@@ -27,6 +27,14 @@
  *      likewise written by the service (SerpAPI — it has the
  *      client) or by the route from the engine result (HF — the
  *      service has no client in scope); the engine writes none.
+ *      The ONE durable write the engine does make is the AI usage
+ *      ledger (Section 21, Stage E, E-P2-9): one row per
+ *      engine-routed capability call via recordEngineUsageLedger
+ *      (usage-ledger.ts), fire-and-forget, gracefully no-op until
+ *      migration 067 is applied. That is the durable counterpart
+ *      of recordAiCapabilityCall, not of recordAiCall — it cannot
+ *      double-count provider-level usage, which is never written
+ *      here.
  *
  * `validate()` (§12 #3) is the live provider-registry validation
  * the health endpoint calls: deterministic providers report
@@ -34,12 +42,26 @@
  * key presence ONLY — no network probe is ever made, so validation
  * burns zero SerpAPI/HF quota. A key's presence is not proof the
  * provider works; the label says so.
+ *
+ * Section 21, Stage E (E-P2-1) — input freshness is read HERE,
+ * in the engine, not only in the adapters: `invoke()` computes
+ * `describeEngineInputFreshness(input)` once per call and
+ * attaches the verdict to the returned `AIEngineResult` as
+ * `inputFreshness`, so EVERY capability's caller — not just the
+ * two adapters that qualify their own copy (providers.ts) — can
+ * see whether the result was computed from stale/unverified
+ * prices and label it accordingly. The engine does not withhold
+ * or downgrade on stale input: no capability defines a
+ * withholding policy, and inventing one would silently change
+ * every AI surface.
  */
 
 import type { AIEngineResult, AICapability, AIProviderStatus, AIEngineInput } from './types';
 import { NoAiProviderAvailableError, ProviderSkippedError } from './types';
 import type { AIEngineRegistry } from './registry';
 import { isAiCircuitOpen, recordAiCapabilityCall } from './usage';
+import { recordEngineUsageLedger } from './usage-ledger';
+import { describeEngineInputFreshness } from './input-freshness';
 
 export class AIEngine {
   private readonly registry: AIEngineRegistry;
@@ -62,6 +84,11 @@ export class AIEngine {
     capability: AICapability,
     input: AIEngineInput
   ): Promise<AIEngineResult<T>> {
+    // Section 21, Stage E (E-P2-1) — read the typed freshness /
+    // verification input once, up front, and carry the verdict on
+    // the result so every caller sees it (see the header note).
+    // Pure, no I/O, never throws.
+    const inputFreshness = describeEngineInputFreshness(input);
     const candidates = this.registry
       .getByCapability(capability)
       .filter((p) => typeof p.invoke === 'function');
@@ -82,6 +109,15 @@ export class AIEngine {
         const value = (await provider.invoke!(capability, input)) as T;
         const latencyMs = Date.now() - start;
         recordAiCapabilityCall(capability, latencyMs, true);
+        // Section 21, Stage E (E-P2-9) — durable usage ledger
+        // (one row per engine-routed call, $0 while
+        // deterministic-only; no-op until migration 067 applies).
+        recordEngineUsageLedger(input, {
+          providerKey: provider.key,
+          capability,
+          success: true,
+          latencyMs,
+        });
         return {
           value,
           providerKey: provider.key,
@@ -95,6 +131,7 @@ export class AIEngine {
           fallbackUsed: i > 0,
           attemptedProviders: [...attempted],
           latencyMs,
+          inputFreshness,
         };
       } catch (err) {
         const latencyMs = Date.now() - start;
@@ -106,6 +143,14 @@ export class AIEngine {
         }
         lastError = err;
         recordAiCapabilityCall(capability, latencyMs, false);
+        // Section 21, Stage E (E-P2-9) — failed attempts are
+        // ledgered too (success: false), same no-op-until-067.
+        recordEngineUsageLedger(input, {
+          providerKey: provider.key,
+          capability,
+          success: false,
+          latencyMs,
+        });
       }
     }
 

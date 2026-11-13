@@ -11,7 +11,8 @@
  *
  * Features: 7D / 30D / 90D / 1Y range selector, and stats computed
  * from the selected range — Current, Lowest, Highest, Average and
- * Change (last vs first point in range, in $ and %). The chart also
+ * Change (last vs first point in range, in the recorded currency
+ * and %). The chart also
  * marks the range average (dashed line) and the lowest point in the
  * range (green "Lowest" dot), so a price drop / best-buy moment is
  * visible at a glance instead of only in the stats row.
@@ -24,7 +25,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Area, AreaChart, CartesianGrid, Line, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
@@ -44,6 +45,10 @@ import {
 interface PricePoint {
   price: number;
   recordedAt: string;
+  // Sections 21–25, Stage H (H-P2-9) — the recorded currency of
+  // this point, verbatim from GET /api/v1/products/[slug]/prices
+  // (`price_history.currency`). Null when the API row carried none.
+  currency: string | null;
 }
 
 interface PriceHistoryGraphProps {
@@ -90,12 +95,22 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
         const history = (data?.data?.history ?? []) as Array<{
           price: number;
           recordedAt: string;
+          currency?: string | null;
         }>;
         if (!cancelled) {
           // API returns newest-first; chart needs oldest-first.
+          // The currency rides along (H-P2-9) — dropping it here
+          // is what made every price render with a hard-coded $.
           setPoints(
             history
-              .map((h) => ({ price: Number(h.price), recordedAt: h.recordedAt }))
+              .map((h) => ({
+                price: Number(h.price),
+                recordedAt: h.recordedAt,
+                currency:
+                  typeof h.currency === 'string' && h.currency.trim() !== ''
+                    ? h.currency.trim().toUpperCase()
+                    : null,
+              }))
               .filter((h) => Number.isFinite(h.price) && h.recordedAt)
               .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime())
           );
@@ -113,6 +128,34 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
   }, [slug]);
 
   const rangeDays = RANGES.find((r) => r.key === range)?.days ?? 30;
+
+  // Sections 21–25, Stage H (H-P2-9) — the currency the chart
+  // prices in: the single distinct recorded currency across the
+  // loaded points, or null when points are mixed / unrecorded.
+  // Nothing is ever assumed to be dollars — a bare number with
+  // no symbol is more honest than a $ that was never recorded.
+  const currencies = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of points) if (p.currency) set.add(p.currency);
+    return [...set].sort();
+  }, [points]);
+  const displayCurrency = currencies.length === 1 ? currencies[0] : null;
+  const formatMoney = useCallback(
+    (value: number) => {
+      if (displayCurrency) {
+        try {
+          return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: displayCurrency,
+          }).format(value);
+        } catch {
+          // Invalid recorded code — fall through to the bare number.
+        }
+      }
+      return value.toFixed(2);
+    },
+    [displayCurrency]
+  );
 
   // Actual recorded points inside the selected range (oldest-first).
   // No interpolation, no synthesized points: a thin range honestly
@@ -215,23 +258,33 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
       </div>
 
       {/* Stats for the selected range */}
+      {currencies.length === 0 ? (
+        <p className="mb-4 text-xs text-muted-foreground">
+          Currency was not recorded for these prices — amounts are shown without a currency.
+        </p>
+      ) : currencies.length > 1 ? (
+        <p className="mb-4 text-xs text-muted-foreground">
+          Prices recorded in multiple currencies ({currencies.join(', ')}) — amounts are shown in
+          their recorded currency.
+        </p>
+      ) : null}
       {stats ? (
         <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
           <div>
             <p className="text-xs text-muted-foreground">Current</p>
-            <p className="text-lg font-semibold">${stats.current.toFixed(2)}</p>
+            <p className="text-lg font-semibold">{formatMoney(stats.current)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Lowest</p>
-            <p className="text-lg font-semibold text-green-600">${stats.lowest.toFixed(2)}</p>
+            <p className="text-lg font-semibold text-green-600">{formatMoney(stats.lowest)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Highest</p>
-            <p className="text-lg font-semibold text-red-600">${stats.highest.toFixed(2)}</p>
+            <p className="text-lg font-semibold text-red-600">{formatMoney(stats.highest)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Average</p>
-            <p className="text-lg font-semibold">${stats.average.toFixed(2)}</p>
+            <p className="text-lg font-semibold">{formatMoney(stats.average)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Change</p>
@@ -242,7 +295,8 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
               )}
             >
               {stats.change >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-              {stats.change >= 0 ? '+' : ''}${stats.change.toFixed(2)} ({stats.changePercent.toFixed(1)}%)
+              {stats.change >= 0 ? '+' : ''}
+              {formatMoney(stats.change)} ({stats.changePercent.toFixed(1)}%)
             </p>
           </div>
           <div>
@@ -250,7 +304,7 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
             <p className="text-lg font-semibold">
               {stats.vsLowestAmount === 0
                 ? 'At lowest'
-                : `+$${stats.vsLowestAmount.toFixed(2)} (${stats.vsLowestPercent.toFixed(1)}%)`}
+                : `+${formatMoney(stats.vsLowestAmount)} (${stats.vsLowestPercent.toFixed(1)}%)`}
             </p>
           </div>
         </div>
@@ -276,7 +330,7 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
               <YAxis
                 tick={{ fontSize: 12 }}
                 stroke="#94a3b8"
-                tickFormatter={(v: number) => `$${v}`}
+                tickFormatter={(v: number) => formatMoney(v)}
                 domain={['auto', 'auto']}
               />
               <Tooltip
@@ -287,7 +341,7 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
                   fontSize: '13px',
                 }}
                 formatter={(value: number, name?: string) => [
-                  `$${value.toFixed(2)}`,
+                  formatMoney(value),
                   name === 'ma' ? `${MOVING_AVERAGE_WINDOW_DAYS}-day moving average` : 'Price',
                 ]}
               />
@@ -385,11 +439,11 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
             {priceDrops.map((drop, i) => (
               <li key={`${drop.date}-${i}`} className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="text-muted-foreground">{formatDate(drop.date)}</span>
-                <span className="line-through text-muted-foreground">${drop.oldPrice.toFixed(2)}</span>
+                <span className="line-through text-muted-foreground">{formatMoney(drop.oldPrice)}</span>
                 <span aria-hidden>→</span>
-                <span className="font-semibold text-green-600">${drop.newPrice.toFixed(2)}</span>
+                <span className="font-semibold text-green-600">{formatMoney(drop.newPrice)}</span>
                 <span className="font-medium text-green-600">
-                  −${drop.dropAmount.toFixed(2)} (−{drop.dropPercent.toFixed(1)}%)
+                  −{formatMoney(drop.dropAmount)} (−{drop.dropPercent.toFixed(1)}%)
                 </span>
               </li>
             ))}

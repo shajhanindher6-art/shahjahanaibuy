@@ -50,6 +50,12 @@ import { AIEngineRegistry } from './registry';
 import { AIEngine } from './engine';
 import type { AICapability, AIProvider, AIProviderAvailability } from './types';
 import { ProviderSkippedError } from './types';
+// Section 21, Stage E (E-P2-1) — the typed freshness /
+// verification input (AIEngineInput) is READ here, not just
+// carried: the ai-summary adapter enriches the product with the
+// input's verification / freshness, and the predict-price-drop
+// adapter qualifies its explanation with the input's staleness.
+import { describeEngineInputFreshness } from './input-freshness';
 
 function hasEnvKey(name: string): boolean {
   const value = process.env[name];
@@ -145,7 +151,25 @@ export function createDefaultAiRegistry(): AIEngineRegistry {
       async (_capability, input) => {
         const supabase = input.supabase as Parameters<typeof getAISummary>[0];
         const product = input.product as Parameters<typeof getAISummary>[1];
-        return getAISummary(supabase, product);
+        // Section 21, Stage E (E-P2-1) — consume the typed
+        // freshness/verification input: when the caller knows the
+        // product's verification status / last check, the summary
+        // is built from THOSE values (getAISummary gates its
+        // verdict text and freshness note on them) instead of
+        // whatever the product row happened to carry. The
+        // product's own values win when present; the input fills
+        // gaps, never overwrites recorded data.
+        const freshness = describeEngineInputFreshness(input);
+        const enrichedProduct =
+          product && typeof product === 'object'
+            ? {
+                ...product,
+                priceVerificationStatus:
+                  product.priceVerificationStatus ?? freshness.priceVerificationStatus,
+                dataFreshness: product.dataFreshness ?? freshness.dataFreshness,
+              }
+            : product;
+        return getAISummary(supabase, enrichedProduct);
       }
     )
   );
@@ -187,7 +211,24 @@ export function createDefaultAiRegistry(): AIEngineRegistry {
       async (_capability, input) => {
         const supabase = input.supabase as Parameters<typeof predictPriceDrop>[0];
         const productId = input.productId as string;
-        return predictPriceDrop(supabase, productId);
+        const result = await predictPriceDrop(supabase, productId);
+        // Section 21, Stage E (E-P2-1) — consume the typed
+        // freshness input: when the caller knows the last check
+        // is stale, the prediction's explanation says so instead
+        // of presenting a stale-data prediction as current. The
+        // numbers are untouched — only the qualification is added.
+        if (result) {
+          const freshness = describeEngineInputFreshness(input);
+          if (freshness.priceStale) {
+            const days = freshness.daysSinceLastCheck ?? 0;
+            return {
+              ...result,
+              explanation:
+                `${result.explanation} Note: the prices behind this prediction were last checked ${days} day${days === 1 ? '' : 's'} ago — stale, not current.`,
+            };
+          }
+        }
+        return result;
       }
     )
   );

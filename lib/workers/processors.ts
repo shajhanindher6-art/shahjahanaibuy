@@ -5,13 +5,17 @@
  * Processors are intentionally side-effect heavy: they call external
  * providers, write to the database, and invalidate caches.
  *
- * The processors are shared between the synchronous queue (in-process)
- * and the BullMQ queue (Redis-backed), so they must be pure of queue
- * infrastructure concerns.
+ * The processors run on the synchronous in-process queue only
+ * (lib/workers/queue.ts). There is no BullMQ package installed —
+ * the BullMQ adapter in queue.ts can never load — so no processor
+ * ever runs on a BullMQ worker; do not describe this as a
+ * BullMQ-backed queue (Sections 21–25, Stage D, item 8).
  */
 
-import { getProviderRegistry } from '@/services/providers';
-import { ingestBatch } from '@/services/pipeline';
+import { getProviderRegistry, callProviderSearch, callProviderFetch } from '@/services/providers';
+import { isNonRetryableProviderError } from '@/services/providers/errors';
+import { ingestBatch, validateRawProduct, type ValidatedRawProduct } from '@/services/pipeline';
+import { recordDataSourceSync } from '@/services/data-sources';
 import { invalidateCache, cacheKey } from '@/lib/cache';
 import { invalidateAiForProduct } from '@/lib/cache/ai-invalidation';
 // Section 19, Phase 8 (§12 #12) — the `ai.analyze` processor runs
@@ -30,7 +34,41 @@ import type { AiAnalyzeJobData, JobDefinition, JobResult } from './types';
 // Section 19, Phase 1 (§12 #8) — recordProviderHealth had zero
 // live callers; the price.refresh processor reports each provider
 // fetch here (best-effort, never throws).
-import { reportAiProviderHealth } from '@/services/ai-engine/health-report';
+// Sections 21–25, Stage B (B4) — the same reporting now also
+// writes sync history (recordSyncHistory had zero callers) and
+// stamps data_sources.last_sync_at/status/error, all best-effort.
+import {
+  reportAiProviderHealth,
+  reportProviderSyncHistory,
+} from '@/services/ai-engine/health-report';
+// Sections 21–25, Stage D — per-merchant pacing on the pipeline
+// fetch loop (audit §1 #17): a minimum interval between
+// successive fetches to the same provider. (Timeout / transient
+// retry / backoff already live in services/providers/call-guard.ts
+// via Stage B — this pacer is the missing spacing piece, not a
+// second retry layer.)
+import { acquireProviderFetchSlot } from '@/services/provider-rate-limits';
+import {
+  DEFAULT_CURRENCY_CODE,
+  validateProviderCurrency,
+} from '@/services/refresh-currency';
+import { markProductSuccessfullyUpdated } from '@/services/last-successful-update';
+
+/**
+ * Sections 21–25, Stage B (B11) — the refresh-leg re-check.
+ * `price.refresh` used to trust provider output and insert it
+ * straight into price_history; ingest validates with Zod but the
+ * refresh leg never did. Same schema, same shape as ingest:
+ * a provider row that fails validation is rejected (never
+ * inserted) with its field errors. Exported for tests.
+ */
+export function validateProviderRefreshResult(fresh: unknown):
+  | { ok: true; data: ValidatedRawProduct }
+  | { ok: false; errors: Record<string, string[]> } {
+  const result = validateRawProduct(fresh);
+  if (result.success) return { ok: true, data: result.data };
+  return { ok: false, errors: result.errors };
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -65,9 +103,23 @@ async function processProductFetch(
   const limit: number = data.limit ?? 50;
 
   const registry = getProviderRegistry();
-  const provider = retailerSlug
-    ? registry.getForRetailer(retailerSlug)
-    : registry.getPreferred();
+  // Sections 21–25, Stage B (B5) — requireForRetailer throws a
+  // typed error naming the merchant when no provider is
+  // configured for it; there is no silent fallback to another
+  // merchant's provider. A config error is a returned failure,
+  // never a queue retry (retrying a missing client cannot help).
+  let provider: ReturnType<typeof registry.requireForRetailer> | undefined;
+  try {
+    provider = retailerSlug
+      ? registry.requireForRetailer(retailerSlug)
+      : registry.getPreferred();
+  } catch (err) {
+    return {
+      success: false,
+      processed: 0,
+      errors: [err instanceof Error ? err.message : String(err)],
+    };
+  }
 
   if (!provider) {
     return {
@@ -93,9 +145,21 @@ async function processProductFetch(
   let results: Awaited<ReturnType<typeof provider.search>> = [];
   let searchError: string | null = null;
   try {
-    results = await provider.search({ query, retailerSlug, limit });
+    // Sections 21–25, Stage B (B3/B6/B12) — budget + breaker +
+    // 10s timeout + 3 attempts + 100-row cap, via the shared guard.
+    results = await callProviderSearch(provider, { query, retailerSlug, limit });
   } catch (err) {
-    searchError = String(err);
+    searchError = err instanceof Error ? err.message : String(err);
+    // A config/budget/breaker failure is final: return it, do
+    // not throw it into the queue retry loop.
+    if (isNonRetryableProviderError(err)) {
+      void reportAiProviderHealth(healthClient, provider.key, {
+        success: false,
+        responseMs: Date.now() - searchStart,
+        error: searchError.slice(0, 200),
+      });
+      return { success: false, processed: 0, errors: [searchError] };
+    }
   }
   void reportAiProviderHealth(healthClient, provider.key, {
     success: searchError === null,
@@ -112,9 +176,35 @@ async function processProductFetch(
     return { success: true, processed: 0, metadata: { provider: provider.key } };
   }
 
-  const ingestionResults = await ingestBatch(results, provider.key);
+  const ingestionResults = await ingestBatch(results, provider.key, {
+    // Sections 21–25, Stage D (R1) — the search above JUST
+    // fetched these rows from the provider: that is the real
+    // fetch time the freshness stamp must carry, not the later
+    // insert time. Without it ingestion stamped insert-time.
+    fetchedAt: new Date().toISOString(),
+  });
   const succeeded = ingestionResults.filter((r) => r.success).length;
   const failed = ingestionResults.filter((r) => !r.success);
+
+  // Sections 21–25, Stage B (B4) — this is a REAL provider call
+  // with real results, so sync history + the data_sources stamp
+  // are written (best-effort; a missing table never fails the fetch).
+  void reportProviderSyncHistory(healthClient, {
+    providerKey: provider.key,
+    syncType: 'product.fetch',
+    status: failed.length === 0 ? 'success' : 'partial',
+    recordsFetched: results.length,
+    recordsInserted: succeeded,
+    recordsRejected: failed.length,
+    durationMs: Date.now() - searchStart,
+  });
+  if (healthClient) {
+    void recordDataSourceSync(healthClient, provider.key, {
+      status: succeeded > 0 ? 'success' : 'failed',
+      ...(succeeded > 0 ? {} : { error: 'provider fetch returned no ingestible products' }),
+      recordsFetched: results.length,
+    });
+  }
 
   return {
     success: true,
@@ -141,9 +231,21 @@ async function processProductSearch(
   const limit: number = data.limit ?? 50;
 
   const registry = getProviderRegistry();
-  const provider = retailerSlug
-    ? registry.getForRetailer(retailerSlug)
-    : registry.getPreferred();
+  // Sections 21–25, Stage B (B5) — no silent cross-merchant
+  // fallback: a retailer with no configured provider fails
+  // honestly instead of being served another merchant's data.
+  let provider: ReturnType<typeof registry.requireForRetailer> | undefined;
+  try {
+    provider = retailerSlug
+      ? registry.requireForRetailer(retailerSlug)
+      : registry.getPreferred();
+  } catch (err) {
+    return {
+      success: false,
+      processed: 0,
+      errors: [err instanceof Error ? err.message : String(err)],
+    };
+  }
 
   if (!provider) {
     return {
@@ -153,7 +255,35 @@ async function processProductSearch(
     };
   }
 
-  const results = await provider.search({ query, retailerSlug, limit });
+  // Sections 21–25, Stage B (B3/B4/B6/B12) — the read-only search
+  // goes through the same guard as fetch, and its health is
+  // reported too (previously this path wrote no health at all).
+  let healthClient: Awaited<ReturnType<typeof getServiceClient>> | null = null;
+  try {
+    healthClient = await getServiceClient();
+  } catch {
+    healthClient = null;
+  }
+  const searchStart = Date.now();
+  let results: Awaited<ReturnType<typeof provider.search>> = [];
+  try {
+    results = await callProviderSearch(provider, { query, retailerSlug, limit });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    void reportAiProviderHealth(healthClient, provider.key, {
+      success: false,
+      responseMs: Date.now() - searchStart,
+      error: message.slice(0, 200),
+    });
+    if (isNonRetryableProviderError(err)) {
+      return { success: false, processed: 0, errors: [message] };
+    }
+    throw err instanceof Error ? err : new Error(message);
+  }
+  void reportAiProviderHealth(healthClient, provider.key, {
+    success: true,
+    responseMs: Date.now() - searchStart,
+  });
   return {
     success: true,
     processed: results.length,
@@ -237,6 +367,21 @@ async function processPriceRefresh(
   const registry = getProviderRegistry();
   let processed = 0;
   const errors: string[] = [];
+  // Sections 21–25, Stage D (item 4) — price points recorded
+  // with the currency explicitly assumed as USD because the
+  // provider reported no usable currency (see the insert below).
+  let currencyAssumedUsd = 0;
+  // Sections 21–25, Stage B (B4) — aggregate sync reporting for
+  // this refresh job: one sync_history row + one data_sources
+  // stamp per provider key touched.
+  const providersTouched = new Map<string, { attempted: number; succeeded: number; lastError: string | null }>();
+  const touchProvider = (key: string, ok: boolean, error?: string) => {
+    const entry = providersTouched.get(key) ?? { attempted: 0, succeeded: 0, lastError: null };
+    entry.attempted += 1;
+    if (ok) entry.succeeded += 1;
+    else entry.lastError = error ?? 'provider call failed';
+    providersTouched.set(key, entry);
+  };
 
   for (const source of sources) {
     const provider = registry.get(source.provider_key);
@@ -261,12 +406,19 @@ async function processPriceRefresh(
     let fresh: Awaited<ReturnType<typeof provider.fetch>> | null = null;
     let fetchError: string | null = null;
     try {
-      fresh = await provider.fetch({
+      // Sections 21–25, Stage D (item 1) — pace the loop: wait
+      // for this provider's slot before fetching, so 100 sources
+      // on one provider are spaced instead of fired back-to-back.
+      // Best-effort: the pacer never throws, and a pacing failure
+      // must not skip the fetch.
+      await acquireProviderFetchSlot(provider.key);
+      // Sections 21–25, Stage B (B3/B6/B12) — guarded fetch.
+      fresh = await callProviderFetch(provider, {
         externalId: source.external_id,
         retailerSlug: retailer.slug,
       });
     } catch (err) {
-      fetchError = String(err);
+      fetchError = err instanceof Error ? err.message : String(err);
     }
     // Section 19, Phase 1 (§12 #8, #9) — timed provider-health
     // record for the refresh call site (best-effort; a missing
@@ -282,29 +434,80 @@ async function processPriceRefresh(
     });
 
     if (fetchError) {
+      touchProvider(provider.key, false, fetchError);
       errors.push(`Provider fetch failed for source ${source.id}: ${fetchError}`);
       continue;
     }
 
     if (!fresh) {
+      touchProvider(provider.key, false, 'Provider returned no data');
       errors.push(`Provider returned no data for source ${source.id}`);
       continue;
     }
 
+    // Sections 21–25, Stage B (B11) — re-validate provider
+    // output with the same Zod schema as ingest before it is
+    // trusted into price_history. A row that fails validation is
+    // rejected, never inserted.
+    const validated = validateProviderRefreshResult(fresh);
+    if (!validated.ok) {
+      const detail = Object.entries(validated.errors)
+        .map(([field, messages]) => `${field}: ${messages.join('; ')}`)
+        .join(' | ');
+      touchProvider(provider.key, false, `Provider returned invalid data: ${detail}`);
+      errors.push(`Provider returned invalid data for source ${source.id}: ${detail}`);
+      void reportAiProviderHealth(supabase, provider.key, {
+        success: false,
+        responseMs: Date.now() - fetchStart,
+        error: `Invalid provider data: ${detail}`.slice(0, 200),
+      });
+      continue;
+    }
+    // The Zod-validated row allows null for the optional text
+    // fields, but RawProductData only allows `string | undefined`
+    // — null means "absent" here, never a stored value, so the
+    // nulls are normalised to undefined (same convention as
+    // normalizeProduct, which maps them to null for storage).
+    const validatedData = validated.data;
+    fresh = {
+      ...validatedData,
+      description: validatedData.description ?? undefined,
+      brand: validatedData.brand ?? undefined,
+      category: validatedData.category ?? undefined,
+      gtin: validatedData.gtin ?? undefined,
+      url: validatedData.url ?? undefined,
+      variants: validatedData.variants?.map((v) => ({
+        ...v,
+        gtin: v.gtin ?? undefined,
+      })),
+    };
+
     // Record the new price point.
+    // Sections 21–25, Stage D (item 4) — the currency is
+    // recorded explicitly: a provider row with no usable currency
+    // is recorded as USD *and counted* as assumed (see
+    // currencyAssumedUsd in the result metadata), never silently
+    // treated as USD. No FX conversion is applied here or
+    // anywhere in refresh — a non-USD price stays in its native
+    // currency.
+    const providerCurrency = validateProviderCurrency(fresh.currency);
+    const recordedCurrency = providerCurrency ?? DEFAULT_CURRENCY_CODE;
+    if (!providerCurrency) currencyAssumedUsd += 1;
     const { error: insertError } = await supabase.from('price_history').insert({
       product_id: productId,
       retailer_id: source.retailer_id,
       price: fresh.price,
-      currency: fresh.currency,
+      currency: recordedCurrency,
       availability: fresh.availability,
       url: fresh.url ?? null,
       recorded_at: new Date().toISOString(),
     });
 
     if (insertError) {
+      touchProvider(provider.key, false, insertError.message);
       errors.push(insertError.message);
     } else {
+      touchProvider(provider.key, true);
       processed++;
       // Section 19, Phase 8 (§12 #14) — a new price point was
       // recorded, so the AI cache entries for this product are
@@ -315,6 +518,14 @@ async function processPriceRefresh(
       } catch {
         // Invalidation is best-effort; the price point was recorded.
       }
+      // Sections 21–25, Stage D (item 3) — a real provider
+      // response was validated and saved: this is a successful
+      // update. Best-effort; the writer never throws.
+      try {
+        await markProductSuccessfullyUpdated(supabase, productId);
+      } catch {
+        // Freshness bookkeeping must never fail the product.
+      }
     }
 
     // Update the source's last_fetched_at.
@@ -324,10 +535,30 @@ async function processPriceRefresh(
       .eq('id', source.id);
   }
 
+  // Sections 21–25, Stage B (B4) — aggregate sync reporting for
+  // this refresh job (best-effort; a missing table never fails it).
+  for (const [providerKey, entry] of providersTouched) {
+    void reportProviderSyncHistory(supabase, {
+      providerKey,
+      syncType: 'price.refresh',
+      status: entry.succeeded > 0 ? (entry.succeeded === entry.attempted ? 'success' : 'partial') : 'failed',
+      recordsFetched: entry.attempted,
+      recordsInserted: entry.succeeded,
+      recordsRejected: entry.attempted - entry.succeeded,
+      ...(entry.lastError ? { errorMessage: entry.lastError.slice(0, 500) } : {}),
+    });
+    void recordDataSourceSync(supabase, providerKey, {
+      status: entry.succeeded > 0 ? 'success' : 'failed',
+      ...(entry.succeeded > 0 ? {} : { error: entry.lastError ?? 'provider refresh failed' }),
+      recordsFetched: entry.attempted,
+    });
+  }
+
   return {
     success: processed > 0,
     processed,
     errors: errors.length > 0 ? errors : undefined,
+    metadata: { currencyAssumedUsd },
   };
 }
 

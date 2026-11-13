@@ -110,8 +110,11 @@ export const env = {
   // token — set it in the hosting dashboard only.
   hfApiToken: process.env.HF_API_TOKEN,
 
-  // Future provider keys (not yet active)
-  openaiApiKey: process.env.OPENAI_API_KEY,
+  // Future provider keys (not yet active). Section 21, Stage E
+  // (E-P2-6): the dead `openaiApiKey` read was removed here — the
+  // LLM flag was removed in Section 20, no OpenAI client exists,
+  // and nothing read `env.openaiApiKey`. A future LLM provider
+  // re-adds its key read when the provider itself is added.
   redisUrl: process.env.REDIS_URL,
   cloudflareR2AccountId: process.env.CLOUDFLARE_R2_ACCOUNT_ID,
   cloudflareR2AccessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID,

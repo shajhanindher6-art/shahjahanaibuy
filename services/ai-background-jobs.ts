@@ -14,15 +14,17 @@
  *
  * HOW IT RUNS TODAY: through the EXISTING worker queue
  * (`lib/workers/queue.ts` — `enqueueJob`). No new queue service,
- * no new scheduler, no new dependency. With no `REDIS_URL`
- * configured (the current state — BullMQ is not installed) the
- * queue is the SynchronousQueue: the job runs in-process, awaited,
- * inside the requesting function, with the queue's retries,
- * exponential backoff, idempotency dedupe and dead-letter queue.
- * That is honest "deferred work with retries", NOT a separate
- * worker process — the design doc states this plainly. When the
- * owner provisions Upstash Redis (owner-gated), the SAME enqueue
- * call becomes truly asynchronous with no code change.
+ * no new scheduler, no new dependency. The queue is the
+ * SynchronousQueue (BullMQ is not installed): the job runs
+ * in-process, awaited, inside the requesting function, with the
+ * queue's retries, exponential backoff, idempotency dedupe and
+ * dead-letter queue. That is honest "deferred work with retries",
+ * NOT a separate worker process — the design doc states this
+ * plainly. Truly asynchronous execution would need the `bullmq`
+ * package installed (owner decision — do NOT install it as a
+ * drive-by) AND Redis provisioned; configuring Redis alone does
+ * NOT make the same call asynchronous (Sections 21–25, Stage D,
+ * item 8 — the old claim that it would was false).
  *
  * RESULT STORAGE: no new table, no new migration. The outcome is
  * returned in `JobResult.metadata` and read back via

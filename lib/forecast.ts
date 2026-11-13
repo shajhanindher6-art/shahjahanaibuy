@@ -47,11 +47,28 @@
  * ranges/verdicts from seed-thin history). Below 5 points there is
  * no forecast — only the honest "not enough history" state.
  *
+ * Section 21, Stage E (E-P1-1) — FRESHNESS. A forecast used to be
+ * computable from 11-day-old seed points with no freshness input
+ * at all: the library never asked when the last price was checked.
+ * It does now. computeForecast takes the last-checked timestamp
+ * (an explicit `lastCheckedAt` when the caller knows it — e.g.
+ * products.data_freshness — otherwise the latest recorded point)
+ * and STALE_PRICE_DAYS (7): when the latest check is older than
+ * that, the forecast is WITHHELD (status 'stale-data', empty
+ * forecasts, never a range presented as current) instead of
+ * issued from stale data. backtestForecast is historical accuracy,
+ * not a current claim, so it is NOT withheld — but it carries the
+ * same freshness fields so callers can label a stale backtest.
+ * Every result reports lastCheckedAt / daysSinceLastCheck /
+ * priceStale, so no caller has to guess the age.
+ *
  * Every number here is labelled by callers as a probabilistic
  * range — "Simulated — not a forecast or a guarantee" in spirit:
  * the range may miss, and the backtest report exists to show how
  * often it has missed on this product's own recorded history.
  */
+
+import { STALE_PRICE_DAYS } from '@/lib/price-freshness';
 
 export interface ForecastPoint {
   price: number;
@@ -120,7 +137,7 @@ export interface HorizonForecast {
 }
 
 export interface ProductForecast {
-  status: 'ok' | 'not-enough-history';
+  status: 'ok' | 'not-enough-history' | 'stale-data';
   currentPrice: number | null;
   forecasts: HorizonForecast[];
   pointsUsed: number;
@@ -128,6 +145,18 @@ export interface ProductForecast {
   /** Fixed method description, for UI disclosure. */
   method: string;
   note: string;
+  /**
+   * Section 21, Stage E (E-P1-1) — freshness of the input the
+   * forecast was (or would have been) computed from: the explicit
+   * last-checked timestamp when the caller supplied one, otherwise
+   * the latest recorded point. Null when there is no usable point
+   * and no explicit timestamp.
+   */
+  lastCheckedAt: string | null;
+  /** Whole days between lastCheckedAt and the `nowMs` the call used (null when lastCheckedAt is null). */
+  daysSinceLastCheck: number | null;
+  /** True when daysSinceLastCheck is older than STALE_PRICE_DAYS (7). A stale forecast is withheld, never issued. */
+  priceStale: boolean;
 }
 
 export interface BacktestEntry {
@@ -151,9 +180,23 @@ export interface BacktestReport {
   entries: BacktestEntry[];
   status: 'ok' | 'not-enough-history';
   note: string;
+  /**
+   * Section 21, Stage E (E-P1-1) — same freshness fields as
+   * ProductForecast. A backtest is historical accuracy, not a
+   * current claim, so it is never withheld for staleness — but
+   * callers must be able to label a stale backtest as stale.
+   */
+  lastCheckedAt: string | null;
+  /** Whole days between lastCheckedAt and the `nowMs` the call used (null when lastCheckedAt is null). */
+  daysSinceLastCheck: number | null;
+  /** True when daysSinceLastCheck is older than STALE_PRICE_DAYS (7). */
+  priceStale: boolean;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Section 21, Stage E (E-P1-1) — a forecast is only as current as its last check. One threshold for the whole site, not a second number. */
+export const FORECAST_STALE_DAYS = STALE_PRICE_DAYS;
 
 /**
  * Confidence display band (Section 16, item 11) — wording only,
@@ -185,13 +228,73 @@ export function forecastConfidenceLabel(
  */
 export function formatForecastBasis(
   pointsUsed: number,
-  confidencePct: number
+  confidencePct: number,
+  daysSinceLastCheck?: number | null
 ): string {
   const points = Number.isFinite(pointsUsed) ? Math.max(0, Math.floor(pointsUsed)) : 0;
-  return (
+  const base =
     `Based on ${points} recorded price point${points === 1 ? '' : 's'} · ` +
-    `${confidencePct}% confidence (${forecastConfidenceLabel(confidencePct)})`
-  );
+    `${confidencePct}% confidence (${forecastConfidenceLabel(confidencePct)})`;
+  // Section 21, Stage E (E-P1-1) — when the caller knows the age
+  // of the last check, say it: a range from 11-day-old points
+  // must not read as if it were computed today.
+  if (typeof daysSinceLastCheck === 'number' && Number.isFinite(daysSinceLastCheck)) {
+    return `${base} · last checked ${daysSinceLastCheck} day${daysSinceLastCheck === 1 ? '' : 's'} ago`;
+  }
+  return base;
+}
+
+/**
+ * Section 21, Stage E (E-P1-1) — freshness of a forecast's
+ * inputs, from the last-checked timestamp and STALE_PRICE_DAYS.
+ * The explicit `lastCheckedAt` (e.g. products.data_freshness)
+ * wins when it parses; otherwise the latest usable recorded
+ * point is the last check — the points ARE the checks. An
+ * unparseable / missing timestamp with no usable point is
+ * "unknown" (daysSinceLastCheck null, priceStale false — unknown
+ * is never read as fresh, and never as stale either: there is
+ * nothing to judge). A future timestamp ages 0 days, never
+ * negative, never stale.
+ */
+export interface ForecastFreshness {
+  lastCheckedAt: string | null;
+  daysSinceLastCheck: number | null;
+  priceStale: boolean;
+}
+
+export function forecastFreshness(
+  usable: Array<{ recordedAt: string }>,
+  nowMs: number,
+  lastCheckedAt?: string | null
+): ForecastFreshness {
+  let checkedMs: number | null = null;
+  let checkedIso: string | null = null;
+  if (typeof lastCheckedAt === 'string' && lastCheckedAt !== '') {
+    const parsed = new Date(lastCheckedAt).getTime();
+    if (Number.isFinite(parsed)) {
+      checkedMs = parsed;
+      checkedIso = lastCheckedAt;
+    }
+  }
+  if (checkedMs === null && usable.length > 0) {
+    // usablePoints() sorts oldest-first, so the last element is
+    // the latest recorded point.
+    const latest = usable[usable.length - 1];
+    const parsed = new Date(latest.recordedAt).getTime();
+    if (Number.isFinite(parsed)) {
+      checkedMs = parsed;
+      checkedIso = latest.recordedAt;
+    }
+  }
+  if (checkedMs === null) {
+    return { lastCheckedAt: null, daysSinceLastCheck: null, priceStale: false };
+  }
+  const daysSinceLastCheck = Math.max(0, Math.floor((nowMs - checkedMs) / DAY_MS));
+  return {
+    lastCheckedAt: checkedIso,
+    daysSinceLastCheck,
+    priceStale: daysSinceLastCheck > STALE_PRICE_DAYS,
+  };
 }
 
 function toMs(iso: string): number {
@@ -385,7 +488,8 @@ function forecastForHorizon(
 export function computeForecast(
   points: ForecastPoint[],
   nowMs: number = Date.now(),
-  horizons: readonly number[] = FORECAST_HORIZONS
+  horizons: readonly number[] = FORECAST_HORIZONS,
+  options: { lastCheckedAt?: string | null } = {}
 ): ProductForecast {
   const usable = usablePoints(points).filter((p) => p.ms <= nowMs);
   const method =
@@ -397,6 +501,10 @@ export function computeForecast(
       );
     }
   }
+  // Section 21, Stage E (E-P1-1) — freshness is judged BEFORE
+  // any range is fitted: the last check is the explicit timestamp
+  // when the caller knows it, else the latest recorded point.
+  const freshness = forecastFreshness(usable, nowMs, options.lastCheckedAt);
   if (usable.length < FORECAST_MIN_POINTS) {
     return {
       status: 'not-enough-history',
@@ -406,6 +514,32 @@ export function computeForecast(
       historyDays: 0,
       method,
       note: 'Not enough price history yet — at least 5 recorded prices are needed before any forecast can be made.',
+      ...freshness,
+    };
+  }
+  // Stale inputs withhold the forecast: a range fitted to a price
+  // last checked more than STALE_PRICE_DAYS ago must never be
+  // presented as current. The last recorded price is still
+  // reported (it is a fact), but no range, no confidence, no
+  // direction — the caller renders the honest "price is stale,
+  // check back after a refresh" state instead.
+  if (freshness.priceStale) {
+    const days = freshness.daysSinceLastCheck ?? 0;
+    return {
+      status: 'stale-data',
+      currentPrice: usable[usable.length - 1].price,
+      forecasts: [],
+      pointsUsed: usable.length,
+      historyDays: Math.max(
+        0,
+        Math.round((usable[usable.length - 1].ms - usable[0].ms) / DAY_MS)
+      ),
+      method,
+      note:
+        `Forecast withheld — the latest recorded price is ${days} day${days === 1 ? '' : 's'} old ` +
+        `(last checked ${freshness.lastCheckedAt}), older than the ${STALE_PRICE_DAYS}-day freshness window. ` +
+        `A forecast from stale data would present an old price as current; check back after the price is refreshed.`,
+      ...freshness,
     };
   }
   const fit = fitLine(usable);
@@ -421,6 +555,7 @@ export function computeForecast(
     historyDays,
     method,
     note: 'Probabilistic range from recorded price history only — not a guarantee of a future price.',
+    ...freshness,
   };
 }
 
@@ -439,7 +574,8 @@ export function computeForecast(
 export function backtestForecast(
   points: ForecastPoint[],
   horizonDays: number,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  options: { lastCheckedAt?: string | null } = {}
 ): BacktestReport {
   // Section 19, Phase 3 (§12 #35): the backtest accepts the same
   // configurable horizons as the forecast (7 / 14 / 30 / 60 / 90).
@@ -449,6 +585,14 @@ export function backtestForecast(
     );
   }
   const usable = usablePoints(points).filter((p) => p.ms <= nowMs);
+  // Section 21, Stage E (E-P1-1) — a backtest reports PAST
+  // accuracy, not a current claim, so staleness never withholds
+  // it; the freshness fields travel with the report so callers
+  // can label a stale backtest as stale instead of current.
+  const freshness = forecastFreshness(usable, nowMs, options.lastCheckedAt);
+  const staleSuffix = freshness.priceStale
+    ? ` The prices behind this backtest were last checked ${freshness.daysSinceLastCheck} day${freshness.daysSinceLastCheck === 1 ? '' : 's'} ago — stale, not current.`
+    : '';
   const baseNote =
     'Walk-forward backtest on this product’s own recorded price history: each past forecast is checked against the price actually recorded at the horizon date.';
   if (usable.length < FORECAST_MIN_POINTS + 1) {
@@ -459,7 +603,8 @@ export function backtestForecast(
       accuracyPct: null,
       entries: [],
       status: 'not-enough-history',
-      note: 'Not enough price history yet to backtest — no past forecast has a recorded price at its horizon date.',
+      note: 'Not enough price history yet to backtest — no past forecast has a recorded price at its horizon date.' + staleSuffix,
+      ...freshness,
     };
   }
   const entries: BacktestEntry[] = [];
@@ -496,7 +641,8 @@ export function backtestForecast(
     status: entries.length === 0 ? 'not-enough-history' : 'ok',
     note:
       entries.length === 0
-        ? 'Not enough price history yet to backtest — no past forecast has a recorded price at its horizon date.'
-        : baseNote,
+        ? 'Not enough price history yet to backtest — no past forecast has a recorded price at its horizon date.' + staleSuffix
+        : baseNote + staleSuffix,
+    ...freshness,
   };
 }

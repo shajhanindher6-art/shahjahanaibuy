@@ -183,6 +183,13 @@ import { TransparencyBlock } from '@/components/ai/transparency-block';
 // small (recharts loads lazily inside it), so a static import is
 // fine; it renders nothing with <2 recorded points.
 import { PriceTrendSparkline } from '@/components/products/price-trend-sparkline';
+// Sections 21–25, Stage H (H-P2-3) — the 7-dimension data-quality
+// score from GET /api/v1/products/[slug], shown in the Specs tab
+// instead of the old field-presence "confidence" percentage.
+import {
+  DATA_QUALITY_SCORE_LABEL,
+  type ProductQualityScore,
+} from '@/services/product-quality-score';
 import { BestTimeToBuyIndicator } from '@/components/products/best-time-to-buy';
 import { BuyingOpportunityBadge } from '@/components/products/buying-opportunity-badge';
 import { BuyingConsiderations } from '@/components/products/buying-considerations';
@@ -535,6 +542,12 @@ interface Product {
   // Absent or empty when the product has no variants — the
   // selector renders only when this is non-empty.
   variants?: ProductVariant[];
+  // Sections 21–25, Stage H (H-P2-3): the 7-dimension
+  // data-quality score computed server-side by the same
+  // endpoint. Absent on responses fetched before this shipped
+  // (and on the SEO initial product) — the Specs tab then hides
+  // the row instead of showing the old completeness percentage.
+  dataQuality?: (ProductQualityScore & { merchantSourceMissing?: boolean }) | null;
   // Seeded product_attributes rows from GET /api/v1/products/[slug].
   // Absent or empty when the product has no seeded specs — the Specs
   // tab then renders exactly the base rows below, nothing invented.
@@ -2561,8 +2574,29 @@ export default function ProductDetailClient({
                       when null — 0/10 live products have one, so this
                       row renders nothing today and never a guessed value. */}
                   <SpecRow label="Model number" value={product.modelNumber ?? null} />
-                  {/* Section 20, §12 #67 — was "Confidence Score": the number is a field-presence completeness count, not a measured quality score. Labelled as data completeness so a visitor reads it for what it is. */}
-                  <SpecRow label="Data completeness" value={product.confidenceScore != null ? `${product.confidenceScore}%` : null} />
+                  {/* Sections 21–25, Stage H (H-P2-3) — was "Data
+                      completeness {confidence}%": the confidence
+                      number is a field-presence count, not a
+                      quality score. The row now shows the
+                      7-dimension data-quality score computed
+                      server-side (identity / specs / images /
+                      freshness / merchants / GTIN / attribution);
+                      when the merchant price-source column is
+                      missing (migration 045 unapplied) the score
+                      may understate, and the row says so instead
+                      of showing a bare number (H-P2-4). Absent
+                      until the API fetch returns — the row hides
+                      rather than falling back to the old number. */}
+                  <SpecRow
+                    label={DATA_QUALITY_SCORE_LABEL}
+                    value={
+                      product.dataQuality != null
+                        ? product.dataQuality.merchantSourceMissing
+                          ? `${product.dataQuality.score}/100 (may understate)`
+                          : `${product.dataQuality.score}/100`
+                        : null
+                    }
+                  />
                   {/* Seeded specs without a stored group. Key, value
                       and unit are verbatim from the database; a row
                       with an empty value is hidden by SpecRow. */}

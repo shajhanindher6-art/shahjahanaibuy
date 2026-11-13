@@ -118,12 +118,21 @@ export default async function ForecastExplainerPage({ searchParams }: ForecastEx
         price: Number(h.price),
         recordedAt: h.recordedAt,
       }));
-      const forecast = computeForecast(points);
+      const forecast = computeForecast(points, Date.now(), FORECAST_HORIZONS, {
+        // Section 21, Stage E (E-P1-1) — the product's real last
+        // check is the freshness input; stale inputs withhold the
+        // forecast instead of presenting it as current.
+        lastCheckedAt: product.dataFreshness ?? null,
+      });
       return {
         product,
         pointCount: points.length,
         forecast,
-        backtests: FORECAST_HORIZONS.map((h) => backtestForecast(points, h)),
+        backtests: FORECAST_HORIZONS.map((h) =>
+          backtestForecast(points, h, Date.now(), {
+            lastCheckedAt: product.dataFreshness ?? null,
+          })
+        ),
       };
     })
   );

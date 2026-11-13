@@ -1,6 +1,6 @@
 # Phase 3 — Core AI Features Summary
 
-> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. Its numbers are stale: it reports 41 API routes and 16 pages; the repo now has **187 API routes (253 handlers) / 122 page routes**, and the verified suite is **286 files / 3,425 tests**. Do not cite its numbers as current. Superseded by: `project-summary.md` (Verification status) and `API_DOCUMENTATION.md`.
+> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. Its numbers are stale: it reports 41 API routes and 16 pages; the repo now has **197 API routes (266 handlers) / 129 page routes**, and the verified suite is **308 files / 3,981 tests**. Do not cite its numbers as current. Superseded by: `project-summary.md` (Verification status) and `API_DOCUMENTATION.md`.
 
 **Date:** 2026-07-11  
 **Project:** SmartBuy AI — AI Shopping Assistant SaaS  

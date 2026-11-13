@@ -82,7 +82,11 @@ export const PROVIDERS: ProviderConfig[] = [
     name: 'Apify',
     category: 'data',
     enabled: false,
-    description: 'Approved data collection provider for retailer catalogs',
+    // Sections 21–25, Stage B (B8) — was "Approved data
+    // collection provider for retailer catalogs". Apify is
+    // REJECTED / BANNED: scraping is banned by the standing
+    // no-scraping rule, and it was never approved.
+    description: 'Rejected — scraping is banned by the standing no-scraping rule; Apify is never a data source and its vars must stay unset',
   },
 ];
 

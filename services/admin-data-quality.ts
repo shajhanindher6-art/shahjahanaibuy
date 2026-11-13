@@ -22,8 +22,14 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import { assertAdminServiceAccess } from '@/lib/admin-role';
 import { getFreshnessStatus } from '@/lib/price-freshness';
-import { computeProductQualityScore } from './product-quality-score';
+import {
+  computeProductQualityScore,
+  getDataQualityState,
+  isValidGtin,
+  type DataQualityState,
+} from './product-quality-score';
 import {
   computeHistoryCoverage,
   computeSourceReliability,
@@ -35,6 +41,11 @@ import {
   normalizePriceVerificationStatus,
   type PriceVerificationStatus,
 } from './price-verification';
+import {
+  LIVE_PRICE_HISTORY_SOURCES,
+  resolveLastSuccessfulUpdate,
+  type LastSuccessfulUpdate,
+} from './last-successful-update';
 
 export interface AdminDataQualitySummary {
   productsTotal: number;
@@ -65,6 +76,44 @@ export interface AdminDataQualitySummary {
   historyProvenanceMissing: boolean;
   /** True when the 045 verification columns do not exist yet. */
   columnsMissing: boolean;
+  /**
+   * Section 21–25, Stage H (H-P2-4) — true when the 045
+   * `merchant_products.price_source` column does not exist yet.
+   * The merchant read then retries without it (counts stay right),
+   * but the attribution dimension cannot count a recorded price
+   * source, so the average score may understate data quality.
+   */
+  merchantSourceMissing: boolean;
+  /**
+   * True when any missing-column flag above means the average
+   * score may understate data quality (columnsMissing or
+   * merchantSourceMissing). The admin panel must say so next to
+   * the score instead of showing a bare number.
+   */
+  scoreMayUnderstate: boolean;
+  /**
+   * Section 21–25, Stage H (H-P2-2) — the 5-state data-quality
+   * taxonomy distribution across the catalog (Verified /
+   * Partially verified / Unverified / Stale / Missing
+   * information), the same label system the public product page
+   * shows per product.
+   */
+  qualityStates: Record<DataQualityState, number>;
+  /**
+   * Sections 21–25, Stage D (item 3) — per-product "last
+   * successful update": the last time a real provider response
+   * was validated AND saved, distinct from `data_freshness`
+   * ("last checked"). `at` is null when no successful update is
+   * recorded anywhere for the product; `source` says which
+   * durable record produced the value ('column' = the stored
+   * migration-066 value, 'price-history' / 'merchant-sync' =
+   * derived — see services/last-successful-update.ts).
+   */
+  lastSuccessfulUpdate: Record<string, LastSuccessfulUpdate>;
+  /** Products with a recorded successful update (at !== null). */
+  productsWithSuccessfulUpdate: number;
+  /** True when the 066 `last_successful_update` column does not exist yet (values are derived only). */
+  lastSuccessfulUpdateColumnMissing: boolean;
   /** Plain-language notes about what could not be measured. */
   notes: string[];
 }
@@ -84,6 +133,12 @@ const EMPTY_SUMMARY: AdminDataQualitySummary = {
   sourceReliability: {},
   historyProvenanceMissing: false,
   columnsMissing: false,
+  merchantSourceMissing: false,
+  scoreMayUnderstate: false,
+  qualityStates: { verified: 0, partial: 0, unverified: 0, stale: 0, missing: 0 },
+  lastSuccessfulUpdate: {},
+  productsWithSuccessfulUpdate: 0,
+  lastSuccessfulUpdateColumnMissing: false,
   notes: [],
 };
 
@@ -92,8 +147,16 @@ function isUndefinedColumnError(error: unknown): boolean {
 }
 
 export async function getAdminDataQualitySummary(
-  supabase: AnySupabaseClient
+  supabase: AnySupabaseClient,
+  opts: { adminUserId?: string } = {}
 ): Promise<AdminDataQualitySummary> {
+  // Sections 21–25, Stage G, G-P1-4 — defense-in-depth role
+  // re-check (see lib/admin-role.ts). Optional ONLY so existing
+  // unit tests without an auth context keep compiling; every
+  // production caller passes adminUserId.
+  if (opts.adminUserId !== undefined) {
+    await assertAdminServiceAccess(supabase, opts.adminUserId);
+  }
   const summary: AdminDataQualitySummary = {
     ...EMPTY_SUMMARY,
     verification: { verified: 0, unverified: 0, stale: 0, unknown: 0 },
@@ -101,13 +164,22 @@ export async function getAdminDataQualitySummary(
     historyCoverage: {},
     sourceReliability: {},
     historyProvenanceMissing: false,
+    merchantSourceMissing: false,
+    scoreMayUnderstate: false,
+    qualityStates: { verified: 0, partial: 0, unverified: 0, stale: 0, missing: 0 },
     notes: [],
   };
 
   try {
+    // Sections 21–25, Stage D (item 3) — the stored
+    // `last_successful_update` value per product (migration 066),
+    // when the column exists. Filled from the products query
+    // below when the 066 column is present, or from the
+    // 066-only retry when the 045 fallback ran.
+    const columnValueById = new Map<string, string | null>();
     const runProductsQuery = async (withNewColumns: boolean) => {
       const columns = withNewColumns
-        ? 'id, name, slug, brand, category, description, image_url, gtin, price_verification_status, price_verified_at, data_freshness'
+        ? 'id, name, slug, brand, category, description, image_url, gtin, price_verification_status, price_verified_at, data_freshness, last_successful_update'
         : 'id, name, slug, brand, category, description, image_url, gtin, data_freshness';
       return (await supabase
         .from('products')
@@ -125,6 +197,38 @@ export async function getAdminDataQualitySummary(
         'Verification columns do not exist yet (migration 045 not applied), so every product reads as unverified here.'
       );
       ({ data: products, error } = await runProductsQuery(false));
+      // The 045 fallback also drops the 066 column from the
+      // select — retry with ONLY the 066 column to learn whether
+      // it exists independently of 045.
+      try {
+        const { data: columnRows, error: columnError } = (await supabase
+          .from('products')
+          .select('id, last_successful_update')
+          .is('deleted_at', null)
+          .limit(500)) as unknown as {
+          data: Array<{ id: string; last_successful_update: string | null }> | null;
+          error: { code?: string; message: string } | null;
+        };
+        if (columnError && isUndefinedColumnError(columnError)) {
+          summary.lastSuccessfulUpdateColumnMissing = true;
+          summary.notes.push(
+            'Last-successful-update column does not exist yet (migration 066 not applied), so last-successful-update values below are derived from price history and merchant syncs, not stored.'
+          );
+        } else if (!columnError) {
+          for (const row of columnRows ?? []) {
+            columnValueById.set(String(row.id), row.last_successful_update ?? null);
+          }
+        }
+      } catch {
+        summary.notes.push('Last-successful-update column could not be read.');
+      }
+    } else if (!error) {
+      for (const row of products ?? []) {
+        columnValueById.set(
+          String(row.id),
+          (row.last_successful_update as string | null) ?? null
+        );
+      }
     }
     if (error || !products) {
       if (error) logger.warn('getAdminDataQualitySummary: products query failed', { error: error.message });
@@ -169,25 +273,66 @@ export async function getAdminDataQualitySummary(
     }
 
     // Merchant counts + cheapest listing source, per product.
+    // Section 21–25, Stage H (H-P2-4) — this query used to select
+    // `price_source` (migration 045) with no 42703 fallback: when
+    // 045 was unapplied the whole query errored, the catch below
+    // swallowed it, and every product silently scored 0 on the
+    // merchant dimension (25/100 instead of 35/100) with only a
+    // buried note. Now it retries without the column — counts stay
+    // right — and reports merchantSourceMissing so the panel can
+    // say the score may understate instead of showing a bare 25.
     const merchantCounts = new Map<string, { total: number; inStock: number; source: string | null }>();
+    // Sections 21–25, Stage D (item 3) — latest merchant sync
+    // time per product (`merchant_products.last_synced_at`, 045 —
+    // set only by the eBay live-check stamp), one leg of the
+    // derived last-successful-update.
+    const merchantSyncedAt = new Map<string, string>();
     try {
-      const { data: merchants } = await supabase
-        .from('merchant_products')
-        .select('product_id, price, in_stock, price_source')
-        .in('product_id', productIds)
-        .is('deleted_at', null)
-        .order('price', { ascending: true })
-        .limit(5000);
-      for (const row of (merchants ?? []) as Array<{
+      type MerchantRow = {
         product_id: string;
         in_stock: boolean;
         price_source?: string | null;
-      }>) {
+        last_synced_at?: string | null;
+      };
+      const runMerchantQuery = async (withSource: boolean) => {
+        const columns = withSource
+          ? 'product_id, price, in_stock, price_source, last_synced_at'
+          : 'product_id, price, in_stock';
+        return (await supabase
+          .from('merchant_products')
+          .select(columns)
+          .in('product_id', productIds)
+          .is('deleted_at', null)
+          .order('price', { ascending: true })
+          .limit(5000)) as unknown as {
+          data: MerchantRow[] | null;
+          error: { code?: string; message: string } | null;
+        };
+      };
+      let { data: merchants, error: merchantError } = await runMerchantQuery(true);
+      if (merchantError && isUndefinedColumnError(merchantError)) {
+        summary.merchantSourceMissing = true;
+        summary.notes.push(
+          'Merchant price-source column does not exist yet (migration 045 not applied), so the attribution dimension cannot count a recorded price source — the average score may understate data quality.'
+        );
+        ({ data: merchants, error: merchantError } = await runMerchantQuery(false));
+      }
+      if (merchantError) {
+        logger.warn('getAdminDataQualitySummary: merchant listings query failed', {
+          error: merchantError.message,
+        });
+        summary.notes.push('Merchant listings could not be read.');
+      }
+      for (const row of (merchantError ? [] : (merchants ?? [])) as MerchantRow[]) {
         const entry = merchantCounts.get(row.product_id) ?? { total: 0, inStock: 0, source: null };
         entry.total += 1;
         if (row.in_stock === true) entry.inStock += 1;
         if (entry.source === null) entry.source = row.price_source ?? null;
         merchantCounts.set(row.product_id, entry);
+        if (row.last_synced_at) {
+          const prev = merchantSyncedAt.get(row.product_id);
+          if (!prev || row.last_synced_at > prev) merchantSyncedAt.set(row.product_id, row.last_synced_at);
+        }
       }
     } catch {
       summary.notes.push('Merchant listings could not be read.');
@@ -323,9 +468,51 @@ export async function getAdminDataQualitySummary(
         }
       );
       scoreSum += score.score;
+      // Section 21–25, Stage H (H-P2-2) — the same 5-state taxonomy
+      // the public product page shows, counted here per product so
+      // the admin distribution and the public label can never drift
+      // apart: both call getDataQualityState with the same inputs.
+      const state = getDataQualityState({
+        priceVerificationStatus: status,
+        priceAgeDays: score.priceAgeDays,
+        merchantCount: merchants?.total ?? 0,
+        hasValidGtin: isValidGtin(gtin),
+        hasPriceSource: (merchants?.source ?? null) !== null,
+      });
+      summary.qualityStates[state.state] += 1;
+
+      // Sections 21–25, Stage D (item 3) — last successful
+      // update, distinct from "last checked" (`lastCheck` above):
+      // the stored 066 value when the column exists, otherwise
+      // the latest live-source price-history point (a re-read row
+      // carries source NULL and never counts) or the latest
+      // merchant sync. Null for the whole seeded catalog is the
+      // honest state — no provider-validated save has happened.
+      const liveHistoryPoints = (historyPointsByProduct.get(id) ?? []).filter((p) =>
+        (LIVE_PRICE_HISTORY_SOURCES as readonly string[]).includes(p.source ?? '')
+      );
+      const liveHistoryAt =
+        liveHistoryPoints.length > 0
+          ? liveHistoryPoints
+              .map((p) => p.recordedAt)
+              .sort()
+              .at(-1) ?? null
+          : null;
+      const lastSuccessful = resolveLastSuccessfulUpdate(
+        columnValueById.get(id) ?? null,
+        liveHistoryAt,
+        merchantSyncedAt.get(id) ?? null,
+        summary.lastSuccessfulUpdateColumnMissing
+      );
+      summary.lastSuccessfulUpdate[id] = lastSuccessful;
+      if (lastSuccessful.at !== null) summary.productsWithSuccessfulUpdate += 1;
     }
     summary.averageDataQualityScore =
       products.length > 0 ? Math.round((scoreSum / products.length) * 10) / 10 : null;
+    // Section 21–25, Stage H (H-P2-4) — the average is a lower
+    // bound while a verification/source column is missing: say so
+    // on the surface instead of showing a bare number.
+    summary.scoreMayUnderstate = summary.columnsMissing || summary.merchantSourceMissing;
     return summary;
   } catch (err) {
     logger.error('getAdminDataQualitySummary: unexpected error', { error: String(err) });

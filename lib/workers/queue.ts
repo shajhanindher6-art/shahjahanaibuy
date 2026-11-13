@@ -1,14 +1,18 @@
 /**
- * Background worker queue — BullMQ integration with synchronous fallback.
+ * Background worker queue — synchronous in-process ONLY.
  *
- * When Redis is available (REDIS_URL configured):
- * - Jobs are enqueued to BullMQ queues and processed asynchronously by workers
- * - Supports retries, backoff, priority, delayed jobs, and concurrency
- * - Failed jobs after max retries are moved to a dead-letter queue (logged)
- *
- * When Redis is unavailable:
- * - Jobs execute synchronously in-process (development mode)
- * - The same processors run, just without the queue infrastructure
+ * Sections 21–25, Stage D (item 8) — the old header described
+ * the queue as BullMQ-backed with a synchronous fallback. That
+ * was false: the `bullmq` package is NOT installed, so the
+ * `BullMQQueue` adapter below can never load (`eval('require')`
+ * throws, `getQueue()` falls back to `SynchronousQueue`), and
+ * configuring REDIS_URL alone changes nothing — async execution
+ * would ALSO need the package installed (an owner decision; do
+ * NOT install it as a drive-by). Until then:
+ * - Jobs execute synchronously in-process, on this instance.
+ * - The same processors run, with retries, backoff, priority,
+ *   delayed jobs and idempotency handled by the synchronous
+ *   runner — NOT by BullMQ.
  *
  * Enhanced features:
  * - Dead-letter queue: jobs that exhaust their retry budget are logged.
@@ -17,8 +21,9 @@
  * - Scheduled jobs: cron expressions on `data_sources` drive recurring syncs.
  * - Queue monitoring: `recordQueueMetrics()` integration.
  *
- * This dual-mode design means the data pipeline works in all environments
- * without requiring Redis, while production can leverage full BullMQ features.
+ * The `BullMQQueue` class is kept (not silently deleted) so the
+ * adapter is visible, but it is dead code until the package is
+ * installed — never describe the queue as BullMQ-backed.
  */
 
 import { logger } from '@/lib/config/logger';
@@ -61,13 +66,67 @@ const PRIORITY_WEIGHT: Record<string, number> = {
 // Dead-letter queue — failed jobs after max retries are logged here
 // ---------------------------------------------------------------------------
 
-interface DeadLetterEntry {
+export interface DeadLetterEntry {
   id: string;
   type: JobType;
   data: unknown;
   error: string;
   attempts: number;
   failedAt: string;
+}
+
+const DLQ_ERROR_LOG_ROUTE = 'queue.dlq';
+
+/**
+ * Sections 21–25, Stage D (item 2) — persist one dead-lettered
+ * job to `error_log` (migration 048), so a failed job survives
+ * a restart. Best-effort and never throwing: until 048 is
+ * applied the table does not exist and `insertErrorLogRow`
+ * reports 'missing-table' — the in-memory entry is still kept
+ * and the admin surface says the persisted trail is unavailable.
+ * Durable cross-instance DLQ storage needs the owner to apply
+ * 048 (and, for a truly durable queue, a queue table — out of
+ * scope here; the in-memory DLQ + error_log trail is the
+ * persistence this stage can provide without a new migration).
+ */
+export async function persistDeadLetterEntry(
+  supabase: import('@/lib/supabase/types').AnySupabaseClient,
+  entry: DeadLetterEntry
+): Promise<'inserted' | 'missing-table' | 'failed'> {
+  const { insertErrorLogRow } = await import('@/services/error-log-admin');
+  return insertErrorLogRow(supabase, {
+    level: 'error',
+    message: 'Job moved to dead-letter queue',
+    route: DLQ_ERROR_LOG_ROUTE,
+    meta: {
+      jobId: entry.id,
+      jobType: entry.type,
+      attempts: entry.attempts,
+      error: entry.error,
+      failedAt: entry.failedAt,
+      data: entry.data ?? null,
+    },
+  });
+}
+
+/** Fire-and-forget persistence for `recordDeadLetter` (never blocks the queue). */
+async function persistDeadLetterEntryBestEffort(entry: DeadLetterEntry): Promise<void> {
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(
+      env.supabaseUrl,
+      env.supabaseServiceRoleKey ?? env.supabaseAnonKey,
+      { auth: { persistSession: false } }
+    );
+    await persistDeadLetterEntry(
+      supabase as unknown as import('@/lib/supabase/types').AnySupabaseClient,
+      entry
+    );
+  } catch (err) {
+    // Persistence must never fail the queue: the in-memory entry
+    // is the record of last resort on this instance.
+    logger.warn('persistDeadLetterEntry: failed', { error: String(err) });
+  }
 }
 
 const deadLetterQueue: DeadLetterEntry[] = [];
@@ -82,6 +141,10 @@ function recordDeadLetter(entry: DeadLetterEntry): void {
     error: entry.error,
     attempts: entry.attempts,
   });
+  // Sections 21–25, Stage D (item 2) — persist best-effort to
+  // error_log so the entry survives a restart (when 048 is
+  // applied). Fire-and-forget: persistence never blocks the queue.
+  void persistDeadLetterEntryBestEffort(entry);
 }
 
 /**
@@ -122,6 +185,23 @@ function recordJobResult(jobId: string, result: JobResult): void {
  */
 export function getJobResult(jobId: string): JobResult | undefined {
   return lastJobResults.get(jobId);
+}
+
+/**
+ * Sections 21–25, Stage G — background-job monitoring surface.
+ * A snapshot of the recorded job outcomes on THIS instance
+ * (newest first), for the admin monitoring surface
+ * (`services/admin-monitoring.ts`). Bounded to the last 100 by
+ * construction (`MAX_JOB_RESULTS`). In-memory, per-instance state
+ * like the DLQ — a job that ran on another Vercel instance does
+ * not appear here, and a BullMQ job never records a result at
+ * all (its outcome is genuinely unknown to this instance, so the
+ * surface says so instead of inventing one).
+ */
+export function listJobResults(): Array<{ jobId: string; result: JobResult }> {
+  return [...lastJobResults.entries()]
+    .reverse()
+    .map(([jobId, result]) => ({ jobId, result }));
 }
 
 // ---------------------------------------------------------------------------
@@ -322,7 +402,12 @@ class SynchronousQueue implements QueueAdapter {
 }
 
 // ---------------------------------------------------------------------------
-// BullMQ queue — used when Redis is available
+// BullMQ queue adapter — DEAD CODE today: the `bullmq` package is
+// not installed, so the constructor always falls back and
+// `getQueue()` returns the SynchronousQueue. Kept visible (not
+// deleted) so the adapter is not silently lost; enabling it needs
+// the package installed (owner decision) AND Redis configured.
+// Do not describe the queue as BullMQ-backed (Stage D, item 8).
 // ---------------------------------------------------------------------------
 
 class BullMQQueue implements QueueAdapter {
@@ -467,8 +552,9 @@ let scheduledTimer: ReturnType<typeof setInterval> | null = null;
  * Start scheduled job processing. Reads `data_sources` rows with a
  * `schedule_cron` expression and enqueues `data.sync` jobs on their
  * schedule. This is a lightweight, best-effort scheduler — for precise
- * scheduling in production, use a dedicated cron service or BullMQ's
- * `Queue.upsertJobScheduler`.
+ * scheduling in production, use a dedicated cron service (not a
+ * queue: the BullMQ adapter cannot load — the package is not
+ * installed — so no queue-based scheduler exists today).
  */
 export async function startScheduledJobs(): Promise<void> {
   if (scheduledTimer) return;

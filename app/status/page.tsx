@@ -182,8 +182,9 @@ export default async function StatusPage() {
 
           <h2 className="mt-10 text-xl font-semibold">Services &amp; integrations</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Checked live on every visit — this is what the app itself can verify right now.
-            See the{' '}
+            Checked at request time from recorded configuration — this page reads what is actually
+            configured right now, not a live probe of each service. Static search-link directories
+            are labelled as search links only, never as live integrations. See the{' '}
             <Link href="/platforms" className="underline">
               platforms hub
             </Link>{' '}

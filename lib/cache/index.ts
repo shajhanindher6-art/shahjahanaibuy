@@ -24,6 +24,7 @@
  */
 
 import { logger } from '@/lib/config/logger';
+import { isRedisRateLimitConfigured } from '@/lib/api/rate-limit';
 
 // ---------------------------------------------------------------------------
 // Cache key helper
@@ -49,6 +50,76 @@ interface CacheEntry<T> {
 
 const DEFAULT_FRESH_TTL_MS = 60_000; // 1 minute fresh
 const DEFAULT_STALE_TTL_MS = 300_000; // 5 minutes stale
+
+/**
+ * Section 21–25, Stage J, J-P2-8 — the TTL table, in one place.
+ * Every `swrGet` call site below uses either the defaults or one
+ * of these explicit pairs (verified by grep, 2026-11-13). Changing
+ * a TTL is a behaviour change: update this table in the same edit
+ * and say so in the commit — never change a TTL silently.
+ *
+ * All entries are per-instance in-memory (see the file header):
+ * another Vercel instance keeps serving its own copy until its
+ * TTL expires, so the "stale" column is also the cross-instance
+ * staleness window.
+ */
+export interface CacheTtlEntry {
+  /** Cache-key prefix (the `cacheKey(...)` first segment). */
+  surface: string;
+  /** Fresh TTL: served without a background refresh. */
+  freshMs: number;
+  /** Stale TTL: served stale + background refresh, then evicted. */
+  staleMs: number;
+  /** Where the TTL is set. */
+  setIn: string;
+}
+
+export const CACHE_TTL_TABLE: readonly CacheTtlEntry[] = [
+  { surface: 'product', freshMs: 60_000, staleMs: 300_000, setIn: 'services/products.ts (getCachedProductBySlug)' },
+  { surface: 'merchant-products', freshMs: 60_000, staleMs: 300_000, setIn: 'services/commerce.ts (defaults — no explicit TTL)' },
+  { surface: 'price-history', freshMs: 60_000, staleMs: 300_000, setIn: 'services/price-history.ts' },
+  { surface: 'ai-search', freshMs: 30_000, staleMs: 120_000, setIn: 'services/ai-search.ts' },
+  { surface: 'ai-summary', freshMs: 300_000, staleMs: 3_600_000, setIn: 'services/ai-summary.ts' },
+  { surface: 'prediction', freshMs: 60_000, staleMs: 300_000, setIn: 'services/ai-predictions.ts' },
+  { surface: 'comparison', freshMs: 60_000, staleMs: 300_000, setIn: 'services/ai-comparison.ts' },
+  { surface: 'deals-ranked', freshMs: 60_000, staleMs: 300_000, setIn: 'services/ai-deals.ts' },
+  { surface: 'review-summary', freshMs: 600_000, staleMs: 3_600_000, setIn: 'services/review-summary.ts (AI summary)' },
+  { surface: 'review-summary-numbers', freshMs: 600_000, staleMs: 3_600_000, setIn: 'services/reviews.ts' },
+];
+
+export function getCacheTtl(surface: string): CacheTtlEntry | undefined {
+  return CACHE_TTL_TABLE.find((entry) => entry.surface === surface);
+}
+
+/**
+ * Section 21–25, Stage J, J-P2-8 — shared-cache readiness gate.
+ * A shared cache needs the same Upstash Redis the rate limiter
+ * uses. This returns true ONLY when Upstash is confirmed
+ * configured (`UPSTASH_REDIS_REST_URL` + TOKEN set — see
+ * `isRedisRateLimitConfigured`); until then the in-memory store
+ * above stays the cache and its per-instance limitation (file
+ * header) stands. No shared-cache read/write exists yet — this is
+ * the gate the future Upstash-backed implementation must check
+ * before activating, so the move cannot silently switch stores.
+ */
+export function isSharedCacheConfigured(): boolean {
+  return isRedisRateLimitConfigured();
+}
+
+export function getSharedCacheStatus(): {
+  configured: boolean;
+  backend: 'upstash' | 'in-memory';
+  limitation: string;
+} {
+  const configured = isSharedCacheConfigured();
+  return {
+    configured,
+    backend: configured ? 'upstash' : 'in-memory',
+    limitation: configured
+      ? 'Upstash is configured, but no shared-cache implementation is wired yet — the in-memory store is still authoritative.'
+      : 'Per-instance in-memory cache only: other Vercel instances serve stale copies until TTL expiry (see CACHE_TTL_TABLE).',
+  };
+}
 
 const memoryStore = new Map<string, CacheEntry<unknown>>();
 

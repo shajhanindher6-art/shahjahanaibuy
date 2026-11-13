@@ -28,8 +28,10 @@ import { buildSuitabilityExplanations } from '@/services/comparison-suitability'
 import {
   appendSourceLabel,
   GENERAL_GUIDANCE_LABEL,
+  recordedDataRangeLabel,
   verifiedDataRangeLabel,
 } from '@/lib/ai-source-label';
+import { getFreshnessStatus } from '@/lib/price-freshness';
 
 /**
  * Format a recorded shipping offer into display text, or null when
@@ -65,7 +67,7 @@ export async function compareProducts(
   try {
     const { data: productsData, error: productsError } = await supabase
       .from('products')
-      .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at')
+      .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, price_verification_status, created_at, updated_at')
       .in('id', productIds)
       .is('deleted_at', null);
 
@@ -138,37 +140,60 @@ export async function compareProducts(
       };
     }
 
+    // Section 21, P0 #1 (J-P2-1) — the per-product reviews +
+    // merchant-listings reads were an N+1: 2 queries per product
+    // inside the loop below. Both are batched here, ONCE for the
+    // whole comparison, with `.in('product_id', ids)` and grouped
+    // by product. Reviews keep the old per-product cap (1000) in
+    // code; listings keep the old price-ascending order (the
+    // global sort preserves each product's cheapest-first order,
+    // so the first-row-per-merchant rule below is unchanged).
+    const comparedIds = productsData.map((p) => (p as Record<string, unknown>).id as string);
+    const ratingsByProduct = new Map<string, number[]>();
+    const { data: allReviewsData } = await supabase
+      .from('reviews')
+      .select('product_id, rating')
+      .in('product_id', comparedIds)
+      .is('deleted_at', null)
+      .limit(1000 * comparedIds.length);
+    for (const r of (allReviewsData ?? []) as Array<Record<string, unknown>>) {
+      const list = ratingsByProduct.get(r.product_id as string) ?? [];
+      if (list.length >= 1000) continue;
+      list.push(r.rating as number);
+      ratingsByProduct.set(r.product_id as string, list);
+    }
+    const listingsByProduct = new Map<string, Array<Record<string, unknown>>>();
+    const { data: allListingsData } = await supabase
+      .from('merchant_products')
+      .select('merchant_id, product_id, price, compare_at_price, availability, url, in_stock, shipping_cost, shipping_days')
+      .in('product_id', comparedIds)
+      .is('deleted_at', null)
+      .order('price', { ascending: true });
+    for (const row of (allListingsData ?? []) as Array<Record<string, unknown>>) {
+      const list = listingsByProduct.get(row.product_id as string) ?? [];
+      list.push(row);
+      listingsByProduct.set(row.product_id as string, list);
+    }
+
     const products: ComparisonProduct[] = [];
 
     for (const pRow of productsData) {
       const product = pRow as Record<string, unknown>;
       const productId = product.id as string;
 
-      const { data: reviewsData } = await supabase
-        .from('reviews')
-        .select('rating')
-        .eq('product_id', productId)
-        .is('deleted_at', null)
-        .limit(1000);
-
-      const ratings = (reviewsData ?? []).map((r) => (r as Record<string, unknown>).rating as number);
+      const ratings = ratingsByProduct.get(productId) ?? [];
       const avgRating = ratings.length > 0 ? ratings.reduce((a, b) => a + b, 0) / ratings.length : null;
 
       // Primary source: merchant_products, exactly like Where to Buy
       // (cheapest first; one entry per merchant). This is what makes
       // the compare count match Where to Buy.
-      const { data: listingsData } = await supabase
-        .from('merchant_products')
-        .select('merchant_id, price, compare_at_price, availability, url, in_stock, shipping_cost, shipping_days')
-        .eq('product_id', productId)
-        .is('deleted_at', null)
-        .order('price', { ascending: true });
+      const listingsData = listingsByProduct.get(productId) ?? [];
 
       const seenMerchants = new Set<string>();
       const retailerEntries: ComparisonProduct['retailers'] = [];
 
-      for (const row of listingsData ?? []) {
-        const mpRow = row as Record<string, unknown>;
+      for (const row of listingsData) {
+        const mpRow = row;
         const merchantId = mpRow.merchant_id as string;
         if (seenMerchants.has(merchantId)) continue;
         seenMerchants.add(merchantId);
@@ -307,6 +332,10 @@ export async function compareProducts(
         // Section 16, items 9–10: recorded freshness for the stale
         // badge, point count for the withheld-score note.
         dataFreshness: (product.data_freshness as string | null) ?? null,
+        // Section 21, P0 #1: the recorded verification stamp —
+        // the verdict label below earns "verified" only when every
+        // compared product is 'verified' AND fresh.
+        priceVerificationStatus: (product.price_verification_status as string | null) ?? null,
         dealScoreDataPoints:
           prediction && typeof prediction.dataPoints === 'number'
             ? prediction.dataPoints
@@ -318,14 +347,34 @@ export async function compareProducts(
     const bestChoice = determineBestChoice(products);
     // Section 19, Phase 5 (§12 #51/#55): per-requirement suitability
     // prose grounded in the real rows, and the source label for the
-    // verdict — verified recorded data with the products' freshness
-    // range, plus the note that the summary's closing
-    // "consider your priorities" line is general guidance, not
-    // verified data. The label is appended to aiSummary too, so API
-    // consumers who only read the summary still see it.
+    // verdict — "verified recorded data" ONLY when every compared
+    // product is verified AND fresh (Section 21, P0 #1 gate below),
+    // otherwise the recorded-data range label, plus the note that
+    // the summary's closing "consider your priorities" line is
+    // general guidance, not verified data. The label is appended
+    // to aiSummary too, so API consumers who only read the summary
+    // still see it.
     const suitability = buildSuitabilityExplanations(products);
+    // Section 21, P0 #1 — the "verified" label is earned, never
+    // default, exactly like the Section 20 chat gate
+    // (services/chat.ts withSourceLabel): ONLY when EVERY compared
+    // product is price_verification_status = 'verified' AND its
+    // price is fresh (checked within STALE_PRICE_DAYS). Anything
+    // else — unverified, stale, unknown, or a missing stamp — gets
+    // the recorded-data range label, so a comparison of the live
+    // catalog (all 10 unverified, 11 days stale) never again says
+    // "based on verified recorded data".
+    const allVerifiedAndFresh =
+      products.length > 0 &&
+      products.every(
+        (p) =>
+          p.priceVerificationStatus === 'verified' &&
+          getFreshnessStatus(p.dataFreshness ?? null).status === 'fresh'
+      );
     const sourceLabel =
-      `${verifiedDataRangeLabel(products.map((p) => p.dataFreshness ?? null))} ` +
+      `${allVerifiedAndFresh
+        ? verifiedDataRangeLabel(products.map((p) => p.dataFreshness ?? null))
+        : recordedDataRangeLabel(products.map((p) => p.dataFreshness ?? null))} ` +
       `The closing recommendation in this summary is ${GENERAL_GUIDANCE_LABEL}.`;
 
     return {

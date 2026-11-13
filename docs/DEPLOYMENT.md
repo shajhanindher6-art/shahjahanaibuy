@@ -1,6 +1,6 @@
 # SmartBuy AI — Deployment Documentation
 
-**Last updated:** 2026-11-13 (Section 19 — gate baseline + migration count update)
+**Last updated:** 2026-11-13 (Section 20 — gate baseline + migration count update)
 **Live site:** https://shahjahanaibuy-b1zp.vercel.app/
 **Repo:** https://github.com/shajhanindher6-art/shahjahanaibuy (branch `main`)
 
@@ -11,7 +11,7 @@
 - **Hosting: Vercel. Deploy = git push to `main`.** There is no `vercel.json` (no Vercel Cron, no custom headers, no build overrides).
 - **Verification gate before every push:** `npx tsc --noEmit` = 0 errors · full `npx vitest run` = 100% pass · clean `next build` · headless smoke · live recheck after push. **Push only on the user's live approval** (standing rule).
 - **GitHub workflow files** (`.github/workflows/*`) cannot be pushed by the GitHub App (403) — workflow changes go via the GitHub website.
-- **Baseline (13 Nov 2026, Section 19 gate):** tsc 0 · vitest 286 files / 3,425 tests, 100% PASS · clean build exit 0, 802 pages, `/products/[slug]` First Load 338 kB (budget ≤350 kB).
+- **Baseline (13 Nov 2026, Section 20 gate):** tsc 0 · vitest 296 files / 3,773 tests, 100% PASS · clean build exit 0, 805 pages, `/products/[slug]` First Load 338 kB (budget ≤350 kB).
 
 ## Deployment checklist
 
@@ -53,6 +53,8 @@
 - [ ] Sitemap accessible at `/sitemap.xml`
 - [ ] Robots accessible at `/robots.txt`
 - [ ] Unknown slugs return real 404s: `/products/unknown-slug-xyz`, `/brands/unknown-slug-xyz`, `/categories/unknown-slug-xyz`, `/live/unknown-slug-xyz` (note: `/creators/unknown-slug-xyz` returns 200 until migration 044 is applied — expected, not a failure)
+
+> **Contradiction — owner re-confirmation pending (13 Nov 2026, Sections 21–25 audit §1A A-3):** the live recheck on 13 Nov 2026 ~10:17 PKT found `/creators/unknown-slug-xyz` → **404** (confirmed twice), which is the behaviour the 044 view produces — suggesting 044 **is** applied live, the opposite of the note above. The note above is left EXACTLY as written until the owner re-confirms 044 in `supabase_migrations.schema_migrations`. Do not "fix" it from code alone.
 
 ---
 
@@ -167,7 +169,7 @@ Without the client ID + secret, every eBay call returns a fail-closed error and 
 | `HF_API_TOKEN` | Hugging Face token for visual search. Unset → `POST /api/v1/visual-search` returns 503. |
 | `CLOUDFLARE_R2_ACCOUNT_ID` / `CLOUDFLARE_R2_ACCESS_KEY_ID` / `CLOUDFLARE_R2_SECRET_ACCESS_KEY` | Cloudflare R2 storage. (The bare `R2_*` names are not read by code — use the `CLOUDFLARE_R2_*` names.) |
 | `WHATSAPP_PHONE_NUMBER_ID` / `WHATSAPP_ACCESS_TOKEN` / `WHATSAPP_TEMPLATE_NAME` | WhatsApp alerts (needs a Meta Business app + approved template). Unset → channel reports `not_configured`, never a fake "sent". |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Telegram alerts (bot token from BotFather). |
+| `TELEGRAM_BOT_TOKEN` | Telegram alerts (bot token from BotFather). There is **no** `TELEGRAM_CHAT_ID` env var — the code never reads one; each user saves their chat ID in settings (`services/alert-webhooks.ts`). Do not set `TELEGRAM_CHAT_ID` expecting an effect. |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis for distributed rate limiting. Unset → per-instance in-memory buckets (partial protection on serverless). |
 | `AMAZON_ASSOC_TAG` (+ `AMAZON_ASSOC_TAG_<CC>` per locale, e.g. GB, DE, JP) | Amazon Associates tags. US visitors use the base tag; other countries need their own override. `AMAZON_ASSOC_TAG_US` is never read (silently ignored). Tag `smartbuy-20` is live via Vercel env; approved vs placeholder is unknown — only the Associates dashboard can confirm. |
 | `SKIMLINKS_PUBLISHER_ID` | Skimlinks publisher ID. Not configured; do NOT apply for Skimlinks without the owner's explicit go-ahead (rejection blocks reapplying for 90 days). |
@@ -177,18 +179,28 @@ Dead/phantom references (mentioned in old docs, never read by code): `NEXT_PUBLI
 
 ---
 
-## Migrations (52 files — not 12)
+## Migrations (56 files — not 12)
 
-`supabase/migrations/` holds **52 files** (001–054, gaps 024/025/046 — 023 exists — plus the unnumbered `20260718060823_fix_anonymous_access_policies.sql`). 123 `CREATE TABLE` statements, 122 distinct tables, every table RLS-enabled.
+`supabase/migrations/` holds **56 files** (001–058, gaps 024/025/046 — 023 exists — plus the unnumbered `20260718060823_fix_anonymous_access_policies.sql`). 122 `CREATE TABLE` statements, 122 distinct tables, every table RLS-enabled (statement-start count, 13 Nov 2026 — a raw-substring grep gives 123 because one `CREATE` appears inside a comment/string; see `project-summary.md` Database).
 
 **Applied status of every migration is UNKNOWN from the repo** — only the owner can check `supabase_migrations.schema_migrations` in Supabase. Two are proven NOT applied live: **033** (`live_shopping_sessions` table missing — proven by a PGRST205) and **044** (`creator_slugs` view — applying it activates `/creators` 404s with no redeploy).
 
+> **Contradiction — owner re-confirmation pending (13 Nov 2026, Sections 21–25 audit §1A A-3):** the live recheck on 13 Nov 2026 ~10:17 PKT found `/creators/unknown-slug-xyz` → **404** (confirmed twice), which is the behaviour the 044 view produces — suggesting 044 **is** applied live, the opposite of the line above. The line above is left EXACTLY as written until the owner re-confirms 044 in `supabase_migrations.schema_migrations`. Do not "fix" it from code alone.
+
 ### Rules
 - **Never apply a migration without the owner's explicit approval for that migration.**
-- **17 files carry "DO NOT APPLY YET" (035–043, 045, 047–053).** In particular, **never apply 035 without a separate explicit review** (standing rule).
+- **22 files carry "DO NOT APPLY YET" (035–043, 045, 047–058).** In particular, **never apply 035 without a separate explicit review** (standing rule).
 - **Never apply the unnumbered `supabase/migrations/20260718060823_fix_anonymous_access_policies.sql` as-is** — it restricts public catalogue reads to authenticated users and would break the public site.
 - Apply in filename order. 022 and 023 share the timestamp prefix `20261109124500_` — order by full filename.
 - Preconditions: **018 needs `add-smartpools.sql` first** (it alters the `pools` table); **031 needs `add-community-deals.sql` first** (hard FK to `community_deals`); 038 needs 026; 042 needs 039; 037 needs the commented cleanup UPDATE + VALIDATE after applying.
+- **Duplicate checks before applying 045, 054 and 056 (see `docs/owner-checklist-045-058.md` for the full checklist):** 045's price-history UNIQUE index is inside a duplicate-guarded DO block — if duplicate `(product_id, retailer_id, recorded_at)` rows exist it raises a NOTICE and creates nothing, so the migration "succeeds" while the index is silently missing. Run the duplicate check first and resolve any duplicates before applying 045:
+  ```sql
+  SELECT product_id, retailer_id, recorded_at, count(*)
+  FROM public.price_history
+  GROUP BY product_id, retailer_id, recorded_at
+  HAVING count(*) > 1;
+  ```
+  Apply 045 only when that query returns 0 rows. (054 and 056 have the same shape: their CREATE UNIQUE INDEX statements fail outright if duplicates exist — check first, per their file headers.)
 
 ### The 10 `add-*.sql` files — run only the subset you need
 
@@ -287,7 +299,7 @@ Exactly **one** scheduler is expected: **cron-job.org**. There is no `vercel.jso
 
 ### Infrastructure
 - [ ] Supabase project provisioned
-- [ ] All 52 migrations verified (see migration section — do not blindly apply; 035–043, 045 and 047–054 are DO NOT APPLY YET)
+- [ ] All 64 migrations verified (see migration section — do not blindly apply; 035–043, 045 and 047–063, 065–067 are DO NOT APPLY YET)
 - [ ] RLS policies verified (note: migration 010's 66 wide-open write policies are fixed by 017 in code, but 017's live application is unverified — check `pg_policies` live)
 - [ ] Hosting platform configured (Vercel)
 - [ ] Custom domain pointing to hosting

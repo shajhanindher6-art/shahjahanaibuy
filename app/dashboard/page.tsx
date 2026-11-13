@@ -477,7 +477,7 @@ export default function DashboardPage() {
                   Welcome back, {profile?.fullName?.split(' ')[0] ?? 'Shopper'}!
                 </h1>
                 <p className="mt-1 text-white/90">
-                  Your AI-powered shopping intelligence dashboard
+                  Your shopping intelligence dashboard
                 </p>
                 <Badge className="mt-3 capitalize" variant="secondary">
                   {role} Account

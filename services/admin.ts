@@ -5,7 +5,7 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
-import { resolveRoleName, type ProfileRoleRow } from '@/lib/admin-role';
+import { assertAdminServiceAccess, resolveRoleName, type ProfileRoleRow } from '@/lib/admin-role';
 import type { AdminAnalytics, AdminAuditLog } from '@/types/ai';
 import {
   analyzeAffiliateClicks,
@@ -13,9 +13,31 @@ import {
   type AffiliateClickRow,
 } from '@/services/affiliate-analytics';
 
+/**
+ * Sections 21–25, Stage G, G-P1-4 — defense-in-depth options for
+ * the admin data services in this file. Pass `adminUserId` (the
+ * already-authenticated user id from `requireAdmin` / `getUser()`)
+ * and the service re-checks the admin role via the service-role
+ * client BEFORE touching its tables — the layout/route guard is
+ * no longer the only check. The option is optional ONLY so
+ * existing unit tests that exercise the data mapping without an
+ * auth context keep compiling; every production caller passes it.
+ * When it is absent the read proceeds unguarded, exactly as
+ * before. The guard runs BEFORE the try/catch in each function so
+ * a failed check throws to the caller instead of being swallowed
+ * into an empty result.
+ */
+export interface AdminServiceOptions {
+  adminUserId?: string;
+}
+
 export async function getAdminAnalytics(
-  supabase: AnySupabaseClient
+  supabase: AnySupabaseClient,
+  opts: AdminServiceOptions = {}
 ): Promise<AdminAnalytics> {
+  if (opts.adminUserId !== undefined) {
+    await assertAdminServiceAccess(supabase, opts.adminUserId);
+  }
   try {
     const [usersCount, productsCount, alertsCount, dealsCount, wishlistsCount, searchesCount] = await Promise.all([
       supabase.from('profiles').select('*', { count: 'exact', head: true }),
@@ -95,35 +117,108 @@ export async function getAdminAnalytics(
   }
 }
 
+/**
+ * Sections 21–25, Stage G, G-P2-3 — the audit-log read, fixed.
+ * The old signature returned `AdminAuditLog[]` and swallowed
+ * every failure into `[]` (`logger.warn` only), so the admin
+ * page showed "No audit logs yet" when the table was missing or
+ * the query had failed — a silent empty list that hid a broken
+ * audit trail. This now returns a result object: `logs` plus an
+ * `error` string whenever the read failed (and `tableMissing`
+ * when the table does not exist yet, i.e. the audit-log migration
+ * is unapplied). Callers must surface `error` — the route
+ * answers 503 and the admin page renders an error state, never
+ * an empty list.
+ *
+ * Filters (all optional, server-side): `action` (exact action
+ * string), `adminId` (exact admin user id), `search` (case-
+ * insensitive substring over action / target_type / target_id).
+ * The limit is still clamped to 1–200.
+ */
+export interface GetAdminAuditLogsResult {
+  logs: AdminAuditLog[];
+  /** Human-readable read failure, or null when the read succeeded. */
+  error: string | null;
+  /** True when the admin_audit_logs table does not exist yet. */
+  tableMissing: boolean;
+}
+
+export interface GetAdminAuditLogsOptions extends AdminServiceOptions {
+  action?: string;
+  adminId?: string;
+  search?: string;
+}
+
+function isMissingTableError(error: { code?: string } | null): boolean {
+  return error?.code === '42P01' || error?.code === 'PGRST205';
+}
+
+/** Escape a user string for use inside a PostgREST `ilike` pattern. */
+function escapeLike(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
 export async function getAdminAuditLogs(
   supabase: AnySupabaseClient,
-  limit = 50
-): Promise<AdminAuditLog[]> {
+  limit = 50,
+  opts: GetAdminAuditLogsOptions = {}
+): Promise<GetAdminAuditLogsResult> {
+  if (opts.adminUserId !== undefined) {
+    await assertAdminServiceAccess(supabase, opts.adminUserId);
+  }
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('admin_audit_logs')
       .select('id, admin_id, action, target_type, target_id, details, ip_address, created_at')
       .order('created_at', { ascending: false })
       .limit(Math.min(200, limit));
+    if (opts.action) {
+      query = query.eq('action', opts.action);
+    }
+    if (opts.adminId) {
+      query = query.eq('admin_id', opts.adminId);
+    }
+    if (opts.search) {
+      const pattern = `%${escapeLike(opts.search)}%`;
+      query = query.or(
+        `action.ilike.${pattern},target_type.ilike.${pattern},target_id.ilike.${pattern}`
+      );
+    }
+    const { data, error } = await query;
 
     if (error || !data) {
-      if (error) logger.warn('getAdminAuditLogs: query failed', { error: error.message });
-      return [];
+      if (error) {
+        logger.warn('getAdminAuditLogs: query failed', { error: error.message });
+        if (isMissingTableError(error)) {
+          return {
+            logs: [],
+            error: 'Audit log table is not available yet — the admin audit-log migration has not been applied.',
+            tableMissing: true,
+          };
+        }
+        return { logs: [], error: error.message || 'Audit logs could not be read.', tableMissing: false };
+      }
+      return { logs: [], error: 'Audit logs could not be read.', tableMissing: false };
     }
 
-    return (data as Array<Record<string, unknown>>).map((row) => ({
-      id: row.id as string,
-      adminId: row.admin_id as string,
-      action: row.action as string,
-      targetType: row.target_type as string,
-      targetId: row.target_id as string | null,
-      details: row.details as Record<string, unknown> | null,
-      ipAddress: row.ip_address as string | null,
-      createdAt: row.created_at as string,
-    }));
+    return {
+      logs: (data as Array<Record<string, unknown>>).map((row) => ({
+        id: row.id as string,
+        adminId: row.admin_id as string,
+        action: row.action as string,
+        targetType: row.target_type as string,
+        targetId: row.target_id as string | null,
+        details: row.details as Record<string, unknown> | null,
+        ipAddress: row.ip_address as string | null,
+        createdAt: row.created_at as string,
+      })),
+      error: null,
+      tableMissing: false,
+    };
   } catch (err) {
-    logger.error('getAdminAuditLogs: unexpected error', { error: String(err) });
-    return [];
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error('getAdminAuditLogs: unexpected error', { error: message });
+    return { logs: [], error: message, tableMissing: false };
   }
 }
 
@@ -170,8 +265,12 @@ export async function recordAdminAction(
  */
 export async function getAffiliateClickAnalytics(
   supabase: AnySupabaseClient,
-  days = 30
+  days = 30,
+  opts: AdminServiceOptions = {}
 ): Promise<AffiliateClickAnalytics> {
+  if (opts.adminUserId !== undefined) {
+    await assertAdminServiceAccess(supabase, opts.adminUserId);
+  }
   const safeDays = days === 7 || days === 90 ? days : 30;
   const since = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1000).toISOString();
   try {
@@ -197,8 +296,12 @@ export async function getAffiliateClickAnalytics(
 export async function getAllUsers(
   supabase: AnySupabaseClient,
   page = 1,
-  pageSize = 20
+  pageSize = 20,
+  opts: AdminServiceOptions = {}
 ): Promise<{ users: Array<Record<string, unknown>>; total: number; page: number; pageSize: number }> {
+  if (opts.adminUserId !== undefined) {
+    await assertAdminServiceAccess(supabase, opts.adminUserId);
+  }
   const offset = (Math.max(1, page) - 1) * Math.min(100, Math.max(1, pageSize));
   try {
     // Section 17, Stage H, item 7 (audit §4 #1): the role is resolved

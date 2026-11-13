@@ -18,6 +18,35 @@ import {
   dealIdentityKey,
   type DealDiscountValidation,
 } from './deal-validation';
+// Section 21, Stage E (E-P1-3) — merchant reliability, canonical
+// scorer choice (see scoreDeal + fetchMerchantSyncReliability).
+//
+// NAME COLLISION, READ BEFORE ADDING A FOURTH: three different
+// things in this repo are called "merchant reliability":
+//   1. a listing-count DIMENSION inside the 7-dimension product
+//      quality score (services/product-quality-score.ts) — how
+//      many listings a merchant has, not a reliability score;
+//   2. the SYNC reliability score used here —
+//      scoreMerchantSyncReliability (services/
+//      merchant-reliability-score.ts): refresh-run health +
+//      fresh-listing share + listing depth, from recorded sync
+//      history only, null when there is not enough data;
+//   3. the POLICY reliability score — scoreMerchantReliability
+//      (services/merchant-reliability.ts): directory + website +
+//      Verified Merchant badge + policy trust grade, consumed
+//      only by services/ai-comparison.ts.
+// Worker W2 had wired NEITHER scorer into any surface at build
+// time (zero production callers outside the scorer files), so
+// this surface picks #2, the sync score: it measures whether a
+// merchant's prices are actually refreshed — the dimension that
+// decides whether a deal from that merchant can be trusted in a
+// recommendation. Do NOT add a third scorer; if W2 canonicalises
+// a different one, re-point this import to it instead.
+import {
+  getMerchantSyncReliability,
+  type MerchantSyncReliability,
+} from './merchant-reliability-score';
+import { recordAiRecommendation } from './ai-recommendation-audit';
 
 export interface RankedDealsResult {
   deals: Array<
@@ -33,10 +62,68 @@ export interface RankedDealsResult {
        * rows are never featured (see scoreDeal).
        */
       discountValidation?: DealDiscountValidation;
+      /**
+       * Section 21, Stage E (E-P1-3) — the deal merchant's sync
+       * reliability (refresh-run health + fresh-listing share),
+       * or null when there is not enough data to score the
+       * merchant (migration 040 unapplied / no runs recorded).
+       * A scored-low merchant costs the row 10 aiScore points
+       * and can never be featured (see scoreDeal); unknown is
+       * never read as bad — no data means no penalty.
+       */
+      merchantReliability?: MerchantSyncReliability | null;
     }
   >;
   total: number;
   categories: string[];
+}
+
+/**
+ * Section 21, Stage E (E-P1-3) — merchant-reliability penalty:
+ * a merchant whose sync reliability is SCORED low (fresh
+ * listings stale, refresh runs failing) costs a deal 10 aiScore
+ * points. Unknown / un-scored merchants cost nothing — no data
+ * is not evidence of unreliability. High / medium cost nothing
+ * either: reliability is a penalty for proven-unreliable
+ * merchants, never a reward for merely being listed.
+ */
+export const LOW_RELIABILITY_SCORE_PENALTY = 10;
+
+/**
+ * Fetch one sync-reliability score per distinct merchant. The
+ * reader never throws (missing price_refresh_runs table,
+ * empty history, failed query all degrade to insufficient-data),
+ * so a failure here degrades to "no penalty", never to a lost
+ * ranking. Merchant names are best-effort: a failed lookup still
+ * scores by merchant id.
+ */
+export async function fetchMerchantSyncReliability(
+  supabase: AnySupabaseClient,
+  merchantIds: string[]
+): Promise<Map<string, MerchantSyncReliability>> {
+  const out = new Map<string, MerchantSyncReliability>();
+  const ids = Array.from(new Set(merchantIds.filter(Boolean)));
+  if (ids.length === 0) return out;
+  let nameById = new Map<string, string>();
+  try {
+    const { data } = await supabase
+      .from('merchants')
+      .select('id, name')
+      .in('id', ids);
+    nameById = new Map(
+      ((data ?? []) as Array<{ id: string; name: string }>).map((m) => [
+        m.id,
+        m.name,
+      ])
+    );
+  } catch {
+    // Names unknown — the reader falls back to the merchant id.
+  }
+  const results = await Promise.all(
+    ids.map((id) => getMerchantSyncReliability(supabase, id, nameById.get(id) ?? id))
+  );
+  ids.forEach((id, i) => out.set(id, results[i]));
+  return out;
 }
 
 /**
@@ -86,6 +173,22 @@ function deriveDiscountPercentage(
  *     the claim, but a price genuinely at its recorded low scores
  *     the reality. No history → 0, never a guessed value.
  *
+ *   Section 21, Stage E (E-P1-2) — the two CLAIMED-discount
+ *   terms (discount% × 0.5 and discountValue ≥ $30 +15) count
+ *   ONLY when the discount validation passed ('validated'): an
+ *   unvalidated claimed discount must not rank. A `flagged`
+ *   (fake-discount / inflation pattern) or `insufficient` (too
+ *   little history to judge) discount contributes 0 to the score
+ *   — the deal can still rank on its flash term and its recorded
+ *   value term, but never on the merchant's say-so. The flash
+ *   and value terms are NOT claimed discounts (time and recorded
+ *   prices), so they are ungated.
+ *
+ *   Section 21, Stage E (E-P1-3) — a merchant whose sync
+ *   reliability is SCORED low costs 10 points (see
+ *   LOW_RELIABILITY_SCORE_PENALTY) and can never be featured.
+ *   Unknown (insufficient data) costs nothing.
+ *
  * NO CONFIDENCE TERM (Section 20, §12 #67): the old "+10 when
  * product confidenceScore ≥ 70" is REMOVED. confidence_score is a
  * field-presence completeness count (name +15, GTIN +20…), floored
@@ -96,23 +199,29 @@ function deriveDiscountPercentage(
  * FEATURED GATE (§12 #23/#60, Phase 2): isFeatured requires
  * aiScore ≥ 75 AND a `validated` discount validation — no
  * featured flag without price evidence. A high score on thin or
- * pattern-flagged history is ranked, never featured.
+ * pattern-flagged history is ranked, never featured. (Section 21,
+ * E-P1-3: a scored-low merchant is never featured either.)
  */
-function scoreDeal(
+export function scoreDeal(
   deal: Deal,
   product: Product | null,
   discountPercentage: number | null,
   now: Date,
   value?: { currentPrice: number | null; lowestPrice: number | null },
-  validation?: DealDiscountValidation
+  validation?: DealDiscountValidation,
+  reliability?: MerchantSyncReliability | null
 ): { aiScore: number; isFeatured: boolean } {
   const hoursUntilEnd = (new Date(deal.endAt).getTime() - now.getTime()) / (60 * 60 * 1000);
   const isFlash = hoursUntilEnd < 24;
 
   let aiScore = 50;
-  aiScore += (discountPercentage ?? 0) * 0.5;
+  // Section 21, Stage E (E-P1-2): claimed-discount terms count
+  // only on a 'validated' discount — unvalidated claims rank 0.
+  if (validation?.status === 'validated') {
+    aiScore += (discountPercentage ?? 0) * 0.5;
+    if (deal.discountValue >= 30) aiScore += 15;
+  }
   if (isFlash) aiScore += 20;
-  if (deal.discountValue >= 30) aiScore += 15;
   // Section 20, §12 #67 — NO confidence term: product
   // confidenceScore is field-presence completeness, not quality,
   // and must not move a deal's rank (see the WEIGHTS comment above).
@@ -123,12 +232,17 @@ function scoreDeal(
     if (currentPrice <= lowestPrice * 1.05) aiScore += 10;
     else if (currentPrice <= lowestPrice * 1.15) aiScore += 5;
   }
-  aiScore = Math.min(100, aiScore);
+  // Section 21, Stage E (E-P1-3): scored-low merchant penalty.
+  const lowReliability = reliability?.level === 'low';
+  if (lowReliability) aiScore -= LOW_RELIABILITY_SCORE_PENALTY;
+  aiScore = Math.min(100, Math.max(0, aiScore));
 
   // Featured needs price evidence, not just a high score: the
   // validation must have passed. Callers that have no validation
-  // (no history fetched) pass undefined → not featured.
-  const isFeatured = aiScore >= 75 && validation?.status === 'validated';
+  // (no history fetched) pass undefined → not featured. A
+  // scored-low merchant is never featured either (E-P1-3).
+  const isFeatured =
+    aiScore >= 75 && validation?.status === 'validated' && !lowReliability;
   return { aiScore, isFeatured };
 }
 
@@ -235,7 +349,15 @@ export async function getRankedDeals(
     };
 
     const now = new Date();
-    const honest = dealsWithPrices.map((d) => {
+    // Section 21, Stage E (E-P1-3): one sync-reliability score
+    // per distinct deal merchant — scored-low merchants lose 10
+    // aiScore points and can never be featured (see scoreDeal).
+    // Unknown merchants (no data) cost nothing.
+    const reliabilityByMerchant = await fetchMerchantSyncReliability(
+      supabase,
+      dealsWithPrices.map((d) => d.deal?.merchantId ?? null).filter(Boolean) as string[]
+    );
+    const honest: RankedDealsResult['deals'] = dealsWithPrices.map((d) => {
       const discountPercentage =
         d.deal?.discountType === 'fixed'
           ? deriveDiscountPercentage(d.deal, d.currentPrice)
@@ -245,15 +367,19 @@ export async function getRankedDeals(
       if (!d.deal) return { ...d, discountPercentage };
       const discountValidation = validateRow(d);
       const history = d.productId ? historyByProduct.get(d.productId) : undefined;
+      const merchantReliability = d.deal.merchantId
+        ? (reliabilityByMerchant.get(d.deal.merchantId) ?? null)
+        : null;
       const { aiScore, isFeatured } = scoreDeal(
         d.deal,
         d.product,
         discountPercentage,
         now,
         { currentPrice: d.currentPrice, lowestPrice: history?.lowest ?? null },
-        discountValidation
+        discountValidation,
+        merchantReliability
       );
-      return { ...d, discountPercentage, aiScore, isFeatured, discountValidation };
+      return { ...d, discountPercentage, aiScore, isFeatured, discountValidation, merchantReliability };
     });
     // Section 19, Phase 2 (§12 #66): two identical active deals
     // (same product + merchant + discount + window) rank as ONE
@@ -280,6 +406,28 @@ export async function getRankedDeals(
         b.aiScore - a.aiScore ||
         new Date(b.rankedAt).getTime() - new Date(a.rankedAt).getTime()
     );
+
+    // Section 21, Stage E (E-P1-4) — audit the ranking: which
+    // deals topped it, on what validation / reliability basis.
+    // The recorder never throws; its durable write no-ops until
+    // migration 065 applies. userId null: deal ranking has no
+    // signed-in user context.
+    recordAiRecommendation(supabase, {
+      surface: 'ranked-deals',
+      userId: null,
+      productIds: deduped
+        .slice(0, 3)
+        .map((d) => d.productId)
+        .filter((id): id is string => typeof id === 'string'),
+      recommendation: `Top ranked deals: ${deduped
+        .slice(0, 3)
+        .map((d) => d.deal?.title ?? d.dealId ?? 'deal')
+        .join(', ')}`,
+      basis: {
+        discountValidationStatus: deduped[0]?.discountValidation?.status ?? null,
+        merchantReliabilityLevel: deduped[0]?.merchantReliability?.level ?? null,
+      },
+    });
 
     return { deals: deduped, total: deduped.length, categories };
   } catch (err) {
@@ -333,8 +481,14 @@ async function generateFreshRankings(
   // fetched ONCE — the fake-sale / inflation validation and the
   // value term both read from it (see validateDealDiscount).
   const historyByProduct = await fetchDealHistoryByProduct(supabase, productIds as string[]);
+  // Section 21, Stage E (E-P1-3): one sync-reliability score per
+  // distinct deal merchant (see fetchMerchantSyncReliability).
+  const reliabilityByMerchant = await fetchMerchantSyncReliability(
+    supabase,
+    dedupedDeals.map((dRow) => dRow.merchant_id as string | null).filter(Boolean) as string[]
+  );
 
-  const ranked: Array<DealRanking & { deal: Deal | null; product: Product | null; currentPrice: number | null; discountValidation?: DealDiscountValidation }> = [];
+  const ranked: Array<DealRanking & { deal: Deal | null; product: Product | null; currentPrice: number | null; discountValidation?: DealDiscountValidation; merchantReliability?: MerchantSyncReliability | null }> = [];
   const now = new Date();
 
   for (const dRow of dedupedDeals) {
@@ -378,7 +532,8 @@ async function generateFreshRankings(
       discountPercentage,
       now,
       { currentPrice, lowestPrice: history?.lowest ?? null },
-      discountValidation
+      discountValidation,
+      deal.merchantId ? (reliabilityByMerchant.get(deal.merchantId) ?? null) : null
     );
 
     ranked.push({
@@ -396,6 +551,9 @@ async function generateFreshRankings(
       // Filled by attachCurrentPrices below (one query for all).
       currentPrice: null,
       discountValidation,
+      merchantReliability: deal.merchantId
+        ? (reliabilityByMerchant.get(deal.merchantId) ?? null)
+        : null,
     });
 
     void supabase.from('deal_rankings').insert({
@@ -418,6 +576,26 @@ async function generateFreshRankings(
   const filtered = options.dealType ? ranked.filter((d) => d.dealType === options.dealType) : ranked;
   const finalDeals = options.featuredOnly ? filtered.filter((d) => d.isFeatured) : filtered;
   const result = await attachCurrentPrices(supabase, finalDeals.slice(0, limit));
+
+  // Section 21, Stage E (E-P1-4) — audit the fresh ranking (see
+  // getRankedDeals: same recorder, same no-throw / no-op-until-
+  // 065 behaviour).
+  recordAiRecommendation(supabase, {
+    surface: 'ranked-deals',
+    userId: null,
+    productIds: result
+      .slice(0, 3)
+      .map((d) => d.productId)
+      .filter((id): id is string => typeof id === 'string'),
+    recommendation: `Top ranked deals: ${result
+      .slice(0, 3)
+      .map((d) => d.deal?.title ?? d.dealId ?? 'deal')
+      .join(', ')}`,
+    basis: {
+      discountValidationStatus: result[0]?.discountValidation?.status ?? null,
+      merchantReliabilityLevel: result[0]?.merchantReliability?.level ?? null,
+    },
+  });
 
   const categories = Array.from(new Set(result.map((d) => d.dealType)));
 
