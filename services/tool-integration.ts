@@ -44,6 +44,9 @@
  *   wrapped in `lib/cache#swrGet` with `lib/cache#cacheKey`
  * - `resolveCompareProductSlugs` → `services/products.ts#getProductById`
  * - `compareLinkForProduct` → `getToolProduct` (this file) → `getCachedProductBySlug`
+ * - `parseAndValidateToolParams` → `parseToolParams` + `getToolProduct`
+ *   (this file) — every slug-bearing field checked against the
+ *   catalog; unknown slugs are nulled, never carried onward.
  * - param parsing mirrors the per-tool parsers it unifies:
  *   `lib/upgrade-advisor.ts` (`current`/`successor`),
  *   `lib/compatibility-checker.ts` (`device`/`accessory`),
@@ -336,6 +339,83 @@ export async function parseAndResolveToolParams(
   return selection;
 }
 
+/**
+ * What `parseAndValidateToolParams` returns: the parsed selection
+ * with every unknown slug nulled, the first unknown slug (for the
+ * page's honest "unknown product" notice), and the resolved
+ * canonical product (for pages that display the selected product).
+ */
+export interface ValidatedToolSelection {
+  /** `parseToolParams` result with every unknown slug nulled. */
+  selection: ToolSelection;
+  /** First slug from the URL that names no catalog product, or null. */
+  unknownSlug: string | null;
+  /** The resolved canonical product, or null when there is none. */
+  product: Product | null;
+}
+
+/**
+ * Parse + validate in one call: `parseToolParams`, then check every
+ * slug-bearing field (`product`, `device`, `accessory`, `current`,
+ * `successor`) against the catalog via `getToolProduct` (the
+ * existing cached single-product fetch — no new fetch path, and no
+ * fetch at all when the URL carries no slug).
+ *
+ * A slug that names no catalog product is nulled in the returned
+ * selection — so RelatedTools links carry no product param for it
+ * (an unknown slug must never bounce tool-to-tool as if valid) —
+ * and reported as `unknownSlug`, so the page can show an honest
+ * "unknown product" notice instead of silently showing another
+ * product. The canonical `productSlug` is re-derived from the
+ * VALID slugs only: an explicit `?product=` that is unknown does
+ * not fall back to a valid `?device=` / `?current=`.
+ */
+export async function parseAndValidateToolParams(
+  supabase: AnySupabaseClient,
+  params: ToolSearchParams
+): Promise<ValidatedToolSelection> {
+  const selection = parseToolParams(params);
+  const explicit = {
+    product: firstParam(params, 'product'),
+    device: firstParam(params, 'device'),
+    accessory: firstParam(params, 'accessory'),
+    current: firstParam(params, 'current'),
+    successor: firstParam(params, 'successor'),
+  } as const;
+  const distinct = [
+    ...new Set(
+      Object.values(explicit).filter((slug): slug is string => slug !== null)
+    ),
+  ];
+  const found = new Map<string, Product | null>();
+  await Promise.all(
+    distinct.map(async (slug) => {
+      found.set(slug, await getToolProduct(supabase, slug));
+    })
+  );
+  const valid = (slug: string | null): string | null =>
+    slug !== null && found.get(slug) ? slug : null;
+  selection.productSlug =
+    valid(explicit.product) ?? valid(explicit.device) ?? valid(explicit.current);
+  selection.deviceSlug = valid(explicit.device);
+  selection.accessorySlug = valid(explicit.accessory);
+  selection.currentSlug = valid(explicit.current);
+  selection.successorSlug = valid(explicit.successor);
+  let unknownSlug: string | null = null;
+  for (const key of ['product', 'device', 'accessory', 'current', 'successor'] as const) {
+    const slug = explicit[key];
+    if (slug !== null && !found.get(slug)) {
+      unknownSlug = slug;
+      break;
+    }
+  }
+  const product =
+    selection.productSlug !== null
+      ? (found.get(selection.productSlug) ?? null)
+      : null;
+  return { selection, unknownSlug, product };
+}
+
 // ---------------------------------------------------------------------------
 // URL builder (the inverse of parseToolParams)
 // ---------------------------------------------------------------------------
@@ -371,9 +451,13 @@ const TOOL_URL_EXTRAS: Partial<Record<ToolId, Array<keyof ToolSelection>>> = {
  *   so a slug-only call returns the bare `/compare`; use
  *   `compareLinkForProduct` when only a slug is known)
  * - every other tool → `?product=<slug>`
- * - T2 (`persona-fit`) and T3 (`price-match`) take no product param,
- *   so their builders carry only their own dialect (`persona`/`budget`,
- *   `status`); no `?product=` is ever emitted for them.
+ * - T2 (`persona-fit`) and T3 (`price-match`) take no product param
+ *   for their OWN logic, so `buildToolUrl` never emits `?product=`
+ *   for them from `productSlug` — but both pages DO read
+ *   `?product=` for transfer (`parseToolParams` → their
+ *   RelatedTools pass it onward), so `personaFitLink` /
+ *   `priceMatchLink` carry it ONLY when the caller explicitly
+ *   passes a product slug (see those builders).
  *
  * Round-trip guarantee: `parseToolParams(new URLSearchParams(
  * buildToolUrl(route, sel).split('?')[1] ?? ''))` returns the same
@@ -569,27 +653,42 @@ export function upgradeAdvisorLink(
 
 /**
  * T2 Persona Fit Finder: `?persona=&budget=`. T2 takes NO product
- * param (audit §T2), so this builder carries persona/budget only —
- * it deliberately emits no `?product=`, which the page would ignore.
+ * param for its own logic (audit §T2), so this builder carries
+ * persona/budget only — UNLESS the caller explicitly passes a
+ * product slug: the page reads `?product=` for transfer
+ * (`parseToolParams` → its RelatedTools pass it onward), so a
+ * caller that knows the product (e.g. the product page) carries
+ * it. Without the third argument no `?product=` is ever emitted.
  */
 export function personaFitLink(
   persona?: string | null,
-  budget?: string | null
+  budget?: string | null,
+  productSlug?: string | null
 ): string {
   return buildToolUrl(TOOL_ROUTES['persona-fit'], {
     persona: persona ?? null,
     budget: budget ?? null,
+    extra: productSlug ? { product: productSlug } : undefined,
   });
 }
 
 /**
  * T3 Price-Match Finder: `?status=`. T3 takes NO product param
- * (audit §T3 — static policy directory), so this builder carries
- * only the status filter.
+ * for its own logic (audit §T3 — static policy directory), so this
+ * builder carries only the status filter — UNLESS the caller
+ * explicitly passes a product slug: the page reads `?product=`
+ * for transfer (`parseToolParams` → its RelatedTools pass it
+ * onward), so a caller that knows the product (e.g. the product
+ * page) carries it. Without the second argument no `?product=`
+ * is ever emitted.
  */
-export function priceMatchLink(status?: string | null): string {
+export function priceMatchLink(
+  status?: string | null,
+  productSlug?: string | null
+): string {
   return buildToolUrl(TOOL_ROUTES['price-match'], {
     status: status ?? null,
+    extra: productSlug ? { product: productSlug } : undefined,
   });
 }
 
@@ -645,8 +744,9 @@ export interface RelatedToolLink {
  * TOOL_DEPENDENCY_MAP.md §1, restricted to destinations that exist
  * as routes — "Specs" (0 specs rows), "Alternatives", "Condition"
  * and "Deal Finder" have no route and are omitted, not linked to a
- * wrong page. T2/T3 links carry their own dialect (persona/budget,
- * status) because those tools take no product param.
+ * wrong page. T2/T3 links carry the product via `?product=` (both
+ * pages read it for transfer and show the selected product)
+ * alongside their own dialect (persona/budget, status).
  */
 export function relatedToolLinks(
   tool: ToolId | string,
@@ -657,8 +757,8 @@ export function relatedToolLinks(
     case 'upgrade-advisor':
       return [
         { href: compareLink([]), label: 'Compare products' },
-        { href: personaFitLink(), label: 'Find your persona fit' },
-        { href: priceMatchLink(), label: 'Check the price-match policy' },
+        { href: personaFitLink(null, null, product), label: 'Find your persona fit' },
+        { href: priceMatchLink(null, product), label: 'Check the price-match policy' },
         { href: ownItLink(product), label: 'Do I already own this?' },
         { href: energyCostLink(product), label: 'Calculate total energy cost' },
         { href: dealStackerLink(product), label: 'Stack this deal' },
@@ -681,7 +781,7 @@ export function relatedToolLinks(
     case 'own-it-check':
       return [
         { href: upgradeAdvisorLink(product), label: 'Is this an upgrade?' },
-        { href: personaFitLink(), label: 'Find your persona fit' },
+        { href: personaFitLink(null, null, product), label: 'Find your persona fit' },
         { href: compatibilityLink(product), label: 'Check compatibility' },
       ];
     case 'energy-cost':
@@ -692,7 +792,7 @@ export function relatedToolLinks(
       ];
     case 'negotiation-coach':
       return [
-        { href: priceMatchLink(), label: 'Check the price-match policy' },
+        { href: priceMatchLink(null, product), label: 'Check the price-match policy' },
         { href: dealStackerLink(product), label: 'Stack this deal' },
       ];
     case 'repairability':
@@ -702,7 +802,7 @@ export function relatedToolLinks(
       ];
     case 'deal-stacker':
       return [
-        { href: priceMatchLink(), label: 'Check the price-match policy' },
+        { href: priceMatchLink(null, product), label: 'Check the price-match policy' },
         { href: '/tools/coupons-cashback', label: 'Coupons and cashback' },
         { href: negotiationLink(product), label: 'Negotiate this price' },
         { href: '/tools/budget-finder', label: 'Find products in your budget' },
@@ -712,12 +812,12 @@ export function relatedToolLinks(
         { href: compareLink([]), label: 'Compare products' },
         { href: upgradeAdvisorLink(product), label: 'Is this an upgrade?' },
         { href: repairabilityLink(product), label: 'Check repairability' },
-        { href: priceMatchLink(), label: 'Check the price-match policy' },
+        { href: priceMatchLink(null, product), label: 'Check the price-match policy' },
       ];
     case 'compatibility-checker':
       return [
         { href: upgradeAdvisorLink(product), label: 'Is this an upgrade?' },
-        { href: personaFitLink(), label: 'Find your persona fit' },
+        { href: personaFitLink(null, null, product), label: 'Find your persona fit' },
       ];
     default:
       return [];

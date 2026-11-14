@@ -157,6 +157,63 @@ Consequence: a live eBay price reaches history-based features **one refresh late
 
 **Open owner/design decision (not decided here, and the write behaviour must not change silently):** record each eBay snapshot as a history point (`source: 'ebay-browse-api'`) so history-based features see live checks immediately, or accept the one-refresh delay. The decision is surfaced in code (`EBAY_PRICE_HISTORY_NOTE`, on every `EbayRefreshResult` and therefore every refresh-run response) and here — not hidden.
 
+## Best Buy source linking + price_history.region (Post-Integration Verification & Real Data Phase, 2026-11-14)
+
+Two gaps the pipeline audit found, and the delta built for them:
+
+- **No `product_sources` rows exist.** The seed creates zero, so the
+  `price.refresh` leg (`lib/workers/processors.ts`) can never fetch a
+  Best Buy price today: it only re-fetches products that already have
+  a source row. The new step `services/bestbuy-source-link.ts`
+  (`linkBestBuySources`) closes that gap — it searches Best Buy per
+  unlinked published product (UPC → model → keyword, first non-empty
+  list wins), scores candidates with the shared eBay matcher
+  (`scoreEbayListingMatchWithModel`, 0.85 auto threshold, same GTIN /
+  model vetoes), and upserts a `product_sources` row (retailer
+  `best-buy`, `external_id` = SKU, `provider_key` 'bestbuy') on
+  auto-match only. It creates NO products, writes NO prices,
+  history, or specs — linking only — and does NOT count toward
+  `livePricesFetched`. Fail-closed without the key
+  (`not-configured`); `retailer-missing` when no `best-buy`
+  retailers row (never auto-created); already-linked products are
+  skipped without spending budget; one budget unit per Best Buy
+  call (50,000/day); batch cap 10; never throws. **NOT wired into
+  the refresh route yet** — the exact wiring snippet is in the
+  module header (after the `pipeline` step, before
+  `buildRefreshSharedReads`; add to `steps`, `stepNames`, rerun
+  switch). Until it is wired, linking is a callable step, not a
+  running one.
+- **`price_history` had no region column.** Region lived only on
+  `retailers.country` (`text NOT NULL DEFAULT 'US'`, migration
+  002). Migration **072** (`20261114120000_072_price_history_region.sql`,
+  owner-applied, NOT applied yet) adds `price_history.region`
+  (nullable, 2-letter code) and backfills it verbatim from
+  `retailers.country`. The writer (`services/price-history-quality.ts`
+  `insertPriceHistoryRow`) resolves the region with
+  `resolvePriceRegion` — explicit region first, retailer country
+  as fallback, only a 2-letter code accepted, anything else
+  resolves to NULL ("region unknown", never guessed) — and rides
+  the tiered 42703 retry as one more layer (tier 1–3 carry it,
+  tier 3b drops it while keeping 060 + 057, tier 4 is the
+  migration-002 fallback). The `price.refresh` processor
+  (`lib/workers/processors.ts`) now selects `retailers.country`
+  and passes it as `retailerCountry`, so every refreshed point
+  carries its region once 072 lands. A caller that passes no
+  region sees byte-identical inserts and identical attempt
+  counts — the region tiers are skipped entirely.
+- **Link-only rows could not be honest about fetch time.**
+  `product_sources.last_fetched_at` was `NOT NULL DEFAULT now()`
+  since migration 002, so a link-only row would have claimed a
+  fetch happened at link time. Migration **073**
+  (`20261114121000_073_product_sources_nullable_last_fetched.sql`,
+  owner-applied, NOT applied yet) drops the NOT NULL + DEFAULT:
+  NULL means "linked, never fetched", and the `price.refresh`
+  processor overwrites it with the real fetch time on the first
+  successful fetch. Until 073 is applied, the source-link step
+  retries its upsert with the link time stamped and reports
+  `fetchTimestampAssumed: true` — the assumption is named,
+  never silent.
+
 ## Pending owner approvals
 
 - eBay keys + EPN/Growth Check + `merchants` row `slug='ebay'` + migration 045

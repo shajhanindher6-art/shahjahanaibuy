@@ -93,6 +93,19 @@ export interface ProcessorPricePointInput {
   /** Provenance the row may claim; null claims none (never guessed). */
   source?: PriceHistorySource | null;
   /**
+   * Region the price was observed in (migration 072, 2-letter
+   * code). Omit it when unknown — the writer falls back to
+   * `retailerCountry`, and NULL means "region unknown", never
+   * a guessed value.
+   */
+  region?: string | null;
+  /**
+   * The retailer's recorded country (`retailers.country`) —
+   * the fallback source for the region when no region was
+   * observed directly. A non-2-letter value is ignored.
+   */
+  retailerCountry?: string | null;
+  /**
    * When the price was observed. An explicit null means
    * "observation time unknown" and is stored as NULL — a re-record
    * must never claim it observed the price "now".
@@ -191,6 +204,8 @@ export async function recordProcessorPricePoint(
     url: input.url ?? null,
     recorded_at: nowIso,
     source,
+    region: input.region,
+    retailerCountry: input.retailerCountry,
     observed_at: input.observedAt === undefined ? nowIso : input.observedAt,
     suspicious_change: assessment.suspicious,
   });
@@ -545,10 +560,13 @@ async function processPriceRefresh(
       continue;
     }
 
-    // Look up the retailer slug for the fetch request.
+    // Look up the retailer slug for the fetch request (and its
+    // recorded country — the region fallback for the history
+    // row, migration 072; the country is recorded verbatim,
+    // never guessed).
     const { data: retailer } = await supabase
       .from('retailers')
-      .select('slug')
+      .select('slug, country')
       .eq('id', source.retailer_id)
       .maybeSingle();
 
@@ -673,6 +691,7 @@ async function processPriceRefresh(
       availability: fresh.availability,
       url: fresh.url ?? null,
       source: 'merchant-feed',
+      retailerCountry: (retailer as { country?: string | null } | null)?.country ?? null,
       observedAt: new Date(fetchStart).toISOString(),
     });
 

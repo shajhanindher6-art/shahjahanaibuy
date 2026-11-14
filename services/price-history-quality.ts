@@ -264,6 +264,26 @@ export interface PriceHistoryInsert {
   availability: string;
   url?: string | null;
   recorded_at?: string;
+  /**
+   * Migration 072 region: the 2-letter region code the price
+   * was observed in ('US' for Best Buy and eBay EBAY_US today).
+   * Omit it (or pass null) when the region is unknown — the
+   * writer falls back to `retailerCountry` below, and NULL
+   * means "region unknown", never a guessed value. COLUMN
+   * DEPENDENCY: `price_history.region` exists only once 072 is
+   * applied; until then the tiered retry drops it and reports
+   * `regionPersisted: false`.
+   */
+  region?: string | null;
+  /**
+   * The retailer's recorded country (`retailers.country`,
+   * NOT NULL DEFAULT 'US' since migration 002) — the fallback
+   * source for `region` when the caller did not observe a
+   * region directly. A non-2-letter value is ignored (never
+   * coerced into a region code). This is a lookup input, never
+   * a stored column.
+   */
+  retailerCountry?: string | null;
   /** Migration 057 provenance — null claims none (see module header). */
   source?: PriceHistorySource | null;
   /**
@@ -309,6 +329,25 @@ export interface PriceHistoryInsertResult {
   verifiedPersisted: boolean;
   /** True when the `currency_assumed` flag reached the stored row. */
   currencyAssumedPersisted: boolean;
+  /** True when the `region` value reached the stored row. */
+  regionPersisted: boolean;
+}
+
+/**
+ * Resolve the region for a price_history row. The caller's
+ * explicit region wins; otherwise the retailer's recorded
+ * country is used verbatim. Only a 2-letter code is accepted —
+ * anything else (a full country name, an empty string, a
+ * marketplace id like 'EBAY_US') resolves to null, "region
+ * unknown", rather than a coerced or guessed value. Pure:
+ * safe to call from tests and from the refresh route.
+ */
+export function resolvePriceRegion(input: {
+  region?: string | null;
+  retailerCountry?: string | null;
+}): string | null {
+  const raw = (input.region ?? input.retailerCountry ?? '').trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(raw) ? raw : null;
 }
 
 /**
@@ -335,6 +374,8 @@ export interface PriceHistoryInsertResult {
  *            so existing callers' inserts are byte-identical);
  *   tier 2 — without the new flags (060 code + 057 kept);
  *   tier 3 — without the 060 code either (057 provenance kept);
+ *   tier 3b — without the region either (060 code + 057 kept),
+ *            reached only when the caller wanted a region;
  *   tier 4 — migration-002 columns only.
  * The result reports whether each flag persisted, so a caller
  * can count dropped flags instead of assuming they landed.
@@ -344,6 +385,14 @@ export interface PriceHistoryInsertResult {
  * exist — the runbook applies migrations in numeric order, so
  * this cannot happen through the documented path, and the
  * dropped flags are reported, never silently kept.)
+ *
+ * Post-Integration Verification & Real Data Phase — the region
+ * (migration 072) rides the same retry as one more layer,
+ * dropped LAST but one: tier 1–3 carry it when the caller
+ * wanted one, tier 3b drops it while keeping 060 + 057, and
+ * tier 4 is the migration-002 fallback. A caller that passes
+ * no region sees byte-identical inserts and identical attempt
+ * counts to before — the region tiers are skipped entirely.
  */
 export async function insertPriceHistoryRow(
   supabase: AnySupabaseClient,
@@ -352,7 +401,13 @@ export async function insertPriceHistoryRow(
   const recordedAt = row.recorded_at ?? new Date().toISOString();
   const wantsVerified = row.verified !== undefined;
   const wantsCurrencyAssumed = row.currencyAssumed !== undefined;
-  const notPersisted = { verifiedPersisted: false, currencyAssumedPersisted: false };
+  const region = resolvePriceRegion({ region: row.region, retailerCountry: row.retailerCountry });
+  const wantsRegion = region !== null;
+  const notPersisted = {
+    verifiedPersisted: false,
+    currencyAssumedPersisted: false,
+    regionPersisted: false,
+  };
   const baseRow: Record<string, unknown> = {
     product_id: row.product_id,
     retailer_id: row.retailer_id,
@@ -380,6 +435,7 @@ export async function insertPriceHistoryRow(
     // services/refresh-currency.ts).
     currency_code: row.currency,
     ...provenance,
+    ...(wantsRegion ? { region } : {}),
     ...(wantsVerified ? { verified: row.verified } : {}),
     ...(wantsCurrencyAssumed ? { currency_assumed: row.currencyAssumed } : {}),
   };
@@ -394,33 +450,59 @@ export async function insertPriceHistoryRow(
       error: null,
       verifiedPersisted: wantsVerified,
       currencyAssumedPersisted: wantsCurrencyAssumed,
+      regionPersisted: wantsRegion,
     };
   }
   if (!isUndefinedColumnError(tier1.error)) {
     return { error: tier1.error, ...notPersisted };
   }
-  // Tier 2 — without the Final-100% flags only (060 + 057 kept).
+  // Tier 2 — without the Final-100% flags only (060 + 057 +
+  // region kept).
   // Skipped when the caller passed neither flag: the tier-1
-  // failure is then necessarily a 060/057 column, and tier 3 is
+  // failure is then necessarily a 060/057/072 column, and tier 3 is
   // the right next attempt (this keeps the pinned 2-attempt /
   // 3-attempt shapes for existing callers).
   if (wantsVerified || wantsCurrencyAssumed) {
-    const tier2 = await insertOnce({ ...baseRow, currency_code: row.currency, ...provenance });
+    const tier2 = await insertOnce({
+      ...baseRow,
+      currency_code: row.currency,
+      ...provenance,
+      ...(wantsRegion ? { region } : {}),
+    });
     if (!tier2.error) {
-      return { error: null, ...notPersisted };
+      return { error: null, ...notPersisted, regionPersisted: wantsRegion };
     }
     if (!isUndefinedColumnError(tier2.error)) {
       return { error: tier2.error, ...notPersisted };
     }
   }
   // Tier 3 — the 057 columns exist but `currency_code` (060)
-  // does not: retry with provenance, without the code.
-  const tier3 = await insertOnce({ ...baseRow, ...provenance });
+  // does not: retry with provenance, without the code (region kept).
+  const tier3 = await insertOnce({
+    ...baseRow,
+    ...provenance,
+    ...(wantsRegion ? { region } : {}),
+  });
   if (!tier3.error) {
-    return { error: null, ...notPersisted };
+    return { error: null, ...notPersisted, regionPersisted: wantsRegion };
   }
   if (!isUndefinedColumnError(tier3.error)) {
     return { error: tier3.error, ...notPersisted };
+  }
+  // Tier 3b — the region column (072) does not exist but 060 +
+  // 057 do: retry with the code and provenance, without the
+  // region. Reached only when the caller wanted a region; when
+  // no region was wanted this tier is byte-identical to the
+  // tier-2 shape and is skipped, so existing callers keep
+  // their pinned attempt counts.
+  if (wantsRegion) {
+    const tier3b = await insertOnce({ ...baseRow, currency_code: row.currency, ...provenance });
+    if (!tier3b.error) {
+      return { error: null, ...notPersisted };
+    }
+    if (!isUndefinedColumnError(tier3b.error)) {
+      return { error: tier3b.error, ...notPersisted };
+    }
   }
   // Tier 4 — the table predates 057 entirely: legacy columns only.
   const tier4 = await insertOnce(baseRow);
