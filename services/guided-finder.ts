@@ -42,7 +42,9 @@
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 import { discountPercent } from '@/lib/deal-math';
+import { normalizeDedupeText } from '@/lib/normalize';
 import { savingsVsBudget, savingsVsCompareAt } from '@/lib/budget-savings';
 import { parseNeedByDate, timelineAdvice } from '@/lib/budget-timeline';
 import { dealScoreForDisplay } from '@/lib/deal-score';
@@ -62,7 +64,8 @@ import { getProducts } from './products';
  *  Enforced here in the pure ranker AND upstream in enrichProducts /
  *  getProducts — a caller passing raw rows cannot smuggle one
  *  through. */
-export const GUIDED_EXCLUDED_SLUGS = ['sample-laptop'] as const;
+/** Alias of the shared EXCLUDED_SLUGS (Stage 2, S2-1) — kept so existing importers keep working. */
+export const GUIDED_EXCLUDED_SLUGS = EXCLUDED_SLUGS;
 
 export interface GuidedCandidate {
   id: string;
@@ -289,8 +292,12 @@ export const GUIDED_SPEC_OPTIONS: Record<string, GuidedSpecOption[]> = {
 /** Spec options for a category (normalized the same way the ranker normalizes categories). Returns [] for categories with no spec inputs. */
 export function specOptionsForCategory(category: string | null | undefined): GuidedSpecOption[] {
   if (!category) return [];
-  const parsed = parseSearchIntent(category).category ?? category.toLowerCase().trim();
-  return GUIDED_SPEC_OPTIONS[parsed.toLowerCase()] ?? [];
+  // S2-6: the fallback normalizes through the shared
+  // normalizeDedupeText (not an inline toLowerCase().trim()) —
+  // the lookup key is normalized the same way, so a punctuated
+  // category ("Laptop,") resolves to the same key as "laptop".
+  const parsed = parseSearchIntent(category).category ?? normalizeDedupeText(category);
+  return GUIDED_SPEC_OPTIONS[normalizeDedupeText(parsed)] ?? [];
 }
 
 /** The honest caveat shown whenever spec inputs were used. */
@@ -412,10 +419,13 @@ export function rankGuidedPicks(
   // Normalize the category through the same intent parser the
   // search uses, so free text ("laptops", "Laptop") collapses to
   // one category key instead of exact-string matching.
+  // S2-6: the fallbacks use the shared normalizeDedupeText, and
+  // the product side is normalized the same way below — both
+  // sides of every comparison go through the one normalizer.
   const parsedCategory = input.category
-    ? (parseSearchIntent(input.category).category ?? input.category.toLowerCase().trim())
+    ? (parseSearchIntent(input.category).category ?? normalizeDedupeText(input.category))
     : null;
-  const brandNorm = input.brand ? input.brand.toLowerCase().trim() : null;
+  const brandNorm = input.brand ? normalizeDedupeText(input.brand) : null;
   const mustHaves = (input.mustHaveKeywords ?? []).filter(
     (m) => typeof m === 'string' && m.trim().length > 0
   );
@@ -442,7 +452,10 @@ export function rankGuidedPicks(
     const price = c.bestPriceUsd as number;
     if (budget !== null && price > budget) continue;
 
-    const productCategory = (c.category ?? '').toLowerCase();
+    // S2-6: product side normalized with the same shared
+    // normalizer as the query side above, so "Wi-Fi" and "wi fi"
+    // match instead of silently missing.
+    const productCategory = normalizeDedupeText(c.category ?? '');
     if (parsedCategory) {
       const cat = parsedCategory.toLowerCase();
       if (!productCategory.includes(cat) && !cat.includes(productCategory) && productCategory.length > 0) {
@@ -453,7 +466,7 @@ export function rankGuidedPicks(
       if (productCategory.length === 0) continue;
     }
 
-    const productBrand = (c.brand ?? '').toLowerCase();
+    const productBrand = normalizeDedupeText(c.brand ?? '');
     if (brandNorm && productBrand !== brandNorm) continue;
 
     const haystack = [c.name, c.brand ?? '', c.category ?? '', c.description ?? '']
@@ -610,9 +623,9 @@ export function rankRelaxedGuidedPicks(
       ? input.budgetUsd
       : null;
   const parsedCategory = input.category
-    ? (parseSearchIntent(input.category).category ?? input.category.toLowerCase().trim())
+    ? (parseSearchIntent(input.category).category ?? normalizeDedupeText(input.category))
     : null;
-  const brandNorm = input.brand ? input.brand.toLowerCase().trim() : null;
+  const brandNorm = input.brand ? normalizeDedupeText(input.brand) : null;
 
   // Section 19, Phase 4 (§12 #37/#46) — same deadline + spec
   // handling as the exact pass; specs stay HARD here (only
@@ -630,14 +643,16 @@ export function rankRelaxedGuidedPicks(
     const price = c.bestPriceUsd as number;
     if (budget !== null && price > budget) continue;
 
-    const productCategory = (c.category ?? '').toLowerCase();
+    // S2-6: product side normalized with the same shared
+    // normalizer as the query side above.
+    const productCategory = normalizeDedupeText(c.category ?? '');
     if (parsedCategory) {
       const cat = parsedCategory.toLowerCase();
       if (productCategory.length === 0) continue;
       if (!productCategory.includes(cat) && !cat.includes(productCategory)) continue;
     }
 
-    const productBrand = (c.brand ?? '').toLowerCase();
+    const productBrand = normalizeDedupeText(c.brand ?? '');
     if (brandNorm && productBrand !== brandNorm) continue;
 
     const haystack = [c.name, c.brand ?? '', c.category ?? '', c.description ?? '']

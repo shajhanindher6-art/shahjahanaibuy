@@ -4,6 +4,7 @@
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 import { logger } from '@/lib/config/logger';
 import { swrGet, cacheKey } from '@/lib/cache';
 import type { DealRanking } from '@/types/ai';
@@ -138,6 +139,19 @@ export async function fetchMerchantSyncReliability(
  *   reports "no percentage available", never an invented number.
  * Callers treat null as a 0 contribution to aiScore, never as a
  * fabricated percentage.
+ *
+ * S2-5 — NAMED DIFFERENT QUANTITY, deliberately NOT routed
+ * through lib/deal-math.ts `discountPercent`: that function is
+ * the MERCHANT-basis derivation (compare_at_price vs price —
+ * "X% off the merchant's stated list price"), while this one is
+ * the DEAL discount ("X% off the current recorded price, as the
+ * deal itself states it"). Different inputs, different meaning:
+ * a 20%-off coupon on a product whose compare-at equals its
+ * price is 20% here and null there, and routing one through the
+ * other would silently change what the number means. The two
+ * must never be confused — see also the stored-column notes at
+ * the deal_rankings read below. The 1-decimal rounding here
+ * matches discountPercent's rounding rule by construction.
  */
 function deriveDiscountPercentage(
   deal: Deal,
@@ -299,6 +313,16 @@ export async function getRankedDeals(
     const dealIds = rankings.map((r) => r.deal_id as string | null).filter(Boolean) as string[];
     const productIds = rankings.map((r) => r.product_id as string | null).filter(Boolean) as string[];
 
+    // S2-5 — STORED DISCOUNT % AT RANK TIME (named different
+    // quantity): `discount_percentage` below is the value written
+    // into deal_rankings when the row was ranked — a stored
+    // snapshot of the deal discount, NOT the canonical
+    // merchant-basis discountPercent and NOT recomputed here. It
+    // is read only as the fallback for deal types this module
+    // cannot derive (see the honest map below); fixed and
+    // percentage deals are always re-derived from the deal +
+    // current recorded price, and the stored ai_score /
+    // is_featured are never trusted (re-scored below).
     const [dealsMap, productsMap] = await Promise.all([
       fetchDeals(supabase, dealIds),
       fetchProducts(supabase, productIds),
@@ -358,6 +382,13 @@ export async function getRankedDeals(
       dealsWithPrices.map((d) => d.deal?.merchantId ?? null).filter(Boolean) as string[]
     );
     const honest: RankedDealsResult['deals'] = dealsWithPrices.map((d) => {
+      // S2-5 — the fallback arm (`d.discountPercentage`) is the
+      // STORED discount % at rank time (see the note at the
+      // deal_rankings read above): it applies only to deal types
+      // neither 'fixed' nor 'percentage', for which no derivation
+      // exists. Fixed deals re-derive via deriveDiscountPercentage
+      // (deal discount %, not merchant-basis discountPercent);
+      // percentage deals read the merchant-stated discountValue.
       const discountPercentage =
         d.deal?.discountType === 'fixed'
           ? deriveDiscountPercentage(d.deal, d.currentPrice)
@@ -648,7 +679,7 @@ async function fetchProducts(
     .in('id', productIds)
     // The 'sample-laptop' health-check row is not a real product —
     // a deal pointing at it must never render as a deal card.
-    .neq('slug', 'sample-laptop')
+    .neq('slug', EXCLUDED_SLUGS[0])
     .is('deleted_at', null);
 
   const map = new Map<string, Product>();

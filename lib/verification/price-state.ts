@@ -51,6 +51,13 @@
  */
 
 import { STALE_PRICE_DAYS, getPriceAgeDays } from '@/lib/price-freshness';
+import {
+  datelessVerifiedReason,
+  expiredVerifiedCheckReason,
+  freshVerifiedCheckReason,
+  neverVerifiedReason,
+  staleNeverVerifiedReason,
+} from '@/lib/verification/price-state-reasons';
 import type { PriceVerificationStatus } from '@/services/price-verification';
 import type { DataQualityState } from '@/services/product-quality-score';
 
@@ -141,7 +148,13 @@ export function derivePriceState(input: PriceStateInput): PriceStateResult {
       return {
         state: 'LIVE_VERIFIED',
         label: PRICE_STATE_LABELS.LIVE_VERIFIED,
-        reason: `The price was checked by a real fetch ${age} day${age === 1 ? '' : 's'} ago, within the ${STALE_PRICE_DAYS}-day freshness window.`,
+        // S2-6: reason built by the shared builder
+        // (lib/verification/price-state-reasons.ts) — `fresh`
+        // implies age !== null, so `?? 0` never fires.
+        reason: freshVerifiedCheckReason(age ?? 0, STALE_PRICE_DAYS, {
+          verb: 'checked',
+          windowClause: true,
+        }),
       };
     }
     return {
@@ -149,8 +162,11 @@ export function derivePriceState(input: PriceStateInput): PriceStateResult {
       label: PRICE_STATE_LABELS.HISTORICAL_VERIFIED,
       reason:
         age !== null
-          ? `The price was verified once, but the check is ${age} days old — older than ${STALE_PRICE_DAYS} days, so the verification has expired.`
-          : 'The price carries a verified stamp, but no check date is recorded, so the verification cannot be shown as current.',
+          ? expiredVerifiedCheckReason(age, STALE_PRICE_DAYS, {
+              once: true,
+              expiredSuffix: true,
+            })
+          : datelessVerifiedReason({ cannotBeShownCurrent: true }),
     };
   }
 
@@ -171,7 +187,9 @@ export function derivePriceState(input: PriceStateInput): PriceStateResult {
     return {
       state: 'STALE',
       label: PRICE_STATE_LABELS.STALE,
-      reason: `The recorded price was last checked ${age} days ago — older than ${STALE_PRICE_DAYS} days — and was never verified by a real fetch.${sourceNote}`,
+      // S2-6: shared builder (the caller appends its own
+      // source note after the builder's string).
+      reason: `${staleNeverVerifiedReason(age, STALE_PRICE_DAYS)}${sourceNote}`,
     };
   }
 
@@ -180,8 +198,8 @@ export function derivePriceState(input: PriceStateInput): PriceStateResult {
     label: PRICE_STATE_LABELS.UNVERIFIED,
     reason:
       age === null
-        ? `The recorded price was never checked by a real fetch, and its age is unknown — it must not be read as fresh.${sourceNote}`
-        : `The recorded price was never checked by a real fetch.${sourceNote}`,
+        ? `${neverVerifiedReason({ subject: 'recorded price', verb: 'checked', unknownAge: true })}${sourceNote}`
+        : `${neverVerifiedReason({ subject: 'recorded price', verb: 'checked', unknownAge: false })}${sourceNote}`,
   };
 }
 

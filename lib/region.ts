@@ -519,14 +519,44 @@ export function formatPriceForRegionWithRates(
   return { ...fallback, source: 'static', rateDate: null };
 }
 
+/**
+ * Canonical price formatter (Stage 2, S2-2) — the one plain
+ * amount+currency+locale formatter every call site should use.
+ * Plain `Intl.NumberFormat` currency formatting with the currency's
+ * default fraction digits (USD → 2, JPY → 0, …), so output is
+ * identical to the inline formatters it replaces. Pass
+ * `fractionDigits` only when a call site deliberately forces a
+ * fixed precision (e.g. computed money labels that always show 2
+ * decimals, even for zero-decimal currencies) — the option is
+ * explicit at the call site, never a hidden default.
+ *
+ * This is NOT the FX-aware path: converting USD into a region
+ * currency stays with `formatPriceForRegion` /
+ * `formatPriceForRegionWithRates` (approximate, "≈", live/static
+ * source labelled). `formatPrice` formats an amount that is
+ * already in `currency` — it never converts.
+ */
+export function formatPrice(
+  amount: number,
+  currency: CurrencyCode,
+  locale = 'en-US',
+  options?: { minimumFractionDigits?: number; maximumFractionDigits?: number }
+): string {
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency,
+    ...(options?.minimumFractionDigits !== undefined
+      ? { minimumFractionDigits: options.minimumFractionDigits }
+      : {}),
+    ...(options?.maximumFractionDigits !== undefined
+      ? { maximumFractionDigits: options.maximumFractionDigits }
+      : {}),
+  }).format(amount);
+}
+
 /** Format a plain USD amount (the small "original price" text). */
 export function formatUsd(usd: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(usd);
+  return formatPrice(usd, 'USD', 'en-US');
 }
 
 /**

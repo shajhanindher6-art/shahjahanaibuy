@@ -62,6 +62,12 @@
  */
 
 import { STALE_PRICE_DAYS, getPriceAgeDays } from '@/lib/price-freshness';
+import {
+  datelessVerifiedReason,
+  expiredVerifiedCheckReason,
+  freshVerifiedCheckReason,
+  neverVerifiedReason,
+} from '@/lib/verification/price-state-reasons';
 import { validateGtin } from '@/lib/gtin';
 import { validateImageUrl } from '@/lib/image-url';
 import type { PriceVerificationStatus } from '@/services/price-verification';
@@ -285,6 +291,10 @@ export function isFullyVerified(input: FullyVerifiedInput): FullyVerifiedResult 
   }
 
   // Fresh verified price: status 'verified' + a fresh check.
+  // S2-6: the reasons below are built by the shared builder
+  // (lib/verification/price-state-reasons.ts), the same builder
+  // lib/verification/price-state.ts uses — the wordings are
+  // identical to before this refactor.
   {
     const status = input.priceVerificationStatus;
     const age =
@@ -296,28 +306,34 @@ export function isFullyVerified(input: FullyVerifiedInput): FullyVerifiedResult 
         key: 'freshPrice',
         label: 'Fresh verified price',
         passed: false,
-        reason: 'The price was never verified by a real fetch.',
+        reason: neverVerifiedReason({ subject: 'price', verb: 'verified', unknownAge: false }),
       });
     } else if (age === null) {
       checks.push({
         key: 'freshPrice',
         label: 'Fresh verified price',
         passed: false,
-        reason: 'The price carries a verified stamp, but no check date is recorded.',
+        reason: datelessVerifiedReason({ cannotBeShownCurrent: false }),
       });
     } else if (age <= STALE_PRICE_DAYS) {
       checks.push({
         key: 'freshPrice',
         label: 'Fresh verified price',
         passed: true,
-        reason: `The price was verified by a real fetch ${age} day${age === 1 ? '' : 's'} ago.`,
+        reason: freshVerifiedCheckReason(age, STALE_PRICE_DAYS, {
+          verb: 'verified',
+          windowClause: false,
+        }),
       });
     } else {
       checks.push({
         key: 'freshPrice',
         label: 'Fresh verified price',
         passed: false,
-        reason: `The price was verified, but the check is ${age} days old — older than ${STALE_PRICE_DAYS} days.`,
+        reason: expiredVerifiedCheckReason(age, STALE_PRICE_DAYS, {
+          once: false,
+          expiredSuffix: false,
+        }),
       });
     }
   }

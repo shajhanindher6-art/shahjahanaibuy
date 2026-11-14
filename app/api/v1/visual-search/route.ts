@@ -53,6 +53,7 @@ import {
 // run through the AI engine (HF CLIP → MiniLM fallback chain,
 // usage/latency tracking, durable provider-health reporting).
 import { getAiEngine, type AIEngineResult } from '@/services/ai-engine';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 import { reportAiProviderHealth } from '@/services/ai-engine/health-report';
 // Section 19, Phase 1 (§12 #7) — tightened anon cap (10 → 5/min).
 import { VISUAL_SEARCH_ANON_PER_MIN } from '@/services/ai-engine/usage';
@@ -98,7 +99,7 @@ async function enrichMatches(
     .from('products')
     .select('id, slug, name, brand')
     .in('id', ids)
-    .neq('slug', 'sample-laptop')
+    .neq('slug', EXCLUDED_SLUGS[0])
     .is('deleted_at', null);
   if (productsError) {
     logger.error('visual-search: product lookup failed', { error: productsError.message });

@@ -24,6 +24,7 @@ import type { RecentlyViewedItem } from '@/lib/recently-viewed';
 
 import { logApiError } from '@/lib/api/error-logging';
 import { validateBody, productViewSchema } from '@/lib/api/validation';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -61,7 +62,7 @@ export async function GET(request: NextRequest) {
       .select('id, name, slug, brand, category, image_url')
       .in('id', productIds)
       .is('deleted_at', null)
-      .neq('slug', 'sample-laptop');
+      .neq('slug', EXCLUDED_SLUGS[0]);
     if (productsError || !productRows) {
       return internalError('Failed to fetch recently viewed products');
     }

@@ -14,6 +14,7 @@ import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { swrGet, cacheKey } from '@/lib/cache';
 import { logger } from '@/lib/config/logger';
 import { discountPercent } from '@/lib/deal-math';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 import type { Product, ProductImage } from '@/types';
 import { derivePriceState } from '@/lib/verification/price-state';
 import {
@@ -426,7 +427,7 @@ export async function getProducts(
         // pages. Excluding in the query (not post-filtering) keeps the
         // exact count / pagination honest. The row itself stays in the
         // live database for health checks — it is never deleted here.
-        .neq('slug', 'sample-laptop')
+        .neq('slug', EXCLUDED_SLUGS[0])
         .order(sort === 'name' ? 'name' : 'created_at', { ascending: order === 'asc' });
 
       if (withNewColumns) {
@@ -560,7 +561,7 @@ export async function getProductById(
         .from('products')
         .select(columns)
         .eq('id', id)
-        .neq('slug', 'sample-laptop')
+        .neq('slug', EXCLUDED_SLUGS[0])
         .is('deleted_at', null);
       if (withNewColumns) query = query.eq('status', PUBLISHED_PRODUCT_STATUS);
       return (await query.maybeSingle()) as unknown as {
@@ -610,7 +611,7 @@ export async function getProductBySlug(
         .from('products')
         .select(columns)
         .eq('slug', slug)
-        .neq('slug', 'sample-laptop')
+        .neq('slug', EXCLUDED_SLUGS[0])
         .is('deleted_at', null);
       if (withNewColumns) query = query.eq('status', PUBLISHED_PRODUCT_STATUS);
       return (await query.maybeSingle()) as unknown as {
@@ -853,7 +854,7 @@ export async function getCategories(
         .from('products')
         .select('slug, category')
         .not('category', 'is', null)
-        .neq('slug', 'sample-laptop')
+        .neq('slug', EXCLUDED_SLUGS[0])
         .is('deleted_at', null);
       if (withStatus) query = query.eq('status', PUBLISHED_PRODUCT_STATUS);
       return query;
@@ -895,7 +896,7 @@ export async function getBrands(
         .from('products')
         .select('slug, brand')
         .not('brand', 'is', null)
-        .neq('slug', 'sample-laptop')
+        .neq('slug', EXCLUDED_SLUGS[0])
         .is('deleted_at', null);
       if (withStatus) query = query.eq('status', PUBLISHED_PRODUCT_STATUS);
       return query;

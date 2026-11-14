@@ -610,7 +610,10 @@ export async function getAdminDataQualitySummary(
       products.length > 0 ? Math.round((scoreSum / products.length) * 10) / 10 : null;
     // FINAL 100% (F-P1-50) — canonical merchant reliability for
     // the dashboard page: one row per merchant, canonical score
-    // first, supporting dimensions labelled. Best-effort: a
+    // first, supporting dimensions labelled. S2-7: the canonical
+    // score is the POLICY scorer; the SYNC scorer rides along in
+    // the row as a labelled supporting dimension only (deal ranking
+    // is its only scoring use). Best-effort: a
     // failed read leaves the empty array (the page renders an
     // honest "not available" state, never a guessed score).
     try {

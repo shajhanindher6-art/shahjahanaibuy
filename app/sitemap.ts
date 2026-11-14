@@ -79,6 +79,7 @@ import { getTopCreators } from '@/lib/creator-storefront';
 import { getAllStorePages } from '@/lib/store-directory';
 import { SEARCH_TERMS } from '@/lib/search-terms';
 import { withTimeout } from '@/lib/with-timeout';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 
 /**
  * Hard bound on any single Supabase-backed sitemap section (B3).
@@ -248,7 +249,7 @@ async function productSitemap(baseUrl: string): Promise<MetadataRoute.Sitemap> {
       // Section 14: the sample-laptop row is a DB health-check row —
       // it must never appear in the sitemap (same exclusion as
       // getProducts in services/products.ts).
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .order('updated_at', { ascending: false })
       .limit(500)
       // Section 15 (B3): abort a black-holed query instead of
@@ -309,7 +310,7 @@ async function taxonomySitemap(baseUrl: string): Promise<MetadataRoute.Sitemap> 
       .is('deleted_at', null)
       // Section 14: exclude the sample-laptop health-check row, or
       // its brand ('Sample') would mint a /brands/sample URL.
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .limit(500)
       // Section 15 (B3): same timeout guard as productSitemap.
       .abortSignal(AbortSignal.timeout(SITEMAP_QUERY_TIMEOUT_MS));

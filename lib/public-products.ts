@@ -25,6 +25,26 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 
+/**
+ * Slugs excluded from every public product query (Stage 2, S2-1).
+ *
+ * The single entry today is the 'sample-laptop' database
+ * health-check row — a real row that must NEVER be deleted, only
+ * never shown as a product. Every inline `.neq('slug',
+ * 'sample-laptop')` / `slug !== 'sample-laptop'` site in the repo
+ * routes through this list (or `isExcludedSlug` below) so the
+ * exclusion lives in exactly one place. The per-feature aliases
+ * (BUNDLE_EXCLUDED_SLUGS, GIFT_EXCLUDED_SLUGS, …) are the same
+ * list, not copies of it.
+ */
+export const EXCLUDED_SLUGS: readonly string[] = ['sample-laptop'];
+
+/** True when a slug is one of the excluded health-check slugs. */
+export function isExcludedSlug(slug: string | null | undefined): boolean {
+  if (!slug) return false;
+  return (EXCLUDED_SLUGS as readonly string[]).includes(slug);
+}
+
 /** PostgREST/Postgres code for "column does not exist". */
 function isUndefinedColumnError(error: unknown): boolean {
   return (error as { code?: string } | null)?.code === '42703';
@@ -87,7 +107,7 @@ export async function findPublicProductBySlug(
       .from('products')
       .select('id, name, slug, data_freshness')
       .eq('slug', slug)
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .is('deleted_at', null);
     if (withStatus) query = query.eq('status', PUBLISHED_PRODUCT_STATUS);
     const { data, error } = await query.limit(1).maybeSingle();
@@ -110,7 +130,7 @@ export async function findPublicProductByName(
       .from('products')
       .select('id, name, slug, data_freshness')
       .ilike('name', `%${q}%`)
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .is('deleted_at', null);
     if (withStatus) query = query.eq('status', PUBLISHED_PRODUCT_STATUS);
     const { data, error } = await query.limit(1).maybeSingle();
@@ -129,7 +149,7 @@ export async function listPublicProducts(
     let query = supabase
       .from('products')
       .select('id, name, slug, brand, category, description')
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .is('deleted_at', null);
     if (withStatus) query = query.eq('status', PUBLISHED_PRODUCT_STATUS);
     const { data, error } = await query.limit(limit);

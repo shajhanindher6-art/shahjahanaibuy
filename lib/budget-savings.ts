@@ -13,6 +13,8 @@
  * All amounts are USD, rounded to cents.
  */
 
+import { discountPercent } from '@/lib/deal-math';
+
 function roundCents(n: number): number {
   return Math.round(n * 100) / 100;
 }
@@ -45,6 +47,12 @@ export function savingsVsAlternative(
   const savedUsd = roundCents(currentPriceUsd - alternativePriceUsd);
   return {
     savedUsd,
+    // S2-5 — NAMED DIFFERENT QUANTITY: a CROSS-PRODUCT saving
+    // (alternative vs current pick, denominator = the current
+    // pick's price), NOT the merchant-basis discountPercent
+    // (compare-at vs price of the SAME product). Same 1-decimal
+    // rounding rule, different meaning — never read one as the
+    // other.
     savedPct: Math.round((savedUsd / currentPriceUsd) * 1000) / 10,
     alternativeIsMoreExpensive: savedUsd <= 0,
   };
@@ -69,7 +77,10 @@ export function savingsVsCompareAt(
   if (compareAtUsd <= priceUsd) return null;
   return {
     savedUsd: roundCents(compareAtUsd - priceUsd),
-    savedPct: Math.round(((compareAtUsd - priceUsd) / compareAtUsd) * 1000) / 10,
+    // S2-5: savedPct IS the canonical merchant-basis derivation
+    // (lib/deal-math.ts discountPercent) — the inline formula it
+    // replaced was identical, so this is a routing change only.
+    savedPct: discountPercent(priceUsd, compareAtUsd) as number,
   };
 }
 

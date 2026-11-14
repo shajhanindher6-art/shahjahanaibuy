@@ -2,6 +2,19 @@
  * Budget alternative recommender (Enterprise #12) + vector
  * recommendations for the shopping digest (#13).
  *
+ * S2-7 — SPECIALIZED RECOMMENDER (Master Tool Integration), not the
+ * canonical one and not legacy: this is the vector-similarity
+ * surface — budget alternatives for a product page
+ * (/api/v1/products/[slug]/budget-alternative) and digest picks
+ * (/api/v1/dashboard/digest). The canonical general-purpose
+ * recommender is services/personal-assistant.ts — see
+ * docs/RECOMMENDER_CANONICAL.md. This module is NOT delegated to
+ * it: cosine-similarity matching against product embeddings, with
+ * its documented 0.95 / 0.80 bars, is a different job from the
+ * assistant's query-driven recommendations, and merging them would
+ * change what the budget-alternative and digest routes return. Do
+ * not add a fourth recommender.
+ *
  * RULES (do not weaken without a new decision):
  * - A "95%+ match" is ONLY ever claimed when the real cosine
  *   similarity from match_products() is >= 0.95. The threshold is

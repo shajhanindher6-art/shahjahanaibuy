@@ -27,6 +27,7 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { deriveTaxonomySlugs, slugify } from '@/lib/brand-category-seo';
 import { buildItemListJsonLd, toJsonLd } from '@/lib/json-ld';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +48,7 @@ async function getCategories(): Promise<Array<{ name: string; slug: string; coun
     const { data } = await supabase
       .from('products')
       .select('category')
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .is('deleted_at', null)
       .limit(500);
     if (!data) return [];

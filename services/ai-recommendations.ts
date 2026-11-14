@@ -2,9 +2,23 @@
  * AI recommendation engine service.
  * Generates personalized recommendations based on search history, wishlist,
  * viewed products, and user preferences.
+ *
+ * S2-7 — SPECIALIZED RECOMMENDER (Master Tool Integration), not the
+ * canonical one and not legacy: this is the personalized
+ * history/wishlist/views feed behind /api/v1/recommendations (and
+ * the smart-deals surface + AI-engine provider routing). The
+ * canonical general-purpose recommender is
+ * services/personal-assistant.ts (Deal Finder widget, dashboard
+ * chat, guided-finder enrichment) — see
+ * docs/RECOMMENDER_CANONICAL.md. This module is NOT delegated to
+ * it: a personalized feed seeded from a user's own history is a
+ * different job from the assistant's query-driven recommendations,
+ * and merging them would change what /api/v1/recommendations
+ * returns. Do not add a fourth recommender.
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 import { logger } from '@/lib/config/logger';
 import type { Product } from '@/types';
 import type { Recommendation, RecommendationContext } from '@/types/ai';
@@ -103,7 +117,7 @@ export async function getRecommendations(
       // The Sample Laptop row is a database health-check demo, not
       // a shoppable product — it must never appear as a
       // recommendation (same rule as the chat assistant).
-      .neq('slug', 'sample-laptop');
+      .neq('slug', EXCLUDED_SLUGS[0]);
 
     if (excludeProductIds.size > 0) {
       query = query.not('id', 'in', `(${Array.from(excludeProductIds).join(',')})`);
@@ -292,7 +306,7 @@ async function getTrendingRecommendations(
     .from('products')
     .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, view_count, created_at, updated_at')
     .is('deleted_at', null)
-    .neq('slug', 'sample-laptop')
+    .neq('slug', EXCLUDED_SLUGS[0])
     .order('view_count', { ascending: false })
     .limit(maxLimit);
 

@@ -21,6 +21,7 @@ import {
 import { logApiRequest, rateLimitResponse, getClientIp } from '@/lib/api/middleware';
 
 import { logApiError } from '@/lib/api/error-logging';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 // Live DB data must never be served from a stale edge cache.
 export const dynamic = 'force-dynamic';
 
@@ -52,7 +53,7 @@ export async function GET(
       .from('products')
       .select('id')
       .eq('slug', params.slug)
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .is('deleted_at', null)
       .maybeSingle();
     if (error) {

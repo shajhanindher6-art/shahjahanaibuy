@@ -23,6 +23,7 @@ import { getProducts, getProductBySlug } from '@/services/products';
 import { getMerchantProducts } from '@/services/commerce';
 import { gradeCompatibility } from '@/services/compatibility';
 import { suggestCombo, type BundleItemInput } from '@/lib/bundles';
+import { isExcludedSlug } from '@/lib/public-products';
 import {
   allocateBundle,
   type BundleCandidate,
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest) {
     if (comboFor !== null) {
       const anchor = await getProductBySlug(supabase, comboFor.trim());
       if (!anchor) return badRequest('Unknown product slug.');
-      if (anchor.slug === 'sample-laptop') {
+      if (isExcludedSlug(anchor.slug)) {
         return badRequest('Sample Laptop is a health-check row, not a real product.');
       }
 

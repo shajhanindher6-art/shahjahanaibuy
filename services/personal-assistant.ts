@@ -3,6 +3,22 @@
  * the floating AI Deal Finder widget (POST /api/v1/deal-finder)
  * and the dashboard chat (POST /api/v1/chat/messages).
  *
+ * S2-7 — CANONICAL RECOMMENDER (Master Tool Integration). Of the
+ * repo's three recommenders, THIS is the canonical general-purpose
+ * one: it is wired to the most live surfaces — the Deal Finder
+ * widget, the dashboard chat (both via services/chat.ts), the
+ * guided quiz + budget finder (enrichProducts, via
+ * services/guided-finder.ts), and the AI-engine provider routing
+ * (recommendAssistant / buyWaitAssistant, via
+ * services/ai-engine/providers.ts). New general recommendation
+ * surfaces must build on this module, never a fourth recommender.
+ * The other two are SPECIALIZED, not legacy and not delegated here
+ * (delegation is not safe — they do different jobs): 
+ * services/ai-recommendations.ts is the personalized history-based
+ * feed (/api/v1/recommendations, smart-deals), and
+ * services/alternative-recommender.ts is vector-similarity budget
+ * alternatives + digest picks. See docs/RECOMMENDER_CANONICAL.md.
+ *
  * HARD RULES (enforced here, in code — there is no LLM prompt in
  * this codebase; the deterministic parser in ai-search.ts IS the
  * query-understanding layer):
@@ -41,6 +57,7 @@
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 import { logger } from '@/lib/config/logger';
 import {
   FALLBACK_REGION,
@@ -67,7 +84,8 @@ import type { Product } from '@/types';
 // ---------------------------------------------------------------------------
 
 /** Slugs that must never be recommended (demo / health-check rows). */
-export const DEMO_EXCLUDED_SLUGS = ['sample-laptop'] as const;
+/** Alias of the shared EXCLUDED_SLUGS (Stage 2, S2-1) — kept so existing importers keep working. */
+export const DEMO_EXCLUDED_SLUGS = EXCLUDED_SLUGS;
 
 export interface AssistantRetailer {
   merchantId: string;
@@ -576,7 +594,7 @@ export async function recommendAssistant(
       .from('products')
       .select('id, name, slug, brand, category, image_url, confidence_score')
       .is('deleted_at', null)
-      .neq('slug', 'sample-laptop');
+      .neq('slug', EXCLUDED_SLUGS[0]);
 
     if (orConditions.length > 0) query = query.or(orConditions.join(','));
     if (intent.brands.length > 0) {
@@ -783,7 +801,7 @@ export async function compareAssistant(
       .from('products')
       .select('id, name, slug, brand, category, image_url, confidence_score')
       .is('deleted_at', null)
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .order('view_count', { ascending: false }) // Section 20, §12 #67: NOT confidence_score (completeness, not quality)
       .limit(50);
 
@@ -931,7 +949,7 @@ export async function buyWaitAssistant(
       .from('products')
       .select('id, name, slug, brand, category, image_url, confidence_score')
       .is('deleted_at', null)
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .order('view_count', { ascending: false }) // Section 20, §12 #67: NOT confidence_score (completeness, not quality)
       .limit(50);
 
@@ -1093,7 +1111,7 @@ export async function competitivenessAssistant(
       .from('products')
       .select('id, name, slug, brand, category, image_url, confidence_score, data_freshness')
       .is('deleted_at', null)
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .order('view_count', { ascending: false }) // Section 20, §12 #67: NOT confidence_score (completeness, not quality)
       .limit(50);
 
@@ -1271,7 +1289,7 @@ export async function prosConsAssistant(
         'id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at'
       )
       .is('deleted_at', null)
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .order('view_count', { ascending: false }) // Section 20, §12 #67: NOT confidence_score (completeness, not quality)
       .limit(50);
 
@@ -1445,7 +1463,7 @@ export async function couponsAssistant(
       .from('products')
       .select('id, name, slug, brand, category, image_url, confidence_score')
       .is('deleted_at', null)
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .order('view_count', { ascending: false }) // Section 20, §12 #67: NOT confidence_score (completeness, not quality)
       .limit(50);
 
@@ -1607,7 +1625,7 @@ export async function dealsAssistant(
       .select('id, name, slug, brand, category, image_url, confidence_score')
       .in('id', productIds)
       .is('deleted_at', null)
-      .neq('slug', 'sample-laptop');
+      .neq('slug', EXCLUDED_SLUGS[0]);
 
     const enriched = await enrichProducts(supabase, (productRows ?? []) as unknown as BasicProductRow[]);
     const byId = new Map(enriched.map((p) => [p.id, p]));

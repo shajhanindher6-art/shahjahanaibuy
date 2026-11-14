@@ -1,6 +1,18 @@
 /**
  * AI product comparison service.
  * Compares products across retailers and generates AI summaries.
+ *
+ * S2-7 — MERCHANT RELIABILITY, POLICY scorer (Master Tool
+ * Integration): this surface uses `getMerchantReliability`
+ * (services/merchant-reliability.ts) — the canonical POLICY scorer
+ * (directory + website + Verified Merchant badge + policy trust
+ * grade). That is the right scorer here because the compare page
+ * shows merchant TRUST alongside the recorded warranty/policy; the
+ * SYNC scorer (services/merchant-reliability-score.ts — refresh-run
+ * health + fresh-listing share) measures whether a merchant's prices
+ * are refreshed and belongs only to deal ranking
+ * (services/ai-deals.ts). See services/canonical-merchant-
+ * reliability.ts for the canonical entry point. No third scorer.
  */
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
@@ -110,6 +122,9 @@ export async function compareProducts(
     // Section 19, Phase 5 (§12 #49/#50): per-merchant recorded
     // policy (warranty) + reliability, fetched ONCE per merchant
     // across all compared products — never per row, never invented.
+    // S2-7: the reliability below is the POLICY scorer
+    // (getMerchantReliability) — merchant trust for the compare
+    // page, not the SYNC scorer (deal ranking only).
     // A merchant with no recorded policy gets a null warranty and a
     // not-enough-data reliability (the UI renders honest empty
     // states for both).
@@ -221,6 +236,15 @@ export async function compareProducts(
           retailerName: merchantName,
           price,
           originalPrice: compareAt,
+          // S2-5 — NAMED DIFFERENT QUANTITY: a WHOLE-percent
+          // display discount (Math.round to 0 decimals), NOT the
+          // canonical 1-decimal merchant-basis discountPercent
+          // (lib/deal-math.ts). The compare page renders this
+          // retailer-row discount as a whole number by design;
+          // routing it through discountPercent would change the
+          // displayed values (e.g. 12.5% → 13% today, 12.5% via
+          // the canonical form). Same basis (compare-at vs
+          // price), different precision — do not "fix" by merging.
           discount:
             compareAt !== null && compareAt > price
               ? Math.round((1 - price / compareAt) * 100)

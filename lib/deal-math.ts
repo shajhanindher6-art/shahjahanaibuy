@@ -18,6 +18,18 @@
  * extension's checkout panel (Phase 2). The website flow is: auto-find
  * the best currently-valid coupon + one-tap copy + a note that the
  * code is pasted at the retailer's checkout. Never claim otherwise.
+ *
+ * S2-5 — CANONICAL DISCOUNT-% DERIVATION: `discountPercent` below
+ * is THE merchant-basis derivation (compare_at_price vs price).
+ * Call sites that compute the same quantity must call it
+ * (lib/effective-price.ts, lib/budget-savings.ts savingsVsCompareAt).
+ * Quantities that look similar but are NOT this one are named where
+ * they live, never silently a second "%": the DEAL discount %
+ * (services/ai-deals.ts deriveDiscountPercentage — deal-stated % off
+ * the current recorded price), the stored deal_rankings
+ * discount_percentage snapshot (ai-deals read path), the whole-percent
+ * compare-page display discount (services/ai-comparison.ts), and the
+ * cross-product saving % (budget-savings.ts savingsVsAlternative).
  */
 
 // Minimal coupon shape (camelCase, as returned by /api/v1/coupons).

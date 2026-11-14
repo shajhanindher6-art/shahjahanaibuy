@@ -9,8 +9,15 @@
 
 import type { AnySupabaseClient } from '@/lib/supabase/types';
 import { logger } from '@/lib/config/logger';
+import { normalizeDedupeText } from '@/lib/normalize';
 import type { NormalizedProduct } from './normalization';
 import { modelsConflict, normalizeBrand, normalizeModel } from '@/lib/model-normalization';
+
+// S2-6: normalizeDedupeText's canonical home is lib/normalize.ts
+// (a pure lib module, so client-usable code can import it too).
+// It is re-exported here so existing importers
+// (services/pipeline/deduplication.ts consumers, tests) keep working.
+export { normalizeDedupeText } from '@/lib/normalize';
 
 export interface DeduplicationResult {
   existingProductId: string | null;
@@ -97,19 +104,12 @@ function withReviewGate(
   return result;
 }
 
-/** Lower-case, collapse all non-alphanumerics to single spaces. */
-export function normalizeDedupeText(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
 /**
  * Token-set Jaccard similarity between two normalized names
  * (0 = no shared token, 1 = identical token sets). Order-free,
  * so "Air 13 MacBook" and "MacBook Air 13" score 1.
+ * (normalizeDedupeText lives in lib/normalize.ts — see the
+ * re-export at the top of this file.)
  */
 export function nameTokenSimilarity(a: string, b: string): number {
   const tokensA = new Set(normalizeDedupeText(a).split(' ').filter(Boolean));

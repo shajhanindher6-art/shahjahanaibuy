@@ -28,6 +28,7 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { deriveTaxonomySlugs, slugify } from '@/lib/brand-category-seo';
 import { buildItemListJsonLd, toJsonLd } from '@/lib/json-ld';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 import { tFor } from '@/lib/i18n';
 import { isSupportedLanguage, type Language } from '@/lib/region';
 
@@ -50,7 +51,7 @@ async function getBrands(): Promise<Array<{ name: string; slug: string; count: n
     const { data } = await supabase
       .from('products')
       .select('brand')
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .is('deleted_at', null)
       .limit(500);
     if (!data) return [];

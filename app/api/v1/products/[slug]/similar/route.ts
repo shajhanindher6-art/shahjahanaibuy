@@ -17,6 +17,7 @@ import { getProductBySlug, getLowestMerchantPrices, type LowestMerchantPrice } f
 import { rankSimilarByValue, similarityScore } from '@/lib/similar-value';
 
 import { logApiError } from '@/lib/api/error-logging';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
@@ -54,7 +55,7 @@ export async function GET(
       // and must never surface as a "similar product" (Section 14,
       // chunk 5 leak check — getProducts already excludes it, but
       // this route queries the table directly).
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .is('deleted_at', null)
       .order('confidence_score', { ascending: false })
       .limit(fetchLimit);

@@ -19,8 +19,8 @@
 
 import type { Metadata } from 'next';
 import {
+  deriveOfferPriceValidUntil,
   getFreshnessStatus,
-  getPriceAgeDays,
   STALE_PRICE_DAYS,
 } from '@/lib/price-freshness';
 import {
@@ -186,26 +186,13 @@ export function buildProductMetadata(
 /**
  * Derive the offer validity date from the recorded freshness
  * (Section 16, item 12 policy — see ProductSeoData.priceValidUntil).
- * Returns data_freshness + STALE_PRICE_DAYS as an ISO date
- * (YYYY-MM-DD), or null when no freshness is recorded, the date is
- * unparseable, or the price is already stale (its validity window
- * has closed — the caller then suppresses the offer, it does not
- * emit a validity date in the past).
+ *
+ * S2-6: the implementation lives in lib/price-freshness.ts
+ * (deriveOfferPriceValidUntil) — this is a delegating re-export so
+ * existing importers (lib/product-seo-server.ts, tests) keep
+ * working unchanged. Do not re-implement the arithmetic here.
  */
-export function deriveOfferPriceValidUntil(
-  dataFreshness: string | null | undefined,
-  now: Date = new Date()
-): string | null {
-  const age = getPriceAgeDays(dataFreshness, now);
-  if (age === null || age > STALE_PRICE_DAYS) return null;
-  const checked = new Date(dataFreshness as string);
-  if (!Number.isFinite(checked.getTime())) return null;
-  return new Date(
-    checked.getTime() + STALE_PRICE_DAYS * 86_400_000
-  )
-    .toISOString()
-    .slice(0, 10);
-}
+export { deriveOfferPriceValidUntil } from '@/lib/price-freshness';
 
 /**
  * Server-rendered Product JSON-LD, plus a BreadcrumbList, in one

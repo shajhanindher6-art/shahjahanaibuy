@@ -145,6 +145,42 @@ export function alertUnknownAgeNote(): string {
 }
 
 /**
+ * Derive the offer validity date from the recorded freshness
+ * (Section 16, item 12 policy — see ProductSeoData.priceValidUntil
+ * in lib/product-seo.ts).
+ * Returns data_freshness + STALE_PRICE_DAYS as an ISO date
+ * (YYYY-MM-DD), or null when no freshness is recorded, the date is
+ * unparseable, or the price is already stale (its validity window
+ * has closed — the caller then suppresses the offer, it does not
+ * emit a validity date in the past).
+ *
+ * S2-6: this is the ONE valid-until derivation. It used to live in
+ * lib/product-seo.ts; lib/catalog-freshness.ts restates the same
+ * 7-day rule for its dashboard rows, and both now read this helper
+ * (catalog-freshness via getPriceAgeDays/isPriceStale, product-seo
+ * via the re-export below) instead of restating the arithmetic.
+ * Merchant data carries no validity window, so the date is DERIVED,
+ * never invented: data_freshness + the 7-day stale threshold
+ * (STALE_PRICE_DAYS, same threshold as the stale badge on the
+ * product page) — the price is treated as valid until the day it
+ * would be called stale.
+ */
+export function deriveOfferPriceValidUntil(
+  dataFreshness: string | null | undefined,
+  now: Date = new Date()
+): string | null {
+  const age = getPriceAgeDays(dataFreshness, now);
+  if (age === null || age > STALE_PRICE_DAYS) return null;
+  const checked = new Date(dataFreshness as string);
+  if (!Number.isFinite(checked.getTime())) return null;
+  return new Date(
+    checked.getTime() + STALE_PRICE_DAYS * 86_400_000
+  )
+    .toISOString()
+    .slice(0, 10);
+}
+
+/**
  * Surface-level freshness gate (Final 100% — F-P0-06). One wording
  * for every price surface that shows a RECORDED price: product
  * pages, search results, comparison, deals, tools, SEO offers.

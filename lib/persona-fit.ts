@@ -102,19 +102,38 @@ export interface UiPersona {
   mappingNote: string;
 }
 
+/**
+ * THE mapping table (Stage 2, S2-3) — the single place where the
+ * six UI personas map onto the engine's four personas. Every
+ * UI_PERSONAS entry below reads its enginePersonaId from this
+ * table, so the 6 → 4 decision lives in exactly one place and
+ * cannot drift per entry. The engine side is authoritative:
+ * `enginePersonaFor` resolves the mapped id through the engine's
+ * own `getPersona` (services/persona-matcher.ts) — this file
+ * never re-implements an engine persona.
+ */
+export const UI_TO_ENGINE_PERSONA: Record<UiPersonaId, PersonaId> = {
+  student: 'student',
+  creator: 'content',
+  gamer: 'gaming',
+  traveler: 'work',
+  'home-office': 'work',
+  fitness: 'work',
+};
+
 export const UI_PERSONAS: UiPersona[] = [
   {
     id: 'student',
     label: 'Student',
     description: 'Study, notes and classes on a budget-friendly device.',
-    enginePersonaId: 'student',
+    enginePersonaId: UI_TO_ENGINE_PERSONA.student,
     mappingNote: 'Scored with the engine’s Student persona.',
   },
   {
     id: 'creator',
     label: 'Creator',
     description: 'Photo, video and audio work — editing, shooting, streaming.',
-    enginePersonaId: 'content',
+    enginePersonaId: UI_TO_ENGINE_PERSONA.creator,
     mappingNote:
       'Scored with the engine’s Content Creation persona (photo, video and audio work).',
   },
@@ -122,14 +141,14 @@ export const UI_PERSONAS: UiPersona[] = [
     id: 'gamer',
     label: 'Gamer',
     description: 'High-performance play — demanding games, smooth frame rates.',
-    enginePersonaId: 'gaming',
+    enginePersonaId: UI_TO_ENGINE_PERSONA.gamer,
     mappingNote: 'Scored with the engine’s Gaming persona.',
   },
   {
     id: 'traveler',
     label: 'Traveler',
     description: 'Everyday productivity on the move.',
-    enginePersonaId: 'work',
+    enginePersonaId: UI_TO_ENGINE_PERSONA.traveler,
     mappingNote:
       'The engine has no Traveler persona, so this scores with the Work persona ' +
       '(everyday productivity). Nothing travel-specific is scored — no weight, ' +
@@ -139,7 +158,7 @@ export const UI_PERSONAS: UiPersona[] = [
     id: 'home-office',
     label: 'Home Office',
     description: 'Everyday productivity at a desk.',
-    enginePersonaId: 'work',
+    enginePersonaId: UI_TO_ENGINE_PERSONA['home-office'],
     mappingNote:
       'The engine has no Home Office persona, so this scores with the Work persona ' +
       '(everyday productivity). No desk-setup data is recorded or scored.',
@@ -148,7 +167,7 @@ export const UI_PERSONAS: UiPersona[] = [
     id: 'fitness',
     label: 'Fitness',
     description: 'Activity tracking and training.',
-    enginePersonaId: 'work',
+    enginePersonaId: UI_TO_ENGINE_PERSONA.fitness,
     mappingNote:
       'The engine has no Fitness persona, so this scores with the closest generic ' +
       'persona, the Work persona. No fitness, health or activity data is recorded, and a ' +

@@ -25,6 +25,8 @@
  * and cashback depends on the offer's terms.
  */
 
+import { discountPercent } from '@/lib/deal-math';
+
 export interface EffectivePriceCoupon {
   code: string;
   discountType: string;
@@ -94,10 +96,12 @@ export function effectivePrice(input: EffectivePriceInput): EffectivePriceBreakd
       ? (input.listPrice as number)
       : price;
   const dealSaving = round2(listPrice - price);
-  const dealPct =
-    listPrice > price
-      ? Math.round(((listPrice - price) / listPrice) * 1000) / 10
-      : null;
+  // S2-5: the deal % IS the canonical merchant-basis derivation
+  // (lib/deal-math.ts discountPercent: list price vs price, 1
+  // decimal, null when the list price is not above the price) —
+  // the inline formula it replaced was identical, so this is a
+  // routing change only, not a new number.
+  const dealPct = discountPercent(price, listPrice);
   const afterDeal = round2(price);
 
   let couponSaving = 0;
