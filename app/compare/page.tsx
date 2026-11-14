@@ -2,6 +2,7 @@
 import { SiteHeader } from '@/components/layout/site-header';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { ProductTools } from '@/components/tools/product-tools';
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -1414,6 +1415,14 @@ export default function ComparePage() {
                 ))}
               </div>
             </div>
+
+            <ProductTools
+              products={comparison.products.map((p) => ({
+                slug: p.slug,
+                name: p.name,
+                id: p.productId,
+              }))}
+            />
           </div>
         )}
       </div>

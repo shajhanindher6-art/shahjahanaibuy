@@ -5,7 +5,7 @@
  * accessory from the catalog → a verdict.
  *
  * Server component, no JavaScript needed: the form submits as a
- * plain GET to this same page. Data: getProducts +
+ * plain GET to this same page. Data: getCachedProducts +
  * getLowestMerchantPrices; the verdict comes ONLY from
  * services/compatibility.ts via lib/compatibility-checker.ts.
  *
@@ -26,10 +26,13 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { RelatedTools } from '@/components/tools/related-tools';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { ShareButtons } from '@/components/products/share-buttons';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getLowestMerchantPrices, getProducts } from '@/services/products';
+import { getLowestMerchantPrices } from '@/services/products';
+import { getCachedProducts, parseToolParams } from '@/services/tool-integration';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   checkCompatibility,
@@ -72,7 +75,7 @@ export default async function CompatibilityCheckerPage({
   const { deviceSlug, accessorySlug, hasQuery } = parseCompatibilityParams(searchParams);
 
   const supabase = await createSupabaseServerClient();
-  const { products } = await getProducts(supabase, { page: 1, pageSize: 100 });
+  const { products } = await getCachedProducts(supabase, { page: 1, pageSize: 100 });
   const lowest = await getLowestMerchantPrices(
     supabase,
     products.map((p) => p.id)
@@ -290,6 +293,13 @@ export default async function CompatibilityCheckerPage({
                   verdict, because no compatibility data is recorded.
                 </p>
               </article>
+              <div className="mt-6">
+                <SaveCalculationButton
+                  tool="compatibility-checker"
+                  label={`${result.check.device.name} + ${result.check.accessory.name} — ${result.check.grade}`.slice(0, 100)}
+                  params={{ device: deviceSlug ?? '', accessory: accessorySlug ?? '' }}
+                />
+              </div>
             </section>
           )}
 
@@ -328,6 +338,7 @@ export default async function CompatibilityCheckerPage({
               />
             </div>
           )}
+          <RelatedTools tool="compatibility-checker" productSlug={deviceSlug ?? null} />
         </div>
       </main>
       <SiteFooter />

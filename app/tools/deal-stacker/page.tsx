@@ -10,8 +10,8 @@
  * lib/deal-stacker.ts (buildDealStack). Coupons and cashback are
  * read the same way the finder reads them — services/commerce.ts
  * getCoupons / getCashbackOffers / getMerchants — plus
- * getMerchantProducts for the lowest in-stock recorded listing and
- * getPriceHistory for the recorded drop.
+ * getToolMerchantProducts for the lowest in-stock recorded listing and
+ * getToolPriceHistory for the recorded drop (Stage 1 cached fetch).
  *
  * HONESTY:
  * - The total is math on RECORDED prices only, labeled with the
@@ -42,16 +42,20 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { RelatedTools } from '@/components/tools/related-tools';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
   getCashbackOffers,
   getCoupons,
-  getMerchantProducts,
   getMerchants,
 } from '@/services/commerce';
-import { getProducts } from '@/services/products';
-import { getPriceHistory } from '@/services/price-history';
+import {
+  getCachedProducts,
+  getToolMerchantProducts,
+  getToolPriceHistory,
+} from '@/services/tool-integration';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   buildDealStack,
@@ -120,7 +124,7 @@ export default async function DealStackerPage({
       getMerchants(supabase),
       getCoupons(supabase, { active: true, limit: 100 }),
       getCashbackOffers(supabase, { active: true, limit: 100 }),
-      getProducts(supabase, { page: 1, pageSize: 100 }),
+      getCachedProducts(supabase, { page: 1, pageSize: 100 }),
     ]);
 
   const merchantById = new Map(merchants.map((m) => [m.id, m]));
@@ -134,8 +138,8 @@ export default async function DealStackerPage({
   const stacks: DealStack[] = await Promise.all(
     products.map(async (product) => {
       const [listings, historyResult] = await Promise.all([
-        getMerchantProducts(supabase, product.id),
-        getPriceHistory(supabase, product.id, { limit: 500 }),
+        getToolMerchantProducts(supabase, product.id),
+        getToolPriceHistory(supabase, product.id, { limit: 500 }),
       ]);
       const lowestInStock = listings.find((l) => l.inStock) ?? null;
       const merchant = lowestInStock
@@ -349,6 +353,13 @@ export default async function DealStackerPage({
                         </p>
                       </>
                     )}
+                    <div className="mt-6">
+                      <SaveCalculationButton
+                        tool="deal-stacker"
+                        label={`Deal stack — ${selected.productName}`.slice(0, 100)}
+                        params={{ product: selected.productSlug }}
+                      />
+                    </div>
                   </section>
                 )}
 
@@ -407,6 +418,7 @@ export default async function DealStackerPage({
               </Link>
               .
             </p>
+            <RelatedTools tool="deal-stacker" productSlug={selected?.productSlug ?? null} />
           </div>
         </main>
         <SiteFooter />

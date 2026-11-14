@@ -26,6 +26,8 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { RelatedTools } from '@/components/tools/related-tools';
+import { parseToolParams } from '@/services/tool-integration';
 import { appConfig } from '@/lib/config/app';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { getAllStorePages } from '@/lib/store-directory';
@@ -271,6 +273,7 @@ export default async function PriceMatchFinderPage({
               All AI tools →
             </Link>
           </p>
+          <RelatedTools tool="price-match" productSlug={parseToolParams(searchParams).productSlug} />
         </div>
       </main>
       <SiteFooter />

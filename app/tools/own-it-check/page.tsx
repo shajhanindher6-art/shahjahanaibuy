@@ -31,9 +31,11 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { RelatedTools } from '@/components/tools/related-tools';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getProducts } from '@/services/products';
+import { getCachedProducts, parseToolParams } from '@/services/tool-integration';
 import { getBuyList } from '@/lib/buy-list';
 import { getWishlists, getWishlistItems } from '@/services/wishlists';
 import { listSavedSearches } from '@/services/saved-searches';
@@ -99,7 +101,7 @@ function matchedByLabel(match: OwnItMatch): string {
 export default async function OwnItCheckPage({ searchParams }: OwnItCheckProps) {
   const params = parseOwnItCheckParams(searchParams);
   const supabase = await createSupabaseServerClient();
-  const { products } = await getProducts(supabase, { page: 1, pageSize: 100 });
+  const { products } = await getCachedProducts(supabase, { page: 1, pageSize: 100 });
 
   // Resolve the query: a catalog product when ?product= names one,
   // otherwise the free-typed name/brand/GTIN.
@@ -397,6 +399,18 @@ export default async function OwnItCheckPage({ searchParams }: OwnItCheckProps) 
                   </p>
                 </>
               )}
+              <div className="mt-6">
+                <SaveCalculationButton
+                  tool="own-it-check"
+                  label={`Own-it check — ${query.name}`.slice(0, 100)}
+                  params={{
+                    ...(selectedProduct ? { product: selectedProduct.slug } : {}),
+                    ...(params.name ? { name: params.name } : {}),
+                    ...(params.brand ? { brand: params.brand } : {}),
+                    ...(params.gtin ? { gtin: params.gtin } : {}),
+                  }}
+                />
+              </div>
             </section>
           )}
 
@@ -423,6 +437,7 @@ export default async function OwnItCheckPage({ searchParams }: OwnItCheckProps) 
               .
             </p>
           )}
+          <RelatedTools tool="own-it-check" productSlug={parseToolParams(searchParams).productSlug} />
         </div>
       </main>
       <SiteFooter />

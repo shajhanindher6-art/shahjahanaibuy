@@ -13,7 +13,17 @@
 
 export type CalculationParams = Record<string, string | number | boolean>;
 
-/** The 12 pure client-side calculator tools (0 fetch() calls each). */
+/**
+ * The 12 pure client-side calculator tools (0 fetch() calls each)
+ * plus the 8 new tools whose result replays from the URL
+ * (Master Tool Integration, Stage 3, S3-3): upgrade-advisor,
+ * persona-fit, own-it-check, energy-cost, negotiation-coach,
+ * deal-stacker, refurbished-checklist, compatibility-checker.
+ * price-match (a filter-only directory) and repairability (no
+ * params at all) have no calculable result to re-open, so they
+ * are NOT in this list — buildSavedCalculationUrl falls back to
+ * their bare tool route for them.
+ */
 export const SAVED_CALCULATION_TOOLS = [
   'emi-calculator',
   'landed-cost',
@@ -27,6 +37,15 @@ export const SAVED_CALCULATION_TOOLS = [
   'subscription-manager',
   'savings-dashboard',
   'list-optimizer',
+  // Stage 3, S3-3 — new tools with replayable results (see above).
+  'upgrade-advisor',
+  'persona-fit',
+  'own-it-check',
+  'energy-cost',
+  'negotiation-coach',
+  'deal-stacker',
+  'refurbished-checklist',
+  'compatibility-checker',
 ] as const;
 
 export type SavedCalculationTool = (typeof SAVED_CALCULATION_TOOLS)[number];

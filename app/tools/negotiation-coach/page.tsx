@@ -13,8 +13,8 @@
  * same engine the product-page widget
  * components/products/price-negotiator.tsx uses). The cheapest
  * current price comes from getLowestMerchantPrices
- * (services/products.ts) and the recorded low from getPriceHistory
- * (services/price-history.ts) — recorded data only, never a live
+ * (services/products.ts) and the recorded low from getToolPriceHistory
+ * (services/tool-integration.ts) — recorded data only, never a live
  * fetch, never an invented price.
  *
  * HONESTY: SmartBuy cannot negotiate with retailers and has no
@@ -32,10 +32,16 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { RelatedTools } from '@/components/tools/related-tools';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getProducts, getLowestMerchantPrices } from '@/services/products';
-import { getPriceHistory } from '@/services/price-history';
+import { getLowestMerchantPrices } from '@/services/products';
+import {
+  getCachedProducts,
+  getToolPriceHistory,
+  parseToolParams,
+} from '@/services/tool-integration';
 import { analyzeNegotiationGap, buildNegotiationDraft } from '@/services/negotiation';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { CopyTextButton } from '@/components/tools/copy-text-button';
@@ -77,7 +83,7 @@ interface NegotiationCoachProps {
 export default async function NegotiationCoachPage({ searchParams }: NegotiationCoachProps) {
   const params = parseNegotiationCoachParams(searchParams);
   const supabase = await createSupabaseServerClient();
-  const { products } = await getProducts(supabase, { page: 1, pageSize: 100 });
+  const { products } = await getCachedProducts(supabase, { page: 1, pageSize: 100 });
 
   const selectedProduct = params.productSlug
     ? (products.find((p) => p.slug === params.productSlug) ?? null)
@@ -95,7 +101,7 @@ export default async function NegotiationCoachPage({ searchParams }: Negotiation
   if (hasQuery && selectedProduct && params.targetUsd !== null) {
     const lowest = await getLowestMerchantPrices(supabase, [selectedProduct.id]);
     cheapestUsd = lowest.get(selectedProduct.id)?.price ?? null;
-    const history = await getPriceHistory(supabase, selectedProduct.id, { limit: 500 });
+    const history = await getToolPriceHistory(supabase, selectedProduct.id, { limit: 500 });
     const points = (history.history ?? []).map((h) => ({
       price: Number(h.price),
       recordedAt: h.recordedAt,
@@ -342,6 +348,17 @@ export default async function NegotiationCoachPage({ searchParams }: Negotiation
                   View {selectedProduct.name} →
                 </Link>
               </p>
+              <div className="mt-6">
+                <SaveCalculationButton
+                  tool="negotiation-coach"
+                  label={`Negotiation target $${gap.targetUsd.toFixed(2)} — ${selectedProduct.name}`.slice(0, 100)}
+                  params={{
+                    product: selectedProduct.slug,
+                    target: gap.targetUsd,
+                    ...(params.reason ? { reason: params.reason } : {}),
+                  }}
+                />
+              </div>
             </section>
           )}
 
@@ -364,6 +381,7 @@ export default async function NegotiationCoachPage({ searchParams }: Negotiation
               .
             </p>
           )}
+          <RelatedTools tool="negotiation-coach" productSlug={parseToolParams(searchParams).productSlug} />
         </div>
       </main>
       <SiteFooter />

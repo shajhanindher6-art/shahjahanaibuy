@@ -24,9 +24,11 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { RelatedTools } from '@/components/tools/related-tools';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getProducts } from '@/services/products';
+import { getCachedProducts, parseToolParams } from '@/services/tool-integration';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   calculateEnergyCost,
@@ -72,7 +74,7 @@ export default async function EnergyCostPage({
 }: EnergyCostProps): Promise<JSX.Element> {
   const params = parseEnergyCostParams(searchParams);
   const supabase = await createSupabaseServerClient();
-  const { products } = await getProducts(supabase, { page: 1, pageSize: 100 });
+  const { products } = await getCachedProducts(supabase, { page: 1, pageSize: 100 });
 
   const labelledProduct =
     params.productSlug !== ''
@@ -286,6 +288,18 @@ export default async function EnergyCostPage({
                   </Link>
                 </p>
               )}
+              <div className="mt-6">
+                <SaveCalculationButton
+                  tool="energy-cost"
+                  label={`Energy cost $${result.annualCost.toFixed(2)}/yr${labelledProduct ? ` — ${labelledProduct.name}` : ''}`.slice(0, 100)}
+                  params={{
+                    ...(params.watts !== null ? { watts: params.watts } : {}),
+                    ...(params.hoursPerDay !== null ? { hours: params.hoursPerDay } : {}),
+                    ...(params.tariffPerKwh !== null ? { tariff: params.tariffPerKwh } : {}),
+                    ...(labelledProduct ? { product: labelledProduct.slug } : {}),
+                  }}
+                />
+              </div>
             </section>
           )}
 
@@ -295,6 +309,7 @@ export default async function EnergyCostPage({
               that is 292 kWh a year, about $43.80.
             </p>
           )}
+          <RelatedTools tool="energy-cost" productSlug={parseToolParams(searchParams).productSlug} />
         </div>
       </main>
       <SiteFooter />

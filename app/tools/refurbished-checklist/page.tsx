@@ -27,10 +27,15 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { RelatedTools } from '@/components/tools/related-tools';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getProducts } from '@/services/products';
-import { getMerchantProducts } from '@/services/commerce';
+import {
+  getCachedProducts,
+  getToolMerchantProducts,
+  parseToolParams,
+} from '@/services/tool-integration';
 import { policyForStore } from '@/services/return-policies';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { GLOBAL_STORES, buildStoreSearchUrl } from '@/lib/stores';
@@ -79,7 +84,7 @@ export default async function RefurbishedChecklistPage({
   const rawSlug = searchParams.product;
   const selectedSlug = Array.isArray(rawSlug) ? rawSlug[0] : rawSlug;
   const supabase = await createSupabaseServerClient();
-  const { products } = await getProducts(supabase, { page: 1, pageSize: 100 });
+  const { products } = await getCachedProducts(supabase, { page: 1, pageSize: 100 });
 
   const selected =
     products.find((p) => p.slug === selectedSlug) ?? null;
@@ -89,7 +94,7 @@ export default async function RefurbishedChecklistPage({
   // — none is recorded anywhere.
   let benchmark = null;
   if (selected) {
-    const listings = await getMerchantProducts(supabase, selected.id);
+    const listings = await getToolMerchantProducts(supabase, selected.id);
     const inStock = listings.filter((l) => l.inStock);
     const lowest = inStock.length > 0 ? Number(inStock[0].price) : null;
     benchmark = buildRefurbishedBenchmark({
@@ -289,6 +294,13 @@ export default async function RefurbishedChecklistPage({
                       records no refurbished price, so no refurbished
                       comparison can be shown here.
                     </p>
+                    <div className="mt-4">
+                      <SaveCalculationButton
+                        tool="refurbished-checklist"
+                        label={`Refurbished benchmark — ${benchmark.name}`.slice(0, 100)}
+                        params={{ product: benchmark.slug }}
+                      />
+                    </div>
                   </>
                 ) : (
                   <p className="mt-2 text-sm text-muted-foreground">
@@ -367,6 +379,7 @@ export default async function RefurbishedChecklistPage({
               </Link>
             </p>
           </section>
+          <RelatedTools tool="refurbished-checklist" productSlug={selected?.slug ?? null} />
         </div>
       </main>
       <SiteFooter />

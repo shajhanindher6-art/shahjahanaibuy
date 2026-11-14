@@ -11,7 +11,8 @@
  *
  * Server component, no JavaScript needed: the form submits as a
  * plain GET to this same page, so the result URL is shareable.
- * Data: getProducts + getPriceHistory, composed by
+ * Data: getCachedProducts + getToolPriceHistory (Stage 1 cached fetch,
+ * services/tool-integration.ts), composed by
  * lib/upgrade-advisor.ts (pure math).
  *
  * Honesty: no trade-in value is recorded anywhere — none is ever
@@ -30,10 +31,15 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { RelatedTools } from '@/components/tools/related-tools';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getProducts } from '@/services/products';
-import { getPriceHistory } from '@/services/price-history';
+import {
+  getCachedProducts,
+  getToolPriceHistory,
+  parseToolParams,
+} from '@/services/tool-integration';
 import {
   predictResaleValue,
   RESALE_MIN_POINTS,
@@ -112,7 +118,7 @@ export default async function UpgradeAdvisorPage({
 }: UpgradeAdvisorProps): Promise<JSX.Element> {
   const params = parseUpgradeAdvisorParams(searchParams);
   const supabase = await createSupabaseServerClient();
-  const { products } = await getProducts(supabase, { page: 1, pageSize: 100 });
+  const { products } = await getCachedProducts(supabase, { page: 1, pageSize: 100 });
 
   const categories = Array.from(
     new Set(products.map((p) => p.category).filter((c): c is string => !!c))
@@ -131,7 +137,7 @@ export default async function UpgradeAdvisorPage({
   let successorPrice: number | null = null;
   let successorLastChecked: string | null = null;
   if (successor) {
-    const result = await getPriceHistory(supabase, successor.id, { limit: 500 });
+    const result = await getToolPriceHistory(supabase, successor.id, { limit: 500 });
     successorPrice = result.currentPrice;
     successorLastChecked = result.freshness.lastRecordedAt ?? successor.dataFreshness;
   }
@@ -144,7 +150,7 @@ export default async function UpgradeAdvisorPage({
   let resaleReason: string | null = null;
   let resaleBasis: string | null = null;
   if (currentProduct) {
-    const result = await getPriceHistory(supabase, currentProduct.id, {
+    const result = await getToolPriceHistory(supabase, currentProduct.id, {
       limit: 500,
     });
     const points = (result.history ?? []).map((h) => ({
@@ -467,6 +473,20 @@ export default async function UpgradeAdvisorPage({
                 )}
               </div>
 
+              <div className="mt-6">
+                <SaveCalculationButton
+                  tool="upgrade-advisor"
+                  label={`Upgrade advice: ${VERDICT_LABEL[advice.verdict]} — ${successor?.name ?? currentProduct?.name ?? 'device'}`.slice(0, 100)}
+                  params={{
+                    ...(params.brand ? { brand: params.brand } : {}),
+                    ...(params.category ? { category: params.category } : {}),
+                    ...(params.purchaseYear !== null ? { year: params.purchaseYear } : {}),
+                    ...(params.pricePaid !== null ? { price: params.pricePaid } : {}),
+                    ...(params.currentSlug ? { current: params.currentSlug } : {}),
+                    ...(params.successorSlug ? { successor: params.successorSlug } : {}),
+                  }}
+                />
+              </div>
               <p className="mt-4 text-xs text-muted-foreground">
                 This advice is arithmetic on recorded prices only. It
                 never compares specs — the catalog has no recorded
@@ -492,6 +512,7 @@ export default async function UpgradeAdvisorPage({
               Dell XPS 13 as the successor.
             </p>
           )}
+          <RelatedTools tool="upgrade-advisor" productSlug={parseToolParams(searchParams).productSlug} />
         </div>
       </main>
       <SiteFooter />

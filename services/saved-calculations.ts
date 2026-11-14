@@ -4,8 +4,10 @@
  * A saved calculation is a tool slug + a label + the tool's input
  * params as JSON — the same params the tool's shareable URL
  * carries, so re-opening a saved calculation is a link back to
- * /tools/<tool>?<params>. Only the 12 pure-local calculator tools
- * (lib/saved-calculations.ts SAVED_CALCULATION_TOOLS) can be saved.
+ * /tools/<tool>?<params>. Only the tools in
+ * lib/saved-calculations.ts SAVED_CALCULATION_TOOLS can be saved:
+ * the 12 pure-local calculator tools plus the 8 new tools with
+ * replayable results (Stage 3, S3-3).
  *
  * Table: `saved_calculations` (migration 043, written NOT applied).
  * Writes go through the AUTHENTICATED server client (the route's

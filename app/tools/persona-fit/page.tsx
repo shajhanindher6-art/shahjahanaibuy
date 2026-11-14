@@ -5,7 +5,7 @@
  * Fitness) + a budget → scored catalog matches, ranked.
  *
  * Server component, no JavaScript needed: the form submits as a
- * plain GET to this same page. Data: getProducts +
+ * plain GET to this same page. Data: getCachedProducts +
  * getLowestMerchantPrices + getProductAttributes, ranked by
  * lib/persona-fit.ts (which reuses the services/persona-matcher.ts
  * engine — no new scoring here).
@@ -29,11 +29,15 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { RelatedTools } from '@/components/tools/related-tools';
+import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { ShareButtons } from '@/components/products/share-buttons';
 import { StalePriceBadge } from '@/components/products/stale-price-badge';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getLowestMerchantPrices, getProductAttributes, getProducts } from '@/services/products';
+import { getLowestMerchantPrices, getProductAttributes } from '@/services/products';
+import { getCachedProducts, parseToolParams } from '@/services/tool-integration';
+import { getUserPreferences } from '@/services/user-preferences';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   enginePersonaFor,
@@ -77,9 +81,36 @@ export default async function PersonaFitPage({ searchParams }: PersonaFitPagePro
   const hasError = personaError !== null || budgetError !== null;
 
   const supabase = await createSupabaseServerClient();
+
+  // Stage 3, S3-4: stored-budget default from user_preferences.
+  // The URL always wins: the stored budget applies only when the
+  // URL carries no ?budget= (a present-but-invalid budget still
+  // shows its error, never a silent stored value). Signed-out
+  // visitors see no change. The stored value only PREFILLS the
+  // form and caps a run the URL already started — it never
+  // auto-runs a search (hasQuery stays URL-only). No persona is
+  // stored in user_preferences (budget/brands/categories/
+  // retailers only), so no persona can be preselected from it.
+  const urlBudgetRaw = Array.isArray(searchParams.budget)
+    ? searchParams.budget[0]
+    : searchParams.budget;
+  const hasUrlBudget =
+    urlBudgetRaw !== undefined && urlBudgetRaw.trim() !== '';
+  let storedBudgetUsd: number | null = null;
+  if (!hasUrlBudget && !hasError) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) {
+      const prefs = await getUserPreferences(supabase, user.id);
+      storedBudgetUsd = prefs?.budgetMax ?? null;
+    }
+  }
+  const effectiveBudgetUsd = budgetUsd ?? storedBudgetUsd;
+
   const { products } =
     hasQuery && !hasError
-      ? await getProducts(supabase, { page: 1, pageSize: 100 })
+      ? await getCachedProducts(supabase, { page: 1, pageSize: 100 })
       : { products: [] };
 
   const matches =
@@ -106,13 +137,13 @@ export default async function PersonaFitPage({ searchParams }: PersonaFitPagePro
               };
             })
           ),
-          budgetUsd
+          effectiveBudgetUsd
         )
       : null;
 
   const heading =
-    persona && budgetUsd !== null
-      ? `${persona.label} picks under $${budgetUsd.toFixed(2)}`
+    persona && effectiveBudgetUsd !== null
+      ? `${persona.label} picks under $${effectiveBudgetUsd.toFixed(2)}`
       : persona
         ? `${persona.label} picks`
         : 'Find products that fit your persona';
@@ -182,12 +213,17 @@ export default async function PersonaFitPage({ searchParams }: PersonaFitPagePro
                   type="text"
                   inputMode="decimal"
                   placeholder="e.g. 1000"
-                  defaultValue={budgetUsd !== null ? String(budgetUsd) : ''}
+                  defaultValue={effectiveBudgetUsd !== null ? String(effectiveBudgetUsd) : ''}
                   className="mt-1 min-h-[44px] w-full rounded-md border bg-background px-3 py-2 text-sm"
                 />
                 <p className="mt-1 text-xs text-muted-foreground">
                   Optional — without a budget, every category fit is shown.
                 </p>
+                {!hasUrlBudget && storedBudgetUsd !== null && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Using your saved budget of ${storedBudgetUsd.toFixed(2)} — change it above, or pass ?budget= in the URL to override it.
+                  </p>
+                )}
               </div>
             </div>
             {personaError && (
@@ -222,14 +258,26 @@ export default async function PersonaFitPage({ searchParams }: PersonaFitPagePro
                   text={`${heading} — SmartBuy AI`}
                 />
               </div>
+              {matches !== null && (
+                <div className="mt-4">
+                  <SaveCalculationButton
+                    tool="persona-fit"
+                    label={heading.slice(0, 100)}
+                    params={{
+                      ...(persona ? { persona: persona.id } : {}),
+                      ...(effectiveBudgetUsd !== null ? { budget: effectiveBudgetUsd } : {}),
+                    }}
+                  />
+                </div>
+              )}
 
               {matches !== null && matches.length === 0 && (
                 <div className="mt-6">
                   <EmptyState
                     eyebrow="No fit found"
                     title={
-                      budgetUsd !== null
-                        ? `No ${persona.label} fit under $${budgetUsd.toFixed(2)}`
+                      effectiveBudgetUsd !== null
+                        ? `No ${persona.label} fit under $${effectiveBudgetUsd.toFixed(2)}`
                         : `No ${persona.label} fit in the catalog`
                     }
                     description="No product with a recorded price fits this persona’s category within your budget right now — the catalog is small and no specs are recorded yet. Try a higher budget or a different persona."
@@ -348,6 +396,7 @@ export default async function PersonaFitPage({ searchParams }: PersonaFitPagePro
               .
             </p>
           )}
+          <RelatedTools tool="persona-fit" productSlug={parseToolParams(searchParams).productSlug} />
         </div>
       </main>
       <SiteFooter />

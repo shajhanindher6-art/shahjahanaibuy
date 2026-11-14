@@ -32,9 +32,10 @@ import { Wrench } from 'lucide-react';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
+import { RelatedTools } from '@/components/tools/related-tools';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getProducts } from '@/services/products';
+import { getCachedProducts } from '@/services/tool-integration';
 import {
   computeRepairabilityIndex,
   getProductRepairability,
@@ -85,7 +86,7 @@ const VERDICT_LABELS: Record<RepairabilityIndex['verdict'], string> = {
 
 export default async function RepairabilityExplorerPage() {
   const supabase = await createSupabaseServerClient();
-  const { products } = await getProducts(supabase, { page: 1, pageSize: 100 });
+  const { products } = await getCachedProducts(supabase, { page: 1, pageSize: 100 });
 
   // getProductRepairability never throws: when migration 019 has
   // not been applied (today) it returns all nulls, so every row
@@ -280,6 +281,7 @@ export default async function RepairabilityExplorerPage() {
               </Link>
               .
             </p>
+            <RelatedTools tool="repairability" productSlug={null} />
           </div>
         </main>
         <SiteFooter />
