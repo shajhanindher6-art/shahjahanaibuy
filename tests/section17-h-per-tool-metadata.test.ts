@@ -1,5 +1,5 @@
 /**
- * Section 17, Stage H item 3 — per-tool metadata coverage for ALL 36 tools.
+ * Section 17, Stage H item 3 — per-tool metadata coverage for ALL 46 tools.
  *
  * The Section 17 audit (§2) reported "21 of 36 tools have their own
  * metadata, 15 lack it" — that count was stale: Section 16 item 13
@@ -7,6 +7,10 @@
  * layout.tsx (asserted by tests/section16-seo-metadata.test.ts item
  * 13), and the other 21 export it from page.tsx. A re-count on
  * 12 Nov 2026 confirms 36/36: 21 in page.tsx, 15 in layout.tsx.
+ * A re-count on 14 Nov 2026 confirms 46/46: the 10 Future AI Tools
+ * (upgrade-advisor, persona-fit, price-match, own-it-check, energy-cost,
+ * negotiation-coach, repairability, deal-stacker, refurbished-checklist,
+ * compatibility-checker) each export metadata from page.tsx.
  *
  * This test locks the full coverage so a future tool cannot silently
  * inherit the generic /tools hub metadata: every directory under
@@ -36,8 +40,8 @@ function toolDirs(): string[] {
 }
 
 describe('item 3 — every tool has per-tool metadata', () => {
-  it('covers all 36 tools (the audit\'s "15 lacking" count was stale — Section 16 item 13 already added them)', () => {
-    expect(toolDirs()).toHaveLength(36);
+  it('covers all 46 tools (36 + 10 Future AI Tools)', () => {
+    expect(toolDirs()).toHaveLength(46);
   });
 
   it.each(toolDirs())(

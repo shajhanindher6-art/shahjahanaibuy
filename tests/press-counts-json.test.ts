@@ -56,14 +56,14 @@ describe('press-counts.json — generated, not hardcoded', () => {
     expect(viaReader.date).toBe(pressCounts.date);
   });
 
-  it('is the current Best Buy client baseline (323 files / 4,366 tests, 13 November 2026)', () => {
+  it('is the current 10 Future AI Tools baseline (332 files / 4,526 tests, 14 November 2026)', () => {
     // Baseline only — the coordinator re-locks this after the final
     // full gate run (other workers add tests after this change). If
     // this test fails, regenerate the JSON
     // (`npm run generate:press-counts`) and update this baseline in
     // the same change; never edit the JSON by hand.
     expect(pressCounts).toEqual(
-      expect.objectContaining({ tests: 4366, files: 323, date: '2026-11-13' }),
+      expect.objectContaining({ tests: 4526, files: 332, date: '2026-11-14' }),
     );
   });
 });

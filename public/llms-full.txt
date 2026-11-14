@@ -38,7 +38,9 @@
 
 ## All tools
 
-- [Api Quota Calculator](https://shahjahanaibuy-b1zp.vercel.app/tools/api-quota-calculator): API calls per day → tier needed, headroom, next tier up
+- [Api Quota Calculator](https://shahjahanaibuy-b1zp.vercel.app/tools/api-quota-calculator)- [Accessory Compatibility Checker](https://shahjahanaibuy-b1zp.vercel.app/tools/compatibility-checker): Will this accessory work with your device?
+- [Already-Own-It Guard](https://shahjahanaibuy-b1zp.vercel.app/tools/own-it-check): Check your saved lists before you buy a duplicate
+: API calls per day → tier needed, headroom, next tier up
 - [Best Time Calendar](https://shahjahanaibuy-b1zp.vercel.app/tools/best-time-calendar): Best time to buy, by product timing
 - [Budget Finder](https://shahjahanaibuy-b1zp.vercel.app/tools/budget-finder): Best product under a budget
 - [Catalog Freshness Dashboard](https://shahjahanaibuy-b1zp.vercel.app/tools/catalog-freshness): Per-product data freshness and history points
@@ -47,9 +49,11 @@
 - [Currency Converter](https://shahjahanaibuy-b1zp.vercel.app/tools/currency-converter): Currency conversion for prices
 - [Deal Checker](https://shahjahanaibuy-b1zp.vercel.app/tools/deal-checker): Check whether a deal is genuinely good
 - [Deal Score Breakdown Explorer](https://shahjahanaibuy-b1zp.vercel.app/tools/deal-score-breakdown): Deal Score term-by-term, from the real prediction inputs
+- [Deal Stacker](https://shahjahanaibuy-b1zp.vercel.app/tools/deal-stacker): Best valid coupon + cashback + recorded price drop, combined
 - [Eco Coach](https://shahjahanaibuy-b1zp.vercel.app/tools/eco-coach): Lower-impact buying choices
 - [Emi Calculator](https://shahjahanaibuy-b1zp.vercel.app/tools/emi-calculator): EMI / instalment calculator
 - [Emi vs Save Then Buy](https://shahjahanaibuy-b1zp.vercel.app/tools/emi-vs-saving): EMI total cost vs saving monthly and buying outright
+- [Energy Cost Calculator](https://shahjahanaibuy-b1zp.vercel.app/tools/energy-cost): What a device costs to run per year, from watts and tariff you enter
 - [Expense Tracker](https://shahjahanaibuy-b1zp.vercel.app/tools/expense-tracker): Track shopping spending
 - [Forecast Explainer](https://shahjahanaibuy-b1zp.vercel.app/tools/forecast-explainer): How a price forecast is computed, and its limits
 - [Future You Planner](https://shahjahanaibuy-b1zp.vercel.app/tools/future-you-planner): Long-horizon buying planner
@@ -60,11 +64,16 @@
 - [Landed Cost](https://shahjahanaibuy-b1zp.vercel.app/tools/landed-cost): Landed cost incl. shipping, tax and duty
 - [List Optimizer](https://shahjahanaibuy-b1zp.vercel.app/tools/list-optimizer): Optimise a shopping list
 - [Monthly Planner](https://shahjahanaibuy-b1zp.vercel.app/tools/monthly-planner): Monthly buying planner
+- [Negotiation Coach](https://shahjahanaibuy-b1zp.vercel.app/tools/negotiation-coach): Gap math vs the recorded low, plus a message draft for the seller
+- [Persona Fit Finder](https://shahjahanaibuy-b1zp.vercel.app/tools/persona-fit): Ranked catalog matches for your persona and budget
 - [Price Alert Simulator](https://shahjahanaibuy-b1zp.vercel.app/tools/price-alert-simulator): Simulate a price-drop alert
 - [Price Drop Digest](https://shahjahanaibuy-b1zp.vercel.app/tools/price-drop-digest): Digest of recorded price drops
 - [Price History](https://shahjahanaibuy-b1zp.vercel.app/tools/price-history): Price history explorer
 - [Price Protection](https://shahjahanaibuy-b1zp.vercel.app/tools/price-protection): Price protection check
+- [Price-Match Finder](https://shahjahanaibuy-b1zp.vercel.app/tools/price-match): Which stores price-match, what each policy says, how to claim it
 - [Product Qa](https://shahjahanaibuy-b1zp.vercel.app/tools/product-qa): AI product questions and answers
+- [Refurbished Buying Checklist](https://shahjahanaibuy-b1zp.vercel.app/tools/refurbished-checklist): Safety checklist for buying certified refurbished
+- [Repairability Explorer](https://shahjahanaibuy-b1zp.vercel.app/tools/repairability): Repairability index across the catalog, how it is computed
 - [Savings Dashboard](https://shahjahanaibuy-b1zp.vercel.app/tools/savings-dashboard): Savings dashboard
 - [Smart Home Agent](https://shahjahanaibuy-b1zp.vercel.app/tools/smart-home-agent): Smart-home buying agent
 - [Smart Target Price Picker](https://shahjahanaibuy-b1zp.vercel.app/tools/target-price-picker): Target prices suggested from recorded price history
@@ -72,6 +81,7 @@
 - [Store Trust Checker](https://shahjahanaibuy-b1zp.vercel.app/tools/store-trust-checker): Trust grade (A–D) per store, from recorded policy facts
 - [Subscription Manager](https://shahjahanaibuy-b1zp.vercel.app/tools/subscription-manager): Manage shopping subscriptions
 - [Trade In Finder](https://shahjahanaibuy-b1zp.vercel.app/tools/trade-in-finder): Trade-in options finder
+- [Upgrade Advisor](https://shahjahanaibuy-b1zp.vercel.app/tools/upgrade-advisor): Upgrade or keep your current device? Cost-per-year math + resale projection
 - [Volatility Ranking](https://shahjahanaibuy-b1zp.vercel.app/tools/volatility-ranking): Products ranked by price stability, from recorded history
 - [Warranty Claim Helper](https://shahjahanaibuy-b1zp.vercel.app/tools/warranty-claim-helper): Warranty claim helper
 
@@ -118,6 +128,16 @@
 - https://shahjahanaibuy-b1zp.vercel.app/tools/eco-coach
 - https://shahjahanaibuy-b1zp.vercel.app/tools/smart-home-agent
 - https://shahjahanaibuy-b1zp.vercel.app/tools/future-you-planner
+- https://shahjahanaibuy-b1zp.vercel.app/tools/upgrade-advisor
+- https://shahjahanaibuy-b1zp.vercel.app/tools/persona-fit
+- https://shahjahanaibuy-b1zp.vercel.app/tools/price-match
+- https://shahjahanaibuy-b1zp.vercel.app/tools/own-it-check
+- https://shahjahanaibuy-b1zp.vercel.app/tools/energy-cost
+- https://shahjahanaibuy-b1zp.vercel.app/tools/negotiation-coach
+- https://shahjahanaibuy-b1zp.vercel.app/tools/repairability
+- https://shahjahanaibuy-b1zp.vercel.app/tools/deal-stacker
+- https://shahjahanaibuy-b1zp.vercel.app/tools/refurbished-checklist
+- https://shahjahanaibuy-b1zp.vercel.app/tools/compatibility-checker
 - https://shahjahanaibuy-b1zp.vercel.app/pricing
 - https://shahjahanaibuy-b1zp.vercel.app/faq
 - https://shahjahanaibuy-b1zp.vercel.app/live

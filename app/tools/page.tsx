@@ -290,6 +290,76 @@ const TOOL_GROUPS: Array<{
         description:
           'A saving plan for big purchases — set a target and a date, and get a monthly plan, linked to price-drop alerts.',
       },
+      {
+        name: 'AI Upgrade Advisor',
+        href: '/tools/upgrade-advisor',
+        description:
+          'Should you upgrade or keep your current device? Cost-per-year math vs a catalog successor, plus a resale projection labelled as a projection — never a trade-in quote.',
+        isNew: true,
+      },
+      {
+        name: 'AI Persona Fit Finder',
+        href: '/tools/persona-fit',
+        description:
+          'Pick a persona and a budget — Student, Creator, Gamer, Traveller, Home Office or Fitness — and get ranked catalog matches. Scored on category and price only — no specs recorded yet.',
+        isNew: true,
+      },
+      {
+        name: 'AI Price-Match Finder',
+        href: '/tools/price-match',
+        description:
+          'Which stores price-match, what each policy says, and how to claim it. Policies verified from each retailer’s own site, with a last-reviewed date; unrecorded stores say so plainly.',
+        isNew: true,
+      },
+      {
+        name: 'AI Already-Own-It Guard',
+        href: '/tools/own-it-check',
+        description:
+          'Before you buy, check your own saved lists — buy list, wishlists, saved searches — for a duplicate. Checks your lists only; it knows nothing about past purchases.',
+        isNew: true,
+      },
+      {
+        name: 'AI Energy Cost Calculator',
+        href: '/tools/energy-cost',
+        description:
+          'What does a device cost to run per year? Enter watts, hours a day and your tariff — watts are always yours, never looked up, because the catalog records no wattage.',
+        isNew: true,
+      },
+      {
+        name: 'AI Negotiation Coach',
+        href: '/tools/negotiation-coach',
+        description:
+          'Pick a product and a target price: gap math vs the real recorded low, plus a polite message draft you send the seller yourself. SmartBuy cannot negotiate for you.',
+        isNew: true,
+      },
+      {
+        name: 'AI Repairability Explorer',
+        href: '/tools/repairability',
+        description:
+          'The repairability index across the catalog — score, spare-parts years, how it is computed. No scores recorded yet, so today it is an honest explainer, not a scoreboard.',
+        isNew: true,
+      },
+      {
+        name: 'AI Deal Stacker',
+        href: '/tools/deal-stacker',
+        description:
+          'The best stack for a product: best valid coupon + cashback + recorded price drop, each shown separately with its source. Never an expired coupon, never a guaranteed checkout total.',
+        isNew: true,
+      },
+      {
+        name: 'AI Refurbished Buying Checklist',
+        href: '/tools/refurbished-checklist',
+        description:
+          'A safety checklist for buying certified refurbished: condition-grade decoder, a 10-point inspection list, and a benchmark vs the same product new. No refurbished offers are shown — none are recorded.',
+        isNew: true,
+      },
+      {
+        name: 'AI Accessory Compatibility Checker',
+        href: '/tools/compatibility-checker',
+        description:
+          'Will this accessory work with your device? Pick both from the catalog for a verdict — Likely, Possible or Unknown. Every verdict says verify before buying.',
+        isNew: true,
+      },
     ],
   },
 ];
