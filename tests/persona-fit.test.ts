@@ -6,6 +6,7 @@ import {
   rankPersonaMatches,
   PERSONA_FIT_SCORING_NOTE,
   UI_PERSONAS,
+  UI_TO_ENGINE_PERSONA,
   type PersonaFitProductInput,
 } from '@/lib/persona-fit';
 import { getPersona } from '@/services/persona-matcher';
@@ -56,6 +57,22 @@ describe('UI_PERSONAS — the 6-to-4 mapping', () => {
   it('every mapped engine persona exists in the engine', () => {
     for (const ui of UI_PERSONAS) {
       expect(enginePersonaFor(ui)).toEqual(getPersona(ui.enginePersonaId));
+    }
+  });
+
+  it('UI_TO_ENGINE_PERSONA is the single mapping table the entries derive from', () => {
+    // Stage 2, S2-3: one table, six UI personas, four engine ids.
+    expect(UI_TO_ENGINE_PERSONA).toEqual({
+      student: 'student',
+      creator: 'content',
+      gamer: 'gaming',
+      traveler: 'work',
+      'home-office': 'work',
+      fitness: 'work',
+    });
+    expect(new Set(Object.values(UI_TO_ENGINE_PERSONA)).size).toBe(4);
+    for (const ui of UI_PERSONAS) {
+      expect(ui.enginePersonaId).toBe(UI_TO_ENGINE_PERSONA[ui.id]);
     }
   });
 

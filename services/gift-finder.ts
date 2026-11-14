@@ -25,9 +25,10 @@
  */
 
 import { discountPercent } from '@/lib/deal-math';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 
-/** Products the demo seed must never surface as recommendations. */
-export const GIFT_EXCLUDED_SLUGS = ['sample-laptop'] as const;
+/** Alias of the shared EXCLUDED_SLUGS (Stage 2, S2-1) — kept so existing importers keep working. */
+export const GIFT_EXCLUDED_SLUGS = EXCLUDED_SLUGS;
 
 /**
  * Shipping honesty note (shown by the route + page): no live shipping

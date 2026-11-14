@@ -26,7 +26,7 @@ import { tFor } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Globe, ArrowRight } from 'lucide-react';
-import { formatUsd } from '@/lib/region';
+import { formatPrice, formatUsd } from '@/lib/region';
 import { formatFxStatus } from '@/lib/fx-status';
 import { useRegion } from '@/components/region/region-provider';
 import type { CurrencyCode } from '@/services/currency';
@@ -93,10 +93,9 @@ export function LandedCostWidget() {
   }, [countryCode]);
 
   function formatLocal(usdLocal: number, currency: CurrencyCode, locale: string): string {
-    return new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency,
-    }).format(usdLocal);
+    // Stage 2, S2-2: canonical formatter (identical output — the
+    // currency's default fraction digits, same as the inline call).
+    return formatPrice(usdLocal, currency, locale);
   }
 
   return (

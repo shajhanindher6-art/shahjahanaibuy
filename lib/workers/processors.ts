@@ -30,6 +30,7 @@ import {
   type HfResult,
 } from '@/services/visual-search';
 import { logger } from '@/lib/config/logger';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 import type { AiAnalyzeJobData, JobDefinition, JobResult } from './types';
 // Section 19, Phase 1 (§12 #8) — recordProviderHealth had zero
 // live callers; the price.refresh processor reports each provider
@@ -1162,7 +1163,7 @@ async function processAiAnalyze(job: JobDefinition): Promise<JobResult> {
     .from('products')
     .select('id, slug, name, brand')
     .in('id', ids)
-    .neq('slug', 'sample-laptop')
+    .neq('slug', EXCLUDED_SLUGS[0])
     .is('deleted_at', null);
   if (productsError) {
     return { success: false, processed: 0, errors: [productsError.message] };

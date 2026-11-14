@@ -113,6 +113,7 @@ import { getSearchTermBySlug } from '@/lib/search-terms';
 import { getEventBySlug } from '@/components/seasonal/events';
 import { findStorePage } from '@/lib/store-directory';
 import { getPostBySlug } from '@/lib/blog/posts';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 
 export type SlugKind =
   | 'product'
@@ -297,7 +298,7 @@ export async function slugExists(
       `${supabaseUrl}/rest/v1/products` +
       `?slug=eq.${encodeURIComponent(slug)}` +
       `&deleted_at=is.null` +
-      `&slug=neq.sample-laptop` +
+      `&slug=neq.${EXCLUDED_SLUGS[0]}` +
       `&select=slug&limit=1`;
     const res = await fetchFn(url, { headers, signal });
     if (!res.ok) {

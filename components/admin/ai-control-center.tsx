@@ -328,10 +328,11 @@ export function AiControlCenter() {
       <section aria-label="Provider health">
         <h2 className="text-xl font-semibold">Provider health</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Registry data providers (CSV, Amazon, Best Buy, Apify) — read
-          only. A provider that cannot fetch says why, in plain
-          language; a provider with no recorded calls shows no health
-          history rather than a guessed status.
+          Registry data providers (CSV, Amazon, Best Buy, Apify
+          (banned / fail-closed — never called)) — read only. A
+          provider that cannot fetch says why, in plain language; a
+          provider with no recorded calls shows no health history
+          rather than a guessed status.
         </p>
         {providerHealthError ? (
           <p className="mt-4 rounded-lg border border-red-300 bg-red-50 p-4 text-sm dark:border-red-800 dark:bg-red-950">

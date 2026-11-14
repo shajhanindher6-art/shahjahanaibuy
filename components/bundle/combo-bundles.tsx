@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ComboBundleCard } from '@/components/bundle/combo-bundle-card';
 import type { BundleItemInput, BundleTotals } from '@/lib/bundles';
+import { isExcludedSlug } from '@/lib/public-products';
 
 /**
  * Combo bundle picker (Section 3, item 5).
@@ -38,7 +39,7 @@ export function ComboBundles() {
         const res = await fetch('/api/v1/products?pageSize=100');
         const data = await res.json();
         const list: ProductOption[] = ((data?.data ?? []) as ProductOption[])
-          .filter((p) => p.slug !== 'sample-laptop')
+          .filter((p) => !isExcludedSlug(p.slug))
           .map((p) => ({ slug: p.slug, name: p.name }));
         if (!cancelled) {
           setProducts(list);

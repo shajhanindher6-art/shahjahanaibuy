@@ -1374,7 +1374,7 @@ describe('F-P1-29 getProducts — priceState on every listed product with a pric
     };
   }
 
-  it('attaches STALE to a listed product whose recorded price is 11 days old', async () => {
+  it('attaches STALE to a listed product whose recorded price is stale', async () => {
     const { getProducts } = await import('@/services/products');
     const client = listFakeClient({
       merchantRows: [
@@ -1391,10 +1391,18 @@ describe('F-P1-29 getProducts — priceState on every listed product with a pric
     });
     const r = await getProducts(client as never, {});
     expect(r.products).toHaveLength(1);
-    // The live-catalog shape: unverified + 11 days old = STALE,
-    // with the reason attached — never a bare label.
+    // The live-catalog shape: unverified + stale = STALE, with the
+    // reason attached — never a bare label. The fixture date is
+    // fixed (2026-11-02T07:13:52Z) but `now` is live, so the age
+    // in days grows by one per day — compute it from the fixture
+    // date with the same floor formula production uses
+    // (lib/price-freshness.ts getPriceAgeDays), never a hardcoded
+    // day count, or this test flips every midnight.
+    const expectedDays = Math.floor(
+      (Date.now() - new Date('2026-11-02T07:13:52.000Z').getTime()) / 86_400_000
+    );
     expect(r.products[0].priceState?.state).toBe('STALE');
-    expect(r.products[0].priceState?.reason).toMatch(/11 days/);
+    expect(r.products[0].priceState?.reason).toMatch(new RegExp(`${expectedDays} days`));
   });
 
   it('carries no priceState when no in-stock listing shows a price', async () => {

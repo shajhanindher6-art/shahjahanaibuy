@@ -13,6 +13,7 @@
 
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
+import { formatUsd } from '@/lib/region';
 import Link from 'next/link';
 import { TrendingDown, TrendingUp, Target } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -57,15 +58,6 @@ export function summarizeWatchedPrices(items: WatchedPriceItem[]): WatchedPriceS
     }
   }
   return { biggestDrop, biggestRise, belowTargetCount, watchedCount: items.length, pricedCount };
-}
-
-function formatUsd(value: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
 }
 
 function formatPct(value: number): string {

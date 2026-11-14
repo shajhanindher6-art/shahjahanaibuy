@@ -18,6 +18,7 @@
 
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
+import { formatUsd } from '@/lib/region';
 import { PiggyBank, Flame, Award } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { saverBadgeLabel, type SaverBadge } from '@/lib/savings';
@@ -31,15 +32,6 @@ export interface SavingsWidgetProps {
   streakWeeks: number;
   /** Saver badge derived from the event count (none/bronze/silver/gold/platinum). */
   badge: SaverBadge;
-}
-
-function formatUsd(value: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
 }
 
 export function SavingsWidget({ totalSaved, eventCount, streakWeeks, badge }: SavingsWidgetProps) {

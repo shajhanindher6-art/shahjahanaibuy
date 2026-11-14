@@ -17,6 +17,7 @@ import {
   USD_PER_UNIT,
   type CurrencyCode,
 } from '@/services/currency';
+import { formatPrice } from '@/lib/region';
 
 /** All 51 supported codes, in table order (USD first). */
 export const SUPPORTED_CURRENCIES: CurrencyCode[] = Object.keys(
@@ -70,14 +71,12 @@ export function convertCurrency(
   };
 }
 
-/** Format an amount in a currency with grouping (2 decimals). */
+/** Format an amount in a currency with grouping (2 decimals). Stage 2, S2-2: delegates to the canonical formatPrice in lib/region.ts. */
 export function formatConvertedAmount(amount: number, code: CurrencyCode): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: code,
+  return formatPrice(amount, code, 'en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(amount);
+  });
 }
 
 /** Parse the page's GET params: ?amount=…&from=…&to=…. */

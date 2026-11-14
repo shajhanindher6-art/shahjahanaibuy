@@ -52,7 +52,12 @@ describe('Section 10 — shareable search (?q=)', () => {
 
   it('ai-search excludes the sample-laptop health-check row', () => {
     const aiSearch = read('services/ai-search.ts');
-    expect(aiSearch).toContain(".neq('slug', 'sample-laptop')");
+    // Stage 2, S2-1: the exclusion routes through the shared
+    // EXCLUDED_SLUGS constant (lib/public-products.ts), not an
+    // inline literal — same exclusion, one source of truth.
+    expect(aiSearch).toContain('EXCLUDED_SLUGS');
+    expect(aiSearch).toContain(".neq('slug', EXCLUDED_SLUGS[0])");
+    expect(aiSearch).not.toContain(".neq('slug', 'sample-laptop')");
   });
 });
 

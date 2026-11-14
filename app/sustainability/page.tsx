@@ -22,6 +22,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getProducts } from '@/services/products';
 import { getMerchantProducts } from '@/services/commerce';
 import { getProductEndurance } from '@/services/hardware-endurance';
+import { isExcludedSlug } from '@/lib/public-products';
 import {
   resolveCarbonLabel,
   getRepairabilityDatabase,
@@ -73,7 +74,7 @@ export default async function SustainabilityPage() {
 
   const carbonLabels = await Promise.all(
     products
-      .filter((p) => p.slug !== 'sample-laptop')
+      .filter((p) => !isExcludedSlug(p.slug))
       .map(async (product) => {
         const [endurance, listings] = await Promise.all([
           getProductEndurance(supabase, product.id),

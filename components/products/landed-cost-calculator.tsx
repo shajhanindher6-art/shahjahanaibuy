@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { REGIONS, convertUsd, getRegionByCountry } from '@/lib/region';
+import { REGIONS, convertUsd, formatPrice, formatUsd, getRegionByCountry } from '@/lib/region';
 import type { CurrencyCode } from '@/services/currency';
 import {
   DEFAULT_DUTY_PCT,
@@ -141,19 +141,9 @@ export function LandedCostCalculator({
   function formatLocal(usd: number): string {
     const converted =
       fx && fx.rates[currency] ? usd * (fx.rates[currency] as number) : convertUsd(usd, currency);
-    return new Intl.NumberFormat(region?.locale ?? 'en-US', {
-      style: 'currency',
-      currency,
-    }).format(converted);
-  }
-
-  function formatUsd(usd: number): string {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(usd);
+    // Stage 2, S2-2: canonical formatter (identical output — the
+    // currency's default fraction digits, same as the inline call).
+    return formatPrice(converted, currency, region?.locale ?? 'en-US');
   }
 
   // FX status line (Option 12 delta): the feed's own last-update

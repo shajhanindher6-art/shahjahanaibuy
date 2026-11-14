@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { getRegionByCountry, convertUsd, REGIONS } from '@/lib/region';
+import { getRegionByCountry, convertUsd, formatPrice, formatUsd, REGIONS } from '@/lib/region';
 import type { CurrencyCode } from '@/services/currency';
 import { DEFAULT_DUTY_PCT, standardRateForCountry } from '@/services/tax-estimator';
 import { buildStoreSearchUrl, getStoresForCountry } from '@/lib/stores';
@@ -216,19 +216,8 @@ export function RegionArbitrageTable({
   function formatLocal(row: ArbitrageRow, usd: number): string {
     const rate = fx?.rates[row.currency];
     const converted = rate && rate > 0 ? usd * rate : convertUsd(usd, row.currency);
-    return new Intl.NumberFormat(row.locale, {
-      style: 'currency',
-      currency: row.currency,
-    }).format(converted);
-  }
-
-  function formatUsd(usd: number): string {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(usd);
+    // Stage 2, S2-2: canonical formatter (identical output).
+    return formatPrice(converted, row.currency, row.locale);
   }
 
   // FX status line (Option 12 delta): the feed's own last-update

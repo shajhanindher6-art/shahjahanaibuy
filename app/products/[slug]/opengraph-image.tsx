@@ -1,5 +1,6 @@
 import { ImageResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 
 /**
  * Per-product Open Graph image (1200×630), generated at runtime.
@@ -33,7 +34,7 @@ async function loadProduct(slug: string): Promise<{
       .from('products')
       .select('id, name, brand')
       .eq('slug', slug)
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .is('deleted_at', null)
       .single();
     if (!product) return null;

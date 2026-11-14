@@ -20,6 +20,7 @@ import { predictPriceDrop } from './ai-predictions';
 import { dealScoreForDisplay } from '@/lib/deal-score';
 import { discountPercent } from '@/lib/deal-math';
 import { PUBLISHED_PRODUCT_STATUS, normalizePriceVerificationStatus } from '@/services/price-verification';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 import {
   FEW_SEARCH_RESULTS,
   levenshteinDistance,
@@ -649,7 +650,7 @@ export async function suggestFuzzyCorrection(
       .from('products')
       .select('name, brand, category')
       .is('deleted_at', null)
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .limit(MAX_SEARCH_CANDIDATES);
     const rows = (data ?? []) as Array<{
       name: string;
@@ -697,7 +698,7 @@ export async function aiSearch(
           .from('products')
           .select('id, name, slug, description, brand, category, image_url, gtin, confidence_score, data_freshness, created_at, updated_at')
           .is('deleted_at', null)
-          .neq('slug', 'sample-laptop')
+          .neq('slug', EXCLUDED_SLUGS[0])
           // Section 17, Stage C item 15: a pending product is not
           // a compare candidate. On 42703 (migration 045
           // unapplied) this select errors, data is null, and the
@@ -773,7 +774,7 @@ export async function aiSearch(
         // products API and /brands + /categories pages exclude it.
         // The row itself stays in the live database for health
         // checks — it is never deleted here.
-        .neq('slug', 'sample-laptop');
+        .neq('slug', EXCLUDED_SLUGS[0]);
 
       // Section 17, Stage C item 15: public search lists published
       // products only. `withStatus` is false on the 42703 retry

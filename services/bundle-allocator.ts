@@ -29,7 +29,10 @@
  *   recorded lowest merchant price.
  */
 
-export const BUNDLE_EXCLUDED_SLUGS = ['sample-laptop'] as const;
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
+
+/** Alias of the shared EXCLUDED_SLUGS (Stage 2, S2-1) — kept so existing importers keep working. */
+export const BUNDLE_EXCLUDED_SLUGS = EXCLUDED_SLUGS;
 
 /** One catalog product as the allocator sees it. */
 export interface BundleCandidate {

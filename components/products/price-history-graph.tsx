@@ -41,6 +41,8 @@ import {
   MOVING_AVERAGE_WINDOW_DAYS,
   type TrendPoint,
 } from '@/lib/price-trend';
+import { formatPrice } from '@/lib/region';
+import type { CurrencyCode } from '@/services/currency';
 import {
   gateTrendStats,
   getHistoryProvenance,
@@ -157,10 +159,9 @@ export function PriceHistoryGraph({ slug, className }: PriceHistoryGraphProps) {
     (value: number) => {
       if (displayCurrency) {
         try {
-          return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: displayCurrency,
-          }).format(value);
+          // Stage 2, S2-2: canonical formatter — throws the same
+          // RangeError for an invalid recorded code, caught below.
+          return formatPrice(value, displayCurrency as CurrencyCode, 'en-US');
         } catch {
           // Invalid recorded code — fall through to the bare number.
         }

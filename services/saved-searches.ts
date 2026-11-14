@@ -32,6 +32,7 @@ import {
   tokenizeSearchTerms,
 } from '@/services/ai-search';
 import { queueNotification } from '@/services/notifications';
+import { EXCLUDED_SLUGS } from '@/lib/public-products';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -449,7 +450,7 @@ export async function notifySavedSearchMatches(
       .from('products')
       .select('id, name, slug, brand, category, description, created_at')
       .is('deleted_at', null)
-      .neq('slug', 'sample-laptop')
+      .neq('slug', EXCLUDED_SLUGS[0])
       .order('created_at', { ascending: false })
       .limit(200);
     if (productError || !productRows) {

@@ -96,7 +96,12 @@ describe('sitemap additions (B6, A3, A4, C1, C9)', () => {
   });
 
   it('keeps the sample-laptop exclusion on both DB queries', () => {
-    expect(text.match(/\.neq\('slug', 'sample-laptop'\)/g)?.length).toBe(2);
+    // Stage 2, S2-1: both queries exclude via the shared
+    // EXCLUDED_SLUGS constant (lib/public-products.ts), not an
+    // inline literal — same exclusion, one source of truth.
+    expect(text).toContain('EXCLUDED_SLUGS');
+    expect(text.match(/\.neq\('slug', EXCLUDED_SLUGS\[0\]\)/g)?.length).toBe(2);
+    expect(text).not.toContain(".neq('slug', 'sample-laptop')");
   });
 
   it('stays a single-file sitemap (no multi-file split)', () => {

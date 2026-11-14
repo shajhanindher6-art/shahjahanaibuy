@@ -28,6 +28,8 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getLiveSessionDetail, liveSessionStatusLabel } from '@/lib/live-sessions';
 import { appConfig } from '@/lib/config/app';
 import { buildLiveSessionEventJsonLd, toJsonLd } from '@/lib/json-ld';
+import { formatPrice } from '@/lib/region';
+import type { CurrencyCode } from '@/services/currency';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,23 +76,20 @@ export async function generateMetadata({
  * Recorded merchant prices are USD unless a 3-letter currency code
  * was recorded on the listing; currency_id is NULL on the seed rows,
  * so the USD format is the default, not an assumption about a
- * specific listing.
+ * specific listing. Stage 2, S2-2: the formatting itself is the
+ * canonical formatPrice (lib/region.ts); this wrapper only keeps
+ * the local fallback — an unparseable/invalid recorded code falls
+ * through to USD, exactly as before.
  */
-function formatPrice(price: number, currencyId: string | null): string {
+function formatLivePrice(price: number, currencyId: string | null): string {
   if (currencyId && /^[A-Za-z]{3}$/.test(currencyId)) {
     try {
-      return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: currencyId.toUpperCase(),
-      }).format(price);
+      return formatPrice(price, currencyId.toUpperCase() as CurrencyCode, 'en-US');
     } catch {
       // Fall through to the USD format below.
     }
   }
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(price);
+  return formatPrice(price, 'USD', 'en-US');
 }
 
 export default async function LiveSessionPage({ params }: { params: { slug: string } }) {
@@ -231,7 +230,7 @@ export default async function LiveSessionPage({ params }: { params: { slug: stri
                   <p className="mt-1 text-sm text-muted-foreground">
                     {lowestPrice !== null ? (
                       <>
-                        From {formatPrice(lowestPrice, currencyId)}
+                        From {formatLivePrice(lowestPrice, currencyId)}
                         {inStock ? '' : ' (not currently in stock at that listing)'}
                       </>
                     ) : (

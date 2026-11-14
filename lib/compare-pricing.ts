@@ -8,15 +8,16 @@
  * never a guessed number; the page renders words for nulls.
  */
 
+import { formatPrice } from '@/lib/region';
+
 export function formatUsd(amount: number): string {
   // Fixed 2 decimals: these are computed money labels (gaps,
-  // ranges), where "$20.5" would read as a typo.
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
+  // ranges), where "$20.5" would read as a typo. Stage 2, S2-2:
+  // delegates to the canonical formatPrice in lib/region.ts.
+  return formatPrice(amount, 'USD', 'en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(amount);
+  });
 }
 
 /**

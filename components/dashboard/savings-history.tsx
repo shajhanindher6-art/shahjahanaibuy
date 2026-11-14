@@ -19,20 +19,12 @@
 
 import { useRegion } from '@/components/region/region-provider';
 import { tFor } from '@/lib/i18n';
+import { formatUsd } from '@/lib/region';
 import { PiggyBank } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import type { SavingsEvent } from '@/lib/savings';
 
 export type { SavingsEvent };
-
-function formatUsd(value: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 export function basisLabel(basis: SavingsEvent['basis']): string {
   return basis === 'price_drop' ? 'Price drop purchase' : 'Alert purchase';

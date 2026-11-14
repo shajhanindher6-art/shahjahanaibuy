@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { POOL_SHIPPING_NOTE, splitShippingEstimate } from '@/services/smartpool';
+import { formatUsd } from '@/lib/region';
 
 /**
  * Shared international shipping split (Option 11, Phase 3).
@@ -43,14 +44,6 @@ export function PoolShippingSplit({
   const split = stored ?? preview;
   const usingPreview = stored === null && preview !== null;
 
-  function formatUsd(usd: number): string {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(usd);
-  }
 
   return (
     <div className="space-y-2 rounded-md border p-3">
