@@ -77,6 +77,22 @@ export interface PriceMatchPolicy {
  * retailer's own public policy page. Deliberately conservative:
  * where a policy covers only the retailer's own prices, the entry
  * says 'limited' instead of 'yes'.
+ *
+ * COUNT — resolved 2026-11-14 (Master Tool Integration, Stage 0,
+ * item B-21): there are 7 policies and 7 sourceUrl values in this
+ * array. The audit's "8 sourceUrl fields" counted the interface
+ * field declaration (`sourceUrl: string;` above) as an eighth
+ * occurrence — it is a type field, not a policy. All 7 source URLs
+ * were re-opened on 2026-11-14 and each still says what its
+ * summary claims (Best Buy matches competitors; Walmart matches
+ * Walmart.com in store only; Target own-price within 14 days +
+ * Nov 1–Dec 24, 2026 holiday window; Newegg own-price drop within
+ * 7 days as a Customer Care card; Costco.com 30-day adjustment,
+ * no other retailers; Amazon does not price-match; eBay is a
+ * marketplace with no single policy, so its homepage is the
+ * source). Amazon's fetch was a 2025-12-07 cached copy — wording
+ * unchanged, re-check it at the next review. Next re-verification
+ * is due when any summary is next edited, or by 2026-12-14.
  */
 export const PRICE_MATCH_POLICIES: PriceMatchPolicy[] = [
   {

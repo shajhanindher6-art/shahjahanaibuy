@@ -1,6 +1,6 @@
 # PROJECT ARCHITECTURE — SmartBuy AI
 
-> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. Its stack/version numbers and route/page counts are stale (it predates Sections 9–17: 36 AI tools, 121 page routes, 181 API routes, middleware soft-404 handling, cron-job.org scheduling). Do not use it for current architecture decisions. Superseded by: `project-summary.md` (Stack + Architecture). **Correction 13 Nov 2026 (Sections 21–25, Stage L):** the two "BullMQ-ready / BullMQ support" claims in this file were wrong and are corrected in place — BullMQ is NOT installed; the queue is in-process `SynchronousQueue` only. The rest of the file is still frozen.
+> **FROZEN — historical snapshot, 12 Nov 2026.** This file is from July 2026 and is kept for history only. Its stack/version numbers and route/page counts are stale (it predates Sections 9–17: 36 AI tools, 121 page routes, 181 API routes, middleware soft-404 handling, cron-job.org scheduling). Do not use it for current architecture decisions. Superseded by: `project-summary.md` (Stack + Architecture). **Correction 13 Nov 2026 (Sections 21–25, Stage L):** the two "BullMQ-ready / BullMQ support" claims in this file were wrong and are corrected in place — BullMQ is NOT installed; the queue is in-process `SynchronousQueue` only. **Correction 14 Nov 2026 (Master Tool Integration, Stage 0):** the Provider Pattern line listed Apify as a data provider — Apify is banned / fail-closed only, never a live provider; the Workers line now also states the Redis scope (Upstash REST rate limiting only) and the single scheduler (cron-job.org). The rest of the file is still frozen.
 
 **Version:** 1.0.0  
 **Date:** 2026-07-12
@@ -88,7 +88,7 @@ project/
 ### 3. Service Layer (`services/`)
 - **24 service modules** covering: products, catalog, commerce, reviews, wishlists, alerts, AI (search, summary, predictions, comparison, recommendations, deals), notifications, email, push, stripe, health, monitoring, admin, chat, affiliate, profiles, settings, user-preferences, alert-history, freshness, feature-flags, audit-logs
 - **Data Pipeline**: Ingestion → Validation → Normalization → Brand Detection → Category Assignment → Deduplication → Image Processing
-- **Provider Pattern**: Registry-based data provider system (Apify, CSV, Mock)
+- **Provider Pattern**: Registry-based data provider system (CSV, Mock; Apify is registered fail-closed only — scraping is banned, Apify is never a live provider, see `services/providers/apify-provider.ts`)
 
 ### 4. Data Layer (Supabase)
 - **60 tables** with RLS on every table
@@ -98,7 +98,7 @@ project/
 
 ### 5. Infrastructure Layer
 - **Middleware**: Supabase session refresh on every request, auth-gated routes
-- **Workers**: Job queue is in-process only (`SynchronousQueue` in `lib/workers/queue.ts`); BullMQ is NOT installed (`bullmq` is absent from `package.json`) and the `BullMQQueue` adapter in code is never reached — it loads via `eval('require')`, which always throws and falls back to sync. There is no Redis worker. (Corrected 13 Nov 2026 — this file previously said "BullMQ-ready" / "BullMQ support".)
+- **Workers**: Job queue is in-process only (`SynchronousQueue` in `lib/workers/queue.ts`); BullMQ is NOT installed (`bullmq` is absent from `package.json`) and the `BullMQQueue` adapter in code is never reached — it loads via `eval('require')`, which always throws and falls back to sync. There is no Redis worker and no Redis queue: the only scheduler is cron-job.org (POSTs to `CRON_SECRET`-protected endpoints), and Redis (Upstash REST) is rate limiting only (`lib/api/rate-limit.ts`). (Corrected 13 Nov 2026 — this file previously said "BullMQ-ready" / "BullMQ support"; Redis scope clarified 14 Nov 2026, Master Tool Integration Stage 0.)
 - **Caching**: Cache abstraction with provider registry
 - **PWA**: Service worker with stale-while-revalidate, push handlers
 

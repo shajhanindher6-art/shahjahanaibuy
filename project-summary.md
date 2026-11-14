@@ -1,6 +1,6 @@
 # SmartBuy AI — Project Summary
 
-**Last updated:** 2026-11-13 (Section 20; gate numbers verified 13 Nov 2026)
+**Last updated:** 2026-11-14 (Master Tool Integration, Stage 0 — counts re-verified from the tree; section histories below are unchanged dated records)
 **Repo:** https://github.com/shajhanindher6-art/shahjahanaibuy (public, branch `main`)
 **Live site:** https://shahjahanaibuy-b1zp.vercel.app/
 **Supabase project:** https://inejitcvexpghejhuuko.supabase.co
@@ -33,11 +33,11 @@ Next.js 13.5.9 is ~2 years old (current is 15.x). Upgrading is a project decisio
 
 ## Architecture
 
-- **App Router pages** — 129 `page.tsx` files under `app/` (counted 2026-11-13). Dynamic routes use middleware slug-existence checks that rewrite unknown slugs to `/__smartbuy_not_found__` (a path with no route), so Next returns a real HTTP 404 with the app's not-found UI. 9 dynamic routes covered: products, brands, categories, find, stores, events, blog, live, creators. (`/creators` 404s activate only after the owner applies migration 044 — until then unknown creator slugs return 200 by design.)
-- **API** — 197 route files / 266 exported handlers under `app/api/` (GET 142, POST 88, DELETE 18, PATCH 14, PUT 4 — counted 2026-11-13). Full reference: `API_DOCUMENTATION.md`; machine-readable paths+methods: `docs/openapi.json`.
+- **App Router pages** — 140 `page.tsx` files under `app/` (counted 2026-11-14, was 129 on 2026-11-13). Dynamic routes use middleware slug-existence checks that rewrite unknown slugs to `/__smartbuy_not_found__` (a path with no route), so Next returns a real HTTP 404 with the app's not-found UI. 9 dynamic routes covered: products, brands, categories, find, stores, events, blog, live, creators. (`/creators` 404s activate only after the owner applies migration 044 — until then unknown creator slugs return 200 by design.)
+- **API** — 198 route files / 268 exported handlers under `app/api/` (GET 143, POST 89, DELETE 18, PATCH 14, PUT 4 — counted 2026-11-14, was 197/266 on 2026-11-13). Full reference: `API_DOCUMENTATION.md`; machine-readable paths+methods: `docs/openapi.json`.
 - **Auth** — email/password + Google OAuth only; no magic link; email confirmation on; password reset via `/auth/callback?type=recovery`; 8-character client minimum. Server-side session validation uses `getUser()`, never `getSession()`. Delete-account exists (`DELETE /api/v1/account`, requires `{confirmation:"DELETE"}`, 1/hour).
 - **Admin** — `/admin` + sub-pages (analytics, affiliate clicks, users, audit logs, feature flags, intake, merchants, fact-check, community-deals), server-guarded. Admin stats are real DB counts. The server-side admin check resolves the role via `role_id → roles.name` (`lib/admin-role.ts`, `fetchProfileRoleName`) — it no longer reads a `profiles.role` column, which does not exist in the migration chain. The `/owner` layout had the same stale read and was fixed the same way in Section 18 Phase 0 (audit §1 #1). Live verification of both is still owner-gated (one admin login attempt). There **is** an owner dashboard (`app/owner/`, admin-only, server-guarded): revenue, subscription/plan counts, API usage, price-source health, failed jobs and error logs in aggregate — with honest empty states where the underlying table is not yet applied live (e.g. the error log until migration 048 is applied).
-- **Rate limiting** — all 197 API route files call `rateLimitResponse` (enforced by test). Upstash Redis first when configured, otherwise per-instance in-memory (fail-open by design).
+- **Rate limiting** — all 198 API route files call `rateLimitResponse` (enforced by test). Upstash Redis first when configured, otherwise per-instance in-memory (fail-open by design).
 - **Security** — nonce-based CSP, `requireAuth`/`requireAdmin` fail-closed, service-role client returns `null` when the key is unset (callers 503, never silently run as anon), no hardcoded secrets found by grep, Stripe webhook signature-verified with idempotency, smart-home webhook HMAC-SHA256 + `timingSafeEqual`.
 - **Background work** — there is no BullMQ/Redis worker. `bullmq`/`ioredis` are not in `package.json`; `lib/workers/queue.ts` loads BullMQ only via `eval('require')`, which always throws and falls back to an in-process `SynchronousQueue`. The only scheduler is cron-job.org (see "Cron jobs" below). The standing rule is exactly **one** scheduler — never two.
 - **i18n** — 167 keys, 20 languages. No localized routes exist (hreflang points at the same URL; disclosed as a limit in code).
@@ -46,15 +46,17 @@ Next.js 13.5.9 is ~2 years old (current is 15.x). Upgrading is a project decisio
 
 ## Features
 
-### The 36 AI tools (0 stubs)
+### The 46 AI tools (0 stubs)
 
-36 tool directories under `app/tools/`; the hub (`app/tools/page.tsx`) lists all 36. All render logged-out; 10 gate only their save/persist function, not viewing.
+46 tool directories under `app/tools/`; the hub (`app/tools/page.tsx`) lists all 46. All render logged-out; the 10 pre-existing tools below gate only their save/persist function, not viewing.
 
 Public (26): help-me-choose, budget-finder, store-finder, price-history, gift-splitter, forecast-explainer, currency-converter, price-alert-simulator, deal-checker, landed-cost, price-protection, emi-calculator, volatility-ranking, catalog-freshness, api-quota-calculator, deal-score-breakdown, store-trust-checker, real-price-converter, emi-vs-saving, target-price-picker, gift-occasions, cheapest-store-by-category, coupons-cashback (explicitly labelled demo/seed data), product-qa, best-time-calendar, trade-in-finder (directory starts empty; predictor labelled "Simulated").
 
 Auth-gated function (10): list-optimizer, expense-tracker, subscription-manager, monthly-planner, savings-dashboard, warranty-claim-helper, price-drop-digest (guest mode exists), eco-coach, smart-home-agent, future-you-planner.
 
-Per-tool metadata exists on all 36 tools: 21 define their own `page.tsx` metadata and 15 inherit generic metadata from their own `layout.tsx` (36/36 covered).
+10 Future AI Tools (added 2026-11-14, all render logged-out; only own-it-check reads the visitor's own saved lists): upgrade-advisor, persona-fit, price-match, own-it-check, energy-cost, negotiation-coach, repairability, deal-stacker, refurbished-checklist, compatibility-checker. The hub's `isNew` badge marks exactly these 10 (decided 2026-11-14 — see `app/tools/page.tsx`).
+
+Per-tool metadata exists on all 46 tools: 31 define their own `page.tsx` metadata and 15 inherit generic metadata from their own `layout.tsx` (46/46 covered).
 
 ### Core surfaces
 
@@ -80,7 +82,7 @@ Per-tool metadata exists on all 36 tools: 21 define their own `page.tsx` metadat
 
 ## Database
 
-- **68 migration files** in `supabase/migrations/` (001–071 with gaps 024, 025, 046, 064 — plus the unnumbered `20260718060823_fix_anonymous_access_policies.sql`). 122 `CREATE TABLE` statements, 122 distinct tables, every table RLS-enabled. 617 `CREATE POLICY` statements, 273 distinct policy names (many are DROP+CREATE recreations) — re-counted at the Section 20 audit (13 Nov 2026) by the statement-start method; raw-substring counts are 123 tables / 618 policies (method-sensitive — a `CREATE` inside a comment/string changes the total).
+- **68 migration files** in `supabase/migrations/` (001–071 with gaps 024, 025, 046, 064 — plus the unnumbered `20260718060823_fix_anonymous_access_policies.sql`). 129 `CREATE TABLE` statements (raw-substring count, 2026-11-14; 126 at statement start, 3 mentions inside comments), 126 distinct tables, every table RLS-enabled. 621 `CREATE POLICY` statements at statement start (623 raw-substring), 417 distinct policy names (many are DROP+CREATE recreations) — re-counted 2026-11-14, Master Tool Integration Stage 0. Note: the Section 20 figure of "273 distinct policy names" is superseded and not reproducible — only 4 policy statements were added since Section 20, so distinct names could have grown by at most 4; the old figure used a different, unrecorded method.
 - **Applied status of every migration is UNKNOWN from the repo** — only the owner can check `supabase_migrations.schema_migrations` in Supabase. Two are proven NOT applied live: 033 (`live_shopping_sessions` table missing — proven by a PGRST205) and 044 (`creator_slugs` view — owner step; applying it activates `/creators` 404s with no redeploy).
 
 > **Contradiction — owner re-confirmation pending (13 Nov 2026, Sections 21–25 audit §1A A-3):** the live recheck on 13 Nov 2026 ~10:17 PKT found `/creators/unknown-slug-xyz` → **404** (confirmed twice), which is the behaviour the 044 view produces — suggesting 044 **is** applied live, the opposite of the line above. The repo cannot prove either state, so the line above is left EXACTLY as written until the owner re-confirms 044 in `supabase_migrations.schema_migrations`. Do not "fix" it from code alone.
@@ -128,7 +130,7 @@ Whether the cron-job.org jobs exist or fire is **maloom nahi** from the repo —
 - **Vercel, deploy on push to `main`.** No build overrides, no custom headers, no Vercel Cron.
 - **Verification gate before every push:** `npx tsc --noEmit` = 0 errors, full `npx vitest run` = 100% pass, clean `next build`, headless smoke, live recheck after push. Push only on the user's live approval.
 - **GitHub workflow files** (`.github/workflows/*`) cannot be pushed by the GitHub App (403) — workflow changes go via the GitHub website. `check-press-counts.yml` is still pending via web UI.
-- **Press counts** are generated from real test runs (`lib/generated/press-counts.json` + `scripts/generate-press-counts.mjs`); the check fails if the JSON is stale. Note: the JSON currently says 3,981/308, matching the verified Sections 21–25 suite (308 files / 3,981 tests).
+- **Press counts** are generated from real test runs (`lib/generated/press-counts.json` + `scripts/generate-press-counts.mjs`); the check fails if the JSON is stale. Note: the JSON currently says 4,526/332, matching the verified 10 Future AI Tools suite (332 files / 4,526 tests, 2026-11-14).
 
 ## Section 18 — Production Readiness, Security Hardening & System Reliability (12 Nov 2026)
 
@@ -147,6 +149,23 @@ Built: central AI engine (`services/ai-engine/`, 13 adapters, 9 deterministic + 
 Audit (`~/workspace/section20-audit.md`, §12, 13 Nov 2026 ~08:31 PKT): 54 buildable, 21 owner-gated, 8 rejected, 28 already done (111 items). Gate: tsc 0 errors; vitest **296 files / 3,773 tests passed, 4 skipped, 0 failed** (was 286/3,425 at audit → +10 files, +348 tests; 10 Section 20 test files); a11y 31/31 (5 files); lint 0 errors, 0 warnings; clean build exit 0, 805 pages, `/products/[slug]` First Load 338 kB (≤350 kB ✓), homepage 323 kB, `/scan` 316 kB; API routes 190/258 (+3 files, +5 handlers); migrations 56 files, 22 DO NOT APPLY (055–058 added, all NOT applied). Pushed 13 Nov 2026 ~09:57 PKT (3 commits, 134 files, HEAD `81505fd8`); live recheck 10:17 PKT **29/29 PASS — SECTION 20 FULLY LIVE**.
 
 Built: 5 P0 honesty fixes — `/status` now says Best Buy `recorded-prices-only` and Amazon `tag-only`; AI inputs carry a typed `AIEngineInput` (`priceVerificationStatus` + `dataFreshness`) and `verifiedDataLabel` is appended only when every product is verified AND fresh; price alerts gated on `STALE_PRICE_DAYS = 7`; discounts labelled "vs list price"; the 50-floor on `confidence_score` removed and the score decoupled from Deal Score, AI deal ranking and recommendations (public label now "Data completeness"). New: GS1 GTIN validation (`lib/gtin.ts`), image-URL validation (`lib/image-url.ts`), spec templates (`lib/spec-templates.ts`), 7-dimension product quality score (`services/product-quality-score.ts`), merchant-reliability score, admin product/data-quality services; `/admin/products` + `/admin/ingestion-failures` + `/admin/ai` data-quality panel; 3 new API routes (`/api/v1/admin/data-quality`, `/api/v1/admin/products`, `/api/v1/admin/products/{id}`); migrations 055–058 written NOT applied (model number, GTIN partial UNIQUE, price-history source flags, per-spec attribution); `track_price` redefined (near-low ≤5% above low + confidence ≤45% + no rising trend). Gate fixes: 51 old tests updated to the intended behaviour + 2 genuine code fixes (personal-assistant 1–4-point copy; buy-wait "13" token match); client-bundle boundary fix (CSV hardening pulled `node:dns`/`node:net` into the browser bundle — constants moved to `lib/intake-sources.ts`, pinned by test). Docs: `docs/product-data-architecture.md`, `docs/merchant-integration-guide.md`, `docs/product-verification-policy.md`, `docs/catalog-quality-report.md`, `docs/price-data-pipeline.md`, `docs/section-20-summary.md`. Deviations (documented): per-spec attribution PARTIAL (migration 058 + writer exist, no production spec-write path); Deal Score rebase deferred (still 100/100 on the live 4-point series, withheld <5 points). Known limits: **products 10 → 10 (0 added) — honest shortfall, no verified source**; images/GTINs/specs/reviews/variants/fresh prices/verified prices all still 0/10; prices still stale (2026-11-02). The same recheck also proved Section 16 FULLY LIVE: `/creators/unknown-slug-xyz` → 404, suggesting migration 044 is applied live — see the contradiction note in Database above; owner re-confirmation is pending.
+
+## Master Tool Integration — Stage 0 (14 Nov 2026)
+
+Docs + open checks only; no behaviour change except the hub `isNew` flag values (see below). Counts re-verified from the tree on 2026-11-14 (not copied from any earlier audit):
+
+| Area | Count (2026-11-14) |
+|---|---|
+| Tool directories under `app/tools/` | 46 (36 pre-existing + 10 Future AI Tools) |
+| API `route.ts` files under `app/api/` | 198 (268 exported handlers: GET 143, POST 89, DELETE 18, PATCH 14, PUT 4) |
+| Service files under `services/` | 182 (152 top-level + 30 in subdirs) |
+| Files under `lib/` | 194 (193 `.ts`/`.tsx` + `lib/generated/press-counts.json`) |
+| Test files | 338 (332 `.test.ts` + 6 `.test.tsx` a11y-only) |
+| Press counts (`lib/generated/press-counts.json`) | 4,526 tests / 332 files, 2026-11-14 |
+| `page.tsx` files under `app/` | 140 |
+| Migration `.sql` files in `supabase/migrations/` | 68; 129 `CREATE TABLE` statements (raw-substring; 126 at statement start), 126 distinct tables |
+
+Resolved in this stage: **B-19** — hub `isNew` now means "added in the most recent tools push (10 Future AI Tools, 2026-11-14)"; the 23 older tools that still carried the flag from Sections 11/13/14/16 no longer do, so exactly 10 tools show the "New" badge. **B-20** — `DATABASE_SCHEMA.md` (68/129), this file's counts above, `PROJECT_ARCHITECTURE.md` BullMQ/Redis claims (in-process only; cron-job.org is the only scheduler; Redis = Upstash REST rate limiting only), and the Apify label (already corrected in `lib/config/providers.ts` — "Rejected — scraping is banned"; the task's path `services/providers.ts` does not exist; the remaining Apify mention in `PROJECT_ARCHITECTURE.md` is corrected in place, and the admin provider-health line in `components/admin/ai-control-center.tsx` still lists Apify among registered providers without the banned qualifier — true, since the provider is registered fail-closed, but incomplete; left for a later stage). **B-21** — T3 price-match count is **7 policies / 7 source URLs**; the audit's "8" counted the interface field declaration as an eighth occurrence. All 7 source URLs were re-opened 2026-11-14 and still say what the summaries claim (Amazon's fetch was a 2025-12-07 cached copy — wording unchanged). Design note for the Stage 1 param schema: `docs/TOOL_PARAM_SCHEMA.md`.
 
 ## Verification status (baseline, 13 Nov 2026)
 
@@ -185,7 +204,7 @@ Agentic checkout, voice skills, native app (mobile repo is README-only; `/mobile
 - This file — project overview (start here).
 - `README.md` — entry point: setup, scripts, deployment, links.
 - `docs/DEPLOYMENT.md` — deployment, env vars, migrations, cron, Stripe live gate.
-- `API_DOCUMENTATION.md` + `docs/openapi.json` — API reference (197 routes).
+- `API_DOCUMENTATION.md` + `docs/openapi.json` — API reference (198 routes).
 - `docs/rate-limits.md` — per-route rate limits. `docs/production-readiness-report.md`, `docs/security-audit-report.md`, `docs/system-health-report.md`, `docs/section-18-summary.md` — Section 18 reports (12 Nov 2026). `docs/ai-engine-architecture.md`, `docs/ai-product-analysis.md`, `docs/price-prediction-documentation.md`, `docs/decision-engine-documentation.md`, `docs/ai-security-report.md`, `docs/section-19-summary.md`, `docs/ai-background-jobs.md` — Section 19 reports (13 Nov 2026). `docs/product-data-architecture.md`, `docs/merchant-integration-guide.md`, `docs/product-verification-policy.md`, `docs/catalog-quality-report.md`, `docs/price-data-pipeline.md`, `docs/section-20-summary.md` — Section 20 reports (13 Nov 2026). `docs/owner-checklist-045-058.md` — owner checklist for migrations 045–058. `docs/section-21-25-summary.md` — Sections 21–25 summary (Stage A audit, 13 Nov 2026; build counts filled at gate time). `docs/affiliate-engine.md`, `docs/performance-budgets.md`, `docs/pwa.md`, `docs/alerts-delivery-setup.md`, `docs/sentry-triage.md`, `docs/uptime.md`, `docs/seo.md`, `docs/security-hardening.md`, `docs/visual-search.md`, `docs/responsive-qa.md`, `docs/search-console.md`, `docs/design-system.md` — current topic docs.
 - Root July 2026 docs (`DATABASE_SCHEMA.md`, `LAUNCH_CHECKLIST.md`, `PROJECT_ARCHITECTURE.md`, `QA_REPORT.md`, `SECURITY_AUDIT.md`, `FINAL_DEPLOYMENT_REPORT.md`) + `DEPLOYMENT_PREP.md` + `phase5-summary.md` — **frozen historical snapshots, do not use for current numbers** (see the banner on each file).
 - Section audits: `~/workspace/section17-audit.md` (not in this repo), `~/workspace/section16-audit.md`, `~/workspace/section15-audit.md`.
