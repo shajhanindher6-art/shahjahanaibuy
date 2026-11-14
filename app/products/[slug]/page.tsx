@@ -44,6 +44,8 @@ import {
   normalizePriceVerificationStatus,
 } from '@/services/price-verification';
 import ProductDetailClient from '@/components/products/product-detail-client';
+import { ProductTools } from '@/components/tools/product-tools';
+import { GuidedJourney } from '@/components/tools/guided-journey';
 
 export async function generateMetadata({
   params,
@@ -188,6 +190,15 @@ export default async function ProductPage({
           </p>
         </div>
       )}
+      <div className="container mx-auto max-w-6xl px-4">
+        <ProductTools
+          products={[{ slug: seo.slug, name: seo.name, id: seo.id }]}
+        />
+        {/* Master Tool Integration, Stage 5 — guided journey for
+            this product, alongside (not replacing) the Stage-3
+            "Tools for this product" block above. */}
+        <GuidedJourney productSlug={seo.slug} productId={seo.id} />
+      </div>
       {/* Section skeletons (Section 4, item 2): the hero renders from
           server-provided initial data, so this fallback is a safety
           net for a slow client boundary — never a blank area or a
