@@ -35,7 +35,7 @@ import { RelatedTools } from '@/components/tools/related-tools';
 import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getCachedProducts, parseToolParams } from '@/services/tool-integration';
+import { getCachedProducts } from '@/services/tool-integration';
 import { getBuyList } from '@/lib/buy-list';
 import { getWishlists, getWishlistItems } from '@/services/wishlists';
 import { listSavedSearches } from '@/services/saved-searches';
@@ -286,6 +286,11 @@ export default async function OwnItCheckPage({ searchParams }: OwnItCheckProps) 
                 {params.error}
               </p>
             )}
+            {params.productSlug !== null && selectedProduct === null && (
+              <p className="mt-3 text-sm font-medium text-red-600" role="alert">
+                That product is not in the catalog — pick one from the list.
+              </p>
+            )}
             <Button type="submit" className="mt-4">
               Check my saved lists →
             </Button>
@@ -437,7 +442,7 @@ export default async function OwnItCheckPage({ searchParams }: OwnItCheckProps) 
               .
             </p>
           )}
-          <RelatedTools tool="own-it-check" productSlug={parseToolParams(searchParams).productSlug} />
+          <RelatedTools tool="own-it-check" productSlug={selectedProduct?.slug ?? null} />
         </div>
       </main>
       <SiteFooter />

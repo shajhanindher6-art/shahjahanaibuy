@@ -28,7 +28,7 @@ import { RelatedTools } from '@/components/tools/related-tools';
 import { SaveCalculationButton } from '@/components/tools/save-calculation-button';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getCachedProducts, parseToolParams } from '@/services/tool-integration';
+import { getCachedProducts } from '@/services/tool-integration';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   calculateEnergyCost,
@@ -219,6 +219,11 @@ export default async function EnergyCostPage({
                 {params.tariffError}
               </p>
             )}
+            {params.productSlug !== '' && labelledProduct === null && (
+              <p className="mt-3 text-sm font-medium text-red-600" role="alert">
+                That product is not in the catalog — pick one from the list.
+              </p>
+            )}
             <Button type="submit" className="mt-4">
               Calculate running cost →
             </Button>
@@ -309,7 +314,7 @@ export default async function EnergyCostPage({
               that is 292 kWh a year, about $43.80.
             </p>
           )}
-          <RelatedTools tool="energy-cost" productSlug={parseToolParams(searchParams).productSlug} />
+          <RelatedTools tool="energy-cost" productSlug={labelledProduct?.slug ?? null} />
         </div>
       </main>
       <SiteFooter />

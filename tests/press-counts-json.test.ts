@@ -56,14 +56,14 @@ describe('press-counts.json — generated, not hardcoded', () => {
     expect(viaReader.date).toBe(pressCounts.date);
   });
 
-  it('is the current Master Tool Integration Stages 0–6 baseline (338 files / 4,725 tests, 14 November 2026)', () => {
+  it('is the current Post-Integration Verification & Real Data baseline (341 files / 4,782 tests, 14 November 2026)', () => {
     // Baseline only — the coordinator re-locks this after the final
     // full gate run (other workers add tests after this change). If
     // this test fails, regenerate the JSON
     // (`npm run generate:press-counts`) and update this baseline in
     // the same change; never edit the JSON by hand.
     expect(pressCounts).toEqual(
-      expect.objectContaining({ tests: 4725, files: 338, date: '2026-11-14' }),
+      expect.objectContaining({ tests: 4782, files: 341, date: '2026-11-14' }),
     );
   });
 });

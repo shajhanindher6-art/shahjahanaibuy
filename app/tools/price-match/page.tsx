@@ -27,7 +27,8 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
 import { RelatedTools } from '@/components/tools/related-tools';
-import { parseToolParams } from '@/services/tool-integration';
+import { parseAndValidateToolParams } from '@/services/tool-integration';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { appConfig } from '@/lib/config/app';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import { getAllStorePages } from '@/lib/store-directory';
@@ -85,12 +86,21 @@ const STATUS_BADGE_CLASS: Record<PriceMatchStatus, string> = {
 };
 
 interface PriceMatchPageProps {
-  searchParams: { status?: string | string[] };
+  // Canonical cross-tool arrival (?product=): validated against
+  // the catalog; a valid product is named and carried onward.
+  searchParams: { status?: string | string[]; product?: string | string[] };
 }
 
 export default async function PriceMatchFinderPage({
   searchParams,
 }: PriceMatchPageProps) {
+  // Validate the transferred product against the catalog: an
+  // unknown slug is treated as no product (RelatedTools carries
+  // nothing for it) and the page says so. This is the page's only
+  // product read — the directory itself stays static, and no
+  // product is fetched when the URL carries no slug.
+  const supabase = await createSupabaseServerClient();
+  const validated = await parseAndValidateToolParams(supabase, searchParams);
   const filter = parsePriceMatchFilter(searchParams);
 
   // Unique store names across the 84-store directory (eBay, Noon,
@@ -132,6 +142,23 @@ export default async function PriceMatchFinderPage({
             its current terms. SmartBuy never promises that a price
             match will be granted, and never quotes a matched price.
           </p>
+
+          {validated.product !== null && (
+            <p className="mt-4 text-sm text-muted-foreground">
+              Selected product:{' '}
+              <Link
+                href={`/products/${validated.product.slug}`}
+                className="font-medium text-foreground underline-offset-4 hover:underline"
+              >
+                {validated.product.name}
+              </Link>
+            </p>
+          )}
+          {validated.unknownSlug !== null && (
+            <p className="mt-4 text-sm font-medium text-red-600" role="alert">
+              That product is not in the catalog — pick one from the list.
+            </p>
+          )}
 
           <form
             method="get"
@@ -273,7 +300,7 @@ export default async function PriceMatchFinderPage({
               All AI tools →
             </Link>
           </p>
-          <RelatedTools tool="price-match" productSlug={parseToolParams(searchParams).productSlug} />
+          <RelatedTools tool="price-match" productSlug={validated.selection.productSlug} />
         </div>
       </main>
       <SiteFooter />

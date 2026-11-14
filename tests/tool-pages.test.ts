@@ -474,7 +474,7 @@ describe('T2 persona-fit page', () => {
     expect(html).toContain('No Home Office fit under $500.00');
   });
 
-  it('RelatedTools block is present and its links are bare (T2 takes no product param)', async () => {
+  it('RelatedTools block is present and its links are bare with no product selected', async () => {
     seedCatalog();
     const html = renderToStaticMarkup(
       await PersonaFitPage({ searchParams: { persona: 'work', budget: '500' } })
@@ -516,7 +516,7 @@ describe('T3 price-match page', () => {
     expect(html).toContain('Not recorded yet');
   });
 
-  it('RelatedTools block is present and its links are bare (T3 takes no product param)', async () => {
+  it('RelatedTools block is present and its links are bare with no product selected', async () => {
     const html = renderToStaticMarkup(
       await PriceMatchPage({ searchParams: { status: 'offers' } })
     );
@@ -675,7 +675,7 @@ describe('T6 negotiation-coach page', () => {
 describe('T7 repairability page', () => {
   it('renders every product with the "Not recorded yet" empty state (no repairability data)', async () => {
     seedCatalog();
-    const html = renderToStaticMarkup(await RepairabilityPage());
+    const html = renderToStaticMarkup(await RepairabilityPage({ searchParams: {} }));
     expect(html).toContain('AI Repairability Explorer');
     expect(html).toContain('Test Laptop');
     expect(html).toContain('Test Headphones');
@@ -688,15 +688,15 @@ describe('T7 repairability page', () => {
 
   it('renders the honest empty state when the catalog is empty', async () => {
     seedEmptyCatalog();
-    const html = renderToStaticMarkup(await RepairabilityPage());
+    const html = renderToStaticMarkup(await RepairabilityPage({ searchParams: {} }));
     expect(html).toContain('AI Repairability Explorer');
     expect(html).toContain('The catalog is empty right now, so there is nothing to show.');
     expect(html).toContain('No repairability scores recorded yet');
   });
 
-  it('RelatedTools block is present and its links are bare (T7 takes no product param)', async () => {
+  it('RelatedTools block is present and its links are bare with no product selected', async () => {
     seedCatalog();
-    const html = renderToStaticMarkup(await RepairabilityPage());
+    const html = renderToStaticMarkup(await RepairabilityPage({ searchParams: {} }));
     const section = relatedToolsSection(html);
     expect(section).toContain('Related tools');
     expect(section).not.toContain('product=');
@@ -835,5 +835,196 @@ describe('T10 compatibility-checker page', () => {
     expect(section).toContain('Related tools');
     expect(section).toContain('current=test-laptop');
     expect(section).not.toContain('device=&');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unknown slugs — the defect-fix tests (FIX 1 + FIX 2)
+// ---------------------------------------------------------------------------
+// An unknown ?product= / ?device= / ?current= slug must be treated as
+// NO product: it appears in no RelatedTools link, and the page says
+// so with an honest "not in the catalog" notice. A valid slug keeps
+// its old behaviour (carried onward, picker reflects it).
+// ---------------------------------------------------------------------------
+
+describe('unknown-slug handling — no product carried, honest notice shown', () => {
+  it('T1: unknown ?product= shows the notice and carries nothing', async () => {
+    seedCatalog();
+    const html = renderToStaticMarkup(
+      await UpgradeAdvisorPage({ searchParams: { product: 'unknown-slug-xyz' } })
+    );
+    expect(html).toContain('That product is not in the catalog');
+    const section = relatedToolsSection(html);
+    expect(section).not.toContain('unknown-slug-xyz');
+    expect(section).not.toContain('product=');
+    expect(section).not.toContain('current=unknown');
+  });
+
+  it('T1: valid canonical ?product= is carried and selects the picker', async () => {
+    seedCatalog();
+    const html = renderToStaticMarkup(
+      await UpgradeAdvisorPage({ searchParams: { product: 'test-laptop' } })
+    );
+    const section = relatedToolsSection(html);
+    expect(section).toContain('product=test-laptop');
+    // Minor (b): the canonical param now reflects in the picker.
+    expect(html).toContain('value="test-laptop" selected');
+    expect(html).not.toContain('That product is not in the catalog');
+  });
+
+  it('T2: unknown ?product= shows the notice and carries nothing', async () => {
+    seedCatalog();
+    const html = renderToStaticMarkup(
+      await PersonaFitPage({
+        searchParams: { persona: 'home-office', budget: '500', product: 'unknown-slug-xyz' },
+      })
+    );
+    expect(html).toContain('That product is not in the catalog');
+    const section = relatedToolsSection(html);
+    expect(section).not.toContain('unknown-slug-xyz');
+    expect(section).not.toContain('product=');
+  });
+
+  it('T2: valid ?product= names the selected product and is carried onward', async () => {
+    seedCatalog();
+    const html = renderToStaticMarkup(
+      await PersonaFitPage({
+        searchParams: { persona: 'home-office', budget: '500', product: 'test-laptop' },
+      })
+    );
+    expect(html).toContain('Selected product:');
+    expect(html).toContain('Test Laptop');
+    const section = relatedToolsSection(html);
+    // Persona-fit links out in the other tools' dialects: the
+    // upgrade-advisor link carries ?current=, the compatibility
+    // link carries ?device=. (No ?product= link exists in this
+    // page's delegation map — that is the map, not a leak.)
+    expect(section).toContain('current=test-laptop');
+    expect(section).toContain('device=test-laptop');
+  });
+
+  it('T3: unknown ?product= shows the notice and carries nothing', async () => {
+    seedCatalog();
+    const html = renderToStaticMarkup(
+      await PriceMatchPage({ searchParams: { product: 'unknown-slug-xyz' } })
+    );
+    expect(html).toContain('That product is not in the catalog');
+    const section = relatedToolsSection(html);
+    expect(section).not.toContain('unknown-slug-xyz');
+    expect(section).not.toContain('product=');
+  });
+
+  it('T3: valid ?product= names the selected product and is carried onward', async () => {
+    seedCatalog();
+    const html = renderToStaticMarkup(
+      await PriceMatchPage({ searchParams: { product: 'test-laptop' } })
+    );
+    expect(html).toContain('Selected product:');
+    expect(html).toContain('Test Laptop');
+    const section = relatedToolsSection(html);
+    expect(section).toContain('product=test-laptop');
+  });
+
+  it('T4: unknown ?product= shows the notice and carries nothing', async () => {
+    seedCatalog();
+    const html = renderToStaticMarkup(
+      await OwnItCheckPage({ searchParams: { product: 'unknown-slug-xyz' } })
+    );
+    expect(html).toContain('That product is not in the catalog');
+    const section = relatedToolsSection(html);
+    expect(section).not.toContain('unknown-slug-xyz');
+    expect(section).not.toContain('product=');
+  });
+
+  it('T5: unknown ?product= shows the notice and carries nothing', async () => {
+    seedCatalog();
+    const html = renderToStaticMarkup(
+      await EnergyCostPage({ searchParams: { product: 'unknown-slug-xyz' } })
+    );
+    expect(html).toContain('That product is not in the catalog');
+    const section = relatedToolsSection(html);
+    expect(section).not.toContain('unknown-slug-xyz');
+    expect(section).not.toContain('product=');
+  });
+
+  it('T6: unknown ?product= shows the notice and carries nothing', async () => {
+    seedCatalog();
+    const html = renderToStaticMarkup(
+      await NegotiationCoachPage({ searchParams: { product: 'unknown-slug-xyz' } })
+    );
+    expect(html).toContain('That product is not in the catalog');
+    const section = relatedToolsSection(html);
+    expect(section).not.toContain('unknown-slug-xyz');
+    expect(section).not.toContain('product=');
+  });
+
+  it('T7: valid ?product= is carried onward (FIX 2 — no longer hardcoded null)', async () => {
+    seedCatalog();
+    const html = renderToStaticMarkup(
+      await RepairabilityPage({ searchParams: { product: 'test-laptop' } })
+    );
+    const section = relatedToolsSection(html);
+    // Refurbished-checklist link carries ?product=; upgrade-advisor
+    // link carries the same product in its own ?current= dialect.
+    expect(section).toContain('product=test-laptop');
+    expect(section).toContain('current=test-laptop');
+  });
+
+  it('T7: unknown ?product= shows the notice and carries nothing', async () => {
+    seedCatalog();
+    const html = renderToStaticMarkup(
+      await RepairabilityPage({ searchParams: { product: 'unknown-slug-xyz' } })
+    );
+    expect(html).toContain('That product is not in the catalog');
+    const section = relatedToolsSection(html);
+    expect(section).not.toContain('unknown-slug-xyz');
+    expect(section).not.toContain('product=');
+  });
+
+  it('T8: unknown ?product= shows the notice, carries nothing, and selects no stack', async () => {
+    seedCatalog();
+    const html = renderToStaticMarkup(
+      await DealStackerPage({ searchParams: { product: 'unknown-slug-xyz' } })
+    );
+    expect(html).toContain('That product is not in the catalog');
+    const section = relatedToolsSection(html);
+    expect(section).not.toContain('unknown-slug-xyz');
+    expect(section).not.toContain('product=');
+    // No stack is silently substituted for the unknown product.
+    expect(html).not.toContain('Best stack for');
+  });
+
+  it('T9: unknown ?product= shows the notice and carries nothing', async () => {
+    seedCatalog();
+    const html = renderToStaticMarkup(
+      await RefurbishedChecklistPage({ searchParams: { product: 'unknown-slug-xyz' } })
+    );
+    expect(html).toContain('That product is not in the catalog');
+    const section = relatedToolsSection(html);
+    expect(section).not.toContain('unknown-slug-xyz');
+    expect(section).not.toContain('product=');
+  });
+
+  it('T10: unknown ?device= shows the not-found state and carries nothing', async () => {
+    seedCatalog();
+    const html = renderToStaticMarkup(
+      await CompatibilityCheckerPage({ searchParams: { device: 'unknown-slug-xyz' } })
+    );
+    expect(html).toContain('One of the picked products is not in the catalog');
+    const section = relatedToolsSection(html);
+    expect(section).not.toContain('unknown-slug-xyz');
+    expect(section).not.toContain('current=unknown');
+  });
+
+  it('T10: valid canonical ?product= is carried and selects the picker', async () => {
+    seedCatalog();
+    const html = renderToStaticMarkup(
+      await CompatibilityCheckerPage({ searchParams: { product: 'test-laptop' } })
+    );
+    const section = relatedToolsSection(html);
+    expect(section).toContain('current=test-laptop');
+    // Minor (b): the canonical param now reflects in the device picker.
+    expect(html).toContain('value="test-laptop" selected');
+    expect(html).not.toContain('One of the picked products is not in the catalog');
   });
 });

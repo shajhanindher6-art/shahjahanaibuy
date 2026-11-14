@@ -36,7 +36,7 @@ import { StalePriceBadge } from '@/components/products/stale-price-badge';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getLowestMerchantPrices, getProductAttributes } from '@/services/products';
-import { getCachedProducts, parseToolParams } from '@/services/tool-integration';
+import { getCachedProducts, parseAndValidateToolParams } from '@/services/tool-integration';
 import { getUserPreferences } from '@/services/user-preferences';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
@@ -72,7 +72,9 @@ export const metadata: Metadata = {
 };
 
 interface PersonaFitPageProps {
-  searchParams: { persona?: string | string[]; budget?: string | string[] };
+  // Canonical cross-tool arrival (?product=): validated against
+  // the catalog; a valid product is named and carried onward.
+  searchParams: { persona?: string | string[]; budget?: string | string[]; product?: string | string[] };
 }
 
 export default async function PersonaFitPage({ searchParams }: PersonaFitPageProps) {
@@ -81,6 +83,12 @@ export default async function PersonaFitPage({ searchParams }: PersonaFitPagePro
   const hasError = personaError !== null || budgetError !== null;
 
   const supabase = await createSupabaseServerClient();
+
+  // Validate the transferred product against the catalog: an
+  // unknown slug is treated as no product (RelatedTools carries
+  // nothing for it) and the page says so, instead of passing the
+  // bogus slug tool-to-tool as if it were valid.
+  const validated = await parseAndValidateToolParams(supabase, searchParams);
 
   // Stage 3, S3-4: stored-budget default from user_preferences.
   // The URL always wins: the stored budget applies only when the
@@ -175,6 +183,23 @@ export default async function PersonaFitPage({ searchParams }: PersonaFitPagePro
             whose category does not fit the persona is never listed,
             and a product above your budget is never listed either.
           </p>
+
+          {validated.product !== null && (
+            <p className="mt-4 text-sm text-muted-foreground">
+              Selected product:{' '}
+              <Link
+                href={`/products/${validated.product.slug}`}
+                className="font-medium text-foreground underline-offset-4 hover:underline"
+              >
+                {validated.product.name}
+              </Link>
+            </p>
+          )}
+          {validated.unknownSlug !== null && (
+            <p className="mt-4 text-sm font-medium text-red-600" role="alert">
+              That product is not in the catalog — pick one from the list.
+            </p>
+          )}
 
           <form
             method="get"
@@ -396,7 +421,7 @@ export default async function PersonaFitPage({ searchParams }: PersonaFitPagePro
               .
             </p>
           )}
-          <RelatedTools tool="persona-fit" productSlug={parseToolParams(searchParams).productSlug} />
+          <RelatedTools tool="persona-fit" productSlug={validated.selection.productSlug} />
         </div>
       </main>
       <SiteFooter />

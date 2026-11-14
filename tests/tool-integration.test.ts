@@ -18,9 +18,11 @@
  * would mask the first call's query count.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
+import { invalidateCache } from '@/lib/cache';
 import {
   parseToolParams,
   parseAndResolveToolParams,
+  parseAndValidateToolParams,
   resolveCompareProductSlugs,
   buildToolUrl,
   getToolProduct,
@@ -597,7 +599,9 @@ describe('cross-tool link builders', () => {
     expect(
       ownItLink(null, { name: 'Test Laptop', brand: 'TestBrand' })
     ).toBe('/tools/own-it-check?name=Test+Laptop&brand=TestBrand');
-    // T2/T3 take no product param: their builders carry their own dialect.
+    // Without a product argument the T2/T3 builders carry their own
+    // dialect only (no ?product=); with one they carry it (asserted
+    // in the parseAndValidateToolParams block below).
     expect(personaFitLink('work', '500')).toBe('/tools/persona-fit?persona=work&budget=500');
     expect(priceMatchLink('offers')).toBe('/tools/price-match?status=offers');
   });
@@ -657,6 +661,20 @@ describe('relatedToolLinks', () => {
     expect(relatedToolLinks('compare', 'test-laptop')).toEqual([]);
   });
 
+  it('carries the product into T2 persona-fit and T3 price-match links', () => {
+    // Both destinations read ?product= for transfer and show the
+    // selected product, so RelatedTools must not drop it there.
+    const fromUpgrade = relatedToolLinks('upgrade-advisor', 'test-laptop');
+    const persona = fromUpgrade.find((l) => l.href.startsWith(TOOL_ROUTES['persona-fit']));
+    const priceMatch = fromUpgrade.find((l) => l.href.startsWith(TOOL_ROUTES['price-match']));
+    expect(persona?.href).toBe('/tools/persona-fit?product=test-laptop');
+    expect(priceMatch?.href).toBe('/tools/price-match?product=test-laptop');
+    const fromDealStacker = relatedToolLinks('deal-stacker', 'test-laptop');
+    expect(
+      fromDealStacker.find((l) => l.href.startsWith(TOOL_ROUTES['price-match']))?.href
+    ).toBe('/tools/price-match?product=test-laptop');
+  });
+
   it('works with a null product (bare routes, no empty ?product=)', () => {
     const links = relatedToolLinks('upgrade-advisor', null);
     expect(links.length).toBeGreaterThan(0);
@@ -664,5 +682,129 @@ describe('relatedToolLinks', () => {
       expect(link.href).not.toContain('product=');
       expect(link.href).not.toContain('current=');
     }
+  });
+});
+
+describe('parseAndValidateToolParams', () => {
+  beforeEach(() => {
+    resetFakeDb();
+    invalidateCache('smartbuy:');
+    // The helper validates against the catalog: seed the two
+    // fixture products every test uses, then the unknown slug is
+    // genuinely unknown (no row for it).
+    seedTable('products', [
+      productRow({ id: 'prod-1', slug: 'test-laptop', name: 'Test Laptop' }),
+      productRow({
+        id: 'prod-2',
+        slug: 'test-headphones',
+        name: 'Test Headphones',
+      }),
+    ]);
+  });
+
+  it('keeps a valid slug and returns the product', async () => {
+    const validated = await parseAndValidateToolParams(fakeClient, {
+      product: 'test-laptop',
+    });
+    expect(validated.selection.productSlug).toBe('test-laptop');
+    expect(validated.unknownSlug).toBeNull();
+    expect(validated.product).not.toBeNull();
+    expect(validated.product?.slug).toBe('test-laptop');
+    expect(validated.product?.name).toBe('Test Laptop');
+  });
+
+  it('nulls an unknown slug, reports it, and carries it nowhere', async () => {
+    const validated = await parseAndValidateToolParams(fakeClient, {
+      product: 'unknown-slug-xyz',
+    });
+    expect(validated.selection.productSlug).toBeNull();
+    expect(validated.unknownSlug).toBe('unknown-slug-xyz');
+    expect(validated.product).toBeNull();
+    // Even the links built from the validated selection must not
+    // contain the bogus slug anywhere.
+    for (const tool of ['upgrade-advisor', 'persona-fit', 'price-match'] as const) {
+      for (const link of relatedToolLinks(tool, validated.selection.productSlug)) {
+        expect(link.href).not.toContain('unknown-slug-xyz');
+      }
+    }
+  });
+
+  it('validates ?device= the same way', async () => {
+    const unknown = await parseAndValidateToolParams(fakeClient, {
+      device: 'unknown-slug-xyz',
+    });
+    expect(unknown.selection.productSlug).toBeNull();
+    expect(unknown.selection.deviceSlug).toBeNull();
+    expect(unknown.unknownSlug).toBe('unknown-slug-xyz');
+
+    const valid = await parseAndValidateToolParams(fakeClient, {
+      device: 'test-headphones',
+    });
+    expect(valid.selection.productSlug).toBe('test-headphones');
+    expect(valid.selection.deviceSlug).toBe('test-headphones');
+    expect(valid.unknownSlug).toBeNull();
+    expect(valid.product?.name).toBe('Test Headphones');
+  });
+
+  it('keeps a valid ?current= and nulls an unknown ?successor=', async () => {
+    const validated = await parseAndValidateToolParams(fakeClient, {
+      current: 'test-laptop',
+      successor: 'unknown-slug-xyz',
+    });
+    expect(validated.selection.currentSlug).toBe('test-laptop');
+    expect(validated.selection.successorSlug).toBeNull();
+    expect(validated.selection.productSlug).toBe('test-laptop');
+    expect(validated.unknownSlug).toBe('unknown-slug-xyz');
+  });
+
+  it('makes no product query when the URL carries no slug', async () => {
+    const validated = await parseAndValidateToolParams(fakeClient, {});
+    expect(validated.selection.productSlug).toBeNull();
+    expect(validated.unknownSlug).toBeNull();
+    expect(validated.product).toBeNull();
+    expect(fakeDb.fromCalls.products ?? 0).toBe(0);
+  });
+
+  it('reports an unknown ?product= and never carries it, while a valid ?device= still transfers', async () => {
+    const validated = await parseAndValidateToolParams(fakeClient, {
+      product: 'unknown-slug-xyz',
+      device: 'test-headphones',
+    });
+    // The unknown slug is reported and appears in no link, but the
+    // valid device in the same URL still transfers (and becomes
+    // the canonical product) — the bogus slug is never substituted
+    // for it.
+    expect(validated.unknownSlug).toBe('unknown-slug-xyz');
+    expect(validated.selection.deviceSlug).toBe('test-headphones');
+    expect(validated.selection.productSlug).toBe('test-headphones');
+    for (const tool of ['upgrade-advisor', 'persona-fit', 'price-match'] as const) {
+      for (const link of relatedToolLinks(tool, validated.selection.productSlug)) {
+        expect(link.href).not.toContain('unknown-slug-xyz');
+      }
+    }
+  });
+
+  it('personaFitLink and priceMatchLink carry a product when given one', () => {
+    expect(personaFitLink(null, null, 'test-laptop')).toBe(
+      '/tools/persona-fit?product=test-laptop',
+    );
+    expect(priceMatchLink(null, 'test-laptop')).toBe(
+      '/tools/price-match?product=test-laptop',
+    );
+    expect(
+      personaFitLink('work', '500', 'test-laptop'),
+    ).toBe('/tools/persona-fit?persona=work&budget=500&product=test-laptop');
+    expect(priceMatchLink('offers', 'test-laptop')).toBe(
+      '/tools/price-match?status=offers&product=test-laptop',
+    );
+  });
+
+  it('personaFitLink and priceMatchLink are unchanged without a product', () => {
+    expect(personaFitLink(null, null)).toBe('/tools/persona-fit');
+    expect(personaFitLink('work', '500')).toBe(
+      '/tools/persona-fit?persona=work&budget=500',
+    );
+    expect(priceMatchLink(null)).toBe('/tools/price-match');
+    expect(priceMatchLink('offers')).toBe('/tools/price-match?status=offers');
   });
 });

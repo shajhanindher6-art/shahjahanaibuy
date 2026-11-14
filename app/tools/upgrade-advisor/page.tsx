@@ -38,7 +38,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
   getCachedProducts,
   getToolPriceHistory,
-  parseToolParams,
+  parseAndValidateToolParams,
 } from '@/services/tool-integration';
 import {
   predictResaleValue,
@@ -87,6 +87,9 @@ interface UpgradeAdvisorProps {
     price?: string | string[];
     current?: string | string[];
     successor?: string | string[];
+    // Canonical cross-tool arrival: validated against the catalog
+    // and reflected in the picker (see parseAndValidateToolParams).
+    product?: string | string[];
   };
 }
 
@@ -118,6 +121,11 @@ export default async function UpgradeAdvisorPage({
 }: UpgradeAdvisorProps): Promise<JSX.Element> {
   const params = parseUpgradeAdvisorParams(searchParams);
   const supabase = await createSupabaseServerClient();
+  // Validate the transferred product against the catalog: an
+  // unknown slug is treated as no product (RelatedTools carries
+  // nothing for it) and the page says so, instead of passing the
+  // bogus slug tool-to-tool as if it were valid.
+  const validated = await parseAndValidateToolParams(supabase, searchParams);
   const { products } = await getCachedProducts(supabase, { page: 1, pageSize: 100 });
 
   const categories = Array.from(
@@ -296,7 +304,11 @@ export default async function UpgradeAdvisorPage({
                 <select
                   id="current"
                   name="current"
-                  defaultValue={params.currentSlug}
+                  defaultValue={
+                    params.currentSlug !== ''
+                      ? params.currentSlug
+                      : (validated.selection.productSlug ?? '')
+                  }
                   className="mt-1 min-h-[44px] w-full rounded-md border bg-background px-3 py-2 text-sm"
                 >
                   <option value="">Not in the catalog</option>
@@ -338,6 +350,11 @@ export default async function UpgradeAdvisorPage({
             {params.priceError && (
               <p className="mt-3 text-sm font-medium text-red-600" role="alert">
                 {params.priceError}
+              </p>
+            )}
+            {validated.unknownSlug !== null && (
+              <p className="mt-3 text-sm font-medium text-red-600" role="alert">
+                That product is not in the catalog — pick one from the list.
               </p>
             )}
             <Button type="submit" className="mt-4">
@@ -512,7 +529,7 @@ export default async function UpgradeAdvisorPage({
               Dell XPS 13 as the successor.
             </p>
           )}
-          <RelatedTools tool="upgrade-advisor" productSlug={parseToolParams(searchParams).productSlug} />
+          <RelatedTools tool="upgrade-advisor" productSlug={validated.selection.productSlug} />
         </div>
       </main>
       <SiteFooter />

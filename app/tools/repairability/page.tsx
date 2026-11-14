@@ -35,7 +35,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { RelatedTools } from '@/components/tools/related-tools';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getCachedProducts } from '@/services/tool-integration';
+import { getCachedProducts, parseAndValidateToolParams } from '@/services/tool-integration';
 import {
   computeRepairabilityIndex,
   getProductRepairability,
@@ -84,8 +84,18 @@ const VERDICT_LABELS: Record<RepairabilityIndex['verdict'], string> = {
   excellent: 'Excellent',
 };
 
-export default async function RepairabilityExplorerPage() {
+export default async function RepairabilityExplorerPage({
+  searchParams = {},
+}: {
+  searchParams?: { product?: string | string[] };
+}) {
   const supabase = await createSupabaseServerClient();
+  // The product arrives via ?product= from other tools: validate
+  // it against the catalog and carry it onward in RelatedTools
+  // (until now this page ignored its query string entirely and
+  // passed a hardcoded null). An unknown slug is treated as no
+  // product and the page says so.
+  const validated = await parseAndValidateToolParams(supabase, searchParams);
   const { products } = await getCachedProducts(supabase, { page: 1, pageSize: 100 });
 
   // getProductRepairability never throws: when migration 019 has
@@ -141,6 +151,12 @@ export default async function RepairabilityExplorerPage() {
               recorded data gets no index: it reads &ldquo;Not recorded
               yet&rdquo;, never a guessed score.
             </p>
+
+            {validated.unknownSlug !== null && (
+              <p className="mt-4 text-sm font-medium text-red-600" role="alert">
+                That product is not in the catalog — pick one from the list.
+              </p>
+            )}
 
             {recorded.length === 0 && (
               <div className="mt-6">
@@ -281,7 +297,7 @@ export default async function RepairabilityExplorerPage() {
               </Link>
               .
             </p>
-            <RelatedTools tool="repairability" productSlug={null} />
+            <RelatedTools tool="repairability" productSlug={validated.selection.productSlug} />
           </div>
         </main>
         <SiteFooter />

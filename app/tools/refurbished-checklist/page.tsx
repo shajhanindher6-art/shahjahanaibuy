@@ -34,7 +34,6 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
   getCachedProducts,
   getToolMerchantProducts,
-  parseToolParams,
 } from '@/services/tool-integration';
 import { policyForStore } from '@/services/return-policies';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
@@ -229,6 +228,12 @@ export default async function RefurbishedChecklistPage({
                 Show benchmark →
               </Button>
             </form>
+
+            {selectedSlug !== undefined && selectedSlug !== '' && selected === null && (
+              <p className="mt-6 text-sm font-medium text-red-600" role="alert">
+                That product is not in the catalog — pick one from the list.
+              </p>
+            )}
 
             {products.length === 0 && (
               <div className="mt-6">

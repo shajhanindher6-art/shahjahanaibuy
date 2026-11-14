@@ -32,7 +32,7 @@ import { ShareButtons } from '@/components/products/share-buttons';
 import { appConfig } from '@/lib/config/app';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getLowestMerchantPrices } from '@/services/products';
-import { getCachedProducts, parseToolParams } from '@/services/tool-integration';
+import { getCachedProducts, parseAndValidateToolParams } from '@/services/tool-integration';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
 import {
   checkCompatibility,
@@ -66,7 +66,9 @@ export const metadata: Metadata = {
 };
 
 interface CompatibilityCheckerPageProps {
-  searchParams: { device?: string | string[]; accessory?: string | string[] };
+  // Canonical cross-tool arrival (?product=): validated against
+  // the catalog and reflected in the device picker.
+  searchParams: { device?: string | string[]; accessory?: string | string[]; product?: string | string[] };
 }
 
 export default async function CompatibilityCheckerPage({
@@ -75,6 +77,12 @@ export default async function CompatibilityCheckerPage({
   const { deviceSlug, accessorySlug, hasQuery } = parseCompatibilityParams(searchParams);
 
   const supabase = await createSupabaseServerClient();
+  // Validate the transferred product against the catalog: an
+  // unknown slug is treated as no product (RelatedTools carries
+  // nothing for it) and the page says so. This also makes the
+  // canonical ?product= work here — until now the page only read
+  // ?device=, so a ?product= arrival carried nothing onward.
+  const validated = await parseAndValidateToolParams(supabase, searchParams);
   const { products } = await getCachedProducts(supabase, { page: 1, pageSize: 100 });
   const lowest = await getLowestMerchantPrices(
     supabase,
@@ -143,7 +151,7 @@ export default async function CompatibilityCheckerPage({
                 <select
                   id="device"
                   name="device"
-                  defaultValue={deviceSlug ?? ''}
+                  defaultValue={deviceSlug ?? validated.selection.productSlug ?? ''}
                   className="mt-1 min-h-[44px] w-full rounded-md border bg-background px-3 py-2 text-sm"
                 >
                   <option value="">Pick a device</option>
@@ -178,7 +186,7 @@ export default async function CompatibilityCheckerPage({
             </Button>
           </form>
 
-          {hasQuery && unknownSlug && (
+          {((hasQuery && unknownSlug) || validated.unknownSlug !== null) && (
             <div className="mt-6">
               <EmptyState
                 eyebrow="Product not found"
@@ -338,7 +346,7 @@ export default async function CompatibilityCheckerPage({
               />
             </div>
           )}
-          <RelatedTools tool="compatibility-checker" productSlug={deviceSlug ?? null} />
+          <RelatedTools tool="compatibility-checker" productSlug={validated.selection.productSlug} />
         </div>
       </main>
       <SiteFooter />

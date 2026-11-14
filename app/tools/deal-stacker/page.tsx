@@ -167,8 +167,15 @@ export default async function DealStackerPage({
   );
 
   const requestedSlug = firstParam(searchParams.product).trim();
+  // An unknown slug selects NOTHING — it must not silently fall
+  // back to the first product's stack as if it were the requested
+  // one. With no ?product= at all the first stack is the default.
   const selected =
-    stacks.find((s) => s.productSlug === requestedSlug) ?? stacks[0] ?? null;
+    requestedSlug !== ''
+      ? (stacks.find((s) => s.productSlug === requestedSlug) ?? null)
+      : (stacks[0] ?? null);
+  const unknownSlug =
+    requestedSlug !== '' && selected === null ? requestedSlug : null;
   const stacksWithStack = stacks.filter((s) => s.hasStack);
 
   return (
@@ -235,6 +242,12 @@ export default async function DealStackerPage({
                     Stack the deal →
                   </Button>
                 </form>
+
+                {unknownSlug !== null && (
+                  <p className="mt-6 text-sm font-medium text-red-600" role="alert">
+                    That product is not in the catalog — pick one from the list.
+                  </p>
+                )}
 
                 <p
                   className="mt-6 text-sm text-muted-foreground"

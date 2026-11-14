@@ -7,9 +7,10 @@
  * link carries the product in the destination tool's own dialect
  * (?product=, ?current= on T1, ?device= on T10; /compare takes
  * the product id when known, else the bare picker). Persona Fit
- * and Price-Match take no product param, so their links carry
- * their own dialect (bare here — no persona/budget is known on
- * a product page).
+ * and Price-Match take no product param for their OWN logic, but
+ * both pages read ?product= for transfer (their RelatedTools pass
+ * it onward) — so their links carry it too, instead of dropping
+ * the product on entry.
  *
  * Takes resolved products (slug + name + optional id) as props,
  * so the component never fetches: the product page passes one
@@ -50,8 +51,8 @@ function linksForProduct(product: ProductToolsProduct): Array<{ href: string; la
     { href: repairabilityLink(slug), label: 'Check repairability' },
     { href: refurbishedLink(slug), label: 'Refurbished buying checklist' },
     { href: ownItLink(slug), label: 'Do I already own this?' },
-    { href: priceMatchLink(), label: 'Check the price-match policy' },
-    { href: personaFitLink(), label: 'Find your persona fit' },
+    { href: priceMatchLink(null, slug), label: 'Check the price-match policy' },
+    { href: personaFitLink(null, null, slug), label: 'Find your persona fit' },
     {
       href: product.id ? compareLink([product.id]) : compareLink([]),
       label: 'Compare products',

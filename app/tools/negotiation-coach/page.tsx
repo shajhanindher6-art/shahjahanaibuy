@@ -40,7 +40,6 @@ import { getLowestMerchantPrices } from '@/services/products';
 import {
   getCachedProducts,
   getToolPriceHistory,
-  parseToolParams,
 } from '@/services/tool-integration';
 import { analyzeNegotiationGap, buildNegotiationDraft } from '@/services/negotiation';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
@@ -381,7 +380,7 @@ export default async function NegotiationCoachPage({ searchParams }: Negotiation
               .
             </p>
           )}
-          <RelatedTools tool="negotiation-coach" productSlug={parseToolParams(searchParams).productSlug} />
+          <RelatedTools tool="negotiation-coach" productSlug={selectedProduct?.slug ?? null} />
         </div>
       </main>
       <SiteFooter />

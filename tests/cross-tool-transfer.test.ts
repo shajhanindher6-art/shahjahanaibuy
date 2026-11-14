@@ -37,9 +37,11 @@
  *     getToolPriceHistory / getToolMerchantProducts dedup itself
  *     stays Stage 1 + Stage 3's and is referenced, not repeated.
  * (c) the transfer matrix never emits an empty product param, and
- *     the product is honestly DROPPED (never mangled) when the
- *     destination takes no product param (T2 persona-fit, T3
- *     price-match).
+ *     the product is carried to every destination that takes one —
+ *     including T2 persona-fit and T3 price-match, which read
+ *     `?product=` for transfer and show the selected product. Only
+ *     routes with no product concept (/compare, budget-finder,
+ *     coupons-cashback, price-history) stay bare.
  *
  * No fake products or prices are asserted anywhere: the slugs are
  * opaque identifiers carried through URLs, and the /compare chain
@@ -204,9 +206,19 @@ describe('cross-dialect transfer — one selection survives to every tool', () =
           accessorySlug: sel.accessorySlug ?? sel.successorSlug ?? null,
         });
       case TOOL_ROUTES['persona-fit']:
-        return buildToolUrl(route, { persona: sel.persona, budget: sel.budget });
+        // T2 carries the product via ?product= (its own dialect is
+        // persona/budget; the builders add the product through `extra`).
+        return personaFitLink(
+          sel.persona,
+          sel.budget,
+          sel.productSlug ?? sel.currentSlug ?? sel.deviceSlug
+        );
       case TOOL_ROUTES['price-match']:
-        return buildToolUrl(route, { status: sel.status });
+        // T3 likewise carries the product via ?product=.
+        return priceMatchLink(
+          sel.status,
+          sel.productSlug ?? sel.currentSlug ?? sel.deviceSlug
+        );
       default:
         return buildToolUrl(route, { productSlug: sel.productSlug });
     }
@@ -229,16 +241,14 @@ describe('cross-dialect transfer — one selection survives to every tool', () =
         const href = buildForDestination(route, source);
         const back = parsed(href);
         if (route === TOOL_ROUTES['persona-fit']) {
-          // T2 takes no product param — the product is dropped, and
-          // the URL carries no mangled product fragment.
-          expect(back.productSlug).toBeNull();
-          expect(href).not.toContain('product=');
-          expect(href).not.toContain('device=');
-          expect(href).not.toContain('current=');
+          // T2 reads ?product= for transfer and shows the selected
+          // product, so the product travels here too.
+          expect(back.productSlug).toBe(SLUG);
+          expect(href).toBe(`/tools/persona-fit?product=${SLUG}`);
         } else if (route === TOOL_ROUTES['price-match']) {
-          // T3 likewise takes no product param.
-          expect(back.productSlug).toBeNull();
-          expect(href).not.toContain('product=');
+          // T3 likewise carries the product.
+          expect(back.productSlug).toBe(SLUG);
+          expect(href).toBe(`/tools/price-match?product=${SLUG}`);
         } else {
           expect(destinationProduct(route, href)).toBe(SLUG);
         }
@@ -281,14 +291,16 @@ describe('cross-dialect transfer — one selection survives to every tool', () =
     expect(back.productSlug).toBe(SLUG);
   });
 
-  it('T2 persona/budget survives a transfer to T2, and the product is not smuggled in', () => {
+  it('T2 persona/budget survive a transfer to T2; buildToolUrl ignores the legacy productSlug field there', () => {
     const href = personaFitLink('student', '1000');
     const back = parsed(href);
     expect(back.persona).toBe('student');
     expect(back.budget).toBe('1000');
     expect(back.productSlug).toBeNull();
-    // Rebuilding T2 from a product-carrying selection keeps only
-    // persona/budget — the product never leaks into a param T2
+    // buildToolUrl's T2 branch ignores the legacy `productSlug`
+    // field — the product travels to T2 through the builders'
+    // `extra` path instead (personaFitLink(..., product), asserted
+    // in tool-integration.test.ts), never through a param T2
     // does not understand.
     const rebuilt = buildToolUrl(TOOL_ROUTES['persona-fit'], {
       productSlug: SLUG,
@@ -298,7 +310,7 @@ describe('cross-dialect transfer — one selection survives to every tool', () =
     expect(rebuilt).toBe('/tools/persona-fit?persona=student&budget=1000');
   });
 
-  it('T3 status survives a transfer to T3, and the product is not smuggled in', () => {
+  it('T3 status survives a transfer to T3; buildToolUrl ignores the legacy productSlug field there', () => {
     const back = parsed(priceMatchLink('offers'));
     expect(back.status).toBe('offers');
     expect(back.productSlug).toBeNull();
@@ -414,10 +426,17 @@ describe('relatedToolLinks — every link parses back to the same product', () =
         } else if (route === TOOL_ROUTES['compatibility-checker']) {
           expect(sel.deviceSlug).toBe(SLUG);
           expect(sel.productSlug).toBe(SLUG);
+        } else if (route === TOOL_ROUTES['persona-fit']) {
+          // T2 reads ?product= for transfer and shows the selected
+          // product, so the link carries it.
+          expect(sel.productSlug).toBe(SLUG);
+        } else if (route === TOOL_ROUTES['price-match']) {
+          // T3 likewise carries the product.
+          expect(sel.productSlug).toBe(SLUG);
         } else {
-          // /compare, T2 persona-fit, T3 price-match, budget-finder,
-          // coupons-cashback, price-history: no product param by
-          // design — the link must be bare, never half-carried.
+          // /compare, budget-finder, coupons-cashback, price-history:
+          // no product param by design — the link must be bare,
+          // never half-carried.
           expect(sel.productSlug).toBeNull();
           expect(sel.deviceSlug).toBeNull();
           expect(sel.currentSlug).toBeNull();
