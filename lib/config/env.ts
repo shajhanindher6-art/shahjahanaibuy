@@ -138,6 +138,20 @@ export const env = {
   get bestbuyApiKey(): string | undefined {
     return process.env.BESTBUY_API_KEY;
   },
+  // Retailers Delta — Walmart Affiliate API v2 (walmart.io).
+  // RSA key-pair auth, NOT a plain API key: the Consumer ID +
+  // PEM private key come from the walmart.io portal. Both
+  // optional: unset = provider reports not_configured
+  // (fail-closed). Never commit real values.
+  get walmartConsumerId(): string | undefined {
+    return process.env.WALMART_CONSUMER_ID;
+  },
+  get walmartPrivateKey(): string | undefined {
+    return process.env.WALMART_PRIVATE_KEY;
+  },
+  get walmartKeyVersion(): string | undefined {
+    return process.env.WALMART_KEY_VERSION;
+  },
   get csvSourceUrl(): string | undefined {
     return process.env.CSV_SOURCE_URL;
   },

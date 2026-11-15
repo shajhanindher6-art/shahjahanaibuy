@@ -8,6 +8,8 @@ import { ApifyProvider } from './apify-provider';
 import { CsvProvider } from './csv-provider';
 import { AmazonProvider } from './amazon-provider';
 import { BestBuyProvider } from './bestbuy-provider';
+import { EbayProvider } from './ebay-provider';
+import { WalmartProvider } from './walmart-provider';
 import {
   canonicalMerchantSlug,
   merchantSlugForProviderKey,
@@ -268,6 +270,16 @@ export function getProviderRegistry(): ProviderRegistry {
   // provider (B5).
   registrySingleton.register(new AmazonProvider());
   registrySingleton.register(new BestBuyProvider());
+  // Retailers Delta — eBay Browse (services/ebay-browse.ts) and
+  // the Walmart Affiliate API v2 (walmart-provider.ts) join the
+  // registry as official_api providers. Both are fail-closed
+  // without their credentials, so registering them changes
+  // nothing about selection until the owner configures keys.
+  registrySingleton.register(new EbayProvider());
+  registrySingleton.register(new WalmartProvider());
+  registrySingleton.setRetailerOverride('ebay', 'ebay');
+  registrySingleton.setRetailerOverride('ebay.com', 'ebay');
+  registrySingleton.setRetailerOverride('walmart', 'walmart');
   registrySingleton.setRetailerOverride('amazon', 'amazon');
   // FINAL 100% (F-P2-06): register under BOTH spellings — the
   // canonical merchants slug 'best-buy' and the provider key

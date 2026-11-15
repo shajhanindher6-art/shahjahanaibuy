@@ -41,9 +41,15 @@ export const PROVIDER_DEFAULT_DAILY_BUDGET = 100;
  *     Buy client to a standstill, so the documented limit is
  *     the default here. The 5/second pace is enforced separately
  *     by the client's own 200ms throttle.
+ *   - Walmart Affiliate API terms: 5,000 calls/day.
+ *   - eBay Browse: 5,000 calls/day default, capped at 4,500 by
+ *     services/ebay-budget.ts (EBAY_DAILY_BUDGET_CAP) — the
+ *     guard uses the same cap so registry calls agree.
  */
 export const PROVIDER_DEFAULT_DAILY_BUDGETS: Record<string, number> = {
   bestbuy: 50_000,
+  walmart: 5_000,
+  ebay: 4_500,
 };
 
 export interface ProviderBudgetState {

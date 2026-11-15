@@ -29,6 +29,8 @@ export { ApifyProvider, APIFY_NOT_CONFIGURED_REASON } from './apify-provider';
 export { CsvProvider, CSV_NOT_CONFIGURED_REASON } from './csv-provider';
 export { AmazonProvider, AMAZON_NOT_CONFIGURED_REASON } from './amazon-provider';
 export { BestBuyProvider, BESTBUY_NOT_CONFIGURED_REASON } from './bestbuy-provider';
+export { EbayProvider, EBAY_NOT_CONFIGURED_REASON } from './ebay-provider';
+export { WalmartProvider, WALMART_NOT_CONFIGURED_REASON } from './walmart-provider';
 export {
   ProviderRegistry,
   getProviderRegistry,
