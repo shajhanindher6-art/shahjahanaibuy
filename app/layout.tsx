@@ -236,6 +236,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="theme-color" content="#1e40af" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        {/* Impact.com site verification (owner-supplied, 2026-11-16):
+            Impact reads the `value` attribute, not `content` —
+            and React's MetaHTMLAttributes has no `value` prop, so
+            the literal tag fails tsc (TS2322). The spread cast
+            passes the attribute through unchanged. */}
+        <meta
+          name="impact-site-verification"
+          {...({ value: 'e60aaeca-7982-40a5-bda8-0a9822057709' } as { value: string })}
+        />
         <script
           type="application/ld+json"
           nonce={nonce ?? undefined}

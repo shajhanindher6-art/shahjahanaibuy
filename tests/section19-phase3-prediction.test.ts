@@ -124,13 +124,20 @@ describe('#28 — legacy engine guard below 5 points', () => {
 
 describe('#29 — OLS confidence on flat/thin series', () => {
   it('flat 5-point series → low band: 15% / 10% / 5% (Section 20, §12 #46: below 5 points there is no forecast)', () => {
-    const result = computeForecast([
-      fpoint(100, 0),
-      fpoint(100, 10),
-      fpoint(100, 20),
-      fpoint(100, 30),
-      fpoint(100, 40),
-    ]);
+    const result = computeForecast(
+      [
+        fpoint(100, 0),
+        fpoint(100, 10),
+        fpoint(100, 20),
+        fpoint(100, 30),
+        fpoint(100, 40),
+      ],
+      // Fixture is frozen at BASE (2026-10-01): pin "now" to the day
+      // after the last point so the 7-day staleness gate never
+      // withholds this confidence-math test once the calendar moves
+      // past the fixture (it first fired on 2026-11-16).
+      BASE + 41 * DAY_MS
+    );
     expect(result.status).toBe('ok');
     // Flatness is weak evidence, not strong: R² counts as 0, and
     // at the 5-point minimum there is no point-count bonus — the
@@ -148,7 +155,11 @@ describe('#29 — OLS confidence on flat/thin series', () => {
 
   it('flat 20-point series → still low band (flatness never earns confidence)', () => {
     const points = Array.from({ length: 20 }, (_, i) => fpoint(100, i * 2));
-    const result = computeForecast(points);
+    // Same nowMs pin as the 5-point test above: last point is
+    // BASE + 38 days; without the pin the 7-day staleness gate
+    // withholds the forecast once the calendar passes 2026-11-15
+    // (first failed 2026-11-16, forecasts [] instead of [30, 25, 18]).
+    const result = computeForecast(points, BASE + 39 * DAY_MS);
     expect(result.forecasts.map((f) => f.confidencePct)).toEqual([30, 25, 18]);
     for (const f of result.forecasts) {
       expect(f.confidencePct).toBeLessThan(40);
