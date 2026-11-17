@@ -243,7 +243,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             passes the attribute through unchanged. */}
         <meta
           name="impact-site-verification"
-          {...({ value: 'e60aaeca-7982-40a5-bda8-0a9822057709' } as { value: string })}
+          {...({ value: 'b2af1eb9-fa19-4b9a-ac63-42ee1134a1fe' } as { value: string })}
         />
         <script
           type="application/ld+json"
