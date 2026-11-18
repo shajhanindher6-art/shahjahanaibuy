@@ -9,15 +9,18 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const PRICE_ROWS = [
-  { price: 100, recorded_at: '2026-10-01T00:00:00.000Z' },
-  { price: 95, recorded_at: '2026-10-11T00:00:00.000Z' },
-  { price: 90, recorded_at: '2026-10-21T00:00:00.000Z' },
-  { price: 85, recorded_at: '2026-10-31T00:00:00.000Z' },
-  // 5 points: the Section 20 (§12 #46) forecast minimum — 4
-  // points would return 'not-enough-history' with no forecasts.
-  { price: 80, recorded_at: '2026-11-10T00:00:00.000Z' },
-];
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Fixture re-based to relative dates (was frozen at 2026-10-01…11-10):
+// same 10-day spacing and 5-point shape, last point 1 day ago, so
+// the 7-day staleness gate never withholds the forecast once the
+// calendar moves past the fixture (first failed 2026-11-18, same
+// class as the 2026-11-16 #29 incident). Absolute dates here would
+// be a time-bomb again. 5 points: the Section 20 (§12 #46) forecast
+// minimum — 4 points would return 'not-enough-history'.
+const PRICE_ROWS = [100, 95, 90, 85, 80].map((price, i) => ({
+  price,
+  recorded_at: new Date(Date.now() - (41 - i * 10) * DAY_MS).toISOString(),
+}));
 
 type Row = Record<string, unknown>;
 

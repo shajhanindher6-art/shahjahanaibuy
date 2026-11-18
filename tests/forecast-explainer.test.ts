@@ -62,7 +62,12 @@ describe('forecast explainer — thin-history honesty', () => {
   });
 
   it('5 points produce a forecast, labelled by point count', () => {
-    const result = computeForecast(FIVE_POINT_SHAPE);
+    // Fixture frozen at BASE (2026-10-01), last point day 40: pin
+    // "now" to the day after it so the 7-day staleness gate never
+    // withholds this test once the calendar moves past the fixture
+    // (first failed 2026-11-18, same class as the 2026-11-16 #29
+    // incident).
+    const result = computeForecast(FIVE_POINT_SHAPE, BASE + 41 * DAY_MS);
     expect(result.status).toBe('ok');
     expect(result.pointsUsed).toBe(5);
     expect(result.historyDays).toBe(40);

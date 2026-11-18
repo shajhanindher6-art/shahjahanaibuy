@@ -46,13 +46,21 @@ describe('computeForecast', () => {
   });
 
   it('flat series: centre equals the price, direction flat, range contains it', () => {
-    const result = computeForecast([
-      point(100, 0),
-      point(100, 10),
-      point(100, 20),
-      point(100, 30),
-      point(100, 40),
-    ]);
+    // Fixture frozen at BASE (2026-10-01), last point day 40: pin
+    // "now" to the day after it so the 7-day staleness gate never
+    // withholds this confidence-math test once the calendar moves
+    // past the fixture (first failed 2026-11-18, same class as the
+    // 2026-11-16 #29 incident).
+    const result = computeForecast(
+      [
+        point(100, 0),
+        point(100, 10),
+        point(100, 20),
+        point(100, 30),
+        point(100, 40),
+      ],
+      BASE + 41 * DAY_MS
+    );
     expect(result.status).toBe('ok');
     expect(result.currentPrice).toBe(100);
     expect(result.pointsUsed).toBe(5);
@@ -80,13 +88,19 @@ describe('computeForecast', () => {
   });
 
   it('declining series: direction down, centre below current, low stays positive', () => {
-    const result = computeForecast([
-      point(100, 0),
-      point(95, 10),
-      point(90, 20),
-      point(85, 30),
-      point(80, 40),
-    ]);
+    // Same nowMs pin as the flat-series test above: last point is
+    // day 40; without it the 7-day staleness gate withholds the
+    // forecast once the calendar passes 2026-11-17.
+    const result = computeForecast(
+      [
+        point(100, 0),
+        point(95, 10),
+        point(90, 20),
+        point(85, 30),
+        point(80, 40),
+      ],
+      BASE + 41 * DAY_MS
+    );
     expect(result.status).toBe('ok');
     const f30 = result.forecasts.find((f) => f.horizonDays === 30)!;
     // Slope is exactly −0.5/day: centre at day 70 = 100 − 0.5×70 = 65.
@@ -101,13 +115,17 @@ describe('computeForecast', () => {
   });
 
   it('rising series: direction up', () => {
-    const result = computeForecast([
-      point(80, 0),
-      point(90, 10),
-      point(100, 20),
-      point(110, 30),
-      point(120, 40),
-    ]);
+    // Same nowMs pin: last point day 40 (see flat-series test).
+    const result = computeForecast(
+      [
+        point(80, 0),
+        point(90, 10),
+        point(100, 20),
+        point(110, 30),
+        point(120, 40),
+      ],
+      BASE + 41 * DAY_MS
+    );
     expect(result.forecasts.every((f) => f.direction === 'up')).toBe(true);
     expect(result.forecasts[0].central).toBeGreaterThan(120);
   });
@@ -124,17 +142,21 @@ describe('computeForecast', () => {
   });
 
   it('drops invalid rows and sorts unsorted input', () => {
-    const result = computeForecast([
-      point(90, 20),
-      { price: Number.NaN, recordedAt: day(5) },
-      { price: 0, recordedAt: day(6) },
-      { price: -10, recordedAt: day(7) },
-      { price: 100, recordedAt: 'not-a-date' },
-      point(100, 0),
-      point(95, 10),
-      point(85, 30),
-      point(80, 40),
-    ]);
+    // Same nowMs pin: last valid point day 40 (see flat-series test).
+    const result = computeForecast(
+      [
+        point(90, 20),
+        { price: Number.NaN, recordedAt: day(5) },
+        { price: 0, recordedAt: day(6) },
+        { price: -10, recordedAt: day(7) },
+        { price: 100, recordedAt: 'not-a-date' },
+        point(100, 0),
+        point(95, 10),
+        point(85, 30),
+        point(80, 40),
+      ],
+      BASE + 41 * DAY_MS
+    );
     expect(result.status).toBe('ok');
     expect(result.pointsUsed).toBe(5);
     expect(result.currentPrice).toBe(80);
@@ -142,7 +164,10 @@ describe('computeForecast', () => {
 
   it('confidence never exceeds 90, even for a perfect long fit', () => {
     const points = Array.from({ length: 20 }, (_, i) => point(100, i * 2));
-    const result = computeForecast(points);
+    // Preventive pin (same class): last point day 38 — without it
+    // the staleness gate returns no forecasts and the loop below
+    // asserts nothing. Same nowMs pattern as the tests above.
+    const result = computeForecast(points, BASE + 39 * DAY_MS);
     for (const f of result.forecasts) {
       expect(f.confidencePct).toBeLessThanOrEqual(90);
       expect(f.confidencePct).toBeGreaterThanOrEqual(5);

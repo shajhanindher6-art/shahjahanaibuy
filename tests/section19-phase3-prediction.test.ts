@@ -174,13 +174,19 @@ describe('#29 — OLS confidence on flat/thin series', () => {
     // rebase deferred, formula untouched): a non-flat 5-point
     // perfect fit scores the full 15 + 55×R² = 70 at 7d, minus the
     // horizon penalty — longer horizons still score lower.
-    const five = computeForecast([
-      fpoint(100, 0),
-      fpoint(95, 10),
-      fpoint(90, 20),
-      fpoint(85, 30),
-      fpoint(80, 40),
-    ]);
+    // Same nowMs pin as the #29 flat-series tests above: last
+    // point day 40; without it the 7-day staleness gate withholds
+    // the forecast once the calendar passes 2026-11-17.
+    const five = computeForecast(
+      [
+        fpoint(100, 0),
+        fpoint(95, 10),
+        fpoint(90, 20),
+        fpoint(85, 30),
+        fpoint(80, 40),
+      ],
+      BASE + 41 * DAY_MS
+    );
     expect(five.status).toBe('ok');
     expect(five.forecasts.map((f) => f.confidencePct)).toEqual([70, 65, 58]);
     expect(five.forecasts[2].confidencePct).toBeLessThan(
@@ -189,13 +195,17 @@ describe('#29 — OLS confidence on flat/thin series', () => {
   });
 
   it('non-flat 5-point series with a perfect fit → full confidence, no thin cap', () => {
-    const result = computeForecast([
-      fpoint(100, 0),
-      fpoint(95, 10),
-      fpoint(90, 20),
-      fpoint(85, 30),
-      fpoint(80, 40),
-    ]);
+    // Same nowMs pin: last point day 40 (see the #29 tests above).
+    const result = computeForecast(
+      [
+        fpoint(100, 0),
+        fpoint(95, 10),
+        fpoint(90, 20),
+        fpoint(85, 30),
+        fpoint(80, 40),
+      ],
+      BASE + 41 * DAY_MS
+    );
     expect(result.status).toBe('ok');
     expect(result.forecasts.map((f) => f.confidencePct)).toEqual([70, 65, 58]);
     // The range math is untouched: 30-day centre is still on the
@@ -204,13 +214,17 @@ describe('#29 — OLS confidence on flat/thin series', () => {
   });
 
   it('the doc example is now real: flat 5-point 7d reads "15% confidence (low)"', () => {
-    const result = computeForecast([
-      fpoint(100, 0),
-      fpoint(100, 10),
-      fpoint(100, 20),
-      fpoint(100, 30),
-      fpoint(100, 40),
-    ]);
+    // Same nowMs pin: last point day 40 (see the #29 tests above).
+    const result = computeForecast(
+      [
+        fpoint(100, 0),
+        fpoint(100, 10),
+        fpoint(100, 20),
+        fpoint(100, 30),
+        fpoint(100, 40),
+      ],
+      BASE + 41 * DAY_MS
+    );
     expect(result.forecasts[0].confidencePct).toBe(15);
   });
 });
@@ -545,16 +559,21 @@ describe('#35 — configurable prediction periods', () => {
 
   it('defaults stay [7, 30, 90]', () => {
     expect(FORECAST_HORIZONS).toEqual([7, 30, 90]);
-    expect(computeForecast(points).forecasts.map((f) => f.horizonDays)).toEqual([
-      7, 30, 90,
-    ]);
+    // Same nowMs pin: last point day 40; without it the 7-day
+    // staleness gate returns no forecasts (first failed 2026-11-18).
+    expect(
+      computeForecast(points, BASE + 41 * DAY_MS).forecasts.map((f) => f.horizonDays)
+    ).toEqual([7, 30, 90]);
   });
 
   it('custom horizon returns predictions for that horizon only', () => {
-    const result = computeForecast(points, Date.now(), [14]);
+    // Same nowMs pin (replaces the real Date.now() calls): the
+    // fixture's last point is day 40, so a live "now" makes the
+    // series stale and returns no forecasts.
+    const result = computeForecast(points, BASE + 41 * DAY_MS, [14]);
     expect(result.forecasts).toHaveLength(1);
     expect(result.forecasts[0].horizonDays).toBe(14);
-    const multi = computeForecast(points, Date.now(), [14, 60]);
+    const multi = computeForecast(points, BASE + 41 * DAY_MS, [14, 60]);
     expect(multi.forecasts.map((f) => f.horizonDays)).toEqual([14, 60]);
   });
 

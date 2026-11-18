@@ -73,7 +73,15 @@ describe('formatForecastBasis — built from a real computeForecast run', () => 
   }
 
   it('a 5-point forecast labels itself with 5 points and its real band', () => {
-    const forecast = computeForecast(fivePointHistory());
+    // Fixture frozen at 2026-10-01, last point 2026-11-10: pin
+    // "now" to the day after it so the 7-day staleness gate never
+    // withholds this test once the calendar moves past the fixture
+    // (first failed 2026-11-18, same class as the 2026-11-16 #29
+    // incident).
+    const forecast = computeForecast(
+      fivePointHistory(),
+      new Date('2026-11-11T00:00:00Z').getTime()
+    );
     expect(forecast.status).toBe('ok');
     expect(forecast.pointsUsed).toBe(5);
     for (const horizon of forecast.forecasts) {

@@ -195,11 +195,20 @@ beforeEach(() => {
     { product_id: 'p2', merchant_id: 'm1', price: 80, availability: 'in_stock', url: 'https://example.com/p2', in_stock: true, deleted_at: null },
     { product_id: 'p3', merchant_id: 'm1', price: 70, availability: 'out_of_stock', url: 'https://example.com/p3', in_stock: false, deleted_at: null },
   ]);
+  // Fixture dates re-based to relative days (were frozen at
+  // 2026-11-01 / 2026-11-10): the guest-alert stale gate in
+  // services/guest-alerts.ts suppresses alerts on prices older
+  // than 7 days, so absolute dates stopped triggering once the
+  // calendar passed 2026-11-17 (first failed 2026-11-18, same
+  // class as the 2026-11-16 #29 incident). Shape unchanged:
+  // p1's older point 10 days ago, latest prices 1 day ago.
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const daysAgo = (n: number) => new Date(Date.now() - n * DAY_MS).toISOString();
   seed('price_history', [
-    { product_id: 'p1', retailer_id: 'r1', price: 100, availability: 'in_stock', recorded_at: '2026-11-01T00:00:00Z' },
-    { product_id: 'p1', retailer_id: 'r1', price: 95, availability: 'in_stock', recorded_at: '2026-11-10T00:00:00Z' },
-    { product_id: 'p2', retailer_id: 'r1', price: 80, availability: 'in_stock', recorded_at: '2026-11-10T00:00:00Z' },
-    { product_id: 'p3', retailer_id: 'r1', price: 70, availability: 'out_of_stock', recorded_at: '2026-11-10T00:00:00Z' },
+    { product_id: 'p1', retailer_id: 'r1', price: 100, availability: 'in_stock', recorded_at: daysAgo(10) },
+    { product_id: 'p1', retailer_id: 'r1', price: 95, availability: 'in_stock', recorded_at: daysAgo(1) },
+    { product_id: 'p2', retailer_id: 'r1', price: 80, availability: 'in_stock', recorded_at: daysAgo(1) },
+    { product_id: 'p3', retailer_id: 'r1', price: 70, availability: 'out_of_stock', recorded_at: daysAgo(1) },
   ]);
   seed('availability_history', []);
   seed('deals', []);
