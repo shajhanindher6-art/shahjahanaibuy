@@ -37,7 +37,13 @@ import {
 } from '@/services/tool-integration';
 import { policyForStore } from '@/services/return-policies';
 import { PageJsonLd } from '@/components/seo/page-json-ld';
+import { cookies, headers } from 'next/headers';
 import { GLOBAL_STORES, buildStoreSearchUrl } from '@/lib/stores';
+import {
+  buildGeoAffiliateUrl,
+  isGeoAffiliateEnabled,
+  resolveGeoCountry,
+} from '@/services/affiliate-geo';
 import {
   CONDITION_GRADES,
   INSPECTION_CHECKLIST,
@@ -108,6 +114,18 @@ export default async function RefurbishedChecklistPage({
   const searchQuery = selected
     ? refurbishedSearchQuery(selected.name)
     : 'refurbished';
+
+  // Amazon Associates tag delta (2026-11-18): the "Where to look"
+  // links below go through the geo affiliate engine, so a configured
+  // locale tag is stamped on Amazon search links (US tag never on a
+  // non-US link — the engine owns that rule). Country resolves the
+  // same way the stores route does (Vercel geo header, then the
+  // saved sb-country cookie, then US).
+  const visitorCountry = resolveGeoCountry(
+    headers().get('x-vercel-ip-country'),
+    cookies().get('sb-country')?.value ?? null
+  );
+  const affiliateEnabled = isGeoAffiliateEnabled();
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -353,24 +371,39 @@ export default async function RefurbishedChecklistPage({
               {REFURBISHED_OUTBOUND_NOTE}
             </p>
             <ul className="mt-4 space-y-3">
-              {GLOBAL_STORES.map((store) => (
-                <li key={store.slug} className="rounded-lg border p-4 text-sm">
-                  <a
-                    href={buildStoreSearchUrl(store, searchQuery)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-medium underline-offset-4 hover:underline"
-                  >
-                    Search refurbished on {store.name} →
-                  </a>
-                  <span className="text-muted-foreground">
-                    {' '}
-                    — {store.name}&apos;s own search results
-                    {selected ? ` for “${searchQuery}”` : ' for refurbished items'}.
-                  </span>
-                </li>
-              ))}
+              {GLOBAL_STORES.map((store) => {
+                const rawUrl = buildStoreSearchUrl(store, searchQuery);
+                const href =
+                  buildGeoAffiliateUrl(rawUrl, visitorCountry) ?? rawUrl;
+                return (
+                  <li key={store.slug} className="rounded-lg border p-4 text-sm">
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium underline-offset-4 hover:underline"
+                    >
+                      Search refurbished on {store.name} →
+                    </a>
+                    <span className="text-muted-foreground">
+                      {' '}
+                      — {store.name}&apos;s own search results
+                      {selected ? ` for “${searchQuery}”` : ' for refurbished items'}.
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
+            {/* Same on-page disclosure wording as compare / product /
+                gifts — rendered only when an affiliate path is
+                actually configured, so there is nothing to disclose
+                when there is nothing configured. */}
+            {affiliateEnabled && (
+              <p className="mt-4 text-xs text-muted-foreground">
+                Affiliate disclosure: SmartBuy may earn a commission from qualifying purchases
+                made through these retailer links, at no extra cost to you.
+              </p>
+            )}
             <p className="mt-4 text-sm">
               <Link href="/find" className="underline-offset-4 hover:underline">
                 Search all stores on /find →

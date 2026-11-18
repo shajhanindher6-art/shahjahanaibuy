@@ -198,6 +198,16 @@ vi.mock('@/components/layout/site-footer', () => ({
   SiteFooter: () => null,
 }));
 
+// Amazon Associates tag delta (2026-11-18): the refurbished page
+// resolves the visitor country server-side via next/headers
+// (Vercel geo header, then the sb-country cookie). No signal in
+// tests → the US fallback, exactly as the real page behaves
+// without a geo header or cookie.
+vi.mock('next/headers', () => ({
+  cookies: () => ({ get: () => undefined, getAll: () => [] }),
+  headers: () => ({ get: () => null }),
+}));
+
 // Signed-out visitor: account lists are never checked (T4 asserts
 // the copy that says so). Everything else in the module stays real.
 vi.mock('@/features/auth', async (importOriginal) => {
@@ -780,6 +790,51 @@ describe('T9 refurbished-checklist page', () => {
     expect(section).toContain('Related tools');
     expect(section).toContain('product=test-laptop');
     expect(section).not.toContain('product=&');
+  });
+
+  // Amazon Associates tag delta (2026-11-18): the "Where to look"
+  // Amazon link goes through the geo affiliate engine, so a
+  // configured tag is stamped — and the on-page disclosure note
+  // renders only when something is configured. The tag value here
+  // is a test fixture, never the live value.
+  it('tags the Amazon "Where to look" link + shows the disclosure note when a tag is configured', async () => {
+    const savedTag = process.env.AMAZON_ASSOC_TAG;
+    process.env.AMAZON_ASSOC_TAG = 'test-tag-20';
+    try {
+      seedCatalog();
+      const html = renderToStaticMarkup(
+        await RefurbishedChecklistPage({ searchParams: { product: 'test-laptop' } })
+      );
+      expect(html).toContain('amazon.com/s?k=refurbished+Test+Laptop');
+      // Note the `+`: buildGeoAffiliateUrl re-serializes the query
+      // via URLSearchParams, which encodes spaces as `+` (the raw
+      // buildStoreSearchUrl form uses %20 — see the unconfigured
+      // test below). Either form is the same search to Amazon.
+      expect(html).toContain('tag=test-tag-20');
+      expect(html).toContain(
+        'Affiliate disclosure: SmartBuy may earn a commission from qualifying purchases'
+      );
+    } finally {
+      if (savedTag === undefined) delete process.env.AMAZON_ASSOC_TAG;
+      else process.env.AMAZON_ASSOC_TAG = savedTag;
+    }
+  });
+
+  it('leaves the "Where to look" links plain + no disclosure note when nothing is configured', async () => {
+    const savedTag = process.env.AMAZON_ASSOC_TAG;
+    delete process.env.AMAZON_ASSOC_TAG;
+    try {
+      seedCatalog();
+      const html = renderToStaticMarkup(
+        await RefurbishedChecklistPage({ searchParams: { product: 'test-laptop' } })
+      );
+      expect(html).toContain('amazon.com/s?k=refurbished%20Test%20Laptop');
+      expect(html).not.toContain('tag=');
+      expect(html).not.toContain('Affiliate disclosure: SmartBuy may earn');
+    } finally {
+      if (savedTag === undefined) delete process.env.AMAZON_ASSOC_TAG;
+      else process.env.AMAZON_ASSOC_TAG = savedTag;
+    }
   });
 });
 

@@ -151,6 +151,22 @@ export function SiteFooter() {
           <p className="text-sm text-muted-foreground">
             &copy; {new Date().getFullYear()} SmartBuy AI. All rights reserved.
           </p>
+          {/* Amazon Associates disclosure (2026-11-18): the Operating
+              Agreement requires this exact sentence to be visible
+              where Amazon affiliate links appear. It stays English in
+              every language — like the copyright line, it is a legal
+              line, and translating a legally required verbatim
+              statement risks non-compliance. The methodology page
+              carries the dynamic detail (which locales are configured). */}
+          <p className="text-sm text-muted-foreground">
+            As an Amazon Associate, I earn from qualifying purchases.{' '}
+            <Link
+              href="/methodology#affiliate-disclosure"
+              className="underline-offset-4 hover:underline"
+            >
+              Affiliate disclosure
+            </Link>
+          </p>
         </div>
       </div>
     </footer>

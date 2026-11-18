@@ -35,6 +35,10 @@ import {
 } from '@/lib/stores';
 import { FALLBACK_REGION, getRegionByCountry } from '@/lib/region';
 import { resolveServerCountry } from '@/lib/platform-geo';
+import {
+  buildGeoAffiliateUrl,
+  isGeoAffiliateEnabled,
+} from '@/services/affiliate-geo';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,13 +50,26 @@ interface StoreEntry {
   searchUrl: string | null;
 }
 
-function toEntry(store: LocalStore, query: string | null): StoreEntry {
+function toEntry(
+  store: LocalStore,
+  query: string | null,
+  countryCode: string
+): StoreEntry {
+  const rawSearchUrl = query ? buildStoreSearchUrl(store, query) : null;
   return {
     name: store.name,
     slug: store.slug,
     countryCode: store.countryCode,
     websiteUrl: store.websiteUrl,
-    searchUrl: query ? buildStoreSearchUrl(store, query) : null,
+    // Amazon Associates tag delta (2026-11-18): search URLs go
+    // through the geo affiliate engine, so a configured locale tag
+    // is stamped (US tag never on a non-US link — the engine owns
+    // that rule). Unconfigured / non-Amazon URLs pass through
+    // unchanged, exactly as buildGeoAffiliateUrl defines.
+    searchUrl:
+      rawSearchUrl === null
+        ? null
+        : (buildGeoAffiliateUrl(rawSearchUrl, countryCode) ?? rawSearchUrl),
   };
 }
 
@@ -97,16 +114,20 @@ export async function GET(request: NextRequest) {
     const region = getRegionByCountry(countryCode) ?? FALLBACK_REGION;
     const split = getStoresSplit(countryCode);
 
-    return apiSuccess({
-      country: countryCode,
-      countryName: region.name,
-      source,
-      hasLocal: split.hasLocal,
-      local: split.local.map((store) => toEntry(store, query)),
-      international: split.international.map((store) =>
-        toEntry(store, query)
-      ),
-    });
+    return apiSuccess(
+      {
+        country: countryCode,
+        countryName: region.name,
+        source,
+        hasLocal: split.hasLocal,
+        local: split.local.map((store) => toEntry(store, query, countryCode)),
+        international: split.international.map((store) =>
+          toEntry(store, query, countryCode)
+        ),
+      },
+      200,
+      { affiliateEnabled: isGeoAffiliateEnabled() }
+    );
   } catch (err) {
     logApiError(err, { request, route: 'stores', status: 500, startedAt });
     return internalError('Failed to load stores');

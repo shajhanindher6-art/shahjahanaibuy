@@ -17,7 +17,7 @@ claimed that the code cannot prove. Counts from the Section 20 audit
 
 | Merchant / integration | Adapter exists? | Credentials configured? | Ever verified working? |
 |---|---|---|---|
-| **Amazon** | **No.** Zero hits for PA-API / Product Advertising in `app`, `lib`, `services`. Only affiliate-tag stamping (`services/affiliate-geo.ts:66-69`). Tag decoration only — no price/stock fetch exists. | Tag env set live (`smartbuy-20`, US); approved vs placeholder **UNKNOWN** (Associates dashboard only) | **Never** — there is no API call to succeed or fail |
+| **Amazon** | **No.** Zero hits for PA-API / Product Advertising in `app`, `lib`, `services`. Only affiliate-tag stamping (`services/affiliate-geo.ts:66-69`). Tag decoration only — no price/stock fetch exists. | Tag env set live (`smartbuy-20`, US — being changed to `shahjahanaibu-20`; verify live after redeploy); approved vs placeholder **UNKNOWN** (Associates dashboard only) | **Never** — there is no API call to succeed or fail |
 | **Best Buy** | **Yes** — `services/providers/bestbuy-provider.ts` (Products API client: keyword search, SKU fetch, UPC + model search, GS1-validated GTIN, 200 ms throttle, 50,000/day budget). **Key pending — no live call yet.** | **No** — `BESTBUY_API_KEY` unset; free key via email signup at developer.bestbuy.com | **Never** — client built, key pending; first live call still to be done |
 | **eBay** | **Yes** — `services/ebay-browse.ts` (Browse API, OAuth client-credentials, in-memory token cache, 10 s timeout, 429 → distinct `rate-limited` reason). Lives **outside** the provider registry. | **No** — `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET` unset; EPN + Growth Check also owner-gated | **Never** — blocked twice over (keys + missing `merchants` row) |
 | **Skimlinks** | **No integration** — only a `buildSkimlinksUrl` helper + env read; format "must be confirmed against the owner's Skimlinks dashboard before enabling". | No — `SKIMLINKS_PUBLISHER_ID` unset | **Never** |
@@ -42,8 +42,9 @@ layer is schema-only.
 - What exists: affiliate-tag stamping on outbound links
   (`services/affiliate-geo.ts`), base tag from `AMAZON_ASSOC_TAG` for US
   visitors; `AMAZON_ASSOC_TAG_US` is never read by code (silently ignored).
-  Tag `smartbuy-20` is verified live via the merchants API; **approved vs
-  placeholder is unknown** — only the Amazon Associates dashboard can confirm.
+  Tag `smartbuy-20` is verified live via the merchants API (being changed to
+  `shahjahanaibu-20` — verify the new value live after the Vercel redeploy);
+  **approved vs placeholder is unknown** — only the Amazon Associates dashboard can confirm.
 - What does **not** exist: any Amazon price/stock API. PA-API 5.0 is retired;
   the Creators API needs ≥10 qualifying sales in a trailing 30 days. There is
   no adapter to write and no credential to configure until that threshold is met.
@@ -169,7 +170,7 @@ not catalog records — they must never be counted as products.
 ## Pending owner approvals
 
 - eBay keys + EPN/Growth Check + `merchants` row `slug='ebay'` + migration 045.
-- Amazon Associates approval check for `smartbuy-20` (dashboard only).
+- Amazon Associates approval check for `shahjahanaibu-20` (dashboard only; Vercel env change pending redeploy).
 - Skimlinks application — explicit go-ahead required (90-day reapply block).
 - Best Buy API key (free, developer.bestbuy.com) — client built, key pending; then one live SKU fetch to verify.
 - Image-host / hotlink policy decision (hotlinking is current practice; no

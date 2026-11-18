@@ -92,10 +92,73 @@ export default function StoreFinderPage() {
   );
   const trimmedQuery = query.trim();
 
+  // Amazon Associates tag delta (2026-11-18): store search links go
+  // through the batch transform endpoint (same pattern as the
+  // region-arbitrage table) so a configured locale tag is stamped on
+  // Amazon links. Until the transform returns — or on any failure —
+  // links stay the plain search URLs. The endpoint caps each batch
+  // at 20 URLs, so the lists are sent in chunks of 20. The response
+  // meta reports whether any affiliate path is configured; the
+  // disclosure note below renders only then.
+  const [transformedUrls, setTransformedUrls] = useState<
+    Record<string, string>
+  >({});
+  const [affiliateEnabled, setAffiliateEnabled] = useState(false);
+  useEffect(() => {
+    if (!trimmedQuery) {
+      setTransformedUrls({});
+      setAffiliateEnabled(false);
+      return;
+    }
+    const urls = [...local, ...international].map((store) =>
+      buildStoreSearchUrl(store, trimmedQuery)
+    );
+    if (urls.length === 0) return;
+    let cancelled = false;
+    const TRANSFORM_BATCH_SIZE = 20;
+    const batches: string[][] = [];
+    for (let i = 0; i < urls.length; i += TRANSFORM_BATCH_SIZE) {
+      batches.push(urls.slice(i, i + TRANSFORM_BATCH_SIZE));
+    }
+    void Promise.all(
+      batches.map((batch) =>
+        fetch('/api/v1/affiliate/transform', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls: batch }),
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((json) => {
+            if (
+              cancelled ||
+              !json?.success ||
+              !Array.isArray(json.data?.urls)
+            )
+              return;
+            if (json.meta?.affiliateEnabled === true)
+              setAffiliateEnabled(true);
+            const next: Record<string, string> = {};
+            batch.forEach((u, i) => {
+              const t = json.data.urls[i];
+              if (typeof t === 'string' && t.length > 0) next[u] = t;
+            });
+            setTransformedUrls((prev) => ({ ...prev, ...next }));
+          })
+          .catch(() => {
+            // Links stay plain on any failure.
+          })
+      )
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [trimmedQuery, local, international]);
+
   const renderStore = (store: LocalStore) => {
     const searchUrl = trimmedQuery
       ? buildStoreSearchUrl(store, trimmedQuery)
       : null;
+    const href = searchUrl ? (transformedUrls[searchUrl] ?? searchUrl) : null;
     return (
       <li
         key={`${store.countryCode}-${store.slug}`}
@@ -105,9 +168,9 @@ export default function StoreFinderPage() {
           <p className="font-medium">{store.name}</p>
           <p className="text-sm text-muted-foreground">{store.websiteUrl}</p>
         </div>
-        {searchUrl ? (
+        {href ? (
           <a
-            href={searchUrl}
+            href={href}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex min-h-[44px] items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
@@ -239,6 +302,17 @@ export default function StoreFinderPage() {
           <ul className="mt-4 space-y-3">
             {international.map(renderStore)}
           </ul>
+
+          {/* Same on-page disclosure wording as compare / product /
+              gifts — rendered only when the transform endpoint
+              reports an affiliate path configured, so there is
+              nothing to disclose when there is nothing configured. */}
+          {affiliateEnabled && (
+            <p className="mt-4 text-xs text-muted-foreground">
+              Affiliate disclosure: SmartBuy may earn a commission from qualifying purchases
+              made through these retailer links, at no extra cost to you.
+            </p>
+          )}
 
           <p className="mt-8 text-sm text-muted-foreground">
             Looking for live prices instead? Start on the{' '}

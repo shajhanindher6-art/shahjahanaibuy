@@ -97,6 +97,17 @@ scheme in this batch** — they use the Skimlinks fallback when it is
 configured, else passthrough. Confirm the Skimlinks redirect format
 in the Skimlinks dashboard before enabling.
 
+**Tag value (2026-11-18):** the tag itself lives only in env — no
+value is hardcoded anywhere in source. The Vercel value is being
+changed from `smartbuy-20` to `shahjahanaibu-20` (owner step: env →
+Production → Redeploy; verify live after). Approval status of either
+tag is unknown — only the Associates dashboard can confirm.
+
+**Not integrated — CJ Affiliate:** no CJ helper, env var, link
+builder, doc, or account reference exists anywhere in the repo.
+Amazon tagging and Skimlinks are the only affiliate paths; CJ would
+be a brand-new integration, not an extension of an existing setup.
+
 ## Files
 
 - `services/affiliate-geo.ts` — pure transform + geo resolution

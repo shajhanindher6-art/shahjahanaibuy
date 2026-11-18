@@ -180,7 +180,8 @@ export default async function MethodologyPage() {
                 {' '}
                 An affiliate tag is configured for: {configuredLocales.join(', ')}. Retailer
                 links for those locales carry the configured tag, so a purchase through
-                them may earn the site a commission. This page states only that a tag is
+                them may earn the site a commission. As an Amazon Associate, I earn from
+                qualifying purchases. This page states only that a tag is
                 configured — whether it belongs to an approved Associates account is a
                 fact of the account dashboard, not of this page.
               </>
