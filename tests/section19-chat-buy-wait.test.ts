@@ -17,7 +17,7 @@
  * (not enough data).
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buyWaitAssistant } from '@/services/personal-assistant';
 import { generateChatResponse } from '@/services/chat';
 import { FALLBACK_REGION } from '@/lib/region';
@@ -178,6 +178,20 @@ function stub(): AnySupabaseClient {
 }
 
 describe('buyWaitAssistant — verdict from recorded price history', () => {
+  // Time-bomb fix (2026-11-21): the fixtures freeze price history
+  // at 2026-11-11 at the latest, and the verdict engine withholds
+  // its verdict when the latest price is older than the 7-day
+  // STALE_PRICE_DAYS window. Pin "now" to 2026-11-13 so the
+  // recorded prices stay fresh; only the clock is pinned, every
+  // assertion is unchanged.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-13T00:00:00.000Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('MacBook at its recorded low → "Buy Now" with explanation, confidence, and the estimate label', async () => {
     const answer = await buyWaitAssistant(
       stub(),
@@ -233,6 +247,16 @@ describe('buyWaitAssistant — verdict from recorded price history', () => {
 });
 
 describe('generateChatResponse routes buy/wait questions to the verdict handler', () => {
+  // Same clock pin as the buyWaitAssistant describe above: the
+  // routed verdict stands on the same frozen 2026-11-11 history.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-13T00:00:00.000Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('routes "should I buy the MacBook Air 13 now or wait?" to buyWaitAssistant', async () => {
     const answer = await generateChatResponse(
       stub(),

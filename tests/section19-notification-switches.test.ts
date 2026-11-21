@@ -22,7 +22,7 @@
  * sendable and the tests can discriminate opt-out from "no key".
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { checkPriceAlerts } from '@/services/alert-checker';
 import { processNotificationQueue } from '@/services/notification-dispatch';
 import { sendPriceAlertEmail } from '@/services/email';
@@ -185,6 +185,21 @@ beforeEach(() => {
 });
 
 describe('checkPriceAlerts honours the master switches (before queueing)', () => {
+  // Time-bomb fix (2026-11-21): the fixture price was recorded
+  // 2026-11-12T10:00Z, and the Section 20 §12 #81 stale gate
+  // suppresses any trigger older than the 7-day STALE_PRICE_DAYS
+  // window. Pin "now" to 2026-11-13T10:00Z so the price is 1 day
+  // old (fresh); only the clock is pinned, every assertion is
+  // unchanged. Scoped to this describe so the dispatch describe
+  // below keeps real timers.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-13T10:00:00.000Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('price_alerts off → nothing queued, no trigger recorded, counted as skippedOptedOut', async () => {
     const db = checkerDb([alertRow()], [settingsRow({ price_alerts: false })]);
     const result = await checkPriceAlerts(db.client);

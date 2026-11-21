@@ -56,14 +56,14 @@ describe('press-counts.json — generated, not hardcoded', () => {
     expect(viaReader.date).toBe(pressCounts.date);
   });
 
-  it('is the current forecast time-bomb fix baseline (346 files / 4,830 tests, 18 November 2026)', () => {
+  it('is the current CJ feed importer baseline (348 files / 4,869 tests, 21 November 2026)', () => {
     // Baseline only — the coordinator re-locks this after the final
     // full gate run (other workers add tests after this change). If
     // this test fails, regenerate the JSON
     // (`npm run generate:press-counts`) and update this baseline in
     // the same change; never edit the JSON by hand.
     expect(pressCounts).toEqual(
-      expect.objectContaining({ tests: 4830, files: 346, date: '2026-11-18' }),
+      expect.objectContaining({ tests: 4869, files: 348, date: '2026-11-21' }),
     );
   });
 });

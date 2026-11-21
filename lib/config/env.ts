@@ -155,6 +155,30 @@ export const env = {
   get csvSourceUrl(): string | undefined {
     return process.env.CSV_SOURCE_URL;
   },
+
+  // CJ Affiliate (DHGate feed import). All optional: unset =
+  // importer / SFTP fetcher report not_configured (fail-closed).
+  // The Personal Access Token and SFTP password are owner-set in
+  // Vercel only — never commit real values, never log them.
+  // CJ_PSA_APPROVED is the hard compliance gate: it must stay
+  // false until the CJ Publisher Service Agreement display rules
+  // are read and verified; only then may imported rows go public.
+  get cjPersonalAccessToken(): string | undefined {
+    return process.env.CJ_PERSONAL_ACCESS_TOKEN;
+  },
+  get cjSftpHost(): string | undefined {
+    return process.env.CJ_SFTP_HOST;
+  },
+  get cjSftpPort(): string | undefined {
+    return process.env.CJ_SFTP_PORT;
+  },
+  get cjSftpUsername(): string | undefined {
+    return process.env.CJ_SFTP_USERNAME;
+  },
+  get cjSftpPassword(): string | undefined {
+    return process.env.CJ_SFTP_PASSWORD;
+  },
+  cjPsaApproved: booleanEnv(process.env.CJ_PSA_APPROVED, false),
 } as const;
 
 export type Env = typeof env;

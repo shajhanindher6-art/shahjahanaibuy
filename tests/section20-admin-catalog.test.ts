@@ -20,7 +20,7 @@
  * the same pattern predictions/outcomes + uptime/check already
  * use, and is verified live, not by a unit test.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DATA_QUALITY_SCORE_LABEL,
   computeProductQualityScore,
@@ -582,6 +582,22 @@ describe('listProductsPriceHistorySummary', () => {
 // ---------------------------------------------------------------------------
 
 describe('getAdminDataQualitySummary', () => {
+  // Time-bomb fix (2026-11-21): the fixtures freeze the fresh
+  // product at data_freshness 2026-11-12 and the stale one at
+  // 2026-11-02, and freshness is judged against the 7-day
+  // STALE_PRICE_DAYS window from the real clock. Pin "now" to
+  // 2026-11-13T08:00Z (the same date the file's other fixtures
+  // already use) so the fresh product stays fresh and the stale
+  // one stays stale; only the clock is pinned, every assertion
+  // is unchanged.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-13T08:00:00.000Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('computes verification, freshness, coverage, and an average score', async () => {
     const client = fakeClient((table) => {
       if (table === 'products') {

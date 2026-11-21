@@ -22,7 +22,7 @@
  *   text brand/category columns (functional ingestProduct test
  *   with a mocked Supabase client).
  */
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -322,6 +322,21 @@ describe('item 16 — public-product helper filters deleted/pending rows', () =>
 // ---------------------------------------------------------------------------
 
 describe('item 17 — alert checker batches prices (one query per table, not per alert)', () => {
+  // Time-bomb fix (2026-11-21): the fixture price was recorded
+  // 2026-11-12T10:00Z, and the Section 20 §12 #81 stale gate
+  // suppresses any trigger older than the 7-day STALE_PRICE_DAYS
+  // window. Pin "now" to 2026-11-13T10:00Z so the price is 1 day
+  // old (fresh); only the clock is pinned, every assertion is
+  // unchanged. Scoped to this describe so the other items in
+  // this file keep real timers.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-13T10:00:00.000Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('checks 3 alerts over 2 products with exactly 1 price_history + 1 merchant_products query', async () => {
     const db = new FakeDb({
       rows: {
