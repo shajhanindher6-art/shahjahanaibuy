@@ -14,6 +14,7 @@ import {
 } from '@/lib/referral';
 import { AuthShell } from '@/components/layout/auth-shell';
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
+import { trackEvent } from '@/components/analytics/track-event';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -89,6 +90,15 @@ export default function SignUpPage() {
             const outcome = await submitReferralAttribution(code);
             if (outcome !== 'retry') clearPendingReferralCode();
           }
+          // PostHog: track ONLY the full success (session exists).
+          // signUp() also returns success+error for "confirmation
+          // required" and for "email already registered"
+          // (anti-enumeration) — neither is a completed signup, so
+          // neither is tracked. Google sign-up is not tracked here:
+          // signInWithGoogle() only starts the OAuth redirect, and
+          // the account is created later via /auth/callback.
+          // trackEvent() is consent-gated and never throws.
+          trackEvent('user_signed_up', { method: 'email', success: true });
           router.push('/dashboard');
         }
       } else {

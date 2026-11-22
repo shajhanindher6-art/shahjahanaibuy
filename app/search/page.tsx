@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { buildItemListJsonLd, toJsonLd } from '@/lib/json-ld';
 import { appConfig } from '@/lib/config/app';
 import { WishlistButton } from '@/components/products/wishlist-button';
+import { trackEvent } from '@/components/analytics/track-event';
 import { ShareButtons } from '@/components/products/share-buttons';
 import { PriceAlertDialog } from '@/components/products/price-alert-dialog';
 import { Price } from '@/components/region/price';
@@ -128,6 +129,12 @@ function SearchPageContent() {
   // the ?q= effect below never re-runs a search that already ran
   // when performSearch's router.replace re-renders the page.
   const lastSearchedRef = useRef<string | null>(null);
+  // PostHog: the last search that fired a 'product_searched' event,
+  // keyed on (mode + normalised query). performSearch re-runs for
+  // filter/sort/page changes and for the ?q= deep-link effect —
+  // those re-runs must not re-fire the event, so the key is compared
+  // before tracking. A genuinely new query fires again.
+  const lastTrackedSearchRef = useRef<string | null>(null);
   const [searchMode, setSearchMode] = useState<'text' | 'url'>('text');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [webResults, setWebResults] = useState<WebSearchResult[]>([]);
@@ -491,6 +498,32 @@ function SearchPageContent() {
             ? data.meta.didYouMean
             : null
         );
+        // PostHog: one 'product_searched' event per distinct search.
+        // performSearch re-runs for filter/sort/page changes and for
+        // the ?q= deep-link effect — the lastTrackedSearchRef guard
+        // above stops those re-runs re-firing. Only the success path
+        // tracks (a failed search sets searchError and never reaches
+        // here). The raw query is never sent — only the result count
+        // and, when available, the product category as a safe
+        // predefined value. trackEvent() is consent-gated and never
+        // throws.
+        const trackKey = `${effectiveMode}:${searchQuery.trim().toLowerCase()}`;
+        if (lastTrackedSearchRef.current !== trackKey) {
+          lastTrackedSearchRef.current = trackKey;
+          const resultsCount =
+            typeof data.meta?.total === 'number' ? data.meta.total : nextResults.length;
+          const searchCategory =
+            activeFilters.category ||
+            (typeof data.meta?.parsedIntent?.category === 'string'
+              ? data.meta.parsedIntent.category
+              : '');
+          trackEvent(
+            'product_searched',
+            searchCategory
+              ? { results_count: resultsCount, search_type: searchCategory }
+              : { results_count: resultsCount }
+          );
+        }
         // B4: "On deal" badges for the returned products, from the
         // ranked-deals endpoint (one call per search, same rows the
         // deals page renders). Best-effort and non-blocking: a
@@ -1728,6 +1761,8 @@ function SearchPageContent() {
                         productId={result.product.id}
                         productName={result.product.name}
                         productSlug={result.product.slug}
+                        productCategory={result.product.category ?? undefined}
+                        source="search_results"
                         variant="outline"
                         size="sm"
                       />

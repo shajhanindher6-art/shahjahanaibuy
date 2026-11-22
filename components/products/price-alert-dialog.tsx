@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth';
+import { trackEvent } from '@/components/analytics/track-event';
 import {
   listLocalAlertsForProduct,
   removeLocalAlert,
@@ -164,6 +165,15 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
       });
       const data = await res.json();
       if (data.success) {
+        // PostHog: track ONLY after the server confirms the alert
+        // was saved. alert_type is one of the predefined AlertType
+        // values (price_drop, back_in_stock, deal, significant_drop,
+        // trend, opportunity). No user id, product id, email, note
+        // or target price is sent. currency is omitted: it is not
+        // reliably available in this component (prices render with
+        // a hardcoded "$"). trackEvent() is consent-gated and
+        // never throws.
+        trackEvent('price_alert_created', { alert_type: alertType });
         // The old toast always said "drops below $X" — wrong for
         // every type except price_drop. One honest line per type.
         const createdDescription =
@@ -216,6 +226,12 @@ export function PriceAlertDialog({ productId, productName, currentPrice, initial
       toast({ title: 'Could not save alert', description: result.error, variant: 'destructive' });
       return;
     }
+    // PostHog: track ONLY after the device-local alert was saved.
+    // A guest save is a real price-alert creation (device-only).
+    // alert_type is 'price_drop' | 'back_in_stock' (predefined).
+    // No email is sent, even when the guest also left one for the
+    // optional server-side email alert below.
+    trackEvent('price_alert_created', { alert_type: guestAlertType });
     toast({
       title: 'Price alert saved on this device',
       description:

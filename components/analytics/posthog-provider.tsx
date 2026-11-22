@@ -16,6 +16,16 @@ import { getAnalyticsConsent } from '@/lib/consent';
  */
 let initialized = false;
 
+/**
+ * Whether PostHog has been initialized in this page session.
+ * Read by the central tracker (./track-event.ts) so it never
+ * calls capture() on an uninitialized client and never starts a
+ * second PostHog instance. Additive only — tryInit() is unchanged.
+ */
+export function isPosthogInitialized(): boolean {
+  return initialized;
+}
+
 function tryInit(): void {
   if (initialized) return;
   const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;

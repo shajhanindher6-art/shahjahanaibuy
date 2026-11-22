@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth';
+import { trackEvent } from '@/components/analytics/track-event';
 import { cn } from '@/lib/utils';
 import {
   GUEST_WISHLIST_EVENT,
@@ -23,6 +24,10 @@ interface WishlistButtonProps {
   productName: string;
   /** Slug for the guest (localStorage) wishlist entry; optional for callers that only have an id. */
   productSlug?: string;
+  /** Product category, when the caller knows it (used only as a PostHog event property — never a product id). */
+  productCategory?: string | null;
+  /** Page / UI location, when the caller knows it (e.g. 'product_page', 'search_results'). */
+  source?: string;
   variant?: 'default' | 'outline' | 'ghost';
   size?: 'default' | 'sm' | 'lg' | 'icon';
 }
@@ -34,7 +39,7 @@ interface Wishlist {
   createdAt: string;
 }
 
-export function WishlistButton({ productId, productName, productSlug, variant = 'outline', size = 'default' }: WishlistButtonProps) {
+export function WishlistButton({ productId, productName, productSlug, productCategory, source, variant = 'outline', size = 'default' }: WishlistButtonProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -54,6 +59,17 @@ export function WishlistButton({ productId, productName, productSlug, variant = 
     return () => window.removeEventListener(GUEST_WISHLIST_EVENT, sync);
   }, [productId]);
 
+  // PostHog: the approved event properties for a wishlist add.
+  // Built fresh per call so absent values are omitted (never sent
+  // as null/undefined). No product id is ever sent — the brief
+  // forbids ids that could identify a user's private records.
+  const wishlistEventProps = (): { product_category?: string; source?: string } => {
+    const props: { product_category?: string; source?: string } = {};
+    if (productCategory) props.product_category = productCategory;
+    if (source) props.source = source;
+    return props;
+  };
+
   const handleGuestToggle = () => {
     const saved = toggleGuestWishlist({
       id: productId,
@@ -61,6 +77,10 @@ export function WishlistButton({ productId, productName, productSlug, variant = 
       name: productName,
     });
     setGuestSaved(saved);
+    // PostHog: track ONLY the add (saved === true), never the
+    // remove. A guest save is a real wishlist addition (device-
+    // local). trackEvent() is consent-gated and never throws.
+    if (saved) trackEvent('product_added_to_wishlist', wishlistEventProps());
     toast({
       title: saved ? 'Saved on this device' : 'Removed from wishlist',
       description: saved
@@ -114,6 +134,9 @@ export function WishlistButton({ productId, productName, productSlug, variant = 
       const data = await res.json();
       if (data.success) {
         setAddedTo(new Set([...addedTo, wishlistId]));
+        // PostHog: track ONLY after the server confirms the add.
+        // trackEvent() is consent-gated and never throws.
+        trackEvent('product_added_to_wishlist', wishlistEventProps());
         toast({ title: 'Added to wishlist', description: `${productName} added to "${wishlistName}".` });
       } else {
         toast({ title: 'Failed to add', description: data.error?.message ?? 'Please try again.', variant: 'destructive' });

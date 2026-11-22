@@ -1649,6 +1649,8 @@ export default function ProductDetailClient({
                 productId={product.id}
                 productName={product.name}
                 productSlug={product.slug}
+                productCategory={product.category ?? undefined}
+                source="product_page"
               />
               {/* P0 fix (2026-11-09 audit): public UI had no share
                   mechanism anywhere — a good deal was a dead end. */}

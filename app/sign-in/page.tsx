@@ -9,6 +9,7 @@ import type { AuthErrorCode } from '@/features/auth/auth-errors';
 import { isSafeRedirectPath } from '@/lib/utils/safe-redirect';
 import { AuthShell } from '@/components/layout/auth-shell';
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
+import { trackEvent } from '@/components/analytics/track-event';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -50,6 +51,14 @@ function SignInContent() {
     try {
       const result = await signIn(email, password);
       if (result.success) {
+        // PostHog: track ONLY a successful sign-in, before the
+        // redirect (capture is fire-and-forget via beacon, so the
+        // navigation does not drop it). Failed logins are never
+        // tracked. Google sign-in is not tracked here:
+        // signInWithGoogle() only starts the OAuth redirect, and
+        // the session is established later via /auth/callback.
+        // trackEvent() is consent-gated and never throws.
+        trackEvent('user_logged_in', { method: 'email', success: true });
         router.push(redirect);
       } else {
         setError(result.error || 'Failed to sign in');
