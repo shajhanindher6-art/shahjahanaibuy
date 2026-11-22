@@ -192,7 +192,19 @@ import {
 } from '@/services/product-quality-score';
 import { BestTimeToBuyIndicator } from '@/components/products/best-time-to-buy';
 import { BuyingOpportunityBadge } from '@/components/products/buying-opportunity-badge';
-import { BuyingConsiderations } from '@/components/products/buying-considerations';
+// Section 19, §12 #18 — deferred with ssr:false so the component +
+// services/buying-considerations.ts stay out of First Load JS (350 kB
+// budget, Phase 1B). It renders well below the hero / Where-to-Buy,
+// gated on `product`, with the same LoadingSpinner fallback as the
+// other below-fold blocks. No feature removed: it still renders the
+// same consolidated considerations once its chunk loads.
+const BuyingConsiderations = dynamic(
+  () =>
+    import('@/components/products/buying-considerations').then(
+      (m) => m.BuyingConsiderations
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
 import { PricePredictionBadge } from '@/components/products/price-prediction-badge';
 // Section 14, chunk 5: product gallery — static import, small
 // (no chart library); renders the single product image when no
@@ -483,22 +495,35 @@ const TrustScoreCard = dynamic(
     ),
   { ssr: false, loading: () => <LoadingSpinner /> }
 );
-import { VerifiedMerchantBadge } from '@/components/merchant/verified-badge';
+// Merchant trust block (Where-to-Buy rows, below the hero, gated on
+// merchantTrustLoaded) — deferred with ssr:false so the badge +
+// lib/verified-merchants.ts stay out of First Load JS (350 kB
+// budget, Phase 1B). Same pattern as the TrustScoreCard in the same
+// block. The badge renders nothing until a merchant earns it, so the
+// deferral is invisible today.
+const VerifiedMerchantBadge = dynamic(
+  () =>
+    import('@/components/merchant/verified-badge').then(
+      (m) => m.VerifiedMerchantBadge
+    ),
+  { ssr: false, loading: () => <LoadingSpinner /> }
+);
 import { AccuracyFlag } from '@/components/merchant/accuracy-flag';
-import {
-  computeTrustGrade,
-  type TrustGradeResult,
-} from '@/lib/merchant-trust';
+// NOTE (Phase 1B): computeTrustGrade is NOT imported statically — it is
+// loaded on demand inside the merchant-trust effect below, so
+// lib/merchant-trust.ts stays out of First Load JS (350 kB budget).
+// Only the type is imported (erased at compile time, 0 bytes).
+import type { TrustGradeResult } from '@/lib/merchant-trust';
 import {
   accuracyScore,
   ACCURACY_MIN_SAMPLES_FOR_CAUTION,
   type AccuracyCheck,
 } from '@/lib/price-accuracy';
-import {
-  loadGuestMemory,
-  saveGuestMemory,
-  mergeSeenProducts,
-} from '@/lib/agent-memory';
+// NOTE (Phase 1B): lib/agent-memory is NOT imported statically — it is
+// loaded on demand inside the seen-recording effect below, so its
+// 17 kB stays out of First Load JS (350 kB budget). The guest branch
+// there is the only caller.
+
 // Section 11, Chunk C: guest recently-viewed history (device-local
 // only). The signed-in path is separate — POST /api/v1/product-views
 // in fetchAll below — and is untouched.
@@ -905,23 +930,31 @@ export default function ProductDetailClient({
         }
       })();
     } else {
-      try {
-        const guest = loadGuestMemory();
-        // Section 13, Chunk C: same stated-budget capture as the
-        // signed-in branch above, from device-local memory.
-        const guestBudget = guest?.preferences?.maxBudgetUsd;
-        if (typeof guestBudget === 'number' && Number.isFinite(guestBudget) && guestBudget > 0) {
-          setBudgetUsd(guestBudget);
+      // lib/agent-memory is loaded on demand (not in First Load JS,
+      // Phase 1B): the guest memory is only read after mount, in this
+      // fire-and-forget effect, and the stated-budget capture is
+      // best-effort — a failed load behaves exactly like no memory.
+      void (async () => {
+        try {
+          const { loadGuestMemory, saveGuestMemory, mergeSeenProducts } =
+            await import('@/lib/agent-memory');
+          const guest = loadGuestMemory();
+          // Section 13, Chunk C: same stated-budget capture as the
+          // signed-in branch above, from device-local memory.
+          const guestBudget = guest?.preferences?.maxBudgetUsd;
+          if (typeof guestBudget === 'number' && Number.isFinite(guestBudget) && guestBudget > 0) {
+            setBudgetUsd(guestBudget);
+          }
+          if (guest?.consentGrantedAt) {
+            saveGuestMemory({
+              ...guest,
+              seenProductSlugs: mergeSeenProducts(guest.seenProductSlugs, slug),
+            });
+          }
+        } catch {
+          // Guest memory is best-effort only.
         }
-        if (guest?.consentGrantedAt) {
-          saveGuestMemory({
-            ...guest,
-            seenProductSlugs: mergeSeenProducts(guest.seenProductSlugs, slug),
-          });
-        }
-      } catch {
-        // Guest memory is best-effort only.
-      }
+      })();
     }
   }, [user?.id, authLoading, slug]);
 
@@ -963,19 +996,38 @@ export default function ProductDetailClient({
   useEffect(() => {
     if (!merchantsLoaded || merchants.length === 0) return;
     let cancelled = false;
-    const emptyTrust = (): {
+    // lib/merchant-trust loads on demand inside this effect (not in
+    // First Load JS, Phase 1B). `emptyTrust` starts as the same
+    // all-null "no data" grade computeTrustGrade returns for empty
+    // policy facts, so the catch below stays correct even if the chunk
+    // itself fails to load; it is replaced by the real function once
+    // the import resolves.
+    let emptyTrust: () => {
       trust: TrustGradeResult;
       accuracy: AccuracyCheck;
-    } => ({
-      trust: computeTrustGrade({
-        returnWindowDays: null,
-        warrantyMonths: null,
-        reputationScore: null,
-      }),
+    } = () => ({
+      trust: {
+        grade: null,
+        score: null,
+        missing: ['returnWindowDays', 'warrantyMonths', 'reputationScore'],
+        breakdown: null,
+        reasons: [
+          'Not enough data — still needed: return window, warranty length, reputation score. No policy values have been recorded for this store yet, so no trust grade is shown.',
+        ],
+      } as TrustGradeResult,
       accuracy: accuracyScore([]),
     });
     void (async () => {
       try {
+        const { computeTrustGrade } = await import('@/lib/merchant-trust');
+        emptyTrust = () => ({
+          trust: computeTrustGrade({
+            returnWindowDays: null,
+            warrantyMonths: null,
+            reputationScore: null,
+          }),
+          accuracy: accuracyScore([]),
+        });
         const [listRes, verifiedRes] = await Promise.all([
           fetchTimed('/api/v1/merchants?pageSize=100', 15000),
           fetchTimed('/api/v1/merchants/verified', 15000),

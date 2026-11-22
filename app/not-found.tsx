@@ -21,7 +21,13 @@ export default function NotFoundPage() {
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-6">
         <Sparkles className="h-8 w-8 text-primary" />
       </div>
-      <div className="text-8xl font-bold text-muted-foreground/20 mb-4" aria-hidden="true">404</div>
+      {/* Decorative "404": muted-foreground at 20% opacity is 1.29:1 —
+          far below the 3:1 WCAG AA minimum even for large text
+          (Lighthouse color-contrast flags it despite aria-hidden,
+          because it is visible on screen). 80% opacity is 3.24:1
+          in light mode and 5.15:1 in dark mode — it passes while
+          staying the faintest large-text treatment that does. */}
+      <div className="text-8xl font-bold text-muted-foreground/80 mb-4" aria-hidden="true">404</div>
       <h1 className="text-3xl font-bold tracking-tight mb-3">Page not found</h1>
       <p className="text-muted-foreground max-w-md mb-8">
         The page you&apos;re looking for doesn&apos;t exist or has been moved. The

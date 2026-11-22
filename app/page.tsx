@@ -311,7 +311,11 @@ function ToolsPreviewSection({ language }: { language: Language }) {
                 <Link href={tool.href} className="font-medium underline-offset-4 hover:underline">
                   {tool.name}
                 </Link>{' '}
-                <span className="ml-1 inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                {/* "Sign-in required" badge: muted-foreground on a muted
+                    background is 4.34:1 — just below the 4.5:1 WCAG AA
+                    minimum for small text (Lighthouse color-contrast).
+                    Foreground on the same background is 18:1. */}
+                <span className="ml-1 inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
                   Sign-in required
                 </span>
                 <span className="block text-muted-foreground">{tool.description}</span>

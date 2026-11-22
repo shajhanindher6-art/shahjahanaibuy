@@ -56,14 +56,14 @@ describe('press-counts.json — generated, not hardcoded', () => {
     expect(viaReader.date).toBe(pressCounts.date);
   });
 
-  it('is the current CJ GraphQL probe fix baseline (353 files / 4,922 tests, 22 November 2026)', () => {
+  it('is the current Phase 1D Lighthouse fix baseline (353 files / 4,923 tests, 22 November 2026)', () => {
     // Baseline only — the coordinator re-locks this after the final
     // full gate run (other workers add tests after this change). If
     // this test fails, regenerate the JSON
     // (`npm run generate:press-counts`) and update this baseline in
     // the same change; never edit the JSON by hand.
     expect(pressCounts).toEqual(
-      expect.objectContaining({ tests: 4922, files: 353, date: '2026-11-22' }),
+      expect.objectContaining({ tests: 4923, files: 353, date: '2026-11-22' }),
     );
   });
 });

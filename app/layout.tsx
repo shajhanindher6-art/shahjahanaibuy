@@ -278,9 +278,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </Providers>
         {/* Vercel Analytics (visitors + page views) + Speed Insights
             (real-user Core Web Vitals). Both are free, need no API keys,
-            and are cookie-free — they only activate on Vercel hosting. */}
-        <Analytics />
-        <SpeedInsights />
+            and are cookie-free — they only activate on Vercel hosting.
+            Gated on process.env.VERCEL so a local / CI `next start`
+            does not inject the /_vercel/* scripts, which 404 there
+            (those scripts are served by Vercel's edge, not by Next)
+            and log console errors that fail the Lighthouse
+            errors-in-console audit. On Vercel (VERCEL=1) they render
+            exactly as before. */}
+        {process.env.VERCEL === '1' && (
+          <>
+            <Analytics />
+            <SpeedInsights />
+          </>
+        )}
         {/* Cookie-consent banner (necessary + analytics categories) and
             PostHog product analytics — PostHog stays dormant until its
             key is set AND the visitor accepts analytics. */}

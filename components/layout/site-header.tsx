@@ -78,7 +78,11 @@ export function SiteHeader() {
           same elements, same order, only breakpoints/spacing. */}
       <div className="container mx-auto flex h-16 min-w-0 items-center justify-between gap-1 px-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-3 md:gap-8">
-          <Link href="/" className="flex shrink-0 items-center gap-2 font-bold text-lg">
+          <Link
+            href="/"
+            aria-label="SmartBuy AI — home"
+            className="flex shrink-0 items-center gap-2 font-bold text-lg"
+          >
             <Sparkles className="h-6 w-6 shrink-0 text-primary" />
             <span className="hidden sm:inline">SmartBuy AI</span>
           </Link>
@@ -158,7 +162,10 @@ export function SiteHeader() {
               <Button size="sm" asChild className="shrink-0">
                 <Link href="/sign-up">
                   <span className="hidden sm:inline">{tFor(language, 'navGetStarted')}</span>
-                  <span className="sm:hidden">Start</span>
+                  {/* Mobile label: "Start" alone is not descriptive
+                      text (Lighthouse link-text audit) — "Start free"
+                      is, and it still fits the tight mobile header. */}
+                  <span className="sm:hidden">Start free</span>
                 </Link>
               </Button>
             </>

@@ -34,6 +34,21 @@ describe('buildCsp', () => {
     expect(connectSrc).toContain('https://us.i.posthog.com');
   });
 
+  // Phase 1D (2026-11-22): the region provider's IP lookup fetches
+  // https://ipwho.is/ — without it in connect-src the browser
+  // blocked the lookup (CSP violation in the console) and the
+  // provider fell back to the browser timezone guess. Pin it here
+  // so a future CSP edit cannot silently re-break geo detection
+  // (same pattern as the PostHog test above).
+  it('includes the ipwho.is host in connect-src (region provider lookup)', () => {
+    const csp = buildCsp('n');
+    expect(csp).toContain('https://ipwho.is');
+    const connectSrc = csp
+      .split('; ')
+      .find((d) => d.startsWith('connect-src'));
+    expect(connectSrc).toContain('https://ipwho.is');
+  });
+
   it('keeps the existing Supabase and Sentry origins', () => {
     const csp = buildCsp('n');
     expect(csp).toContain('https://*.supabase.co');

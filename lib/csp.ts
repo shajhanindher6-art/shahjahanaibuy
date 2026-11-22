@@ -64,13 +64,21 @@ export function buildCsp(nonce: string): string {
   // merchant hotlinks (eBay, Unsplash, Pexels, ...) with no
   // known host list (Section 18 item 39 still blocked), so a
   // host allowlist here would break real product images.
+  // Region provider (components/region/region-provider.tsx): the
+  // client IP lookup is a free, no-key fetch to https://ipwho.is/.
+  // Without this origin in connect-src the browser blocks the
+  // lookup (a CSP violation in the console) and the provider falls
+  // back to the browser timezone guess. Adding it here fixes the
+  // Lighthouse errors-in-console / inspector-issues failures — the
+  // lookup is first-party app behaviour, not tracking (the only
+  // data used is the country code in the response).
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}'${scriptSrcHosts.length ? ` ${scriptSrcHosts.join(' ')}` : ''}`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     'img-src \'self\' blob: https:',
     "font-src 'self' https://fonts.gstatic.com",
-    `connect-src 'self' https://*.supabase.co https://*.supabase.in https://*.ingest.sentry.io ${posthogHost}${connectSrcHosts.length ? ` ${connectSrcHosts.join(' ')}` : ''}`,
+    `connect-src 'self' https://*.supabase.co https://*.supabase.in https://*.ingest.sentry.io https://ipwho.is ${posthogHost}${connectSrcHosts.length ? ` ${connectSrcHosts.join(' ')}` : ''}`,
     "frame-ancestors 'self'",
     "base-uri 'self'",
     "form-action 'self'",

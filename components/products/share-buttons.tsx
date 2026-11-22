@@ -9,6 +9,7 @@ import {
   parseReferralCodeFromSearch,
   recordReferralClick,
 } from '@/lib/referral';
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 
 /**
  * Share buttons (P0 fix, 2026-11-09 audit; S3#10, 2026-11-10).
@@ -70,13 +71,28 @@ export function ShareButtons({ title, text, url, enableReferral }: ShareButtonsP
   const [rewards, setRewards] = useState<CreatorRewardsSummary | null>(null);
 
   // Load the rewards summary only where the referral button is
-  // shown. Signed-out visitors get a 401 and see nothing; a failed
-  // fetch also shows nothing — the share buttons never depend on it.
+  // shown, and only for a signed-in visitor. Signed-out visitors
+  // used to get a 401 here — the fetch was caught and showed
+  // nothing, but Chrome still logs a 401 response as a console
+  // error, which fails the Lighthouse errors-in-console audit.
+  // Checking the (locally stored) session first means guests never
+  // make the request at all; signed-in visitors fetch exactly as
+  // before. A failed session check also skips the fetch — the
+  // share buttons never depend on it.
   useEffect(() => {
     if (!enableReferral) return;
     let cancelled = false;
     void (async () => {
       try {
+        let session = null;
+        try {
+          const supabase = getSupabaseBrowserClient();
+          const { data } = await supabase.auth.getSession();
+          session = data.session;
+        } catch {
+          session = null;
+        }
+        if (!session) return;
         const res = await fetch('/api/v1/creator-rewards/me');
         if (!res.ok) return;
         const json = await res.json().catch(() => null);
