@@ -111,8 +111,8 @@ describe('059 products data-quality persistence', () => {
   it('adds nullable score / dimensions / computed_at, no backfill, no grade column', () => {
     const sql = migration(M059);
     expect(sql).toContain('DO NOT APPLY');
-    expect(sql).toContain('035–058 backlog clears in numeric');
-    expect(sql).toContain('then 059–062');
+    expect(sql).toContain('Phase 7 of the authoritative plan');
+    expect(sql).toContain('migration-plan-m0-confirmed.md');
     expect(sql).toContain('ADD COLUMN IF NOT EXISTS data_quality_score integer');
     expect(sql).toContain('ADD COLUMN IF NOT EXISTS data_quality_dimensions jsonb');
     expect(sql).toContain('ADD COLUMN IF NOT EXISTS data_quality_computed_at timestamptz');
@@ -132,8 +132,8 @@ describe('060 price_history.currency_code', () => {
   it('pre-flights on non-USD rows and backfills from the recorded currency verbatim', () => {
     const sql = migration(M060);
     expect(sql).toContain('DO NOT APPLY');
-    expect(sql).toContain('035–058 backlog clears in numeric');
-    expect(sql).toContain('then 059–062');
+    expect(sql).toContain('Phase 7 of the authoritative plan');
+    expect(sql).toContain('migration-plan-m0-confirmed.md');
     expect(sql).toContain('ADD COLUMN IF NOT EXISTS currency_code text');
     expect(sql).toContain('char_length(currency_code) = 3');
     // Pre-flight: aborts safely when a non-USD row exists.
@@ -152,8 +152,8 @@ describe('061 merchant_reliability table', () => {
   it('creates one durable row per merchant, scored/insufficient-data, service-role writes only', () => {
     const sql = migration(M061);
     expect(sql).toContain('DO NOT APPLY');
-    expect(sql).toContain('035–058 backlog clears in numeric');
-    expect(sql).toContain('then 059–062');
+    expect(sql).toContain('Phase 7 of the authoritative plan');
+    expect(sql).toContain('migration-plan-m0-confirmed.md');
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS public.merchant_reliability');
     expect(sql).toContain('REFERENCES public.merchants(id) ON DELETE CASCADE');
     expect(sql).toContain('UNIQUE (merchant_id)');
@@ -173,8 +173,8 @@ describe('062 log-table user_id FKs', () => {
   it('adds DO-guarded FKs: error_log SET NULL, digest_failures CASCADE (NOT NULL)', () => {
     const sql = migration(M062);
     expect(sql).toContain('DO NOT APPLY');
-    expect(sql).toContain('035–058 backlog clears in numeric');
-    expect(sql).toContain('then 059–062');
+    expect(sql).toContain('Phase 6 of the authoritative plan');
+    expect(sql).toContain('migration-plan-m0-confirmed.md');
     expect(sql).toContain('error_log_user_id_fkey');
     expect(sql).toContain('REFERENCES auth.users(id) ON DELETE SET NULL');
     expect(sql).toContain('digest_failures_user_id_fkey');
