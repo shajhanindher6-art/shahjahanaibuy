@@ -70,6 +70,6 @@ export interface PriceComparison {
   highest_price: number | null;
   /** Exact saving: highest − lowest effective price (0 with < 2 offers). */
   savings: number;
-  /** Currency of the offers (all rows share it in practice). */
+  /** Currency of the returned offers — the comparison covers one currency group only (the largest); all returned offers share it. */
   currency: string | null;
 }

@@ -15,16 +15,25 @@
  * map to the same canonical field. A header that is not in the
  * known list is ignored, never guessed.
  *
- * FILTER RULES (applied before any upsert, in this order):
+ * FILTER RULES (applied before any upsert, in this order — the
+ * same order as the GraphQL mapper in lib/offers/cj-graphql.ts,
+ * so the two importers agree on what a storable offer is):
  *   1. external id present (feed `id`)
- *   2. availability is 'in stock' (Google Shopping) / 'in_stock'
- *   3. price parses and is > 0
- *   4. image_link is a valid http(s) URL
- *   5. with --only-with-gtin: a GS1-valid GTIN is required
+ *   2. title present (a row with no title is not a displayable offer)
+ *   3. availability is 'in stock' (Google Shopping) / 'in_stock'
+ *   4. price parses and is > 0
+ *   5. image_link is a valid http(s) URL
+ *   6. with --only-with-gtin: a GS1-valid GTIN is required
+ *   7. link is a valid http(s) URL (the affiliate click-through —
+ *      an offer with no working link is not a displayable offer)
  * A row failing any rule is SKIPPED with a reason — never stored
  * half-parsed. GTINs are validated with lib/gtin.ts validateGtin
  * (GS1 check digit); an invalid GTIN becomes null, never a guess.
- * Prices like "29.99 USD" split into amount 29.99 + currency USD.
+ * Prices like "29.99 USD" split into amount 29.99 + currency USD;
+ * comma decimals are disambiguated ("29,99 EUR" → 29.99, never
+ * 2,999 — see parseAmountText). A sale price whose EXPLICIT
+ * currency differs from the list price's currency is dropped
+ * (stored null); a bare sale figure inherits the row currency.
  */
 
 import { validateGtin } from '@/lib/gtin';
@@ -87,28 +96,87 @@ export interface ParsedPrice {
 }
 
 /**
+ * Parse the numeric part of a price string, disambiguating the
+ * decimal separator. Google Shopping feeds mix formats:
+ *   "1,299.00" → 1299  (comma = thousands, dot = decimal)
+ *   "29,99"    → 29.99 (comma = decimal, European format)
+ *   "1.299,00" → 1299  (dot = thousands, comma = decimal)
+ *   "1,299"    → 1299  (3 digits after the comma = thousands)
+ *   "1,5"      → 1.5   (1–2 digits after the comma = decimal)
+ * When both separators are present, the LAST one is the decimal
+ * mark. A malformed figure ("29.99.99", "1,2,3") returns null —
+ * never a guessed amount. (The old code stripped every comma,
+ * so "29,99 EUR" silently became 2,999.)
+ */
+export function parseAmountText(raw: string): number | null {
+  const text = raw.trim();
+  if (text === '') return null;
+  const hasDot = text.includes('.');
+  const hasComma = text.includes(',');
+  let normalized: string;
+  if (hasDot && hasComma) {
+    normalized =
+      text.lastIndexOf('.') > text.lastIndexOf(',')
+        ? text.replace(/,/g, '')
+        : text.replace(/\./g, '').replace(/,/g, '.');
+  } else if (hasComma) {
+    const afterLastComma = text.slice(text.lastIndexOf(',') + 1);
+    normalized =
+      afterLastComma.length === 3
+        ? text.replace(/,/g, '')
+        : text.replace(/,/g, '.');
+  } else {
+    normalized = text;
+  }
+  if (!/^[0-9]+(\.[0-9]+)?$/.test(normalized)) return null;
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+/**
+ * The EXPLICIT 3-letter currency code in a raw price string, or
+ * null when the string carries none ("19.99" has none; "19.99 EUR"
+ * and "EUR 19.99" have EUR). A bare figure inherits the row's
+ * currency — only an explicitly different code is a mismatch.
+ */
+export function explicitCurrencyCode(
+  value: string | null | undefined,
+): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  if (trimmed === '') return null;
+  const trailing = trimmed.match(/(?:^|\s)([A-Za-z]{3})\s*$/);
+  if (trailing) return trailing[1].toUpperCase();
+  const leading = trimmed.match(/^([A-Za-z]{3})\s+/);
+  if (leading) return leading[1].toUpperCase();
+  return null;
+}
+
+/**
  * Parse a Google Shopping price string: "29.99 USD", "1,299.00 USD",
- * "29.99", "$29.99", "USD 29.99". Returns null when the value is
- * blank or has no parseable number. Currency defaults to USD when
- * no 3-letter code is present. The amount is never rounded here —
- * it is stored as the feed's exact figure.
+ * "29,99 EUR", "29.99", "$29.99", "USD 29.99". Returns null when the
+ * value is blank or has no parseable number. Currency defaults to
+ * USD when no 3-letter code is present. The amount is never rounded
+ * here — it is stored as the feed's exact figure.
  */
 export function parseFeedPrice(value: string | null | undefined): ParsedPrice | null {
   if (value == null) return null;
   const trimmed = value.trim();
   if (trimmed === '') return null;
-  // "29.99 USD" | "1,299.00 USD" | "29.99"
-  const trailing = trimmed.match(/^([$€£]?)\s*([0-9][0-9,]*(\.[0-9]+)?)\s*([A-Za-z]{3})?$/);
+  // "29.99 USD" | "1,299.00 USD" | "29,99 EUR" | "29.99"
+  const trailing = trimmed.match(/^([$€£]?)\s*([0-9][0-9.,]*)\s*([A-Za-z]{3})?$/);
   if (trailing) {
-    const amount = Number(trailing[2].replace(/,/g, ''));
-    if (!Number.isFinite(amount)) return null;
-    return { amount, currency: (trailing[4] ?? 'USD').toUpperCase() };
+    const amount = parseAmountText(trailing[2]);
+    if (amount === null) return null;
+    // Group 3 is the currency: the new numeric class has no inner
+    // decimal subgroup, so the code is group 3 (not 4 as before).
+    return { amount, currency: (trailing[3] ?? 'USD').toUpperCase() };
   }
-  // "USD 29.99"
-  const leading = trimmed.match(/^([A-Za-z]{3})\s+([0-9][0-9,]*(\.[0-9]+)?)$/);
+  // "USD 29.99" | "EUR 29,99"
+  const leading = trimmed.match(/^([A-Za-z]{3})\s+([0-9][0-9.,]*)$/);
   if (leading) {
-    const amount = Number(leading[2].replace(/,/g, ''));
-    if (!Number.isFinite(amount)) return null;
+    const amount = parseAmountText(leading[2]);
+    if (amount === null) return null;
     return { amount, currency: leading[1].toUpperCase() };
   }
   return null;
@@ -196,13 +264,19 @@ function cell(record: FeedRecord, field: CjFeedColumn): string | undefined {
 /**
  * Transform one feed record into an upsert-ready merchant_offers
  * row, or skip it with a reason. Filter order: missing id →
- * availability not in_stock → price missing/≤ 0 → image invalid
- * → (only-with-gtin) no valid GTIN.
+ * missing title → availability not in_stock → price missing/≤ 0
+ * → image invalid → (only-with-gtin) no valid GTIN →
+ * affiliate link missing/invalid.
  */
 export function transformFeedRow(record: FeedRecord, ctx: TransformContext): TransformResult {
   const externalId = cell(record, 'id')?.trim();
   if (!externalId) {
     return { row: null, skipReason: 'missing-id', hasIdentifier: false };
+  }
+
+  const title = cell(record, 'title')?.trim() ?? '';
+  if (title === '') {
+    return { row: null, skipReason: 'missing-title', hasIdentifier: false };
   }
 
   const availability = normalizeAvailability(cell(record, 'availability'));
@@ -229,11 +303,28 @@ export function transformFeedRow(record: FeedRecord, ctx: TransformContext): Tra
     return { row: null, skipReason: 'no-gtin', hasIdentifier };
   }
 
+  // The affiliate click-through must be a usable http(s) URL, not
+  // just present — an offer with no working link is not displayable.
+  // Same bar as the GraphQL mapper ('missing-url') and the analyzer's
+  // invalidAffiliateUrls metric (both use isValidImageUrl).
+  const affiliateUrl = cell(record, 'link')?.trim() ?? '';
+  if (!isValidImageUrl(affiliateUrl)) {
+    return { row: null, skipReason: 'invalid-affiliate-url', hasIdentifier };
+  }
+
   // sale_price is optional: unparseable or ≤ 0 becomes null
-  // (the row still imports on its list price).
-  const salePriceParsed = parseFeedPrice(cell(record, 'sale_price'));
+  // (the row still imports on its list price). A sale price with
+  // an EXPLICITLY different currency than the list price is also
+  // null — storing it under the row's currency would misstate the
+  // discount. A bare sale figure ("19.99") inherits the row's
+  // currency and is kept.
+  const salePriceRaw = cell(record, 'sale_price');
+  const salePriceParsed = parseFeedPrice(salePriceRaw);
+  const saleCurrency = explicitCurrencyCode(salePriceRaw) ?? price.currency;
   const salePrice =
-    salePriceParsed !== null && salePriceParsed.amount > 0
+    salePriceParsed !== null &&
+    salePriceParsed.amount > 0 &&
+    saleCurrency === price.currency
       ? salePriceParsed.amount
       : null;
 
@@ -253,10 +344,10 @@ export function transformFeedRow(record: FeedRecord, ctx: TransformContext): Tra
       gtin,
       mpn,
       brand,
-      title: cell(record, 'title')?.trim() ?? '',
+      title,
       description,
       image_url: imageUrl,
-      affiliate_url: cell(record, 'link')?.trim() ?? '',
+      affiliate_url: affiliateUrl,
       price: price.amount,
       sale_price: salePrice,
       currency: price.currency,

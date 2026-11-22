@@ -15,6 +15,8 @@
     "generate:press-counts": "node scripts/generate-press-counts.mjs",
     "test:ci-log": "node scripts/run-tests-with-log.mjs",
     "import:cj-feed": "tsx scripts/import-cj-feed.ts",
+    "import:cj-graphql": "tsx scripts/import-cj-graphql.ts",
+    "analyze:cj-feed": "tsx scripts/analyze-cj-feed.ts",
     "fetch:cj-sftp": "tsx scripts/fetch-cj-sftp.ts"
   },
   "dependencies": {

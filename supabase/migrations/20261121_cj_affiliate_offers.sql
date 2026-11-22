@@ -42,6 +42,20 @@
 --     cleanup_actions (migration 070) and error_log (048).
 --   * Indexes: gtin, mpn, (is_public_live, availability, price)
 --     for the comparison query, and a GIN full-text index on title.
+--   * updated_at: bumped on every UPDATE by the shared trigger
+--     function public.update_updated_at_column() (migration 001,
+--     applied long ago). The upsert helper never sets updated_at,
+--     so without this trigger the column would keep its insert
+--     time forever and lie about the last import.
+--   * NO foreign key to products (deliberate): offers are matched
+--     by GTIN / MPN, and feed rows arrive for products not yet in
+--     the catalog — an FK would block those imports. The UNIQUE
+--     (network, advertiser_id, external_product_id) is the
+--     duplicate-prevention key.
+--   * NO soft-delete column (known limitation): a product that
+--     disappears from the feed keeps its last imported row until
+--     it is handled manually — there is no stale-offer expiry
+--     sweep yet. The feed file itself is the restorable source.
 --
 -- ROLLBACK: DROP TABLE IF EXISTS public.merchant_offers;
 -- The table is new and empty at apply time, so an immediate
@@ -96,6 +110,16 @@ CREATE INDEX IF NOT EXISTS merchant_offers_live_availability_price_idx
 CREATE INDEX IF NOT EXISTS merchant_offers_title_fts_idx
   ON public.merchant_offers
   USING gin (to_tsvector('english', coalesce(title, '')));
+
+-- updated_at auto-bump on every UPDATE, via the shared trigger
+-- function from migration 001 (same pattern as retailers and
+-- products in migration 002). The upsert helper never sets
+-- updated_at itself, so this trigger is what keeps the column
+-- truthful across re-imports.
+DROP TRIGGER IF EXISTS update_merchant_offers_updated_at ON public.merchant_offers;
+CREATE TRIGGER update_merchant_offers_updated_at
+  BEFORE UPDATE ON public.merchant_offers
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- Row Level Security: public read for live rows only. Writes are
 -- service-role only (no INSERT / UPDATE / DELETE policy exists).

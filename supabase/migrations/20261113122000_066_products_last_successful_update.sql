@@ -10,13 +10,14 @@
 -- 'column-missing'` instead of failing. Nothing 500s because
 -- this file is unapplied.
 --
--- APPLY ORDER: only after the 035–058 backlog clears in numeric
--- order (audit §9 runbook: 045 → 047 → 048–050 → 051 → 052 →
--- 054 + 056 → 057 → 058, then 059–062, then 063–067). This file has
--- no column dependency on 055–062 — `products` exists since 001
--- — but the numeric order keeps the chain auditable. NEVER apply
--- 035, and this file does not depend on 035 or 053 (053 is dead
--- without 035 and stays dead).
+-- APPLY ORDER: Phase 7 of the authoritative plan
+-- (migration-plan-m0-confirmed.md, goal
+-- smartbuy-final-real-data-completion/files/). The audit §9 runbook
+-- order quoted here before was STALE — do not follow it. This file
+-- has no column dependency on 055–062 — `products` exists since
+-- 001 — but apply in the plan's order, after Phase 6 (051, 062).
+-- NEVER apply 035, and this file does not depend on 035 or 053
+-- (053 is dead without 035 and stays dead).
 --
 --   * products.last_successful_update (timestamptz, nullable):
 --     the last time a real provider response was validated AND

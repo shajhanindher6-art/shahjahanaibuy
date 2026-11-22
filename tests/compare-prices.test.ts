@@ -111,6 +111,35 @@ describe('comparePrices', () => {
     expect(result.savings).toBe(0);
   });
 
+  it('compares only the largest currency group (no cross-currency savings)', async () => {
+    const rows = [
+      offer({ price: 100, external_product_id: 'DH-1' }),
+      offer({ price: 80, external_product_id: 'DH-2' }),
+      offer({ price: 10, currency: 'EUR', external_product_id: 'DH-3' }),
+    ];
+    const result = await comparePrices({ gtin: '012345678905' }, mockClient(rows));
+    // The EUR row is cheaper numerically but is a different currency —
+    // it must not win the comparison or enter the saving.
+    expect(result.offers.map((o) => o.effective_price)).toEqual([80, 100]);
+    expect(result.offers.every((o) => o.currency === 'USD')).toBe(true);
+    expect(result.lowest_price).toBe(80);
+    expect(result.highest_price).toBe(100);
+    expect(result.savings).toBe(20);
+    expect(result.currency).toBe('USD');
+  });
+
+  it('breaks a currency tie by the lowest effective price', async () => {
+    const rows = [
+      offer({ price: 50, external_product_id: 'DH-1' }),
+      offer({ price: 40, currency: 'EUR', external_product_id: 'DH-2' }),
+    ];
+    const result = await comparePrices({ gtin: '012345678905' }, mockClient(rows));
+    expect(result.offers).toHaveLength(1);
+    expect(result.currency).toBe('EUR');
+    expect(result.lowest_price).toBe(40);
+    expect(result.savings).toBe(0);
+  });
+
   it('returns an empty comparison when no live offers match', async () => {
     const result = await comparePrices({ gtin: '012345678905' }, mockClient([]));
     expect(result.offers).toEqual([]);

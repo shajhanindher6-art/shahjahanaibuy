@@ -9,11 +9,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parse } from 'csv-parse/sync';
 import {
+  explicitCurrencyCode,
   normalizeAvailability,
   normalizeFeedHeader,
   normalizeFeedHeaders,
   normalizeGtinValue,
   isValidImageUrl,
+  parseAmountText,
   parseFeedPrice,
   transformFeedRow,
   type FeedRecord,
@@ -82,6 +84,35 @@ describe('normalizeFeedHeaders', () => {
   });
 });
 
+describe('parseAmountText', () => {
+  it('disambiguates comma decimals from thousand separators', () => {
+    expect(parseAmountText('29,99')).toBe(29.99);
+    expect(parseAmountText('1,5')).toBe(1.5);
+    expect(parseAmountText('1,299')).toBe(1299);
+    expect(parseAmountText('12,345,678')).toBe(12345678);
+    expect(parseAmountText('1,299.00')).toBe(1299);
+    expect(parseAmountText('1.299,00')).toBe(1299);
+    expect(parseAmountText('29.99')).toBe(29.99);
+  });
+
+  it('rejects malformed figures instead of guessing', () => {
+    expect(parseAmountText('29.99.99')).toBeNull();
+    expect(parseAmountText('1,2,3')).toBeNull();
+    expect(parseAmountText('')).toBeNull();
+    expect(parseAmountText('abc')).toBeNull();
+  });
+});
+
+describe('explicitCurrencyCode', () => {
+  it('finds an explicit code and returns null for a bare figure', () => {
+    expect(explicitCurrencyCode('19.99 EUR')).toBe('EUR');
+    expect(explicitCurrencyCode('EUR 19.99')).toBe('EUR');
+    expect(explicitCurrencyCode('19.99')).toBeNull();
+    expect(explicitCurrencyCode('')).toBeNull();
+    expect(explicitCurrencyCode(null)).toBeNull();
+  });
+});
+
 describe('parseFeedPrice', () => {
   it('splits "29.99 USD" into amount + currency', () => {
     expect(parseFeedPrice('29.99 USD')).toEqual({ amount: 29.99, currency: 'USD' });
@@ -92,6 +123,12 @@ describe('parseFeedPrice', () => {
     expect(parseFeedPrice('29.99')).toEqual({ amount: 29.99, currency: 'USD' });
     expect(parseFeedPrice('$29.99')).toEqual({ amount: 29.99, currency: 'USD' });
     expect(parseFeedPrice('USD 29.99')).toEqual({ amount: 29.99, currency: 'USD' });
+  });
+
+  it('treats a comma as the decimal mark in European figures', () => {
+    expect(parseFeedPrice('29,99 EUR')).toEqual({ amount: 29.99, currency: 'EUR' });
+    expect(parseFeedPrice('EUR 29,99')).toEqual({ amount: 29.99, currency: 'EUR' });
+    expect(parseFeedPrice('1.299,00 EUR')).toEqual({ amount: 1299, currency: 'EUR' });
   });
 
   it('returns null for blank or unparseable values', () => {
@@ -189,6 +226,36 @@ describe('transformFeedRow', () => {
     expect(result.row?.price).toBe(29.99);
   });
 
+  it('drops a sale_price whose explicit currency differs from the list price', () => {
+    const eur = transformFeedRow(
+      record({ price: '29.99 EUR', sale_price: '19.99 USD' }),
+      CTX,
+    );
+    expect(eur.skipReason).toBeNull();
+    expect(eur.row?.sale_price).toBeNull();
+    expect(eur.row?.price).toBe(29.99);
+    expect(eur.row?.currency).toBe('EUR');
+    const usd = transformFeedRow(
+      record({ price: '29.99', sale_price: '19.99 EUR' }),
+      CTX,
+    );
+    expect(usd.row?.sale_price).toBeNull();
+  });
+
+  it('keeps a sale_price in the same currency, or a bare figure that inherits it', () => {
+    const same = transformFeedRow(
+      record({ price: '29.99 EUR', sale_price: '19.99 EUR' }),
+      CTX,
+    );
+    expect(same.row?.sale_price).toBe(19.99);
+    const bare = transformFeedRow(
+      record({ price: '29.99 EUR', sale_price: '19.99' }),
+      CTX,
+    );
+    expect(bare.row?.sale_price).toBe(19.99);
+    expect(bare.row?.currency).toBe('EUR');
+  });
+
   it('skips rows that are not in stock', () => {
     expect(transformFeedRow(record({ availability: 'out of stock' }), CTX).skipReason).toBe(
       'not-in-stock',
@@ -213,6 +280,25 @@ describe('transformFeedRow', () => {
 
   it('skips rows with a missing id', () => {
     expect(transformFeedRow(record({ id: '' }), CTX).skipReason).toBe('missing-id');
+  });
+
+  it('skips rows with a missing title', () => {
+    expect(transformFeedRow(record({ title: '' }), CTX).skipReason).toBe('missing-title');
+    expect(transformFeedRow(record({ title: '   ' }), CTX).skipReason).toBe(
+      'missing-title',
+    );
+  });
+
+  it('skips rows with a missing or invalid affiliate link', () => {
+    expect(transformFeedRow(record({ link: '' }), CTX).skipReason).toBe(
+      'invalid-affiliate-url',
+    );
+    expect(transformFeedRow(record({ link: 'not a url' }), CTX).skipReason).toBe(
+      'invalid-affiliate-url',
+    );
+    expect(transformFeedRow(record({ link: 'ftp://example.com/buy' }), CTX).skipReason).toBe(
+      'invalid-affiliate-url',
+    );
   });
 
   it('drops an invalid GTIN but keeps the row on its MPN', () => {

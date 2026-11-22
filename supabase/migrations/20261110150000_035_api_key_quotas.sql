@@ -1,10 +1,13 @@
 -- 035 — Public API quota ledger (Section 9, chunk 3).
 --
--- DO NOT APPLY YET: this migration is written but intentionally NOT
--- applied. The runtime quota enforcement in lib/api-quota.ts works
--- today on its in-memory daily store (same pattern as the in-memory
--- fallback in lib/api/middleware.ts), so no migration is required
--- for the paywall to function. This table exists so a future
+-- NEVER APPLY: this migration must NEVER be applied. Applying it is a
+-- behaviour switch, not a harmless schema addition — quota enforcement
+-- in lib/api-quota.ts would flip from its in-memory daily store to
+-- durable counters, and 053 (increment_api_key_usage RPC) is dead
+-- without this table and stays dead. The runtime quota enforcement
+-- works today on its in-memory daily store (same pattern as the
+-- in-memory fallback in lib/api/middleware.ts), so no migration is
+-- required for the paywall to function. This table exists so a future
 -- cross-instance, durable counter can replace the in-memory store
 -- without a schema change: one row per key hash per UTC day.
 --

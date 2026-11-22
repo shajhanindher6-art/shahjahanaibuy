@@ -14,12 +14,13 @@
 -- migration — rows are just recorded without a stored region,
 -- as today.
 --
--- APPLY ORDER: only after the 035–058 backlog clears in numeric
--- order and after 060 (the currency-code column): the region
--- backfill below never has to guess a row's provenance, and the
--- writer's tiered retry already knows the 060/057 columns. NEVER
--- apply 035, and this file does not depend on 035 or 053 (053 is
--- dead without 035 and stays dead).
+-- APPLY ORDER: only after the backlog clears per the authoritative
+-- plan (migration-plan-m0-confirmed.md, goal
+-- smartbuy-final-real-data-completion/files/) and after 060 (the
+-- currency-code column): the region backfill below never has to
+-- guess a row's provenance, and the writer's tiered retry already
+-- knows the 060/057 columns. NEVER apply 035, and this file does
+-- not depend on 035 or 053 (053 is dead without 035 and stays dead).
 --
 --   * `region` (text, nullable, 2-letter ISO region code when
 --     present — 'US' for Best Buy and eBay EBAY_US today).

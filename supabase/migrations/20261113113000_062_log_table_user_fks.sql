@@ -18,13 +18,14 @@
 -- silently). Only apply once every count is 0. The DO guards
 -- below protect against RE-RUNS only — they cannot fix orphans.
 --
--- APPLY ORDER: only after the 035–058 backlog clears in numeric
--- order (audit §9 runbook: 045 → 047 → 048–050 → 051 → 052 →
--- 054 + 056 → 057 → 058, then 059–062). Applies after 048
--- (error_log) and 050 (digest_failures) — the tables it constrains
--- — and after 051, whose 12-table FK pattern this file follows.
--- NEVER apply 035, and this file does not depend on 035 or 053
--- (053 is dead without 035 and stays dead).
+-- APPLY ORDER: Phase 6 of the authoritative plan
+-- (migration-plan-m0-confirmed.md, goal
+-- smartbuy-final-real-data-completion/files/). The audit §9 runbook
+-- order quoted here before was STALE — do not follow it. Applies
+-- after 048 (error_log) and 050 (digest_failures) — the tables it
+-- constrains — and after 051, whose 12-table FK pattern this file
+-- follows. NEVER apply 035, and this file does not depend on 035
+-- or 053 (053 is dead without 035 and stays dead).
 --
 -- WHY NOT FOLDED INTO 051 (item 3 decision): 051 is a uniform
 -- block — 12 user-owned tables, all `user_id uuid NOT NULL`,

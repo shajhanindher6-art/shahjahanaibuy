@@ -8,10 +8,11 @@
 -- column means every alert is treated as unexpired, and
 -- `cleanupExpiredAlerts` reports a clean skip, never a failure.
 --
--- APPLY ORDER: only after the 035–058 backlog clears in numeric
--- order (audit §9 runbook: 045 → 047 → 048–050 → 051 → 052 →
--- 054 + 056 → 057 → 058, then 059–062, then 063–067). NEVER apply
--- 035, and this file does not depend on 035 or 053.
+-- APPLY ORDER: Phase 7 of the authoritative plan
+-- (migration-plan-m0-confirmed.md, goal
+-- smartbuy-final-real-data-completion/files/). The audit §9 runbook
+-- order quoted here before was STALE — do not follow it. NEVER
+-- apply 035, and this file does not depend on 035 or 053.
 --
 --   * alerts.expires_at + guest_email_alerts.expires_at
 --     (timestamptz, nullable): the instant an alert stops firing.

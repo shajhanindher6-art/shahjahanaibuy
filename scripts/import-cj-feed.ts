@@ -50,6 +50,7 @@ import {
   type FeedRecord,
   type TransformContext,
 } from '@/lib/offers/cj-feed-transform';
+import { upsertMerchantOffers } from '@/lib/offers/cj-upsert';
 import type { MerchantOfferRow } from '@/lib/offers/types';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 
@@ -166,16 +167,17 @@ export async function importCjFeed(options: CliOptions): Promise<ImportStats> {
       stats.wouldUpsert += rows.length;
       return;
     }
-    const { error } = await (supabase as NonNullable<typeof supabase>)
-      .from('merchant_offers')
-      .upsert(rows, { onConflict: 'network,advertiser_id,external_product_id' });
-    if (error) {
+    const result = await upsertMerchantOffers(
+      supabase as NonNullable<typeof supabase>,
+      rows,
+    );
+    if (result.error !== null) {
       stats.errors += rows.length;
       // eslint-disable-next-line no-console
-      console.error(`[import-cj-feed] upsert failed for batch of ${rows.length}: ${error.message}`);
+      console.error(`[import-cj-feed] upsert failed for batch of ${rows.length}: ${result.error}`);
       return;
     }
-    stats.upserted += rows.length;
+    stats.upserted += result.upserted;
   };
 
   const csvStream = isZip

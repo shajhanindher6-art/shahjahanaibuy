@@ -178,6 +178,25 @@ export const env = {
   get cjSftpPassword(): string | undefined {
     return process.env.CJ_SFTP_PASSWORD;
   },
+  /**
+   * CJ tracking PID for linkCode() click URLs in the GraphQL API.
+   * Optional — without it, affiliate_url falls back to the plain
+   * `link` field. The PID value lives in the CJ account; it is
+   * not the Personal Access Token.
+   */
+  get cjPid(): string | undefined {
+    return process.env.CJ_PID;
+  },
+  /**
+   * Min ms between GraphQL calls (conservative throttle — the
+   * query-side rate limit is UNKNOWN in CJ's docs). Default 1000.
+   */
+  get cjGraphqlMinIntervalMs(): number | undefined {
+    const raw = process.env.CJ_GRAPHQL_MIN_INTERVAL_MS;
+    if (raw === undefined || raw === '') return undefined;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+  },
   cjPsaApproved: booleanEnv(process.env.CJ_PSA_APPROVED, false),
 } as const;
 

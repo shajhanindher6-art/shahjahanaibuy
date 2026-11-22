@@ -7,13 +7,14 @@
 -- (migration 002) and code keeps reading that column — nothing
 -- 500s because this file is unapplied.
 --
--- APPLY ORDER: only after the 035–058 backlog clears in numeric
--- order (audit §9 runbook: 045 → 047 → 048–050 → 051 → 052 →
--- 054 + 056 → 057 → 058, then 059–062). Applies after 057: the
--- 057 backfill labels seed rows first, so the currency backfill
--- below never has to guess a row's provenance. NEVER apply 035,
--- and this file does not depend on 035 or 053 (053 is dead
--- without 035 and stays dead).
+-- APPLY ORDER: Phase 7 of the authoritative plan
+-- (migration-plan-m0-confirmed.md, goal
+-- smartbuy-final-real-data-completion/files/). The audit §9 runbook
+-- order quoted here before was STALE — do not follow it. Applies
+-- after 057: the 057 backfill labels seed rows first, so the
+-- currency backfill below never has to guess a row's provenance.
+-- NEVER apply 035, and this file does not depend on 035 or 053
+-- (053 is dead without 035 and stays dead).
 --
 -- PREMISE CORRECTION (audit §9 said "verify no non-USD rows
 -- first" as if no currency were recorded): price_history ALREADY

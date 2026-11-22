@@ -98,6 +98,14 @@ function emptyComparison(
  * identity available, returns an empty comparison (no error —
  * the product simply has no comparable offers yet).
  *
+ * CURRENCY: offers may arrive in several currencies (CJ + Amazon
+ * feeds). A saving across currencies is meaningless, so the
+ * comparison covers only the LARGEST currency group (ties: the
+ * group with the lowest effective price). Single-currency input
+ * is unaffected — the group is the whole list. The returned
+ * offers, lowest/highest prices and savings are all in the one
+ * reported currency.
+ *
  * @throws when the Supabase client is not configured or the
  * query itself fails.
  */
@@ -154,16 +162,38 @@ export async function comparePrices(
     return emptyComparison(gtin, mpn, brand);
   }
 
-  const lowest = offers[0].effective_price;
-  const highest = offers[offers.length - 1].effective_price;
+  // One currency group only: the largest group wins (ties: the
+  // group with the lowest effective price). Groups preserve the
+  // cheapest-first order because `offers` is already sorted.
+  const byCurrency = new Map<string, ComparedOffer[]>();
+  for (const offer of offers) {
+    const group = byCurrency.get(offer.currency) ?? [];
+    group.push(offer);
+    byCurrency.set(offer.currency, group);
+  }
+  let grouped: ComparedOffer[] | null = null;
+  for (const candidate of byCurrency.values()) {
+    if (
+      grouped === null ||
+      candidate.length > grouped.length ||
+      (candidate.length === grouped.length &&
+        candidate[0].effective_price < grouped[0].effective_price)
+    ) {
+      grouped = candidate;
+    }
+  }
+  const compared = grouped ?? [];
+
+  const lowest = compared[0].effective_price;
+  const highest = compared[compared.length - 1].effective_price;
   return {
     gtin,
     mpn,
     brand,
-    offers,
+    offers: compared,
     lowest_price: lowest,
     highest_price: highest,
-    savings: roundMoney(offers.length > 1 ? highest - lowest : 0),
-    currency: offers[0].currency,
+    savings: roundMoney(compared.length > 1 ? highest - lowest : 0),
+    currency: compared[0].currency,
   };
 }

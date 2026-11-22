@@ -9,11 +9,13 @@
 -- score) keep returning their in-memory results exactly as today,
 -- and no surface reads this table.
 --
--- APPLY ORDER: only after the 035–058 backlog clears in numeric
--- order (audit §9 runbook: 045 → 047 → 048–050 → 051 → 052 →
--- 054 + 056 → 057 → 058, then 059–062). Depends on `merchants`
--- (migration 005) only. NEVER apply 035, and this file does not
--- depend on 035 or 053 (053 is dead without 035 and stays dead).
+-- APPLY ORDER: Phase 7 of the authoritative plan
+-- (migration-plan-m0-confirmed.md, goal
+-- smartbuy-final-real-data-completion/files/). The audit §9 runbook
+-- order quoted here before was STALE — do not follow it. Depends
+-- on `merchants` (migration 005) only. NEVER apply 035, and this
+-- file does not depend on 035 or 053 (053 is dead without 035 and
+-- stays dead).
 --
 --   * One durable row per merchant: UNIQUE (merchant_id).
 --     Scores are refreshed in place (UPSERT on merchant_id),
